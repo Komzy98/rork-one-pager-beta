@@ -1,0 +1,1852 @@
+import React, { useState, useCallback } from 'react';
+import {
+  StyleSheet,
+  View,
+  Text,
+  ScrollView,
+  TouchableOpacity,
+  Switch,
+  TextInput,
+  Alert,
+  Modal,
+  LayoutAnimation,
+  Platform,
+  UIManager,
+  ActionSheetIOS,
+  ActivityIndicator
+} from 'react-native';
+import { Image } from 'expo-image';
+import * as ImagePicker from 'expo-image-picker';
+import {
+  User,
+  Users,
+  Heart,
+  Bell,
+  Plus,
+  X,
+  Trophy,
+  LogOut,
+  ChevronRight,
+  Cloud,
+  Camera,
+  Sparkles,
+  Check,
+  Moon,
+  Sun,
+  Palette,
+  Flame,
+  BookOpen,
+  Target,
+  Edit3,
+  ChevronDown,
+  ChevronUp,
+  ArrowUp,
+  ArrowDown,
+  GripVertical,
+  LayoutGrid,
+  RotateCcw,
+  Search,
+  Shield,
+  FileText,
+  Dumbbell,
+  Clapperboard,
+  CookingPot,
+  GraduationCap,
+  Zap,
+  Briefcase,
+  Swords,
+} from 'lucide-react-native';
+import * as Haptics from 'expo-haptics';
+import { router } from 'expo-router';
+import { useAuth } from '@/hooks/useAuth';
+import { useUserProfile } from '@/hooks/useUserProfile';
+import { useApp } from '@/hooks/useHabitsStore';
+import { useNotificationsSafe } from '@/hooks/useBackgroundServices';
+import { useGamification } from '@/hooks/useHabitsEnhancement';
+import { useTheme } from '@/hooks/useTheme';
+import SwipeableTabContainer from '@/components/SwipeableTabContainer';
+import CustomHeader from '@/components/CustomHeader';
+
+import FirebaseSyncStatus from '@/components/FirebaseSyncStatus';
+import { AchievementsBadges } from '@/components/AchievementsBadges';
+import { ChallengeLeaderboard } from '@/components/ChallengeLeaderboard';
+import { MOCK_CHALLENGES } from '@/mocks/socialData';
+import { ThemeSettings } from '@/components/ThemeSettings';
+
+import { UserTeam, UserCountry } from '@/types/habit';
+import { FOOTBALL_COUNTRIES, FOOTBALL_TEAMS, searchTeams as searchAllTeams } from '@/constants/footballData';
+import TabWalkthrough from '@/components/TabWalkthrough';
+import { useWalkthrough } from '@/hooks/useWalkthrough';
+import { ALL_NATIONS, Nation } from '@/constants/nations';
+
+type Nationality = Nation;
+
+if (Platform.OS === 'android' && UIManager.setLayoutAnimationEnabledExperimental) {
+  UIManager.setLayoutAnimationEnabledExperimental(true);
+}
+
+const INTEREST_ICONS: Record<string, React.ComponentType<any>> = {
+  'football': Trophy,
+  'ufc': Swords,
+  'fitness': Dumbbell,
+  'movies': Clapperboard,
+  'cooking': CookingPot,
+  'learning': GraduationCap,
+  'productivity': Zap,
+  'work': Briefcase,
+};
+
+const AVAILABLE_INTERESTS = [
+  { id: 'football', name: 'Football', color: '#34C759', tabs: ['sports'] },
+  { id: 'ufc', name: 'UFC', color: '#D32F2F', tabs: ['sports'] },
+  { id: 'fitness', name: 'Fitness', color: '#FF9500', tabs: ['habits', 'tasks'] },
+  { id: 'movies', name: 'Movies & TV', color: '#FF2D55', tabs: ['shows'] },
+  { id: 'cooking', name: 'Cooking', color: '#00C7BE', tabs: ['habits'] },
+  { id: 'learning', name: 'Learning', color: '#FF9500', tabs: ['activities', 'tasks'] },
+  { id: 'productivity', name: 'Productivity', color: '#007AFF', tabs: ['tasks'] },
+  { id: 'work', name: 'Work', color: '#8E8E93', tabs: ['tasks'] },
+];
+
+type ExpandedSection = 'favorites' | 'notifications' | 'appearance' | 'achievements' | 'challenges' | null;
+
+export default function ProfileScreen() {
+  const { colors, isDark, setThemeMode } = useTheme();
+  const { user, logout, deleteAccount, isGuest } = useAuth();
+  const {
+    profile,
+    updateProfile,
+    addFavoriteTeam,
+    removeFavoriteTeam,
+    addFavoriteCountry,
+    removeFavoriteCountry,
+    updateDisplayPreferences,
+    updateInterests,
+    getPersonalizedTabs,
+    updateTabOrder,
+    resetTabOrder,
+    resetOnboarding,
+  } = useUserProfile();
+  const { resetAllWalkthroughs } = useWalkthrough();
+  const { dashboardSummary } = useApp();
+  const {
+    badges,
+    achievements,
+    stats: gamificationStats,
+    challenges,
+    joinChallenge,
+    leaveChallenge,
+    getLeaderboard,
+  } = useGamification();
+  const {
+    isEnabled: notificationsEnabled,
+    toggleNotificationSetting,
+    sendTestNotification,
+    requestPermissions,
+  } = useNotificationsSafe();
+
+  const [showTeamModal, setShowTeamModal] = useState<boolean>(false);
+  const [showCountryModal, setShowCountryModal] = useState<boolean>(false);
+  const [showInterestsModal, setShowInterestsModal] = useState<boolean>(false);
+  const [showNationalityModal, setShowNationalityModal] = useState<boolean>(false);
+  const [teamSearch, setTeamSearch] = useState<string>('');
+  const [countrySearch, setCountrySearch] = useState<string>('');
+  const [nationalitySearch, setNationalitySearch] = useState<string>('');
+  const [editingName, setEditingName] = useState<boolean>(false);
+  const [tempName, setTempName] = useState<string>(profile?.name || '');
+  const [expandedSection, setExpandedSection] = useState<ExpandedSection>(null);
+  const [isUploadingImage, setIsUploadingImage] = useState<boolean>(false);
+  const [tempSelectedInterests, setTempSelectedInterests] = useState<string[]>([]);
+  const [showTabOrderModal, setShowTabOrderModal] = useState<boolean>(false);
+  const [tempTabOrder, setTempTabOrder] = useState<string[]>([]);
+
+  const hasInterest = (interestId: string) => profile?.interests?.includes(interestId) ?? false;
+  const hasSportsInterest = hasInterest('football');
+  const unlockedBadgesCount = badges.filter(b => b.unlockedAt).length;
+
+  const toggleSection = useCallback((section: ExpandedSection) => {
+    LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
+    setExpandedSection(prev => prev === section ? null : section);
+  }, []);
+
+  const handleToggleDarkMode = useCallback(() => {
+    const newMode = isDark ? 'light' : 'dark';
+    setThemeMode(newMode);
+  }, [isDark, setThemeMode]);
+
+  const pickImage = useCallback(async (source: 'camera' | 'library') => {
+    try {
+      let result: ImagePicker.ImagePickerResult;
+
+      if (source === 'camera') {
+        const { status } = await ImagePicker.requestCameraPermissionsAsync();
+        if (status !== 'granted') {
+          Alert.alert('Permission Required', 'Camera permission is needed to take photos.');
+          return;
+        }
+        result = await ImagePicker.launchCameraAsync({
+          allowsEditing: true,
+          aspect: [1, 1],
+          quality: 0.7,
+        });
+      } else {
+        const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
+        if (status !== 'granted') {
+          Alert.alert('Permission Required', 'Photo library permission is needed to select photos.');
+          return;
+        }
+        result = await ImagePicker.launchImageLibraryAsync({
+          mediaTypes: ['images'],
+          allowsEditing: true,
+          aspect: [1, 1],
+          quality: 0.7,
+        });
+      }
+
+      if (!result.canceled && result.assets[0]) {
+        setIsUploadingImage(true);
+        const imageUri = result.assets[0].uri;
+        updateProfile({ avatar: imageUri });
+        setIsUploadingImage(false);
+      }
+    } catch (error) {
+      if (__DEV__) console.error('Error picking image:', error);
+      setIsUploadingImage(false);
+      Alert.alert('Error', 'Failed to pick image. Please try again.');
+    }
+  }, [updateProfile]);
+
+  const showImagePickerOptions = useCallback(() => {
+    if (Platform.OS === 'ios') {
+      ActionSheetIOS.showActionSheetWithOptions(
+        {
+          options: ['Cancel', 'Take Photo', 'Choose from Library', ...(profile?.avatar ? ['Remove Photo'] : [])],
+          cancelButtonIndex: 0,
+          destructiveButtonIndex: profile?.avatar ? 3 : undefined,
+        },
+        (buttonIndex) => {
+          if (buttonIndex === 1) void pickImage('camera');
+          else if (buttonIndex === 2) void pickImage('library');
+          else if (buttonIndex === 3 && profile?.avatar) updateProfile({ avatar: undefined });
+        }
+      );
+    } else {
+      Alert.alert(
+        'Profile Photo',
+        'Choose an option',
+        [
+          { text: 'Cancel', style: 'cancel' },
+          { text: 'Take Photo', onPress: () => pickImage('camera') },
+          { text: 'Choose from Library', onPress: () => pickImage('library') },
+          ...(profile?.avatar ? [{ text: 'Remove Photo', style: 'destructive' as const, onPress: () => updateProfile({ avatar: undefined }) }] : []),
+        ]
+      );
+    }
+  }, [pickImage, profile?.avatar, updateProfile]);
+
+  if (!user) {
+    return (
+      <SwipeableTabContainer>
+        <View style={[styles.container, { backgroundColor: colors.background }]}>
+          <View style={styles.loadingContainer}>
+            <Text style={[styles.loadingText, { color: colors.text }]}>Please log in to view your profile</Text>
+            <TouchableOpacity 
+              style={[styles.loginButton, { backgroundColor: colors.primary }]}
+              onPress={() => router.push('/(auth)/login' as any)}
+            >
+              <Text style={[styles.loginButtonText, { color: colors.textInverse }]}>Go to Login</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+      </SwipeableTabContainer>
+    );
+  }
+
+  if (!profile) {
+    return (
+      <SwipeableTabContainer>
+        <View style={[styles.container, { backgroundColor: colors.background }]}>
+          <View style={styles.loadingContainer}>
+            <ActivityIndicator size="large" color={colors.primary} />
+            <Text style={[styles.loadingText, { color: colors.textTertiary, marginTop: 12 }]}>Loading your profile...</Text>
+          </View>
+        </View>
+      </SwipeableTabContainer>
+    );
+  }
+
+  const filteredTeams = teamSearch.trim() 
+    ? searchAllTeams(teamSearch)
+    : FOOTBALL_TEAMS.slice(0, 50);
+
+  const filteredCountries = FOOTBALL_COUNTRIES.filter(country =>
+    country.name.toLowerCase().includes(countrySearch.toLowerCase()) ||
+    country.leagues.some(league => league.toLowerCase().includes(countrySearch.toLowerCase()))
+  );
+
+  const filteredNationalities = ALL_NATIONS.filter(nation =>
+    nationalitySearch.trim() === '' || 
+    nation.name.toLowerCase().includes(nationalitySearch.toLowerCase())
+  ).sort((a, b) => a.name.localeCompare(b.name));
+
+  const handleSaveName = () => {
+    updateProfile({ name: tempName });
+    setEditingName(false);
+  };
+
+  const handleRemoveTeam = (teamId: string) => {
+    Alert.alert('Remove Team', 'Remove this team from your favourites?', [
+      { text: 'Cancel', style: 'cancel' },
+      { text: 'Remove', style: 'destructive', onPress: () => removeFavoriteTeam(teamId) }
+    ]);
+  };
+
+  const handleAddTeam = (team: UserTeam) => {
+    const isAlreadyAdded = profile.favoriteTeams.some(t => t.id === team.id);
+    if (!isAlreadyAdded) {
+      addFavoriteTeam(team);
+      setShowTeamModal(false);
+      setTeamSearch('');
+    }
+  };
+
+  const handleRemoveCountry = (countryId: string) => {
+    Alert.alert('Remove Country', 'Remove this country from your favourites?', [
+      { text: 'Cancel', style: 'cancel' },
+      { text: 'Remove', style: 'destructive', onPress: () => removeFavoriteCountry(countryId) }
+    ]);
+  };
+
+  const handleAddCountry = (country: UserCountry) => {
+    const isAlreadyAdded = profile.favoriteCountries.some(c => c.id === country.id);
+    if (!isAlreadyAdded) {
+      addFavoriteCountry(country);
+      setShowCountryModal(false);
+      setCountrySearch('');
+    }
+  };
+
+  const handleRemoveNationality = (nationalityId: string) => {
+    Alert.alert('Remove Nationality', 'Remove this nationality?', [
+      { text: 'Cancel', style: 'cancel' },
+      { 
+        text: 'Remove', 
+        style: 'destructive', 
+        onPress: () => {
+          const updatedNationalities = profile.nationalities?.filter(n => n.id !== nationalityId) || [];
+          updateProfile({ nationalities: updatedNationalities });
+        }
+      }
+    ]);
+  };
+
+  const handleAddNationality = (nation: Nationality) => {
+    const isAlreadyAdded = profile.nationalities?.some(n => n.id === nation.id) ?? false;
+    if (!isAlreadyAdded) {
+      const updatedNationalities = [
+        ...(profile.nationalities || []),
+        { id: nation.id, name: nation.name, code: nation.code, flag: nation.flag, apiId: nation.apiId }
+      ];
+      updateProfile({ nationalities: updatedNationalities });
+      setShowNationalityModal(false);
+      setNationalitySearch('');
+    }
+  };
+
+  const handleLogout = () => {
+    Alert.alert('Sign Out', 'Are you sure you want to sign out?', [
+      { text: 'Cancel', style: 'cancel' },
+      { text: 'Sign Out', style: 'destructive', onPress: async () => {
+        await logout();
+        router.replace('/(auth)/login' as any);
+      }}
+    ]);
+  };
+
+  const handleDeleteAccount = () => {
+    Alert.alert(
+      'Delete Account',
+      'This action cannot be undone. All your data will be permanently lost.',
+      [
+        { text: 'Cancel', style: 'cancel' },
+        { text: 'Delete Account', style: 'destructive', onPress: async () => {
+          const result = await deleteAccount();
+          if (result.success) router.replace('/(auth)/login' as any);
+          else Alert.alert('Error', result.error || 'Failed to delete account');
+        }}
+      ]
+    );
+  };
+
+  return (
+    <SwipeableTabContainer>
+      <TabWalkthrough tabName="profile" />
+      <CustomHeader title="Profile" subtitle="Your account & preferences" />
+      <View style={[styles.container, { backgroundColor: colors.background }]}>
+        <ScrollView 
+          style={styles.scrollView} 
+          showsVerticalScrollIndicator={false}
+          contentContainerStyle={styles.scrollContent}
+        >
+          {/* Guest Banner */}
+          {isGuest && (
+            <View style={[styles.guestBanner, { backgroundColor: colors.primary + '12', borderColor: colors.primary + '30' }]}>
+              <View style={styles.guestBannerContent}>
+                <Text style={[styles.guestBannerTitle, { color: colors.text }]}>Browsing as Guest</Text>
+                <Text style={[styles.guestBannerText, { color: colors.textTertiary }]}>
+                  Create an account to save your progress
+                </Text>
+              </View>
+              <TouchableOpacity 
+                style={[styles.guestCreateButton, { backgroundColor: colors.primary }]}
+                onPress={() => router.push('/(auth)/signup' as any)}
+              >
+                <Text style={[styles.guestCreateButtonText, { color: colors.textInverse }]}>Sign Up</Text>
+              </TouchableOpacity>
+            </View>
+          )}
+
+          {/* Profile Hero Card */}
+          <View style={[styles.heroCard, { backgroundColor: colors.card, borderColor: colors.border }]}>
+            <View style={styles.heroTop}>
+              <TouchableOpacity 
+                style={[styles.avatarContainer, { backgroundColor: colors.surfaceSecondary }]}
+                onPress={!isGuest ? showImagePickerOptions : undefined}
+                activeOpacity={isGuest ? 1 : 0.7}
+              >
+                {isUploadingImage ? (
+                  <ActivityIndicator size="small" color={colors.primary} />
+                ) : profile?.avatar ? (
+                  <Image source={{ uri: profile.avatar }} style={styles.avatarImage} contentFit="cover" transition={200} />
+                ) : (
+                  <User size={36} color={colors.primary} />
+                )}
+                {!isGuest && (
+                  <View style={[styles.avatarBadge, { backgroundColor: colors.primary }]}>
+                    <Camera size={12} color={colors.textInverse} />
+                  </View>
+                )}
+              </TouchableOpacity>
+
+              <View style={styles.heroInfo}>
+                {editingName && !isGuest ? (
+                  <View style={styles.nameEditRow}>
+                    <TextInput
+                      style={[styles.nameInput, { color: colors.text, borderColor: colors.primary }]}
+                      value={tempName}
+                      onChangeText={setTempName}
+                      onBlur={handleSaveName}
+                      onSubmitEditing={handleSaveName}
+                      autoFocus
+                    />
+                  </View>
+                ) : (
+                  <TouchableOpacity 
+                    style={styles.nameRow}
+                    onPress={() => !isGuest && setEditingName(true)}
+                    activeOpacity={isGuest ? 1 : 0.7}
+                  >
+                    <Text style={[styles.heroName, { color: colors.text }]} numberOfLines={1}>
+                      {isGuest ? 'Guest User' : profile.name}
+                    </Text>
+                    {!isGuest && <Edit3 size={14} color={colors.textTertiary} style={{ marginLeft: 6 }} />}
+                  </TouchableOpacity>
+                )}
+                <Text style={[styles.heroEmail, { color: colors.textTertiary }]}>
+                  {isGuest ? 'guest@example.com' : user.email}
+                </Text>
+              </View>
+
+              {/* Dark Mode Toggle */}
+              <TouchableOpacity
+                style={[styles.darkModeButton, { backgroundColor: isDark ? colors.primary + '20' : colors.surfaceSecondary }]}
+                onPress={handleToggleDarkMode}
+                activeOpacity={0.7}
+              >
+                {isDark ? (
+                  <Moon size={20} color={colors.primary} />
+                ) : (
+                  <Sun size={20} color={colors.textSecondary} />
+                )}
+              </TouchableOpacity>
+            </View>
+
+            {/* Quick Stats */}
+            <View style={[styles.statsRow, { borderTopColor: colors.border }]}>
+              <View style={styles.statItem}>
+                <View style={[styles.statIconBg, { backgroundColor: '#FF9500' + '15' }]}>
+                  <Flame size={16} color="#FF9500" />
+                </View>
+                <Text style={[styles.statValue, { color: colors.text }]}>{dashboardSummary.habits.currentStreak}</Text>
+                <Text style={[styles.statLabel, { color: colors.textTertiary }]}>Streak</Text>
+              </View>
+              <View style={[styles.statDivider, { backgroundColor: colors.border }]} />
+              <View style={styles.statItem}>
+                <View style={[styles.statIconBg, { backgroundColor: '#34C759' + '15' }]}>
+                  <Target size={16} color="#34C759" />
+                </View>
+                <Text style={[styles.statValue, { color: colors.text }]}>{dashboardSummary.habits.completed}/{dashboardSummary.habits.total}</Text>
+                <Text style={[styles.statLabel, { color: colors.textTertiary }]}>Today</Text>
+              </View>
+              <View style={[styles.statDivider, { backgroundColor: colors.border }]} />
+              <View style={styles.statItem}>
+                <View style={[styles.statIconBg, { backgroundColor: '#5856D6' + '15' }]}>
+                  <BookOpen size={16} color="#5856D6" />
+                </View>
+                <Text style={[styles.statValue, { color: colors.text }]}>{profile.favoriteBooks.length}</Text>
+                <Text style={[styles.statLabel, { color: colors.textTertiary }]}>Books</Text>
+              </View>
+              <View style={[styles.statDivider, { backgroundColor: colors.border }]} />
+              <View style={styles.statItem}>
+                <View style={[styles.statIconBg, { backgroundColor: '#FFD700' + '15' }]}>
+                  <Trophy size={16} color="#FFD700" />
+                </View>
+                <Text style={[styles.statValue, { color: colors.text }]}>{unlockedBadgesCount}</Text>
+                <Text style={[styles.statLabel, { color: colors.textTertiary }]}>Badges</Text>
+              </View>
+            </View>
+          </View>
+
+          {/* Interests Section */}
+          <View style={styles.sectionWrapper}>
+            <Text style={[styles.sectionTitle, { color: colors.text }]}>My Interests</Text>
+            <View style={[styles.interestsCard, { backgroundColor: colors.card, borderColor: colors.border }]}>
+              {profile?.interests && profile.interests.length > 0 ? (
+                <View style={styles.interestsList}>
+                  {profile.interests.map(interestId => {
+                    const interest = AVAILABLE_INTERESTS.find(i => i.id === interestId);
+                    if (!interest) return null;
+                    return (
+                      <View 
+                        key={interestId} 
+                        style={[styles.interestTag, { backgroundColor: interest.color + '15', borderColor: interest.color + '40' }]}
+                      >
+                        {(() => { const IconComp = INTEREST_ICONS[interest.id] || Sparkles; return <IconComp size={14} color={interest.color} />; })()}
+                        <Text style={[styles.interestText, { color: interest.color }]}>{interest.name}</Text>
+                      </View>
+                    );
+                  })}
+                </View>
+              ) : (
+                <Text style={[styles.noInterestsText, { color: colors.textTertiary }]}>No interests selected</Text>
+              )}
+              <TouchableOpacity 
+                style={[styles.manageButton, { backgroundColor: colors.surfaceSecondary }]}
+                onPress={() => {
+                  setTempSelectedInterests(profile?.interests || []);
+                  setShowInterestsModal(true);
+                }}
+              >
+                <Sparkles size={16} color={colors.primary} />
+                <Text style={[styles.manageButtonText, { color: colors.primary }]}>Manage Interests</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+
+          {/* Settings List */}
+          <View style={styles.sectionWrapper}>
+            <Text style={[styles.sectionTitle, { color: colors.text }]}>Settings</Text>
+            
+            {/* Favorites (if sports interest) */}
+            {hasSportsInterest && (
+              <TouchableOpacity 
+                style={[styles.settingsItem, { backgroundColor: colors.card, borderColor: colors.border }]}
+                onPress={() => toggleSection('favorites')}
+                activeOpacity={0.7}
+              >
+                <View style={[styles.settingsIconBg, { backgroundColor: '#FF2D55' + '15' }]}>
+                  <Heart size={18} color="#FF2D55" />
+                </View>
+                <View style={styles.settingsItemContent}>
+                  <Text style={[styles.settingsItemTitle, { color: colors.text }]}>Favorite Teams</Text>
+                  <Text style={[styles.settingsItemSubtitle, { color: colors.textTertiary }]}>
+                    {profile.favoriteTeams.length + (profile.nationalities?.length || 0)} teams, {profile.favoriteCountries.length} leagues
+                  </Text>
+                </View>
+                {expandedSection === 'favorites' ? (
+                  <ChevronUp size={20} color={colors.textTertiary} />
+                ) : (
+                  <ChevronDown size={20} color={colors.textTertiary} />
+                )}
+              </TouchableOpacity>
+            )}
+
+            {expandedSection === 'favorites' && hasSportsInterest && (
+              <View style={[styles.expandedContent, { backgroundColor: colors.surfaceSecondary }]}>
+                {/* Club Teams */}
+                <View style={styles.favSubSection}>
+                  <View style={styles.favSubHeader}>
+                    <Text style={[styles.favSubTitle, { color: colors.text }]}>Club Teams</Text>
+                    <TouchableOpacity style={[styles.addSmallBtn, { backgroundColor: colors.primary + '15' }]} onPress={() => setShowTeamModal(true)}>
+                      <Plus size={14} color={colors.primary} />
+                    </TouchableOpacity>
+                  </View>
+                  {profile.favoriteTeams.length > 0 ? (
+                    <View style={styles.favChipsList}>
+                      {profile.favoriteTeams.map(team => (
+                        <View key={team.id} style={[styles.favChip, { backgroundColor: colors.card, borderColor: colors.border }]}>
+                          <Trophy size={12} color="#34C759" />
+                          <Text style={[styles.favChipText, { color: colors.text }]} numberOfLines={1}>{team.name}</Text>
+                          <TouchableOpacity onPress={() => handleRemoveTeam(team.id)} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
+                            <X size={12} color={colors.textTertiary} />
+                          </TouchableOpacity>
+                        </View>
+                      ))}
+                    </View>
+                  ) : (
+                    <Text style={[styles.emptyFavText, { color: colors.textTertiary }]}>No teams added</Text>
+                  )}
+                </View>
+
+                {/* Nationalities */}
+                <View style={styles.favSubSection}>
+                  <View style={styles.favSubHeader}>
+                    <Text style={[styles.favSubTitle, { color: colors.text }]}>Nationalities</Text>
+                    <TouchableOpacity style={[styles.addSmallBtn, { backgroundColor: colors.primary + '15' }]} onPress={() => setShowNationalityModal(true)}>
+                      <Plus size={14} color={colors.primary} />
+                    </TouchableOpacity>
+                  </View>
+                  {(profile.nationalities?.length || 0) > 0 ? (
+                    <View style={styles.favChipsList}>
+                      {profile.nationalities?.map(nation => (
+                        <View key={nation.id} style={[styles.favChip, { backgroundColor: colors.card, borderColor: colors.border }]}>
+                          <Text style={styles.favChipFlag}>{nation.flag}</Text>
+                          <Text style={[styles.favChipText, { color: colors.text }]} numberOfLines={1}>{nation.name}</Text>
+                          <TouchableOpacity onPress={() => handleRemoveNationality(nation.id)} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
+                            <X size={12} color={colors.textTertiary} />
+                          </TouchableOpacity>
+                        </View>
+                      ))}
+                    </View>
+                  ) : (
+                    <Text style={[styles.emptyFavText, { color: colors.textTertiary }]}>No nationalities added</Text>
+                  )}
+                </View>
+
+                {/* Domestic Leagues */}
+                <View style={[styles.favSubSection, { marginBottom: 0 }]}>
+                  <View style={styles.favSubHeader}>
+                    <Text style={[styles.favSubTitle, { color: colors.text }]}>Domestic Leagues</Text>
+                    <TouchableOpacity style={[styles.addSmallBtn, { backgroundColor: colors.primary + '15' }]} onPress={() => setShowCountryModal(true)}>
+                      <Plus size={14} color={colors.primary} />
+                    </TouchableOpacity>
+                  </View>
+                  {profile.favoriteCountries.length > 0 ? (
+                    <View style={styles.favChipsList}>
+                      {profile.favoriteCountries.map(country => (
+                        <View key={country.id} style={[styles.favChip, { backgroundColor: colors.card, borderColor: colors.border }]}>
+                          <Text style={styles.favChipFlag}>{country.flag}</Text>
+                          <Text style={[styles.favChipText, { color: colors.text }]} numberOfLines={1}>{country.name}</Text>
+                          <TouchableOpacity onPress={() => handleRemoveCountry(country.id)} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
+                            <X size={12} color={colors.textTertiary} />
+                          </TouchableOpacity>
+                        </View>
+                      ))}
+                    </View>
+                  ) : (
+                    <Text style={[styles.emptyFavText, { color: colors.textTertiary }]}>No leagues added</Text>
+                  )}
+                </View>
+              </View>
+            )}
+
+            {/* Notifications */}
+            <TouchableOpacity 
+              style={[styles.settingsItem, { backgroundColor: colors.card, borderColor: colors.border }]}
+              onPress={() => toggleSection('notifications')}
+              activeOpacity={0.7}
+            >
+              <View style={[styles.settingsIconBg, { backgroundColor: '#007AFF' + '15' }]}>
+                <Bell size={18} color="#007AFF" />
+              </View>
+              <View style={styles.settingsItemContent}>
+                <Text style={[styles.settingsItemTitle, { color: colors.text }]}>Notifications</Text>
+                <Text style={[styles.settingsItemSubtitle, { color: notificationsEnabled ? colors.success : colors.textTertiary }]}>
+                  {notificationsEnabled ? 'Enabled' : 'Disabled'}
+                </Text>
+              </View>
+              {expandedSection === 'notifications' ? (
+                <ChevronUp size={20} color={colors.textTertiary} />
+              ) : (
+                <ChevronDown size={20} color={colors.textTertiary} />
+              )}
+            </TouchableOpacity>
+
+            {expandedSection === 'notifications' && (
+              <View style={[styles.expandedContent, { backgroundColor: colors.surfaceSecondary }]}>
+                {!notificationsEnabled && (
+                  <TouchableOpacity style={[styles.enableBtn, { backgroundColor: colors.primary }]} onPress={requestPermissions}>
+                    <Bell size={16} color={colors.textInverse} />
+                    <Text style={[styles.enableBtnText, { color: colors.textInverse }]}>Enable Notifications</Text>
+                  </TouchableOpacity>
+                )}
+                <View style={[styles.notifRow, { borderBottomColor: colors.border }]}>
+                  <Text style={[styles.notifLabel, { color: colors.text }]}>Live Match Alerts</Text>
+                  <Switch
+                    value={profile.notificationSettings.liveMatches}
+                    onValueChange={(value) => toggleNotificationSetting('liveMatches', value)}
+                    trackColor={{ false: colors.border, true: colors.primary }}
+                  />
+                </View>
+                <View style={[styles.notifRow, { borderBottomColor: colors.border }]}>
+                  <Text style={[styles.notifLabel, { color: colors.text }]}>Match Reminders</Text>
+                  <Switch
+                    value={profile.notificationSettings.matchReminders}
+                    onValueChange={(value) => toggleNotificationSetting('matchReminders', value)}
+                    trackColor={{ false: colors.border, true: colors.primary }}
+                  />
+                </View>
+                <View style={[styles.notifRow, { borderBottomColor: colors.border }]}>
+                  <Text style={[styles.notifLabel, { color: colors.text }]}>Goal Alerts</Text>
+                  <Switch
+                    value={profile.notificationSettings.goalAlerts}
+                    onValueChange={(value) => toggleNotificationSetting('goalAlerts', value)}
+                    trackColor={{ false: colors.border, true: colors.primary }}
+                  />
+                </View>
+                <View style={[styles.notifRow, { borderBottomColor: colors.border }]}>
+                  <Text style={[styles.notifLabel, { color: colors.text }]}>Habit Reminders</Text>
+                  <Switch
+                    value={profile.notificationSettings.habitReminders}
+                    onValueChange={(value) => toggleNotificationSetting('habitReminders', value)}
+                    trackColor={{ false: colors.border, true: colors.primary }}
+                  />
+                </View>
+
+                <TouchableOpacity style={[styles.testNotifBtn, { borderColor: colors.primary + '40' }]} onPress={sendTestNotification}>
+                  <Text style={[styles.testNotifBtnText, { color: colors.primary }]}>Send Test Notification</Text>
+                </TouchableOpacity>
+              </View>
+            )}
+
+            {/* Appearance */}
+            <TouchableOpacity 
+              style={[styles.settingsItem, { backgroundColor: colors.card, borderColor: colors.border }]}
+              onPress={() => toggleSection('appearance')}
+              activeOpacity={0.7}
+            >
+              <View style={[styles.settingsIconBg, { backgroundColor: '#AF52DE' + '15' }]}>
+                <Palette size={18} color="#AF52DE" />
+              </View>
+              <View style={styles.settingsItemContent}>
+                <Text style={[styles.settingsItemTitle, { color: colors.text }]}>Appearance & Display</Text>
+                <Text style={[styles.settingsItemSubtitle, { color: colors.textTertiary }]}>
+                  {isDark ? 'Dark' : 'Light'} mode, time format
+                </Text>
+              </View>
+              {expandedSection === 'appearance' ? (
+                <ChevronUp size={20} color={colors.textTertiary} />
+              ) : (
+                <ChevronDown size={20} color={colors.textTertiary} />
+              )}
+            </TouchableOpacity>
+
+            {expandedSection === 'appearance' && (
+              <View style={[styles.expandedContent, { backgroundColor: colors.surfaceSecondary }]}>
+                <View style={[styles.notifRow, { borderBottomColor: colors.border }]}>
+                  <Text style={[styles.notifLabel, { color: colors.text }]}>Show Only Favorites</Text>
+                  <Switch
+                    value={profile.displayPreferences.showOnlyFavorites}
+                    onValueChange={(value) => updateDisplayPreferences({ showOnlyFavorites: value })}
+                    trackColor={{ false: colors.border, true: colors.primary }}
+                  />
+                </View>
+                <View style={[styles.notifRow, { borderBottomWidth: 0 }]}>
+                  <Text style={[styles.notifLabel, { color: colors.text }]}>24-Hour Time</Text>
+                  <Switch
+                    value={profile.displayPreferences.timeFormat === '24h'}
+                    onValueChange={(value) => updateDisplayPreferences({ timeFormat: value ? '24h' : '12h' })}
+                    trackColor={{ false: colors.border, true: colors.primary }}
+                  />
+                </View>
+                <View style={styles.themeSection}>
+                  <ThemeSettings />
+                </View>
+              </View>
+            )}
+
+            {/* Tab Order */}
+            <TouchableOpacity 
+              style={[styles.settingsItem, { backgroundColor: colors.card, borderColor: colors.border }]}
+              onPress={() => {
+                setTempTabOrder(getPersonalizedTabs());
+                setShowTabOrderModal(true);
+              }}
+              activeOpacity={0.7}
+            >
+              <View style={[styles.settingsIconBg, { backgroundColor: '#FF9500' + '15' }]}>
+                <LayoutGrid size={18} color="#FF9500" />
+              </View>
+              <View style={styles.settingsItemContent}>
+                <Text style={[styles.settingsItemTitle, { color: colors.text }]}>Tab Order</Text>
+                <Text style={[styles.settingsItemSubtitle, { color: colors.textTertiary }]}>
+                  Customise your navigation tabs
+                </Text>
+              </View>
+              <ChevronRight size={20} color={colors.textTertiary} />
+            </TouchableOpacity>
+
+            {/* Privacy Policy */}
+            <TouchableOpacity 
+              style={[styles.settingsItem, { backgroundColor: colors.card, borderColor: colors.border }]}
+              onPress={() => router.push('/(root)/privacy-policy' as any)}
+              activeOpacity={0.7}
+              testID="privacy-policy-link"
+            >
+              <View style={[styles.settingsIconBg, { backgroundColor: '#34C759' + '15' }]}>
+                <Shield size={18} color="#34C759" />
+              </View>
+              <View style={styles.settingsItemContent}>
+                <Text style={[styles.settingsItemTitle, { color: colors.text }]}>Privacy Policy</Text>
+                <Text style={[styles.settingsItemSubtitle, { color: colors.textTertiary }]}>
+                  How we handle your data
+                </Text>
+              </View>
+              <ChevronRight size={20} color={colors.textTertiary} />
+            </TouchableOpacity>
+
+            {/* Terms of Use */}
+            <TouchableOpacity 
+              style={[styles.settingsItem, { backgroundColor: colors.card, borderColor: colors.border }]}
+              onPress={() => router.push('/(root)/terms-of-use' as any)}
+              activeOpacity={0.7}
+              testID="terms-of-use-link"
+            >
+              <View style={[styles.settingsIconBg, { backgroundColor: '#007AFF' + '15' }]}>
+                <FileText size={18} color="#007AFF" />
+              </View>
+              <View style={styles.settingsItemContent}>
+                <Text style={[styles.settingsItemTitle, { color: colors.text }]}>Terms of Use</Text>
+                <Text style={[styles.settingsItemSubtitle, { color: colors.textTertiary }]}>
+                  Rules for using the app
+                </Text>
+              </View>
+              <ChevronRight size={20} color={colors.textTertiary} />
+            </TouchableOpacity>
+
+            {/* Re-do Onboarding */}
+            <TouchableOpacity 
+              style={[styles.settingsItem, { backgroundColor: colors.card, borderColor: colors.border }]}
+              onPress={() => {
+                Alert.alert(
+                  'Re-do Onboarding',
+                  'This will reset your interests and take you back to the onboarding flow. Continue?',
+                  [
+                    { text: 'Cancel', style: 'cancel' },
+                    {
+                      text: 'Reset',
+                      style: 'destructive',
+                      onPress: () => {
+                        resetOnboarding();
+                        void Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+                        router.replace('/(onboarding)/welcome' as any);
+                      },
+                    },
+                  ]
+                );
+              }}
+              activeOpacity={0.7}
+            >
+              <View style={[styles.settingsIconBg, { backgroundColor: '#FF9500' + '15' }]}>
+                <RotateCcw size={18} color="#FF9500" />
+              </View>
+              <View style={styles.settingsItemContent}>
+                <Text style={[styles.settingsItemTitle, { color: colors.text }]}>Re-do Onboarding</Text>
+                <Text style={[styles.settingsItemSubtitle, { color: colors.textTertiary }]}>
+                  Reset interests and start fresh
+                </Text>
+              </View>
+              <ChevronRight size={20} color={colors.textTertiary} />
+            </TouchableOpacity>
+
+            {/* Replay Tab Tours */}
+            <TouchableOpacity 
+              style={[styles.settingsItem, { backgroundColor: colors.card, borderColor: colors.border }]}
+              onPress={() => {
+                void resetAllWalkthroughs();
+                void Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+                Alert.alert('Tours Reset', 'Tab walkthroughs will show again when you visit each tab.');
+              }}
+              activeOpacity={0.7}
+            >
+              <View style={[styles.settingsIconBg, { backgroundColor: '#5856D6' + '15' }]}>
+                <RotateCcw size={18} color="#5856D6" />
+              </View>
+              <View style={styles.settingsItemContent}>
+                <Text style={[styles.settingsItemTitle, { color: colors.text }]}>Replay Tab Tours</Text>
+                <Text style={[styles.settingsItemSubtitle, { color: colors.textTertiary }]}>
+                  Show guided walkthroughs again
+                </Text>
+              </View>
+              <ChevronRight size={20} color={colors.textTertiary} />
+            </TouchableOpacity>
+
+            {/* Cloud Sync */}
+            <TouchableOpacity 
+              style={[styles.settingsItem, { backgroundColor: colors.card, borderColor: colors.border }]}
+              activeOpacity={0.7}
+            >
+              <View style={[styles.settingsIconBg, { backgroundColor: '#00C7BE' + '15' }]}>
+                <Cloud size={18} color="#00C7BE" />
+              </View>
+              <View style={styles.settingsItemContent}>
+                <FirebaseSyncStatus />
+              </View>
+              <ChevronRight size={20} color={colors.textTertiary} />
+            </TouchableOpacity>
+          </View>
+
+          {/* Achievements Section */}
+          <View style={styles.sectionWrapper}>
+            <Text style={[styles.sectionTitle, { color: colors.text }]}>Achievements</Text>
+            <TouchableOpacity 
+              style={[styles.settingsItem, { backgroundColor: colors.card, borderColor: colors.border }]}
+              onPress={() => toggleSection('achievements')}
+              activeOpacity={0.7}
+            >
+              <View style={[styles.settingsIconBg, { backgroundColor: '#FFD700' + '15' }]}>
+                <Trophy size={18} color="#FFD700" />
+              </View>
+              <View style={styles.settingsItemContent}>
+                <Text style={[styles.settingsItemTitle, { color: colors.text }]}>Badges & Achievements</Text>
+                <Text style={[styles.settingsItemSubtitle, { color: colors.textTertiary }]}>
+                  {unlockedBadgesCount} badges unlocked
+                </Text>
+              </View>
+              {expandedSection === 'achievements' ? (
+                <ChevronUp size={20} color={colors.textTertiary} />
+              ) : (
+                <ChevronDown size={20} color={colors.textTertiary} />
+              )}
+            </TouchableOpacity>
+
+            {expandedSection === 'achievements' && (
+              <View style={[styles.expandedContent, { backgroundColor: colors.surfaceSecondary }]}>
+                <AchievementsBadges
+                  badges={badges}
+                  achievements={achievements}
+                  stats={gamificationStats}
+                  compact
+                />
+              </View>
+            )}
+
+            {/* Challenges */}
+            <TouchableOpacity 
+              style={[styles.settingsItem, { backgroundColor: colors.card, borderColor: colors.border }]}
+              onPress={() => toggleSection('challenges')}
+              activeOpacity={0.7}
+            >
+              <View style={[styles.settingsIconBg, { backgroundColor: '#6366F1' + '15' }]}>
+                <Users size={18} color="#6366F1" />
+              </View>
+              <View style={styles.settingsItemContent}>
+                <Text style={[styles.settingsItemTitle, { color: colors.text }]}>Challenges</Text>
+                <Text style={[styles.settingsItemSubtitle, { color: colors.textTertiary }]}>
+                  {[...challenges, ...MOCK_CHALLENGES].filter(c => c.status === 'active').length} active
+                </Text>
+              </View>
+              {expandedSection === 'challenges' ? (
+                <ChevronUp size={20} color={colors.textTertiary} />
+              ) : (
+                <ChevronDown size={20} color={colors.textTertiary} />
+              )}
+            </TouchableOpacity>
+
+            {expandedSection === 'challenges' && (
+              <View style={[styles.expandedContent, { backgroundColor: colors.surfaceSecondary }]}>
+                <ChallengeLeaderboard
+                  challenges={[...challenges, ...MOCK_CHALLENGES]}
+                  leaderboard={getLeaderboard('friends')}
+                  currentUserId="current_user"
+                  onJoinChallenge={joinChallenge}
+                  onLeaveChallenge={leaveChallenge}
+                  compact
+                />
+              </View>
+            )}
+          </View>
+
+          {/* Account Actions */}
+          <View style={styles.sectionWrapper}>
+            <Text style={[styles.sectionTitle, { color: colors.text }]}>Account</Text>
+            
+            {isGuest ? (
+              <>
+                <TouchableOpacity 
+                  style={[styles.accountBtn, { backgroundColor: colors.primary }]}
+                  onPress={() => router.push('/(auth)/signup' as any)}
+                >
+                  <User size={18} color={colors.textInverse} />
+                  <Text style={[styles.accountBtnText, { color: colors.textInverse }]}>Create Account</Text>
+                </TouchableOpacity>
+                <TouchableOpacity 
+                  style={[styles.accountBtn, { backgroundColor: colors.card, borderColor: colors.border, borderWidth: 1 }]}
+                  onPress={() => router.push('/(auth)/login' as any)}
+                >
+                  <LogOut size={18} color={colors.text} />
+                  <Text style={[styles.accountBtnText, { color: colors.text }]}>Sign In</Text>
+                </TouchableOpacity>
+              </>
+            ) : (
+              <>
+                <TouchableOpacity 
+                  style={[styles.accountBtn, { backgroundColor: colors.card, borderColor: colors.border, borderWidth: 1 }]}
+                  onPress={handleLogout}
+                >
+                  <LogOut size={18} color={colors.text} />
+                  <Text style={[styles.accountBtnText, { color: colors.text }]}>Sign Out</Text>
+                </TouchableOpacity>
+
+              </>
+            )}
+          </View>
+
+          {!isGuest && (
+            <TouchableOpacity
+              onPress={handleDeleteAccount}
+              style={styles.deleteAccountLink}
+            >
+              <Text style={[styles.deleteAccountText, { color: colors.textTertiary }]}>Delete Account</Text>
+            </TouchableOpacity>
+          )}
+
+          <View style={styles.bottomSpacer} />
+        </ScrollView>
+
+        {/* Modals */}
+        <Modal visible={showTeamModal} animationType="slide" presentationStyle="pageSheet">
+          <View style={[styles.modalContainer, { backgroundColor: colors.background }]}>
+            <View style={[styles.modalHeader, { borderBottomColor: colors.border }]}>
+              <Text style={[styles.modalTitle, { color: colors.text }]}>Add Team</Text>
+              <TouchableOpacity style={[styles.modalClose, { backgroundColor: colors.surfaceSecondary }]} onPress={() => { setShowTeamModal(false); setTeamSearch(''); }}>
+                <X size={20} color={colors.text} />
+              </TouchableOpacity>
+            </View>
+            <View style={[styles.searchBox, { backgroundColor: colors.surfaceSecondary }]}>
+              <TextInput
+                style={[styles.searchInput, { color: colors.text }]}
+                placeholder="Search teams..."
+                placeholderTextColor={colors.textTertiary}
+                value={teamSearch}
+                onChangeText={setTeamSearch}
+              />
+            </View>
+            <ScrollView style={styles.modalList}>
+              {filteredTeams.map((team) => {
+                const isAdded = profile.favoriteTeams.some(t => t.id === team.id);
+                return (
+                  <TouchableOpacity
+                    key={team.id}
+                    style={[styles.modalOption, { borderBottomColor: colors.border }, isAdded && styles.modalOptionDisabled]}
+                    onPress={() => handleAddTeam(team)}
+                    disabled={isAdded}
+                  >
+                    <View style={[styles.modalOptionIcon, { backgroundColor: colors.surfaceSecondary }]}>
+                      <Trophy size={18} color={isAdded ? colors.textTertiary : '#34C759'} />
+                    </View>
+                    <View style={styles.modalOptionInfo}>
+                      <Text style={[styles.modalOptionName, { color: isAdded ? colors.textTertiary : colors.text }]}>{team.name}</Text>
+                      <Text style={[styles.modalOptionSub, { color: colors.textTertiary }]}>{team.league}</Text>
+                    </View>
+                    {isAdded && <Text style={[styles.addedLabel, { color: colors.primary }]}>Added</Text>}
+                  </TouchableOpacity>
+                );
+              })}
+            </ScrollView>
+          </View>
+        </Modal>
+
+        <Modal visible={showCountryModal} animationType="slide" presentationStyle="pageSheet">
+          <View style={[styles.modalContainer, { backgroundColor: colors.background }]}>
+            <View style={[styles.modalHeader, { borderBottomColor: colors.border }]}>
+              <Text style={[styles.modalTitle, { color: colors.text }]}>Add Country</Text>
+              <TouchableOpacity style={[styles.modalClose, { backgroundColor: colors.surfaceSecondary }]} onPress={() => { setShowCountryModal(false); setCountrySearch(''); }}>
+                <X size={20} color={colors.text} />
+              </TouchableOpacity>
+            </View>
+            <View style={[styles.searchBox, { backgroundColor: colors.surfaceSecondary }]}>
+              <TextInput
+                style={[styles.searchInput, { color: colors.text }]}
+                placeholder="Search countries..."
+                placeholderTextColor={colors.textTertiary}
+                value={countrySearch}
+                onChangeText={setCountrySearch}
+              />
+            </View>
+            <ScrollView style={styles.modalList}>
+              {filteredCountries.map((country) => {
+                const isAdded = profile.favoriteCountries.some(c => c.id === country.id);
+                return (
+                  <TouchableOpacity
+                    key={country.id}
+                    style={[styles.modalOption, { borderBottomColor: colors.border }, isAdded && styles.modalOptionDisabled]}
+                    onPress={() => handleAddCountry(country)}
+                    disabled={isAdded}
+                  >
+                    <View style={[styles.modalOptionIcon, { backgroundColor: colors.surfaceSecondary }]}>
+                      <Text style={styles.modalFlag}>{country.flag}</Text>
+                    </View>
+                    <View style={styles.modalOptionInfo}>
+                      <Text style={[styles.modalOptionName, { color: isAdded ? colors.textTertiary : colors.text }]}>{country.name}</Text>
+                      <Text style={[styles.modalOptionSub, { color: colors.textTertiary }]}>{country.leagues.join(', ')}</Text>
+                    </View>
+                    {isAdded && <Text style={[styles.addedLabel, { color: colors.primary }]}>Added</Text>}
+                  </TouchableOpacity>
+                );
+              })}
+            </ScrollView>
+          </View>
+        </Modal>
+
+        <Modal visible={showNationalityModal} animationType="slide" presentationStyle="pageSheet">
+          <View style={[styles.modalContainer, { backgroundColor: colors.background }]}>
+            <View style={[styles.modalHeader, { borderBottomColor: colors.border }]}>
+              <Text style={[styles.modalTitle, { color: colors.text }]}>Add Nationality</Text>
+              <TouchableOpacity style={[styles.modalClose, { backgroundColor: colors.surfaceSecondary }]} onPress={() => { setShowNationalityModal(false); setNationalitySearch(''); }}>
+                <X size={20} color={colors.text} />
+              </TouchableOpacity>
+            </View>
+            <View style={[styles.searchBox, { backgroundColor: colors.surfaceSecondary }]}>
+              <TextInput
+                style={[styles.searchInput, { color: colors.text }]}
+                placeholder="Search nationalities..."
+                placeholderTextColor={colors.textTertiary}
+                value={nationalitySearch}
+                onChangeText={setNationalitySearch}
+              />
+            </View>
+            <View style={[styles.modalInfoBanner, { backgroundColor: '#FFD700' + '15' }]}>
+              <Text style={[styles.modalInfoText, { color: colors.text }]}>🏆 Track AFCON, World Cup qualifiers, and international matches</Text>
+            </View>
+            <ScrollView style={styles.modalList}>
+              {filteredNationalities.map((nation) => {
+                const isAdded = profile.nationalities?.some(n => n.id === nation.id) ?? false;
+                return (
+                  <TouchableOpacity
+                    key={nation.id}
+                    style={[styles.modalOption, { borderBottomColor: colors.border }, isAdded && styles.modalOptionDisabled]}
+                    onPress={() => handleAddNationality(nation)}
+                    disabled={isAdded}
+                  >
+                    <View style={[styles.modalOptionIcon, { backgroundColor: colors.surfaceSecondary }]}>
+                      <Text style={styles.modalFlag}>{nation.flag}</Text>
+                    </View>
+                    <View style={styles.modalOptionInfo}>
+                      <Text style={[styles.modalOptionName, { color: isAdded ? colors.textTertiary : colors.text }]}>{nation.name}</Text>
+                      <Text style={[styles.modalOptionSub, { color: colors.textTertiary }]}>National Team • AFCON • World Cup</Text>
+                    </View>
+                    {isAdded && <Text style={[styles.addedLabel, { color: colors.primary }]}>Added</Text>}
+                  </TouchableOpacity>
+                );
+              })}
+            </ScrollView>
+          </View>
+        </Modal>
+
+        <Modal visible={showTabOrderModal} animationType="slide" presentationStyle="pageSheet">
+          <View style={[styles.modalContainer, { backgroundColor: colors.background }]}>
+            <View style={[styles.modalHeader, { borderBottomColor: colors.border }]}>
+              <Text style={[styles.modalTitle, { color: colors.text }]}>Tab Order</Text>
+              <TouchableOpacity style={[styles.modalClose, { backgroundColor: colors.surfaceSecondary }]} onPress={() => setShowTabOrderModal(false)}>
+                <X size={20} color={colors.text} />
+              </TouchableOpacity>
+            </View>
+            <View style={[styles.modalInfoBanner, { backgroundColor: '#FF9500' + '15' }]}>
+              <GripVertical size={16} color="#FF9500" />
+              <Text style={[styles.modalInfoText, { color: colors.text, marginLeft: 8, flex: 1 }]}>Use the arrows to reorder your tabs</Text>
+            </View>
+            <ScrollView style={styles.modalList} contentContainerStyle={{ paddingBottom: 20 }}>
+              {tempTabOrder.map((tabName, index) => {
+                const TAB_META: Record<string, { icon: React.ComponentType<{color: string; size?: number}>; label: string; color: string }> = {
+                  activities: { icon: LayoutGrid, label: 'Overview', color: '#007AFF' },
+                  shows: { icon: Sparkles, label: 'Shows', color: '#FF2D55' },
+                  sports: { icon: Trophy, label: 'Sports', color: '#34C759' },
+                  tasks: { icon: Target, label: 'Tasks', color: '#FF9500' },
+                  discover: { icon: Search, label: 'Discover', color: '#5856D6' },
+                  profile: { icon: User, label: 'Profile', color: '#8E8E93' },
+                };
+                const meta = TAB_META[tabName] || { icon: LayoutGrid, label: tabName, color: '#8E8E93' };
+                const TabIcon = meta.icon;
+                const isFirst = index === 0;
+                const isLast = index === tempTabOrder.length - 1;
+
+                return (
+                  <View
+                    key={tabName}
+                    style={[styles.tabOrderItem, { backgroundColor: colors.card, borderColor: colors.border }]}
+                  >
+                    <View style={[styles.tabOrderRank, { backgroundColor: meta.color + '15' }]}>
+                      <Text style={[styles.tabOrderRankText, { color: meta.color }]}>{index + 1}</Text>
+                    </View>
+                    <View style={[styles.tabOrderIconBg, { backgroundColor: meta.color + '15' }]}>
+                      <TabIcon color={meta.color} size={20} />
+                    </View>
+                    <Text style={[styles.tabOrderLabel, { color: colors.text }]}>{meta.label}</Text>
+                    <View style={styles.tabOrderArrows}>
+                      <TouchableOpacity
+                        style={[styles.tabOrderArrowBtn, { backgroundColor: isFirst ? colors.border + '40' : colors.primary + '15' }]}
+                        disabled={isFirst}
+                        onPress={() => {
+                          const newOrder = [...tempTabOrder];
+                          [newOrder[index - 1], newOrder[index]] = [newOrder[index], newOrder[index - 1]];
+                          setTempTabOrder(newOrder);
+                          void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+                        }}
+                      >
+                        <ArrowUp size={16} color={isFirst ? colors.textTertiary : colors.primary} />
+                      </TouchableOpacity>
+                      <TouchableOpacity
+                        style={[styles.tabOrderArrowBtn, { backgroundColor: isLast ? colors.border + '40' : colors.primary + '15' }]}
+                        disabled={isLast}
+                        onPress={() => {
+                          const newOrder = [...tempTabOrder];
+                          [newOrder[index], newOrder[index + 1]] = [newOrder[index + 1], newOrder[index]];
+                          setTempTabOrder(newOrder);
+                          void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+                        }}
+                      >
+                        <ArrowDown size={16} color={isLast ? colors.textTertiary : colors.primary} />
+                      </TouchableOpacity>
+                    </View>
+                  </View>
+                );
+              })}
+            </ScrollView>
+            <View style={[styles.modalFooter, { borderTopColor: colors.border }]}>
+              <TouchableOpacity
+                style={[styles.resetTabBtn, { borderColor: colors.border }]}
+                onPress={() => {
+                  resetTabOrder();
+                  setTempTabOrder(getPersonalizedTabs());
+                  void Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+                }}
+              >
+                <RotateCcw size={14} color={colors.textTertiary} />
+                <Text style={[styles.resetTabBtnText, { color: colors.textTertiary }]}>Reset</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={[styles.saveBtn, { backgroundColor: colors.primary }]}
+                onPress={() => {
+                  updateTabOrder(tempTabOrder);
+                  setShowTabOrderModal(false);
+                  void Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+                }}
+              >
+                <Text style={[styles.saveBtnText, { color: colors.textInverse }]}>Save Order</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        </Modal>
+
+        <Modal visible={showInterestsModal} animationType="slide" presentationStyle="pageSheet">
+          <View style={[styles.modalContainer, { backgroundColor: colors.background }]}>
+            <View style={[styles.modalHeader, { borderBottomColor: colors.border }]}>
+              <Text style={[styles.modalTitle, { color: colors.text }]}>Manage Interests</Text>
+              <TouchableOpacity style={[styles.modalClose, { backgroundColor: colors.surfaceSecondary }]} onPress={() => setShowInterestsModal(false)}>
+                <X size={20} color={colors.text} />
+              </TouchableOpacity>
+            </View>
+            <View style={[styles.modalInfoBanner, { backgroundColor: '#FF9500' + '15' }]}>
+              <Sparkles size={16} color="#FF9500" />
+              <Text style={[styles.modalInfoText, { color: colors.text, marginLeft: 8, flex: 1 }]}>Select interests to customise your app experience</Text>
+            </View>
+            <ScrollView style={styles.modalList} contentContainerStyle={styles.interestsListContent}>
+              {AVAILABLE_INTERESTS.map((interest) => {
+                const isSelected = tempSelectedInterests.includes(interest.id);
+                return (
+                  <TouchableOpacity
+                    key={interest.id}
+                    style={[
+                      styles.interestOption,
+                      { backgroundColor: colors.card, borderColor: isSelected ? interest.color : colors.border },
+                      isSelected && { backgroundColor: interest.color + '10' }
+                    ]}
+                    onPress={() => {
+                      setTempSelectedInterests(prev => 
+                        prev.includes(interest.id) ? prev.filter(id => id !== interest.id) : [...prev, interest.id]
+                      );
+                    }}
+                    activeOpacity={0.7}
+                  >
+                    {(() => { const IconComp = INTEREST_ICONS[interest.id] || Sparkles; return <IconComp size={22} color={isSelected ? interest.color : colors.textSecondary} />; })()}
+                    <View style={styles.interestOptionInfo}>
+                      <Text style={[styles.interestOptionName, { color: isSelected ? interest.color : colors.text }]}>{interest.name}</Text>
+                      <Text style={[styles.interestOptionTabs, { color: colors.textTertiary }]}>
+                        {interest.tabs.map(t => t.charAt(0).toUpperCase() + t.slice(1)).join(', ')}
+                      </Text>
+                    </View>
+                    <View style={[styles.interestCheck, { borderColor: isSelected ? interest.color : colors.border, backgroundColor: isSelected ? interest.color : 'transparent' }]}>
+                      {isSelected && <Check size={14} color="#FFF" />}
+                    </View>
+                  </TouchableOpacity>
+                );
+              })}
+            </ScrollView>
+            <View style={[styles.modalFooter, { borderTopColor: colors.border }]}>
+              <Text style={[styles.modalFooterText, { color: colors.textTertiary }]}>
+                {tempSelectedInterests.length} selected
+              </Text>
+              <TouchableOpacity
+                style={[styles.saveBtn, { backgroundColor: colors.primary }]}
+                onPress={() => { updateInterests(tempSelectedInterests); setShowInterestsModal(false); }}
+              >
+                <Text style={[styles.saveBtnText, { color: colors.textInverse }]}>Save Changes</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        </Modal>
+      </View>
+    </SwipeableTabContainer>
+  );
+}
+
+const styles = StyleSheet.create({
+  container: {
+    flex: 1,
+  },
+  scrollView: {
+    flex: 1,
+  },
+  scrollContent: {
+    paddingHorizontal: 16,
+    paddingTop: 8,
+  },
+  loadingContainer: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+    paddingHorizontal: 24,
+  },
+  loadingText: {
+    fontSize: 16,
+    fontWeight: '500',
+    textAlign: 'center',
+  },
+  loginButton: {
+    borderRadius: 12,
+    paddingHorizontal: 24,
+    paddingVertical: 12,
+    marginTop: 16,
+  },
+  loginButtonText: {
+    fontSize: 16,
+    fontWeight: '600',
+  },
+  guestBanner: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    padding: 14,
+    borderRadius: 14,
+    borderWidth: 1,
+    marginBottom: 16,
+  },
+  guestBannerContent: {
+    flex: 1,
+  },
+  guestBannerTitle: {
+    fontSize: 15,
+    fontWeight: '600',
+    marginBottom: 2,
+  },
+  guestBannerText: {
+    fontSize: 13,
+  },
+  guestCreateButton: {
+    paddingHorizontal: 16,
+    paddingVertical: 8,
+    borderRadius: 8,
+    marginLeft: 12,
+  },
+  guestCreateButtonText: {
+    fontSize: 14,
+    fontWeight: '600',
+  },
+  heroCard: {
+    borderRadius: 20,
+    borderWidth: 1,
+    overflow: 'hidden',
+    marginBottom: 20,
+  },
+  heroTop: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    padding: 16,
+  },
+  avatarContainer: {
+    width: 72,
+    height: 72,
+    borderRadius: 36,
+    justifyContent: 'center',
+    alignItems: 'center',
+    position: 'relative',
+  },
+  avatarImage: {
+    width: 72,
+    height: 72,
+    borderRadius: 36,
+  },
+  avatarBadge: {
+    position: 'absolute',
+    bottom: 0,
+    right: 0,
+    width: 24,
+    height: 24,
+    borderRadius: 12,
+    justifyContent: 'center',
+    alignItems: 'center',
+    borderWidth: 2,
+    borderColor: '#FFF',
+  },
+  heroInfo: {
+    flex: 1,
+    marginLeft: 14,
+  },
+  nameRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  nameEditRow: {
+    marginBottom: 4,
+  },
+  heroName: {
+    fontSize: 22,
+    fontWeight: '700',
+  },
+  heroEmail: {
+    fontSize: 14,
+    marginTop: 2,
+  },
+  nameInput: {
+    fontSize: 22,
+    fontWeight: '700',
+    borderBottomWidth: 2,
+    paddingVertical: 2,
+  },
+  darkModeButton: {
+    width: 44,
+    height: 44,
+    borderRadius: 22,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  statsRow: {
+    flexDirection: 'row',
+    borderTopWidth: 1,
+    paddingVertical: 14,
+    paddingHorizontal: 8,
+  },
+  statItem: {
+    flex: 1,
+    alignItems: 'center',
+  },
+  statIconBg: {
+    width: 32,
+    height: 32,
+    borderRadius: 16,
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginBottom: 6,
+  },
+  statValue: {
+    fontSize: 18,
+    fontWeight: '700',
+  },
+  statLabel: {
+    fontSize: 11,
+    marginTop: 2,
+  },
+  statDivider: {
+    width: 1,
+    height: 48,
+    alignSelf: 'center',
+  },
+  sectionWrapper: {
+    marginBottom: 20,
+  },
+  sectionTitle: {
+    fontSize: 18,
+    fontWeight: '700',
+    marginBottom: 12,
+    marginLeft: 4,
+  },
+  interestsCard: {
+    borderRadius: 16,
+    borderWidth: 1,
+    padding: 14,
+  },
+  interestsList: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 8,
+    marginBottom: 12,
+  },
+  interestTag: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingVertical: 8,
+    paddingHorizontal: 12,
+    borderRadius: 10,
+    borderWidth: 1,
+    gap: 6,
+  },
+  interestEmoji: {
+    fontSize: 16,
+  },
+  interestText: {
+    fontSize: 14,
+    fontWeight: '600',
+  },
+  noInterestsText: {
+    fontSize: 14,
+    textAlign: 'center',
+    paddingVertical: 12,
+  },
+  manageButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: 12,
+    borderRadius: 10,
+    gap: 8,
+  },
+  manageButtonText: {
+    fontSize: 14,
+    fontWeight: '600',
+  },
+  settingsItem: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    padding: 14,
+    borderRadius: 14,
+    borderWidth: 1,
+    marginBottom: 8,
+  },
+  settingsIconBg: {
+    width: 40,
+    height: 40,
+    borderRadius: 12,
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginRight: 12,
+  },
+  settingsItemContent: {
+    flex: 1,
+  },
+  settingsItemTitle: {
+    fontSize: 16,
+    fontWeight: '600',
+  },
+  settingsItemSubtitle: {
+    fontSize: 13,
+    marginTop: 2,
+  },
+  expandedContent: {
+    borderRadius: 14,
+    padding: 14,
+    marginTop: -4,
+    marginBottom: 8,
+  },
+  favSubSection: {
+    marginBottom: 16,
+  },
+  favSubHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    marginBottom: 10,
+  },
+  favSubTitle: {
+    fontSize: 14,
+    fontWeight: '600',
+  },
+  addSmallBtn: {
+    width: 28,
+    height: 28,
+    borderRadius: 14,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  favChipsList: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 8,
+  },
+  favChip: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingVertical: 6,
+    paddingHorizontal: 10,
+    borderRadius: 8,
+    borderWidth: 1,
+    gap: 6,
+  },
+  favChipFlag: {
+    fontSize: 14,
+  },
+  favChipText: {
+    fontSize: 13,
+    fontWeight: '500',
+    maxWidth: 100,
+  },
+  emptyFavText: {
+    fontSize: 13,
+    fontStyle: 'italic',
+  },
+  enableBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: 12,
+    borderRadius: 10,
+    marginBottom: 12,
+    gap: 8,
+  },
+  enableBtnText: {
+    fontSize: 14,
+    fontWeight: '600',
+  },
+  notifRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingVertical: 12,
+    borderBottomWidth: 1,
+  },
+  notifLabel: {
+    fontSize: 15,
+  },
+  testNotifBtn: {
+    alignItems: 'center',
+    paddingVertical: 12,
+    borderRadius: 10,
+    borderWidth: 1,
+    marginTop: 12,
+  },
+  testNotifBtnText: {
+    fontSize: 14,
+    fontWeight: '600',
+  },
+  themeSection: {
+    marginTop: 12,
+  },
+  accountBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: 14,
+    borderRadius: 14,
+    marginBottom: 10,
+    gap: 10,
+  },
+  accountBtnText: {
+    fontSize: 16,
+    fontWeight: '600',
+  },
+  bottomSpacer: {
+    height: 100,
+  },
+  modalContainer: {
+    flex: 1,
+  },
+  modalHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingHorizontal: 20,
+    paddingVertical: 16,
+    borderBottomWidth: 1,
+  },
+  modalTitle: {
+    fontSize: 20,
+    fontWeight: '700',
+  },
+  modalClose: {
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  searchBox: {
+    marginHorizontal: 20,
+    marginVertical: 12,
+    borderRadius: 12,
+    paddingHorizontal: 16,
+  },
+  searchInput: {
+    paddingVertical: 14,
+    fontSize: 16,
+  },
+  modalInfoBanner: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginHorizontal: 20,
+    padding: 12,
+    borderRadius: 12,
+    marginBottom: 8,
+  },
+  modalInfoText: {
+    fontSize: 14,
+    lineHeight: 20,
+  },
+  modalList: {
+    flex: 1,
+    paddingHorizontal: 20,
+  },
+  modalOption: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingVertical: 14,
+    borderBottomWidth: 1,
+  },
+  modalOptionDisabled: {
+    opacity: 0.5,
+  },
+  modalOptionIcon: {
+    width: 44,
+    height: 44,
+    borderRadius: 12,
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginRight: 12,
+  },
+  modalFlag: {
+    fontSize: 22,
+  },
+  modalOptionInfo: {
+    flex: 1,
+  },
+  modalOptionName: {
+    fontSize: 16,
+    fontWeight: '600',
+    marginBottom: 2,
+  },
+  modalOptionSub: {
+    fontSize: 13,
+  },
+  addedLabel: {
+    fontSize: 12,
+    fontWeight: '600',
+  },
+  interestsListContent: {
+    paddingBottom: 20,
+  },
+  interestOption: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    padding: 14,
+    borderRadius: 14,
+    borderWidth: 2,
+    marginBottom: 10,
+  },
+  interestOptionEmoji: {
+    fontSize: 28,
+    marginRight: 14,
+  },
+  interestOptionInfo: {
+    flex: 1,
+  },
+  interestOptionName: {
+    fontSize: 16,
+    fontWeight: '600',
+    marginBottom: 2,
+  },
+  interestOptionTabs: {
+    fontSize: 12,
+  },
+  interestCheck: {
+    width: 26,
+    height: 26,
+    borderRadius: 13,
+    borderWidth: 2,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  modalFooter: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingHorizontal: 20,
+    paddingVertical: 16,
+    borderTopWidth: 1,
+  },
+  modalFooterText: {
+    fontSize: 14,
+  },
+  saveBtn: {
+    paddingHorizontal: 24,
+    paddingVertical: 12,
+    borderRadius: 12,
+  },
+  saveBtnText: {
+    fontSize: 16,
+    fontWeight: '600',
+  },
+  tabOrderItem: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    padding: 14,
+    borderRadius: 14,
+    borderWidth: 1,
+    marginBottom: 8,
+  },
+  tabOrderRank: {
+    width: 28,
+    height: 28,
+    borderRadius: 8,
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginRight: 10,
+  },
+  tabOrderRankText: {
+    fontSize: 14,
+    fontWeight: '700',
+  },
+  tabOrderIconBg: {
+    width: 40,
+    height: 40,
+    borderRadius: 12,
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginRight: 12,
+  },
+  tabOrderLabel: {
+    flex: 1,
+    fontSize: 16,
+    fontWeight: '600',
+  },
+  tabOrderArrows: {
+    flexDirection: 'row',
+    gap: 6,
+  },
+  tabOrderArrowBtn: {
+    width: 36,
+    height: 36,
+    borderRadius: 10,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  resetTabBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    paddingHorizontal: 16,
+    paddingVertical: 10,
+    borderRadius: 10,
+    borderWidth: 1,
+  },
+  resetTabBtnText: {
+    fontSize: 14,
+    fontWeight: '500',
+  },
+  deleteAccountLink: {
+    alignItems: 'center' as const,
+    paddingVertical: 16,
+    marginTop: 24,
+  },
+  deleteAccountText: {
+    fontSize: 13,
+    fontWeight: '400' as const,
+    textDecorationLine: 'underline' as const,
+  },
+});

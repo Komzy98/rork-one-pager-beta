@@ -1,0 +1,102 @@
+import { useState, useEffect, useCallback } from 'react';
+import AsyncStorage from '@react-native-async-storage/async-storage';
+import { Appearance, ColorSchemeName } from 'react-native';
+import createContextHook from '@nkzw/create-context-hook';
+import { Theme, ThemeMode } from '@/types/theme';
+import { DEFAULT_LIGHT_THEME, DEFAULT_DARK_THEME, getThemeById } from '@/constants/themes';
+
+const THEME_STORAGE_KEY = '@app_theme_settings';
+
+interface ThemeSettings {
+  mode: ThemeMode;
+  lightThemeId: string;
+  darkThemeId: string;
+}
+
+export const [ThemeProvider, useTheme] = createContextHook(() => {
+  const [themeSettings, setThemeSettings] = useState<ThemeSettings>({
+    mode: 'light',
+    lightThemeId: DEFAULT_LIGHT_THEME.id,
+    darkThemeId: DEFAULT_DARK_THEME.id,
+  });
+  const [systemColorScheme, setSystemColorScheme] = useState<ColorSchemeName>(
+    Appearance.getColorScheme()
+  );
+  const [isLoading, setIsLoading] = useState(true);
+
+  useEffect(() => {
+    loadThemeSettings();
+
+    const subscription = Appearance.addChangeListener(({ colorScheme }) => {
+      setSystemColorScheme(colorScheme);
+    });
+
+    return () => subscription.remove();
+  }, []);
+
+  const loadThemeSettings = async () => {
+    try {
+      const stored = await AsyncStorage.getItem(THEME_STORAGE_KEY);
+      if (stored) {
+        const parsed = JSON.parse(stored) as ThemeSettings;
+        setThemeSettings(parsed);
+      }
+    } catch (error) {
+      console.error('Failed to load theme settings:', error);
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  const saveThemeSettings = async (settings: ThemeSettings) => {
+    try {
+      await AsyncStorage.setItem(THEME_STORAGE_KEY, JSON.stringify(settings));
+      setThemeSettings(settings);
+    } catch (error) {
+      console.error('Failed to save theme settings:', error);
+    }
+  };
+
+  const getCurrentTheme = useCallback((): Theme => {
+    const effectiveMode = themeSettings.mode === 'auto'
+      ? (systemColorScheme === 'dark' ? 'dark' : 'light')
+      : themeSettings.mode;
+
+    const themeId = effectiveMode === 'dark'
+      ? themeSettings.darkThemeId
+      : themeSettings.lightThemeId;
+
+    return getThemeById(themeId) || DEFAULT_LIGHT_THEME;
+  }, [themeSettings, systemColorScheme]);
+
+  const setThemeMode = useCallback((mode: ThemeMode) => {
+    const newSettings = { ...themeSettings, mode };
+    saveThemeSettings(newSettings);
+  }, [themeSettings]);
+
+  const setLightTheme = useCallback((themeId: string) => {
+    const newSettings = { ...themeSettings, lightThemeId: themeId };
+    saveThemeSettings(newSettings);
+  }, [themeSettings]);
+
+  const setDarkTheme = useCallback((themeId: string) => {
+    const newSettings = { ...themeSettings, darkThemeId: themeId };
+    saveThemeSettings(newSettings);
+  }, [themeSettings]);
+
+  const currentTheme = getCurrentTheme();
+
+  return {
+    theme: currentTheme,
+    colors: currentTheme.colors,
+    isDark: currentTheme.isDark,
+    themeMode: themeSettings.mode,
+    lightThemeId: themeSettings.lightThemeId,
+    darkThemeId: themeSettings.darkThemeId,
+    systemColorScheme,
+    isLoading,
+    setThemeMode,
+    setLightTheme,
+    setDarkTheme,
+  };
+});

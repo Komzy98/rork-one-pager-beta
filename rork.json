@@ -1,0 +1,9 @@
+{
+  "apps": [
+    {
+      "name": "One Pager",
+      "path": "expo",
+      "framework": "react-native"
+    }
+  ]
+}
