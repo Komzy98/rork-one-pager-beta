@@ -16,7 +16,8 @@ import {
   Alert,
   Animated as RNAnimated,
   RefreshControl,
-  StatusBar
+  StatusBar,
+  Share,
 } from 'react-native';
 import * as Haptics from 'expo-haptics';
 import { LinearGradient } from 'expo-linear-gradient';
@@ -62,6 +63,7 @@ import { openStreamingApp, getStreamingPlatform } from '@/utils/streamingLinks';
 import { WatchProvider } from '@/utils/tmdbApi';
 
 import { episodeNotificationService, TrackedShow } from '@/utils/episodeNotificationService';
+import { likedContentService } from '@/utils/likedContentService';
 import WatchProviders from '@/components/WatchProviders';
 
 import TabWalkthrough from '@/components/TabWalkthrough';
@@ -117,6 +119,9 @@ interface DetailModalProps {
   trackedShow: TrackedShow | null;
   onToggleNotifications: (enabled: boolean) => void;
   isTogglingNotifications: boolean;
+  isLiked: boolean;
+  onToggleLike: () => void;
+  onShare: () => void;
 }
 
 function TrailerPlayer({ videoKey, onClose }: { videoKey: string; onClose: () => void }) {
@@ -160,7 +165,7 @@ function TrailerPlayer({ videoKey, onClose }: { videoKey: string; onClose: () =>
   );
 }
 
-function DetailModal({ visible, item, mediaType, onClose, onAddToList, isInList, trackedShow, onToggleNotifications, isTogglingNotifications }: DetailModalProps) {
+function DetailModal({ visible, item, mediaType, onClose, onAddToList, isInList, trackedShow, onToggleNotifications, isTogglingNotifications, isLiked, onToggleLike, onShare }: DetailModalProps) {
   const insets = useSafeAreaInsets();
   const scrollY = useRef(new RNAnimated.Value(0)).current;
   const [trailerKey, setTrailerKey] = useState<string | null>(null);
@@ -176,6 +181,7 @@ function DetailModal({ visible, item, mediaType, onClose, onAddToList, isInList,
   } | null>(null);
   const [loadingProviders, setLoadingProviders] = useState(false);
   const [openingApp, setOpeningApp] = useState(false);
+  const heartScale = useRef(new RNAnimated.Value(1)).current;
 
   const itemId = item?.id;
   useEffect(() => {
@@ -458,11 +464,27 @@ function DetailModal({ visible, item, mediaType, onClose, onAddToList, isInList,
                 </>
               )}
               
-              <TouchableOpacity style={styles.detailActionSecondary}>
-                <Heart size={22} color={THEME.text} />
+              <TouchableOpacity 
+                style={[styles.detailActionSecondary, isLiked && styles.detailActionLiked]}
+                onPress={() => {
+                  RNAnimated.sequence([
+                    RNAnimated.timing(heartScale, { toValue: 1.35, duration: 120, useNativeDriver: Platform.OS !== 'web' }),
+                    RNAnimated.timing(heartScale, { toValue: 1, duration: 180, useNativeDriver: Platform.OS !== 'web' }),
+                  ]).start();
+                  onToggleLike();
+                }}
+                testID="like-button"
+              >
+                <RNAnimated.View style={{ transform: [{ scale: heartScale }] }}>
+                  <Heart size={22} color={isLiked ? '#FF2D55' : THEME.text} fill={isLiked ? '#FF2D55' : 'none'} />
+                </RNAnimated.View>
               </TouchableOpacity>
               
-              <TouchableOpacity style={styles.detailActionSecondary}>
+              <TouchableOpacity 
+                style={styles.detailActionSecondary}
+                onPress={onShare}
+                testID="share-button"
+              >
                 <Share2 size={22} color={THEME.text} />
               </TouchableOpacity>
             </View>
@@ -736,6 +758,7 @@ export default function ShowsScreen() {
   }>({ visible: false, item: null, mediaType: 'movie' });
 
   const [trackedShowData, setTrackedShowData] = useState<TrackedShow | null>(null);
+  const [isCurrentItemLiked, setIsCurrentItemLiked] = useState(false);
 
   const [showStatusModal, setShowStatusModal] = useState<{ visible: boolean; show: Show | null }>({ visible: false, show: null });
   const [watchProviders, setWatchProviders] = useState<{
@@ -1019,6 +1042,9 @@ export default function ShowsScreen() {
     }
     setDetailModal({ visible: true, item: { ...item, media_type: mediaType }, mediaType });
     
+    const liked = await likedContentService.isLiked(item.id, mediaType);
+    setIsCurrentItemLiked(liked);
+    
     if (mediaType === 'tv') {
       const tracked = await episodeNotificationService.getTrackedShow(item.id);
       setTrackedShowData(tracked);
@@ -1026,6 +1052,55 @@ export default function ShowsScreen() {
       setTrackedShowData(null);
     }
   }, []);
+
+  const handleToggleLike = useCallback(async () => {
+    if (!detailModal.item) return;
+    const item = detailModal.item;
+    const mediaType = detailModal.mediaType;
+    const title = mediaType === 'movie' ? (item as TMDBMovie).title : (item as TMDBTVShow).name;
+
+    if (Platform.OS !== 'web') {
+      void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+    }
+
+    const nowLiked = await likedContentService.toggleLike({
+      id: item.id,
+      mediaType,
+      title,
+      poster_path: item.poster_path,
+      backdrop_path: item.backdrop_path,
+      genre_ids: item.genre_ids,
+      vote_average: item.vote_average,
+      overview: item.overview,
+    });
+    setIsCurrentItemLiked(nowLiked);
+  }, [detailModal.item, detailModal.mediaType]);
+
+  const handleShare = useCallback(async () => {
+    if (!detailModal.item) return;
+    const item = detailModal.item;
+    const mediaType = detailModal.mediaType;
+    const title = mediaType === 'movie' ? (item as TMDBMovie).title : (item as TMDBTVShow).name;
+    const releaseDate = mediaType === 'movie' ? (item as TMDBMovie).release_date : (item as TMDBTVShow).first_air_date;
+    const year = releaseDate ? releaseDate.split('-')[0] : '';
+    const rating = formatRating(item.vote_average);
+    const tmdbUrl = `https://www.themoviedb.org/${mediaType}/${item.id}`;
+
+    if (Platform.OS !== 'web') {
+      void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+    }
+
+    try {
+      await Share.share({
+        title: title,
+        message: `Check out "${title}"${year ? ` (${year})` : ''} — rated ${rating}/10\n\n${item.overview ? item.overview.slice(0, 150) + '...' : ''}\n\n${tmdbUrl}`,
+        url: tmdbUrl,
+      });
+      console.log('📤 Shared:', title);
+    } catch (error) {
+      console.error('Share failed:', error);
+    }
+  }, [detailModal.item, detailModal.mediaType]);
 
   const toggleNotificationsMutation = useMutation({
     mutationFn: async ({ tmdbId, title, posterPath, enable }: { tmdbId: number; title: string; posterPath: string | null; enable: boolean }) => {
@@ -2042,12 +2117,16 @@ export default function ShowsScreen() {
         onClose={() => {
           setDetailModal({ visible: false, item: null, mediaType: 'movie' });
           setTrackedShowData(null);
+          setIsCurrentItemLiked(false);
         }}
         onAddToList={handleAddFromTMDB}
         isInList={detailModal.item ? isInList(detailModal.item.id, detailModal.mediaType) : false}
         trackedShow={trackedShowData}
         onToggleNotifications={handleToggleNotifications}
         isTogglingNotifications={toggleNotificationsMutation.isPending}
+        isLiked={isCurrentItemLiked}
+        onToggleLike={handleToggleLike}
+        onShare={handleShare}
       />
 
       {renderStatusModal()}
@@ -2949,6 +3028,11 @@ const styles = StyleSheet.create({
     backgroundColor: THEME.surface,
     justifyContent: 'center',
     alignItems: 'center',
+  },
+  detailActionLiked: {
+    backgroundColor: 'rgba(255, 45, 85, 0.15)',
+    borderWidth: 1,
+    borderColor: 'rgba(255, 45, 85, 0.3)',
   },
   detailSection: {
     marginBottom: 24,
