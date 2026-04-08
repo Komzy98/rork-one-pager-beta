@@ -398,6 +398,55 @@ export const getMatchesRoute = publicProcedure
     return result;
   });
 
+export const getTeamLogosRoute = publicProcedure
+  .input(z.object({
+    teamIds: z.array(z.number().int().positive().max(99999)).min(1).max(30),
+  }))
+  .query(async ({ input }) => {
+    const { teamIds } = input;
+    const apiKey = process.env.FOOTBALL_API_KEY;
+
+    console.log(`🏆 Fetching team logos for ${teamIds.length} teams`);
+
+    if (!apiKey) {
+      console.error('❌ FOOTBALL_API_KEY not found in environment');
+      return { logos: {} as Record<number, string> };
+    }
+
+    const headers: Record<string, string> = { 'x-apisports-key': apiKey };
+    const logos: Record<number, string> = {};
+
+    const batchSize = 3;
+    for (let i = 0; i < teamIds.length; i += batchSize) {
+      const batch = teamIds.slice(i, i + batchSize);
+
+      const results = await Promise.all(
+        batch.map(async (teamId) => {
+          const cacheKey = `teamlogo:${teamId}`;
+          const data = await cachedFetch(
+            `${BASE_URL}/teams?id=${teamId}`,
+            headers,
+            cacheKey,
+            24 * 60 * 60 * 1000
+          );
+          const team = data.response?.[0];
+          return { teamId, logo: team?.team?.logo || '' };
+        })
+      );
+
+      results.forEach(({ teamId, logo }) => {
+        if (logo) logos[teamId] = logo;
+      });
+
+      if (i + batchSize < teamIds.length) {
+        await delay(500);
+      }
+    }
+
+    console.log(`✅ Retrieved logos for ${Object.keys(logos).length} teams`);
+    return { logos };
+  });
+
 export const getLeagueStandingsRoute = publicProcedure
   .input(z.object({
     leagueId: z.number().int().positive().max(99999),

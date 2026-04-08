@@ -4,7 +4,8 @@ import createContextHook from '@nkzw/create-context-hook';
 import { UserProfile, UserTeam, UserCountry, Book, Chronotype, ChronotypeInfo } from '@/types/habit';
 import { getChronotypeInfo } from '@/constants/chronotypes';
 import { useAuth } from './useAuth';
-import { getTeamIdFromName, footballApi } from '@/utils/footballApi';
+import { getTeamIdFromName } from '@/utils/footballApi';
+import { trpcClient } from '@/lib/trpc';
 import { useFirebaseSync } from '@/utils/firebaseUserSync';
 import { unifiedStorage } from '@/utils/unifiedStorage';
 
@@ -279,7 +280,11 @@ export const [UserProfileProvider, useUserProfile] = createContextHook(() => {
       teamIds.forEach(id => logoFetchedRef.current.add(id));
       
       try {
-        const logos = await footballApi.getMultipleTeamLogos(teamIds);
+        const result = await trpcClient.football.getTeamLogos.query({ teamIds });
+        const logos = new Map<number, string>();
+        Object.entries(result.logos).forEach(([id, logo]) => {
+          logos.set(Number(id), logo as string);
+        });
         
         if (logos.size > 0) {
           setTeamLogos(prev => {
