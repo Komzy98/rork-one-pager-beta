@@ -232,7 +232,7 @@ const F1Countdown = React.memo(({ race, isDark }: { race: F1Race; isDark: boolea
       <View
         style={[s.countdownGradient, { backgroundColor: isDark ? CARBON_DARK : '#0C0416' }]}
       >
-        <Animated.View style={[s.countdownTopGlow, { opacity: glowAnim }]} />
+
         <View style={s.countdownRedStripe} />
 
         <View style={s.countdownHeader}>
@@ -1212,16 +1212,7 @@ const s = StyleSheet.create({
     paddingHorizontal: 22,
     position: 'relative' as const,
   },
-  countdownTopGlow: {
-    position: 'absolute' as const,
-    top: -60,
-    left: '20%' as any,
-    right: '20%' as any,
-    height: 120,
-    backgroundColor: F1_RED,
-    borderRadius: 60,
-    opacity: 0.06,
-  },
+
   countdownRedStripe: {
     position: 'absolute' as const,
     top: 0,
