@@ -527,6 +527,7 @@ function ModernSportsSectionComponent({
     return allMatches.filter(match => {
       if (team.apiId && team.apiId > 0) {
         if (match.homeTeamId === team.apiId || match.awayTeamId === team.apiId) return true;
+        if (match.homeTeamId && match.awayTeamId) return false;
       }
       return isTeamMatch(match.homeTeam, team.name) || isTeamMatch(match.awayTeam, team.name);
     }).sort((a, b) => {

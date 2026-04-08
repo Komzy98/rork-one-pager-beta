@@ -70,10 +70,16 @@ export const footballApi = {
         
         if (teamIds && teamIds.length > 0) {
           matches = matches.filter(match => 
-            teamIds.some(id => 
-              match.homeTeam.toLowerCase().includes(getTeamNameFromId(id)?.toLowerCase() || '') ||
-              match.awayTeam.toLowerCase().includes(getTeamNameFromId(id)?.toLowerCase() || '')
-            )
+            teamIds.some(id => {
+              const teamName = getTeamNameFromId(id)?.toLowerCase();
+              if (!teamName) return false;
+              const home = match.homeTeam.toLowerCase().trim();
+              const away = match.awayTeam.toLowerCase().trim();
+              return home === teamName || away === teamName ||
+                home.includes(teamName) && !home.replace(teamName, '').trim().length ||
+                away.includes(teamName) && !away.replace(teamName, '').trim().length ||
+                (match as any).homeTeamId === id || (match as any).awayTeamId === id;
+            })
           );
         }
         
@@ -417,6 +423,8 @@ function transformFixtureToMatch(fixture: ApiFootballFixture): LiveFootballMatch
       awayTeam: fixture.teams.away.name,
       homeTeamLogo: fixture.teams.home.logo,
       awayTeamLogo: fixture.teams.away.logo,
+      homeTeamId: fixture.teams.home.id,
+      awayTeamId: fixture.teams.away.id,
       league: fixture.league.name,
       leagueLogo: fixture.league.logo,
       country: fixture.league.country,
@@ -446,6 +454,8 @@ function transformFixtureToMatch(fixture: ApiFootballFixture): LiveFootballMatch
     awayTeam: fixture.teams.away.name,
     homeTeamLogo: fixture.teams.home.logo,
     awayTeamLogo: fixture.teams.away.logo,
+    homeTeamId: fixture.teams.home.id,
+    awayTeamId: fixture.teams.away.id,
     league: fixture.league.name,
     leagueLogo: fixture.league.logo,
     country: fixture.league.country,
