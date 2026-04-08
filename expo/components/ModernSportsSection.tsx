@@ -512,18 +512,10 @@ function ModernSportsSectionComponent({
       'juventus': ['juve', 'juventus fc'],
     };
 
-    const matchAsWord = (text: string, term: string): boolean => {
-      if (text === term) return true;
-      if (text.length < 3 || term.length < 3) return text === term;
-      const escaped = term.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-      const regex = new RegExp('(^|\\s|\\b)' + escaped + '(\\s|\\b|$)', 'i');
-      return regex.test(text);
-    };
-
     for (const [mainName, variations] of Object.entries(teamVariations)) {
       const allVariations = [mainName, ...variations];
-      const matchInVariations = allVariations.some(v => matchAsWord(normalizedMatch, v) || matchAsWord(v, normalizedMatch));
-      const favoriteInVariations = allVariations.some(v => matchAsWord(normalizedFavorite, v) || matchAsWord(v, normalizedFavorite));
+      const matchInVariations = allVariations.some(v => v === normalizedMatch);
+      const favoriteInVariations = allVariations.some(v => v === normalizedFavorite);
       if (matchInVariations && favoriteInVariations) return true;
     }
 
