@@ -489,9 +489,6 @@ function ModernSportsSectionComponent({
 
     if (normalizedMatch === normalizedFavorite) return true;
 
-    if (normalizedMatch.includes(normalizedFavorite) && normalizedFavorite.length >= 5) return true;
-    if (normalizedFavorite.includes(normalizedMatch) && normalizedMatch.length >= 5) return true;
-
     const normalizedMatchNoHyphens = normalizedMatch.replace(/-/g, ' ');
     const normalizedFavoriteNoHyphens = normalizedFavorite.replace(/-/g, ' ');
     if (normalizedMatchNoHyphens === normalizedFavoriteNoHyphens) return true;

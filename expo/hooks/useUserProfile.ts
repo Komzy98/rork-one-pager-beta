@@ -480,8 +480,7 @@ export const [UserProfileProvider, useUserProfile] = createContextHook(() => {
       const isNationalTeamMatch = profile.nationalities.some(nation => {
         const nationName = nation.name.toLowerCase().trim();
         if (nationName === matchTeamName) return true;
-        if (matchTeamName.includes(nationName) && nationName.length >= 4) return true;
-        if (nationName.includes(matchTeamName) && matchTeamName.length >= 4) return true;
+        if (matchTeamName === nationName) return true;
         return false;
       });
       if (isNationalTeamMatch) return true;
