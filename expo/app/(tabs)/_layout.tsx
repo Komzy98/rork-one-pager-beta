@@ -70,37 +70,31 @@ const AnimatedTabItem = React.memo(({
   avatarUrl,
 }: AnimatedTabItemProps) => {
   const scaleAnim = useRef(new Animated.Value(1)).current;
-  const iconTranslateY = useRef(new Animated.Value(isFocused ? -2 : 0)).current;
-  const bgOpacity = useRef(new Animated.Value(isFocused ? 1 : 0)).current;
-  const labelOpacity = useRef(new Animated.Value(isFocused ? 1 : 0.7)).current;
+  const iconScale = useRef(new Animated.Value(isFocused ? 1.15 : 1)).current;
+  const glowOpacity = useRef(new Animated.Value(isFocused ? 1 : 0)).current;
 
   useEffect(() => {
     Animated.parallel([
-      Animated.spring(iconTranslateY, {
-        toValue: isFocused ? -2 : 0,
-        tension: 200,
-        friction: 14,
+      Animated.spring(iconScale, {
+        toValue: isFocused ? 1.15 : 1,
+        tension: 180,
+        friction: 12,
         useNativeDriver: false,
       }),
-      Animated.spring(bgOpacity, {
+      Animated.spring(glowOpacity, {
         toValue: isFocused ? 1 : 0,
-        tension: 200,
-        friction: 14,
-        useNativeDriver: false,
-      }),
-      Animated.timing(labelOpacity, {
-        toValue: isFocused ? 1 : 0.7,
-        duration: 200,
+        tension: 180,
+        friction: 12,
         useNativeDriver: false,
       }),
     ]).start();
-  }, [isFocused, iconTranslateY, bgOpacity, labelOpacity]);
+  }, [isFocused, iconScale, glowOpacity]);
 
   const handlePressIn = useCallback(() => {
     Animated.spring(scaleAnim, {
-      toValue: 0.88,
-      tension: 200,
-      friction: 10,
+      toValue: 0.9,
+      tension: 180,
+      friction: 12,
       useNativeDriver: false,
     }).start();
   }, [scaleAnim]);
@@ -108,8 +102,8 @@ const AnimatedTabItem = React.memo(({
   const handlePressOut = useCallback(() => {
     Animated.spring(scaleAnim, {
       toValue: 1,
-      tension: 200,
-      friction: 10,
+      tension: 180,
+      friction: 12,
       useNativeDriver: false,
     }).start();
   }, [scaleAnim]);
@@ -123,7 +117,7 @@ const AnimatedTabItem = React.memo(({
   const label = getTabTitle(route.name);
 
   const activeColor = isShowsTabActive ? '#FF4444' : colors.primary;
-  const inactiveColor = 'rgba(255, 255, 255, 0.45)';
+  const inactiveColor = 'rgba(255, 255, 255, 0.5)';
 
   return (
     <View style={styles.tabButton}>
@@ -141,43 +135,41 @@ const AnimatedTabItem = React.memo(({
         styles.tabItemContainer,
         { transform: [{ scale: scaleAnim }] },
       ]}>
-        <Animated.View style={[
-          styles.tabActiveBg,
-          {
-            opacity: bgOpacity,
-            backgroundColor: activeColor + '18',
-          },
-        ]} />
-        <Animated.View style={[{ transform: [{ translateY: iconTranslateY }] }]}>
-          {route.name === 'profile' && avatarUrl ? (
-            <Image
-              source={{ uri: avatarUrl }}
-              style={[
-                styles.profileAvatar,
-                { borderColor: isFocused ? activeColor : 'rgba(255,255,255,0.15)' },
-              ]}
-            />
-          ) : (
-            <IconComponent 
-              color={isFocused ? activeColor : inactiveColor} 
-              size={21} 
-              strokeWidth={isFocused ? 2.4 : 1.8}
-            />
-          )}
+        <Animated.View style={[{ transform: [{ scale: iconScale }] }]}>
+          <Animated.View style={{
+            shadowColor: activeColor,
+            shadowOffset: { width: 0, height: 0 },
+            shadowOpacity: glowOpacity,
+            shadowRadius: 8,
+          }}>
+            {route.name === 'profile' && avatarUrl ? (
+              <Image
+                source={{ uri: avatarUrl }}
+                style={[
+                  styles.profileAvatar,
+                  { borderColor: isFocused ? activeColor : 'transparent' },
+                ]}
+              />
+            ) : (
+              <IconComponent 
+                color={isFocused ? activeColor : inactiveColor} 
+                size={22} 
+              />
+            )}
+          </Animated.View>
         </Animated.View>
-        <Animated.Text style={[
+        <Text style={[
           styles.tabLabel,
           { 
             color: isFocused ? activeColor : inactiveColor,
-            opacity: labelOpacity,
+            textShadowColor: isShowsTabActive ? 'rgba(0, 0, 0, 0.5)' : 'transparent',
+            textShadowOffset: { width: 0, height: 1 },
+            textShadowRadius: isShowsTabActive ? 2 : 0,
           },
           isFocused && styles.tabLabelFocused
         ]}>
           {label}
-        </Animated.Text>
-        {isFocused && (
-          <View style={[styles.tabActiveIndicator, { backgroundColor: activeColor }]} />
-        )}
+        </Text>
       </Animated.View>
       </TouchableOpacity>
     </View>
@@ -210,13 +202,11 @@ function CustomTabBar({ state, descriptors, navigation }: BottomTabBarProps) {
 
   return (
     <Animated.View style={[styles.tabBarContainer, {
-      shadowColor: isShowsTabActive ? '#FF4444' : colors.shadow,
+      shadowColor: colors.shadow,
       opacity: containerOpacity,
     }]}>
-      <BlurView intensity={isShowsTabActive ? 130 : 100} tint="dark" style={[styles.blurContainer, {
-        backgroundColor: isShowsTabActive ? 'rgba(0, 0, 0, 0.88)' : (isDark ? 'rgba(8, 8, 18, 0.82)' : 'rgba(12, 12, 20, 0.78)'),
-        borderWidth: 0.5,
-        borderColor: isShowsTabActive ? 'rgba(255, 68, 68, 0.15)' : 'rgba(255, 255, 255, 0.08)',
+      <BlurView intensity={isShowsTabActive ? 120 : 95} tint="dark" style={[styles.blurContainer, {
+        backgroundColor: isShowsTabActive ? 'rgba(0, 0, 0, 0.9)' : (isDark ? 'rgba(0, 0, 0, 0.75)' : 'rgba(255, 255, 255, 0.75)'),
       }]}>
         <View style={styles.tabBarInner}>
           {visibleRoutes.map((route) => {
@@ -309,39 +299,39 @@ export default function TabLayout() {
 const styles = StyleSheet.create({
   tabBarContainer: {
     position: 'absolute',
-    bottom: 28,
-    left: 16,
-    right: 16,
-    height: 68,
-    borderRadius: 34,
+    bottom: 30,
+    left: 20,
+    right: 20,
+    height: 72,
+    borderRadius: 36,
     overflow: 'visible',
     ...Platform.select({
       ios: {
         shadowColor: '#000',
-        shadowOffset: { width: 0, height: 12 },
-        shadowOpacity: 0.35,
-        shadowRadius: 24,
+        shadowOffset: { width: 0, height: 10 },
+        shadowOpacity: 0.3,
+        shadowRadius: 20,
       },
       android: {
-        elevation: 12,
+        elevation: 10,
       },
     }),
   },
   glassContainer: {
     flex: 1,
-    borderRadius: 34,
+    borderRadius: 36,
     overflow: 'hidden',
   },
   blurContainer: {
     flex: 1,
-    borderRadius: 34,
+    borderRadius: 36,
     overflow: 'hidden',
   },
   tabBarInner: {
     flex: 1,
     flexDirection: 'row',
     alignItems: 'center',
-    paddingHorizontal: 4,
+    paddingHorizontal: 8,
   },
   tabButton: {
     flex: 1,
@@ -351,41 +341,23 @@ const styles = StyleSheet.create({
   tabTouchable: {
     alignItems: 'center',
     justifyContent: 'center',
-    width: '100%',
   },
   tabItemContainer: {
     alignItems: 'center',
     justifyContent: 'center',
-    paddingVertical: 8,
-    paddingHorizontal: 6,
-    borderRadius: 20,
-    minWidth: 56,
-    position: 'relative' as const,
-  },
-  tabActiveBg: {
-    position: 'absolute' as const,
-    top: 2,
-    left: 2,
-    right: 2,
-    bottom: 2,
-    borderRadius: 18,
+    paddingVertical: 10,
+    paddingHorizontal: 12,
+    borderRadius: 24,
+    minWidth: 68,
   },
   tabLabel: {
     fontSize: 9,
     fontWeight: '500' as const,
     marginTop: 3,
     textAlign: 'center' as const,
-    letterSpacing: 0.1,
   },
   tabLabelFocused: {
-    fontWeight: '700' as const,
-    letterSpacing: 0.2,
-  },
-  tabActiveIndicator: {
-    width: 4,
-    height: 4,
-    borderRadius: 2,
-    marginTop: 3,
+    fontWeight: '600' as const,
   },
   profileAvatar: {
     width: 24,

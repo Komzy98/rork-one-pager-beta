@@ -4,6 +4,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Search, Menu, User } from 'lucide-react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import { COLORS } from '@/constants/colors';
+import { TYPOGRAPHY, SPACING, BORDER_RADIUS } from '@/constants/design';
 import { useTheme } from '@/hooks/useTheme';
 
 interface CustomHeaderProps {
@@ -38,10 +39,9 @@ export default function CustomHeader({
   const headerAnim = useRef(new Animated.Value(0)).current;
 
   useEffect(() => {
-    Animated.spring(headerAnim, {
+    Animated.timing(headerAnim, {
       toValue: 1,
-      tension: 50,
-      friction: 10,
+      duration: 700,
       useNativeDriver: true,
     }).start();
   }, [headerAnim]);
@@ -50,18 +50,21 @@ export default function CustomHeader({
     <Animated.View style={[
       styles.container, 
       { 
-        paddingTop: insets.top + 10,
+        paddingTop: insets.top + 12,
         opacity: headerAnim,
         transform: [{
           translateY: headerAnim.interpolate({
             inputRange: [0, 1],
-            outputRange: [-20, 0],
+            outputRange: [-30, 0],
           })
         }]
       },
-      showBorder && [styles.withBorder, { borderBottomColor: isDark ? 'rgba(255,255,255,0.06)' : 'rgba(0,0,0,0.06)' }]
+      showBorder && styles.withBorder
     ]}>
-      <View style={[styles.headerGradient, { backgroundColor: colors.background }]}>
+      <LinearGradient
+        colors={isDark ? [colors.background, colors.backgroundSecondary] : [colors.background, colors.surface]}
+        style={styles.headerGradient}
+      >
         <View style={styles.content}>
           <View style={styles.headerTopRow}>
             <View style={styles.titleRow}>
@@ -72,56 +75,58 @@ export default function CustomHeader({
                   end={{ x: 1, y: 1 }}
                   style={styles.headerIconGradient}
                 >
-                  {icon || <User size={18} color="#FFFFFF" strokeWidth={2.5} />}
+                  {icon || <User size={20} color="#FFFFFF" strokeWidth={2.5} />}
                 </LinearGradient>
               </View>
               <View style={styles.headerTitleGroup}>
                 <Text style={[styles.title, { color: colors.text }]}>{title}</Text>
                 {subtitle && (
-                  <Text style={[styles.subtitle, { color: isDark ? 'rgba(255,255,255,0.4)' : 'rgba(0,0,0,0.4)' }]}>
+                  <Text style={[styles.subtitle, { color: colors.textTertiary }]}>
                     {subtitle}
                   </Text>
                 )}
               </View>
             </View>
-            {(rightComponent || showSearch || showMenu) && (
-              <View style={styles.headerActions}>
-                {showMenu && (
-                  <TouchableOpacity 
-                    style={[styles.actionBtn, { backgroundColor: isDark ? 'rgba(255,255,255,0.06)' : 'rgba(0,0,0,0.04)' }]} 
-                    onPress={onMenuPress}
-                  >
-                    <Menu size={18} color={colors.textTertiary} />
-                  </TouchableOpacity>
-                )}
-                {showSearch && (
-                  <TouchableOpacity 
-                    style={[styles.actionBtn, { backgroundColor: isDark ? 'rgba(255,255,255,0.06)' : 'rgba(0,0,0,0.04)' }]} 
-                    onPress={onSearchPress}
-                  >
-                    <Search size={18} color={colors.textTertiary} />
-                  </TouchableOpacity>
-                )}
-                {rightComponent}
-              </View>
-            )}
           </View>
+          
+          {(rightComponent || showSearch || showMenu) && (
+            <View style={styles.headerActions}>
+              {showMenu && (
+                <TouchableOpacity 
+                  style={[styles.actionBtn, { backgroundColor: colors.surface }]} 
+                  onPress={onMenuPress}
+                >
+                  <Menu size={18} color={colors.textTertiary} />
+                </TouchableOpacity>
+              )}
+              {showSearch && (
+                <TouchableOpacity 
+                  style={[styles.actionBtn, { backgroundColor: colors.surface }]} 
+                  onPress={onSearchPress}
+                >
+                  <Search size={18} color={colors.textTertiary} />
+                </TouchableOpacity>
+              )}
+              {rightComponent}
+            </View>
+          )}
         </View>
-      </View>
+      </LinearGradient>
     </Animated.View>
   );
 }
 
 const styles = StyleSheet.create({
   container: {
-    paddingBottom: 4,
+    paddingBottom: 8,
   },
   withBorder: {
     borderBottomWidth: 1,
+    borderBottomColor: COLORS.border,
   },
   headerGradient: {
     paddingHorizontal: 20,
-    paddingBottom: 12,
+    paddingBottom: 16,
   },
   content: {
     width: '100%',
@@ -129,7 +134,7 @@ const styles = StyleSheet.create({
   headerTopRow: {
     flexDirection: 'row',
     justifyContent: 'space-between',
-    alignItems: 'center',
+    alignItems: 'flex-start',
   },
   titleRow: {
     flexDirection: 'row',
@@ -138,21 +143,17 @@ const styles = StyleSheet.create({
     flex: 1,
   },
   headerIconContainer: {
-    borderRadius: 14,
+    borderRadius: 12,
     overflow: 'hidden',
-    ...Platform.select({
-      ios: {
-        shadowOffset: { width: 0, height: 4 },
-        shadowOpacity: 0.2,
-        shadowRadius: 10,
-      },
-      android: { elevation: 4 },
-    }),
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.3,
+    shadowRadius: 8,
+    elevation: 6,
   },
   headerIconGradient: {
-    width: 40,
-    height: 40,
-    borderRadius: 14,
+    width: 42,
+    height: 42,
+    borderRadius: 12,
     justifyContent: 'center',
     alignItems: 'center',
   },
@@ -160,28 +161,35 @@ const styles = StyleSheet.create({
     flex: 1,
     minWidth: 0,
     justifyContent: 'center',
+    paddingTop: 2,
   },
   title: {
-    fontSize: 26,
+    fontSize: 28,
     fontWeight: '800' as const,
-    letterSpacing: -0.6,
+    letterSpacing: -0.8,
   },
   subtitle: {
-    fontSize: 12,
-    letterSpacing: 0.2,
-    marginTop: 1,
+    fontSize: 13,
+    letterSpacing: 0,
+    marginTop: 2,
     fontWeight: '500' as const,
   },
   headerActions: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: 8,
+    marginTop: 14,
   },
   actionBtn: {
-    width: 38,
-    height: 38,
-    borderRadius: 12,
+    width: 42,
+    height: 42,
+    borderRadius: 14,
     justifyContent: 'center',
     alignItems: 'center',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.06,
+    shadowRadius: 8,
+    elevation: 2,
   },
 });
