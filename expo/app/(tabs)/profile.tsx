@@ -55,7 +55,9 @@ import {
   Zap,
   Briefcase,
   Swords,
+  Award,
 } from 'lucide-react-native';
+import { LinearGradient } from 'expo-linear-gradient';
 import * as Haptics from 'expo-haptics';
 import { router } from 'expo-router';
 import { useAuth } from '@/hooks/useAuth';
@@ -406,99 +408,123 @@ export default function ProfileScreen() {
           )}
 
           {/* Profile Hero Card */}
-          <View style={[styles.heroCard, { backgroundColor: colors.card, borderColor: colors.border }]}>
-            <View style={styles.heroTop}>
-              <TouchableOpacity 
-                style={[styles.avatarContainer, { backgroundColor: colors.surfaceSecondary }]}
-                onPress={!isGuest ? showImagePickerOptions : undefined}
-                activeOpacity={isGuest ? 1 : 0.7}
-              >
-                {isUploadingImage ? (
-                  <ActivityIndicator size="small" color={colors.primary} />
-                ) : profile?.avatar ? (
-                  <Image source={{ uri: profile.avatar }} style={styles.avatarImage} contentFit="cover" transition={200} />
-                ) : (
-                  <User size={36} color={colors.primary} />
-                )}
-                {!isGuest && (
-                  <View style={[styles.avatarBadge, { backgroundColor: colors.primary }]}>
-                    <Camera size={12} color={colors.textInverse} />
-                  </View>
-                )}
-              </TouchableOpacity>
+          <View style={[styles.heroCard, { backgroundColor: colors.card, borderColor: isDark ? 'rgba(255,255,255,0.06)' : colors.border }]}>
+            <LinearGradient
+              colors={isDark 
+                ? [colors.primary + '12', colors.card, colors.card] 
+                : [colors.primary + '08', colors.card, colors.card]
+              }
+              start={{ x: 0, y: 0 }}
+              end={{ x: 0, y: 1 }}
+              style={styles.heroGradientBg}
+            >
+              <View style={styles.heroTop}>
+                <TouchableOpacity 
+                  style={[styles.avatarContainer, { backgroundColor: isDark ? colors.surfaceSecondary : '#F0F2F8' }]}
+                  onPress={!isGuest ? showImagePickerOptions : undefined}
+                  activeOpacity={isGuest ? 1 : 0.7}
+                >
+                  {isUploadingImage ? (
+                    <ActivityIndicator size="small" color={colors.primary} />
+                  ) : profile?.avatar ? (
+                    <Image source={{ uri: profile.avatar }} style={styles.avatarImage} contentFit="cover" transition={200} />
+                  ) : (
+                    <LinearGradient
+                      colors={[colors.primary, colors.accent || colors.primary]}
+                      start={{ x: 0, y: 0 }}
+                      end={{ x: 1, y: 1 }}
+                      style={styles.avatarGradient}
+                    >
+                      <User size={32} color="#FFFFFF" strokeWidth={2} />
+                    </LinearGradient>
+                  )}
+                  {!isGuest && (
+                    <View style={[styles.avatarBadge, { backgroundColor: colors.primary, borderColor: colors.card }]}>
+                      <Camera size={11} color="#FFFFFF" />
+                    </View>
+                  )}
+                </TouchableOpacity>
 
-              <View style={styles.heroInfo}>
-                {editingName && !isGuest ? (
-                  <View style={styles.nameEditRow}>
-                    <TextInput
-                      style={[styles.nameInput, { color: colors.text, borderColor: colors.primary }]}
-                      value={tempName}
-                      onChangeText={setTempName}
-                      onBlur={handleSaveName}
-                      onSubmitEditing={handleSaveName}
-                      autoFocus
-                    />
-                  </View>
-                ) : (
-                  <TouchableOpacity 
-                    style={styles.nameRow}
-                    onPress={() => !isGuest && setEditingName(true)}
-                    activeOpacity={isGuest ? 1 : 0.7}
-                  >
-                    <Text style={[styles.heroName, { color: colors.text }]} numberOfLines={1}>
-                      {isGuest ? 'Guest User' : profile.name}
-                    </Text>
-                    {!isGuest && <Edit3 size={14} color={colors.textTertiary} style={{ marginLeft: 6 }} />}
-                  </TouchableOpacity>
-                )}
-                <Text style={[styles.heroEmail, { color: colors.textTertiary }]}>
-                  {isGuest ? 'guest@example.com' : user.email}
-                </Text>
+                <View style={styles.heroInfo}>
+                  {editingName && !isGuest ? (
+                    <View style={styles.nameEditRow}>
+                      <TextInput
+                        style={[styles.nameInput, { color: colors.text, borderColor: colors.primary }]}
+                        value={tempName}
+                        onChangeText={setTempName}
+                        onBlur={handleSaveName}
+                        onSubmitEditing={handleSaveName}
+                        autoFocus
+                      />
+                    </View>
+                  ) : (
+                    <TouchableOpacity 
+                      style={styles.nameRow}
+                      onPress={() => !isGuest && setEditingName(true)}
+                      activeOpacity={isGuest ? 1 : 0.7}
+                    >
+                      <Text style={[styles.heroName, { color: colors.text }]} numberOfLines={1}>
+                        {isGuest ? 'Guest User' : profile.name}
+                      </Text>
+                      {!isGuest && <Edit3 size={13} color={colors.textTertiary} style={{ marginLeft: 6 }} />}
+                    </TouchableOpacity>
+                  )}
+                  <Text style={[styles.heroEmail, { color: colors.textTertiary }]}>
+                    {isGuest ? 'guest@example.com' : user.email}
+                  </Text>
+                  {!isGuest && unlockedBadgesCount > 0 && (
+                    <View style={[styles.heroLevelBadge, { backgroundColor: '#FFD700' + '15' }]}>
+                      <Award size={11} color="#FFD700" />
+                      <Text style={styles.heroLevelText}>{unlockedBadgesCount} badges earned</Text>
+                    </View>
+                  )}
+                </View>
+
+                <TouchableOpacity
+                  style={[styles.darkModeButton, { 
+                    backgroundColor: isDark ? 'rgba(255,255,255,0.08)' : 'rgba(0,0,0,0.04)',
+                  }]}
+                  onPress={handleToggleDarkMode}
+                  activeOpacity={0.7}
+                >
+                  {isDark ? (
+                    <Moon size={18} color={colors.primary} />
+                  ) : (
+                    <Sun size={18} color={colors.textSecondary} />
+                  )}
+                </TouchableOpacity>
               </View>
-
-              {/* Dark Mode Toggle */}
-              <TouchableOpacity
-                style={[styles.darkModeButton, { backgroundColor: isDark ? colors.primary + '20' : colors.surfaceSecondary }]}
-                onPress={handleToggleDarkMode}
-                activeOpacity={0.7}
-              >
-                {isDark ? (
-                  <Moon size={20} color={colors.primary} />
-                ) : (
-                  <Sun size={20} color={colors.textSecondary} />
-                )}
-              </TouchableOpacity>
-            </View>
+            </LinearGradient>
 
             {/* Quick Stats */}
-            <View style={[styles.statsRow, { borderTopColor: colors.border }]}>
+            <View style={[styles.statsRow, { borderTopColor: isDark ? 'rgba(255,255,255,0.06)' : 'rgba(0,0,0,0.05)' }]}>
               <View style={styles.statItem}>
-                <View style={[styles.statIconBg, { backgroundColor: '#FF9500' + '15' }]}>
-                  <Flame size={16} color="#FF9500" />
+                <View style={[styles.statIconBg, { backgroundColor: '#FF9500' + '12' }]}>
+                  <Flame size={15} color="#FF9500" />
                 </View>
                 <Text style={[styles.statValue, { color: colors.text }]}>{dashboardSummary.habits.currentStreak}</Text>
                 <Text style={[styles.statLabel, { color: colors.textTertiary }]}>Streak</Text>
               </View>
-              <View style={[styles.statDivider, { backgroundColor: colors.border }]} />
+              <View style={[styles.statDivider, { backgroundColor: isDark ? 'rgba(255,255,255,0.06)' : 'rgba(0,0,0,0.06)' }]} />
               <View style={styles.statItem}>
-                <View style={[styles.statIconBg, { backgroundColor: '#34C759' + '15' }]}>
-                  <Target size={16} color="#34C759" />
+                <View style={[styles.statIconBg, { backgroundColor: '#34C759' + '12' }]}>
+                  <Target size={15} color="#34C759" />
                 </View>
                 <Text style={[styles.statValue, { color: colors.text }]}>{dashboardSummary.habits.completed}/{dashboardSummary.habits.total}</Text>
                 <Text style={[styles.statLabel, { color: colors.textTertiary }]}>Today</Text>
               </View>
-              <View style={[styles.statDivider, { backgroundColor: colors.border }]} />
+              <View style={[styles.statDivider, { backgroundColor: isDark ? 'rgba(255,255,255,0.06)' : 'rgba(0,0,0,0.06)' }]} />
               <View style={styles.statItem}>
-                <View style={[styles.statIconBg, { backgroundColor: '#5856D6' + '15' }]}>
-                  <BookOpen size={16} color="#5856D6" />
+                <View style={[styles.statIconBg, { backgroundColor: '#5856D6' + '12' }]}>
+                  <BookOpen size={15} color="#5856D6" />
                 </View>
                 <Text style={[styles.statValue, { color: colors.text }]}>{profile.favoriteBooks.length}</Text>
                 <Text style={[styles.statLabel, { color: colors.textTertiary }]}>Books</Text>
               </View>
-              <View style={[styles.statDivider, { backgroundColor: colors.border }]} />
+              <View style={[styles.statDivider, { backgroundColor: isDark ? 'rgba(255,255,255,0.06)' : 'rgba(0,0,0,0.06)' }]} />
               <View style={styles.statItem}>
-                <View style={[styles.statIconBg, { backgroundColor: '#FFD700' + '15' }]}>
-                  <Trophy size={16} color="#FFD700" />
+                <View style={[styles.statIconBg, { backgroundColor: '#FFD700' + '12' }]}>
+                  <Trophy size={15} color="#FFD700" />
                 </View>
                 <Text style={[styles.statValue, { color: colors.text }]}>{unlockedBadgesCount}</Text>
                 <Text style={[styles.statLabel, { color: colors.textTertiary }]}>Badges</Text>
@@ -1362,15 +1388,27 @@ const styles = StyleSheet.create({
     fontWeight: '600',
   },
   heroCard: {
-    borderRadius: 20,
+    borderRadius: 22,
     borderWidth: 1,
     overflow: 'hidden',
     marginBottom: 20,
+    ...Platform.select({
+      ios: {
+        shadowColor: '#000',
+        shadowOffset: { width: 0, height: 4 },
+        shadowOpacity: 0.08,
+        shadowRadius: 16,
+      },
+      android: { elevation: 3 },
+    }),
+  },
+  heroGradientBg: {
+    paddingBottom: 0,
   },
   heroTop: {
     flexDirection: 'row',
     alignItems: 'center',
-    padding: 16,
+    padding: 18,
   },
   avatarContainer: {
     width: 72,
@@ -1379,6 +1417,14 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     alignItems: 'center',
     position: 'relative',
+    overflow: 'hidden',
+  },
+  avatarGradient: {
+    width: 72,
+    height: 72,
+    borderRadius: 36,
+    justifyContent: 'center',
+    alignItems: 'center',
   },
   avatarImage: {
     width: 72,
@@ -1387,15 +1433,14 @@ const styles = StyleSheet.create({
   },
   avatarBadge: {
     position: 'absolute',
-    bottom: 0,
-    right: 0,
-    width: 24,
-    height: 24,
-    borderRadius: 12,
+    bottom: -1,
+    right: -1,
+    width: 26,
+    height: 26,
+    borderRadius: 13,
     justifyContent: 'center',
     alignItems: 'center',
-    borderWidth: 2,
-    borderColor: '#FFF',
+    borderWidth: 2.5,
   },
   heroInfo: {
     flex: 1,
@@ -1410,64 +1455,92 @@ const styles = StyleSheet.create({
   },
   heroName: {
     fontSize: 22,
-    fontWeight: '700',
+    fontWeight: '800' as const,
+    letterSpacing: -0.4,
   },
   heroEmail: {
-    fontSize: 14,
-    marginTop: 2,
+    fontSize: 13,
+    marginTop: 3,
+    letterSpacing: 0.1,
+  },
+  heroLevelBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    alignSelf: 'flex-start',
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+    borderRadius: 8,
+    marginTop: 6,
+    gap: 4,
+  },
+  heroLevelText: {
+    fontSize: 11,
+    fontWeight: '600' as const,
+    color: '#D4A017',
+    letterSpacing: 0.2,
   },
   nameInput: {
     fontSize: 22,
-    fontWeight: '700',
+    fontWeight: '700' as const,
     borderBottomWidth: 2,
     paddingVertical: 2,
   },
   darkModeButton: {
-    width: 44,
-    height: 44,
-    borderRadius: 22,
+    width: 40,
+    height: 40,
+    borderRadius: 20,
     justifyContent: 'center',
     alignItems: 'center',
   },
   statsRow: {
     flexDirection: 'row',
     borderTopWidth: 1,
-    paddingVertical: 14,
-    paddingHorizontal: 8,
+    paddingVertical: 16,
+    paddingHorizontal: 6,
   },
   statItem: {
     flex: 1,
     alignItems: 'center',
   },
   statIconBg: {
-    width: 32,
-    height: 32,
-    borderRadius: 16,
+    width: 34,
+    height: 34,
+    borderRadius: 10,
     justifyContent: 'center',
     alignItems: 'center',
     marginBottom: 6,
   },
   statValue: {
     fontSize: 18,
-    fontWeight: '700',
+    fontWeight: '800' as const,
+    letterSpacing: -0.3,
   },
   statLabel: {
-    fontSize: 11,
+    fontSize: 10,
+    fontWeight: '500' as const,
     marginTop: 2,
+    letterSpacing: 0.3,
+    textTransform: 'uppercase' as const,
   },
   statDivider: {
     width: 1,
-    height: 48,
+    height: 44,
     alignSelf: 'center',
   },
   sectionWrapper: {
     marginBottom: 20,
   },
   sectionTitle: {
-    fontSize: 18,
-    fontWeight: '700',
+    fontSize: 17,
+    fontWeight: '700' as const,
     marginBottom: 12,
     marginLeft: 4,
+    letterSpacing: -0.2,
+    textTransform: 'uppercase' as const,
+    opacity: 0.6,
+    fontSize: 12,
+    fontWeight: '700' as const,
+    letterSpacing: 0.8,
   },
   interestsCard: {
     borderRadius: 16,
@@ -1517,9 +1590,18 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     padding: 14,
-    borderRadius: 14,
+    borderRadius: 16,
     borderWidth: 1,
     marginBottom: 8,
+    ...Platform.select({
+      ios: {
+        shadowColor: '#000',
+        shadowOffset: { width: 0, height: 1 },
+        shadowOpacity: 0.04,
+        shadowRadius: 6,
+      },
+      android: { elevation: 1 },
+    }),
   },
   settingsIconBg: {
     width: 40,
@@ -1533,12 +1615,14 @@ const styles = StyleSheet.create({
     flex: 1,
   },
   settingsItemTitle: {
-    fontSize: 16,
-    fontWeight: '600',
+    fontSize: 15,
+    fontWeight: '600' as const,
+    letterSpacing: -0.1,
   },
   settingsItemSubtitle: {
-    fontSize: 13,
+    fontSize: 12,
     marginTop: 2,
+    letterSpacing: 0.1,
   },
   expandedContent: {
     borderRadius: 14,

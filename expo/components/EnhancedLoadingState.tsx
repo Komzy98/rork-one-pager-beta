@@ -1,8 +1,8 @@
 import React, { useEffect, useRef } from 'react';
-import { StyleSheet, View, Text, Animated } from 'react-native';
-import { Loader2, Activity, Target } from 'lucide-react-native';
-import { COLORS } from '@/constants/colors';
-import { SPACING, TYPOGRAPHY, BORDER_RADIUS, cardShadow } from '@/constants/design';
+import { StyleSheet, View, Text, Animated, Platform } from 'react-native';
+import { Activity, Target, Zap } from 'lucide-react-native';
+import { LinearGradient } from 'expo-linear-gradient';
+import { useTheme } from '@/hooks/useTheme';
 
 interface EnhancedLoadingStateProps {
   message?: string;
@@ -11,159 +11,115 @@ interface EnhancedLoadingStateProps {
   progress?: number;
 }
 
+const TYPE_CONFIG = {
+  default: { icon: Zap, gradient: ['#007AFF', '#5856D6'] as [string, string], label: 'Loading...', sub: 'Getting things ready' },
+  activities: { icon: Activity, gradient: ['#FF6B35', '#FF9500'] as [string, string], label: 'Loading activities', sub: 'Preparing your overview' },
+  habits: { icon: Target, gradient: ['#34C759', '#30D158'] as [string, string], label: 'Loading habits', sub: 'Syncing your progress' },
+  sports: { icon: Activity, gradient: ['#FF3B30', '#FF453A'] as [string, string], label: 'Loading sports', sub: 'Fetching live data' },
+};
+
 const EnhancedLoadingState: React.FC<EnhancedLoadingStateProps> = ({
-  message = 'Loading...',
+  message,
   type = 'default',
   showProgress = false,
   progress = 0,
 }) => {
-  const rotateValue = useRef(new Animated.Value(0)).current;
-  const scaleValue = useRef(new Animated.Value(1)).current;
-  const pulseValue = useRef(new Animated.Value(1)).current;
+  const { colors, isDark } = useTheme();
+  const pulseAnim = useRef(new Animated.Value(0.8)).current;
+  const ringAnim = useRef(new Animated.Value(0)).current;
+  const dotAnims = useRef([0, 1, 2].map(() => new Animated.Value(0))).current;
+
+  const config = TYPE_CONFIG[type];
+  const IconComp = config.icon;
 
   useEffect(() => {
-    // Rotation animation
-    const rotateAnimation = Animated.loop(
-      Animated.timing(rotateValue, {
-        toValue: 1,
-        duration: 2000,
-        useNativeDriver: true,
-      })
-    );
-
-    // Pulse animation
-    const pulseAnimation = Animated.loop(
+    const pulse = Animated.loop(
       Animated.sequence([
-        Animated.timing(pulseValue, {
-          toValue: 1.1,
-          duration: 1000,
-          useNativeDriver: true,
-        }),
-        Animated.timing(pulseValue, {
-          toValue: 1,
-          duration: 1000,
-          useNativeDriver: true,
-        }),
+        Animated.timing(pulseAnim, { toValue: 1, duration: 1200, useNativeDriver: true }),
+        Animated.timing(pulseAnim, { toValue: 0.8, duration: 1200, useNativeDriver: true }),
       ])
     );
 
-    // Scale animation
-    const scaleAnimation = Animated.loop(
-      Animated.sequence([
-        Animated.timing(scaleValue, {
-          toValue: 0.9,
-          duration: 800,
-          useNativeDriver: true,
-        }),
-        Animated.timing(scaleValue, {
-          toValue: 1,
-          duration: 800,
-          useNativeDriver: true,
-        }),
-      ])
+    const ring = Animated.loop(
+      Animated.timing(ringAnim, { toValue: 1, duration: 2000, useNativeDriver: true })
     );
 
-    rotateAnimation.start();
-    pulseAnimation.start();
-    scaleAnimation.start();
+    const dotAnimations = dotAnims.map((anim, i) =>
+      Animated.loop(
+        Animated.sequence([
+          Animated.delay(i * 200),
+          Animated.timing(anim, { toValue: 1, duration: 400, useNativeDriver: true }),
+          Animated.timing(anim, { toValue: 0, duration: 400, useNativeDriver: true }),
+        ])
+      )
+    );
+
+    pulse.start();
+    ring.start();
+    dotAnimations.forEach(a => a.start());
 
     return () => {
-      rotateAnimation.stop();
-      pulseAnimation.stop();
-      scaleAnimation.stop();
+      pulse.stop();
+      ring.stop();
+      dotAnimations.forEach(a => a.stop());
     };
-  }, [rotateValue, scaleValue, pulseValue]);
-
-  const rotateInterpolate = rotateValue.interpolate({
-    inputRange: [0, 1],
-    outputRange: ['0deg', '360deg'],
-  });
-
-  const getLoadingIcon = () => {
-    const iconProps = { size: 32, color: COLORS.primary };
-    switch (type) {
-      case 'activities':
-        return <Activity {...iconProps} />;
-      case 'habits':
-        return <Target {...iconProps} />;
-      case 'sports':
-        return <Activity {...iconProps} />;
-      default:
-        return <Loader2 {...iconProps} />;
-    }
-  };
-
-  const getLoadingMessage = () => {
-    switch (type) {
-      case 'activities':
-        return 'Loading your activities...';
-      case 'habits':
-        return 'Loading your habits...';
-      case 'sports':
-        return 'Loading sports data...';
-      default:
-        return message;
-    }
-  };
+  }, [pulseAnim, ringAnim, dotAnims]);
 
   return (
-    <View style={styles.container}>
+    <View style={[styles.container, { backgroundColor: colors.background }]}>
       <View style={styles.content}>
-        <Animated.View
-          style={[
-            styles.iconContainer,
+        <Animated.View style={[styles.iconOuter, { transform: [{ scale: pulseAnim }] }]}>
+          <Animated.View style={[
+            styles.ringPulse,
             {
-              transform: [
-                { rotate: rotateInterpolate },
-                { scale: scaleValue },
-              ],
-            },
-          ]}
-        >
-          {getLoadingIcon()}
+              borderColor: config.gradient[0] + '20',
+              opacity: ringAnim.interpolate({ inputRange: [0, 1], outputRange: [0.6, 0] }),
+              transform: [{ scale: ringAnim.interpolate({ inputRange: [0, 1], outputRange: [1, 2.2] }) }],
+            }
+          ]} />
+          <LinearGradient
+            colors={config.gradient}
+            start={{ x: 0, y: 0 }}
+            end={{ x: 1, y: 1 }}
+            style={styles.iconGradient}
+          >
+            <IconComp size={28} color="#FFFFFF" strokeWidth={2.2} />
+          </LinearGradient>
         </Animated.View>
 
-        <Animated.View
-          style={[
-            styles.textContainer,
-            {
-              transform: [{ scale: pulseValue }],
-            },
-          ]}
-        >
-          <Text style={styles.loadingText}>{getLoadingMessage()}</Text>
-          <Text style={styles.subText}>Please wait a moment</Text>
-        </Animated.View>
+        <Text style={[styles.loadingText, { color: colors.text }]}>
+          {message || config.label}
+        </Text>
+        <Text style={[styles.subText, { color: isDark ? 'rgba(255,255,255,0.35)' : 'rgba(0,0,0,0.35)' }]}>
+          {config.sub}
+        </Text>
 
         {showProgress && (
           <View style={styles.progressContainer}>
-            <View style={styles.progressBar}>
-              <Animated.View
-                style={[
-                  styles.progressFill,
-                  {
-                    width: `${Math.min(progress, 100)}%`,
-                  },
-                ]}
+            <View style={[styles.progressBar, { backgroundColor: isDark ? 'rgba(255,255,255,0.08)' : 'rgba(0,0,0,0.06)' }]}>
+              <LinearGradient
+                colors={config.gradient}
+                start={{ x: 0, y: 0 }}
+                end={{ x: 1, y: 0 }}
+                style={[styles.progressFill, { width: `${Math.min(progress, 100)}%` }]}
               />
             </View>
-            <Text style={styles.progressText}>{Math.round(progress)}%</Text>
+            <Text style={[styles.progressText, { color: isDark ? 'rgba(255,255,255,0.4)' : 'rgba(0,0,0,0.4)' }]}>
+              {Math.round(progress)}%
+            </Text>
           </View>
         )}
 
         <View style={styles.dotsContainer}>
-          {[0, 1, 2].map((index) => (
+          {dotAnims.map((anim, index) => (
             <Animated.View
               key={index}
               style={[
                 styles.dot,
                 {
-                  opacity: rotateValue.interpolate({
-                    inputRange: [0, 0.33, 0.66, 1],
-                    outputRange: index === 0 ? [1, 0.3, 0.3, 1] : 
-                               index === 1 ? [0.3, 1, 0.3, 0.3] : 
-                               [0.3, 0.3, 1, 0.3],
-                  }),
+                  backgroundColor: config.gradient[0],
+                  opacity: anim.interpolate({ inputRange: [0, 1], outputRange: [0.25, 1] }),
+                  transform: [{ scale: anim.interpolate({ inputRange: [0, 1], outputRange: [0.8, 1.3] }) }],
                 },
               ]}
             />
@@ -179,76 +135,82 @@ const styles = StyleSheet.create({
     flex: 1,
     justifyContent: 'center',
     alignItems: 'center',
-    backgroundColor: COLORS.background,
-    padding: SPACING.xl,
+    padding: 24,
   },
   content: {
     alignItems: 'center',
-    backgroundColor: COLORS.card,
-    borderRadius: BORDER_RADIUS.xl,
-    padding: SPACING.xxl,
-    ...cardShadow(3),
-    borderWidth: 1,
-    borderColor: COLORS.borderLight,
-    minWidth: 280,
   },
-  iconContainer: {
+  iconOuter: {
     width: 80,
     height: 80,
-    borderRadius: BORDER_RADIUS.full,
-    backgroundColor: `${COLORS.primary}15`,
     justifyContent: 'center',
     alignItems: 'center',
-    marginBottom: SPACING.xl,
+    marginBottom: 28,
   },
-  textContainer: {
+  ringPulse: {
+    position: 'absolute' as const,
+    width: 80,
+    height: 80,
+    borderRadius: 40,
+    borderWidth: 2,
+  },
+  iconGradient: {
+    width: 64,
+    height: 64,
+    borderRadius: 22,
+    justifyContent: 'center',
     alignItems: 'center',
-    marginBottom: SPACING.lg,
+    ...Platform.select({
+      ios: {
+        shadowColor: '#000',
+        shadowOffset: { width: 0, height: 6 },
+        shadowOpacity: 0.15,
+        shadowRadius: 16,
+      },
+      android: { elevation: 6 },
+    }),
   },
   loadingText: {
-    ...TYPOGRAPHY.heading,
-    color: COLORS.text,
-    textAlign: 'center',
-    marginBottom: SPACING.xs,
-    fontWeight: '700',
+    fontSize: 18,
+    fontWeight: '700' as const,
+    letterSpacing: -0.3,
+    textAlign: 'center' as const,
+    marginBottom: 4,
   },
   subText: {
-    ...TYPOGRAPHY.bodySm,
-    color: COLORS.textLight,
-    textAlign: 'center',
+    fontSize: 14,
+    fontWeight: '400' as const,
+    textAlign: 'center' as const,
+    marginBottom: 24,
   },
   progressContainer: {
-    width: '100%',
+    width: 200,
     alignItems: 'center',
-    marginBottom: SPACING.lg,
+    marginBottom: 24,
   },
   progressBar: {
     width: '100%',
     height: 4,
-    backgroundColor: COLORS.border,
     borderRadius: 2,
     overflow: 'hidden',
-    marginBottom: SPACING.xs,
+    marginBottom: 6,
   },
   progressFill: {
     height: '100%',
-    backgroundColor: COLORS.primary,
     borderRadius: 2,
   },
   progressText: {
-    ...TYPOGRAPHY.caption,
-    color: COLORS.textLight,
-    fontWeight: '600',
+    fontSize: 12,
+    fontWeight: '600' as const,
   },
   dotsContainer: {
     flexDirection: 'row',
-    gap: SPACING.sm,
+    gap: 8,
   },
   dot: {
-    width: 8,
-    height: 8,
-    borderRadius: 4,
-    backgroundColor: COLORS.primary,
+    width: 6,
+    height: 6,
+    borderRadius: 3,
   },
 });
 
