@@ -2174,7 +2174,7 @@ export default function SportsScreen() {
                     </Text>
                   </View>
                 </>
-              )
+              )}
             </LinearGradient>
           </View>
         </ScrollView>
