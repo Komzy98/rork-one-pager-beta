@@ -46,6 +46,7 @@ export interface MinimalHabit {
   category: string;
   scientificReason?: string;
   motivationalTip?: string;
+  hasQuickVersion: boolean;
 }
 
 export interface HabitInsight {
@@ -419,12 +420,14 @@ export function generateMinimalHabits(habits: Task[]): MinimalHabit[] {
       }
     }
     
+    const hasQuickVersion = matchedTemplate !== null;
+
     if (!matchedTemplate) {
       matchedTemplate = {
-        minDuration: 2,
-        template: `Quick ${habit.title}: Just start for 2 minutes`,
-        reason: 'Starting maintains the habit loop',
-        tip: 'The hardest part is beginning'
+        minDuration: habit.estimatedDuration || 15,
+        template: habit.title,
+        reason: 'Consistency builds the habit loop',
+        tip: 'Show up even on hard days'
       };
     }
     
@@ -439,6 +442,7 @@ export function generateMinimalHabits(habits: Task[]): MinimalHabit[] {
       category: habit.category || 'personal',
       scientificReason: matchedTemplate.reason,
       motivationalTip: matchedTemplate.tip,
+      hasQuickVersion,
     });
   });
   

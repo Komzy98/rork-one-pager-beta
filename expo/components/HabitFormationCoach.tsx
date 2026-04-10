@@ -194,15 +194,18 @@ export default function HabitFormationCoach({ onComplete, maxItems = 3 }: HabitF
   }, [allHabits, today]);
 
   const quickRoutine = useMemo(() => {
-    const incomplete = incompleteHabits.slice(0, 4);
-    return incomplete.map(h => {
+    const quickable = incompleteHabits.filter(h => {
+      const minimal = minimalHabits.find(m => m.id === h.id);
+      return minimal?.hasQuickVersion === true;
+    });
+    return quickable.slice(0, 4).map(h => {
       const minimal = minimalHabits.find(m => m.id === h.id);
       return {
         id: h.id,
         title: h.title,
         color: h.color || COLORS.primary,
         streak: h.habitStreak || 0,
-        minimalVersion: minimal?.minimalVersion || `Quick ${h.title}`,
+        minimalVersion: minimal?.minimalVersion || h.title,
         minimalDuration: minimal?.minimalDuration || 2,
         isAtRisk: (h.habitStreak || 0) >= 3,
       };
@@ -399,7 +402,7 @@ Rules:
           <View style={styles.quickHeader}>
             <Zap size={14} color="#F59E0B" strokeWidth={2.5} />
             <Text style={styles.quickTitle}>Quick wins</Text>
-            <Text style={styles.quickSubtitle}>Tap to complete in 2 min</Text>
+            <Text style={styles.quickSubtitle}>Simplified versions to keep your streak</Text>
           </View>
           {quickRoutine.map((item) => (
             <QuickWinItem
