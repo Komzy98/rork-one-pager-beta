@@ -1,32 +1,30 @@
-import React, { useMemo, useState, useRef, useEffect } from 'react';
+import React, { useMemo, useState, useRef, useEffect, useCallback } from 'react';
 import {
   StyleSheet,
   View,
   Text,
   TouchableOpacity,
   Animated,
-  Modal,
+  ActivityIndicator,
   ScrollView,
 } from 'react-native';
 import {
-  Clock,
-  Layers,
+  Brain,
   Zap,
   ChevronRight,
-  X,
   CheckCircle2,
-  ArrowRight,
-  Lightbulb,
-  Timer,
-  Link2,
+  Flame,
   Target,
+  TrendingUp,
   AlertTriangle,
-  Coffee,
-  Battery,
-  Hourglass,
-  Brain,
+  Sparkles,
+  MessageCircle,
+  RefreshCw,
+  Clock,
+  Shield,
+  ArrowRight,
+  Trophy,
 } from 'lucide-react-native';
-import { LinearGradient } from 'expo-linear-gradient';
 import * as Haptics from 'expo-haptics';
 import { COLORS } from '@/constants/colors';
 import { useTasks } from '@/hooks/useTasksStore';
@@ -34,14 +32,12 @@ import { useApp } from '@/hooks/useHabitsStore';
 import { useBusyModeSafe } from '@/hooks/useBusyMode';
 import { Task } from '@/types/task';
 import {
-  analyzeHabitCompletionTimes,
-  generateHabitStackSuggestions,
   generateMinimalHabits,
-  getHabitFormationTip,
   generateHabitInsights,
-  HabitStackSuggestion,
   MinimalHabit,
+  HabitInsight,
 } from '@/utils/habitFormationAnalysis';
+import { generateText } from '@rork-ai/toolkit-sdk';
 
 interface HabitFormationCoachProps {
   onComplete?: (habitId: string) => void;
@@ -52,13 +48,12 @@ export default function HabitFormationCoach({ onComplete, maxItems = 3 }: HabitF
   const tasksContext = useTasks();
   useApp();
   const busyMode = useBusyModeSafe();
-  const [activeTab, setActiveTab] = useState<'stack' | 'time' | 'quick'>('stack');
-  const [showDetailModal, setShowDetailModal] = useState(false);
-  const [showBusyModeModal, setShowBusyModeModal] = useState(false);
-  const [selectedStack, setSelectedStack] = useState<HabitStackSuggestion | null>(null);
-  const [selectedMinimalHabit, setSelectedMinimalHabit] = useState<MinimalHabit | null>(null);
+  const [coachMessage, setCoachMessage] = useState<string | null>(null);
+  const [isLoadingCoach, setIsLoadingCoach] = useState(false);
+  const [hasLoadedOnce, setHasLoadedOnce] = useState(false);
   const fadeAnim = useRef(new Animated.Value(0)).current;
   const slideAnim = useRef(new Animated.Value(20)).current;
+  const pulseAnim = useRef(new Animated.Value(1)).current;
 
   useEffect(() => {
     Animated.parallel([
@@ -76,562 +71,322 @@ export default function HabitFormationCoach({ onComplete, maxItems = 3 }: HabitF
     ]).start();
   }, [fadeAnim, slideAnim]);
 
+  useEffect(() => {
+    const loop = Animated.loop(
+      Animated.sequence([
+        Animated.timing(pulseAnim, { toValue: 1.05, duration: 1200, useNativeDriver: true }),
+        Animated.timing(pulseAnim, { toValue: 1, duration: 1200, useNativeDriver: true }),
+      ])
+    );
+    loop.start();
+    return () => loop.stop();
+  }, [pulseAnim]);
+
   const allHabits = useMemo(() => {
-    const taskHabits = (tasksContext?.allTasks || []).filter(
+    return (tasksContext?.allTasks || []).filter(
       (task: Task) => task.isHabit && task.habitFrequency
     );
-    return taskHabits;
   }, [tasksContext?.allTasks]);
 
-  const stackSuggestions = useMemo(() => {
-    return generateHabitStackSuggestions(allHabits);
-  }, [allHabits]);
+  const today = new Date().toISOString().split('T')[0];
 
-  const optimalTimes = useMemo(() => {
-    return analyzeHabitCompletionTimes(allHabits);
+  const habitStats = useMemo(() => {
+    const total = allHabits.length;
+    const completedToday = allHabits.filter(h => h.habitCompletions?.[today]).length;
+    const atRisk = allHabits.filter(h => {
+      const streak = h.habitStreak || 0;
+      return streak >= 3 && !h.habitCompletions?.[today];
+    });
+    const longestStreak = Math.max(0, ...allHabits.map(h => h.habitStreak || 0));
+    const avgCompletion = total > 0 ? Math.round((completedToday / total) * 100) : 0;
+
+    return { total, completedToday, atRisk, longestStreak, avgCompletion };
+  }, [allHabits, today]);
+
+  const insights = useMemo(() => {
+    return generateHabitInsights(allHabits);
   }, [allHabits]);
 
   const minimalHabits = useMemo(() => {
     return generateMinimalHabits(allHabits);
   }, [allHabits]);
 
-  const todayTip = useMemo(() => getHabitFormationTip(), []);
+  const incompleteHabits = useMemo(() => {
+    return allHabits.filter(h => !h.habitCompletions?.[today]);
+  }, [allHabits, today]);
 
-  const insights = useMemo(() => {
-    return generateHabitInsights(allHabits);
-  }, [allHabits]);
+  const quickRoutine = useMemo(() => {
+    const incomplete = incompleteHabits.slice(0, 4);
+    return incomplete.map(h => {
+      const minimal = minimalHabits.find(m => m.id === h.id);
+      return {
+        id: h.id,
+        title: h.title,
+        color: h.color || COLORS.primary,
+        streak: h.habitStreak || 0,
+        minimalVersion: minimal?.minimalVersion || `Quick ${h.title}`,
+        minimalDuration: minimal?.minimalDuration || 2,
+        isAtRisk: (h.habitStreak || 0) >= 3,
+      };
+    });
+  }, [incompleteHabits, minimalHabits]);
 
-  const priorityInsight = useMemo(() => {
-    return insights.find(i => i.priority === 'high') || insights[0];
-  }, [insights]);
+  const buildCoachPrompt = useCallback(() => {
+    const habitSummaries = allHabits.map(h => {
+      const completionCount = Object.keys(h.habitCompletions || {}).length;
+      const doneToday = h.habitCompletions?.[today] ? 'yes' : 'no';
+      return `- "${h.title}" (streak: ${h.habitStreak || 0}d, total completions: ${completionCount}, done today: ${doneToday})`;
+    }).join('\n');
 
-  const handleStackPress = (stack: HabitStackSuggestion) => {
-    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-    setSelectedStack(stack);
-    setShowDetailModal(true);
+    const atRiskNames = habitStats.atRisk.map(h => `"${h.title}" (${h.habitStreak}d streak)`).join(', ');
+
+    return `You are a concise, motivating habit coach. Give ONE short coaching message (2-3 sentences max) based on this data:
+
+Habits today: ${habitStats.completedToday}/${habitStats.total} completed
+${habitSummaries}
+${atRiskNames ? `Streaks at risk: ${atRiskNames}` : 'No streaks at risk.'}
+Longest active streak: ${habitStats.longestStreak} days
+Time of day: ${new Date().getHours() < 12 ? 'morning' : new Date().getHours() < 17 ? 'afternoon' : 'evening'}
+
+Rules:
+- Be specific about THEIR habits by name
+- If streaks are at risk, mention them urgently
+- If all done, celebrate genuinely
+- Give one actionable tip
+- Sound human, warm, direct. No fluff.`;
+  }, [allHabits, habitStats, today]);
+
+  const getCoaching = useCallback(async () => {
+    if (allHabits.length === 0) return;
+    setIsLoadingCoach(true);
+    try {
+      const prompt = buildCoachPrompt();
+      console.log('🧠 [HabitCoach] Requesting coaching...');
+      const response = await generateText({
+        messages: [{ role: 'user', content: prompt }],
+      });
+      setCoachMessage(response);
+      setHasLoadedOnce(true);
+      console.log('✅ [HabitCoach] Got coaching response');
+    } catch (error) {
+      console.error('❌ [HabitCoach] Error:', error);
+      setCoachMessage(getFallbackMessage());
+      setHasLoadedOnce(true);
+    } finally {
+      setIsLoadingCoach(false);
+    }
+  }, [allHabits, buildCoachPrompt]);
+
+  const getFallbackMessage = () => {
+    if (habitStats.completedToday === habitStats.total && habitStats.total > 0) {
+      return "You crushed every habit today! Consistency like this is what separates builders from wishers. Enjoy the win.";
+    }
+    if (habitStats.atRisk.length > 0) {
+      const name = habitStats.atRisk[0].title;
+      const streak = habitStats.atRisk[0].habitStreak || 0;
+      return `Your ${streak}-day streak on "${name}" needs you today. Even 2 minutes counts — don't let momentum slip.`;
+    }
+    if (habitStats.completedToday > 0) {
+      return `${habitStats.completedToday} down, ${habitStats.total - habitStats.completedToday} to go. You've already started — finishing is the easy part now.`;
+    }
+    return "Today is a fresh page. Pick your easiest habit and knock it out right now — momentum builds from one small win.";
   };
 
-  const handleQuickComplete = (habit: MinimalHabit) => {
+  useEffect(() => {
+    if (allHabits.length > 0 && !hasLoadedOnce && !isLoadingCoach) {
+      getCoaching();
+    }
+  }, [allHabits.length, hasLoadedOnce, isLoadingCoach, getCoaching]);
+
+  const handleQuickComplete = (habitId: string) => {
     Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
     if (onComplete) {
-      onComplete(habit.id);
+      onComplete(habitId);
     }
-    
-    const today = new Date().toISOString().split('T')[0];
-    const task = allHabits.find(h => h.id === habit.id);
+    const task = allHabits.find(h => h.id === habitId);
     if (task && tasksContext?.updateTask) {
       const updatedCompletions = { ...(task.habitCompletions || {}) };
       updatedCompletions[today] = true;
-      tasksContext.updateTask(habit.id, {
+      tasksContext.updateTask(habitId, {
         habitCompletions: updatedCompletions,
-        status: 'completed'
+        status: 'completed',
       });
     }
-  };
-
-  const toggleQuickMode = () => {
-    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
-    setShowBusyModeModal(true);
-  };
-
-  const handleEnableBusyMode = async (reason: 'busy_day' | 'low_energy' | 'time_crunch', hours?: number) => {
-    await busyMode.enableBusyMode(reason, hours);
-    setShowBusyModeModal(false);
-  };
-
-  const handleMinimalHabitPress = (habit: MinimalHabit) => {
-    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-    setSelectedMinimalHabit(habit);
   };
 
   if (allHabits.length === 0) {
     return null;
   }
 
+  const allDone = habitStats.completedToday === habitStats.total;
+
   return (
-    <Animated.View 
+    <Animated.View
       style={[
         styles.container,
         {
           opacity: fadeAnim,
-          transform: [{ translateY: slideAnim }]
-        }
+          transform: [{ translateY: slideAnim }],
+        },
       ]}
     >
-      <LinearGradient
-        colors={['rgba(124, 58, 237, 0.08)', 'rgba(6, 182, 212, 0.04)', 'transparent']}
-        start={{ x: 0, y: 0 }}
-        end={{ x: 1, y: 1 }}
-        style={styles.gradientBg}
-      >
-        <View style={styles.header}>
-          <View style={styles.headerLeft}>
-            <View style={styles.iconWrapper}>
-              <LinearGradient
-                colors={['#7c3aed', '#06b6d4']}
-                start={{ x: 0, y: 0 }}
-                end={{ x: 1, y: 1 }}
-                style={styles.iconGradient}
-              >
+      <View style={styles.headerSection}>
+        <View style={styles.headerLeft}>
+          <Animated.View style={[styles.iconWrapper, { transform: [{ scale: pulseAnim }] }]}>
+            <View style={[styles.iconBg, allDone && styles.iconBgDone]}>
+              {allDone ? (
+                <Trophy size={18} color="#fff" strokeWidth={2.5} />
+              ) : (
                 <Brain size={18} color="#fff" strokeWidth={2.5} />
-              </LinearGradient>
+              )}
             </View>
-            <View>
-              <Text style={styles.headerTitle}>Habit Coach</Text>
-              <Text style={styles.headerSubtitle}>Build better habits</Text>
-            </View>
-          </View>
-          <TouchableOpacity 
-            style={[styles.quickModeBtn, busyMode.isEnabled && styles.quickModeBtnActive]}
-            onPress={toggleQuickMode}
-          >
-            <Zap size={14} color={busyMode.isEnabled ? '#fff' : '#F59E0B'} />
-            <Text style={[styles.quickModeBtnText, busyMode.isEnabled && styles.quickModeBtnTextActive]}>
-              {busyMode.isEnabled ? `Busy ${busyMode.getTimeRemaining() || 'On'}` : 'Busy Mode'}
+          </Animated.View>
+          <View>
+            <Text style={styles.headerTitle}>Habit Coach</Text>
+            <Text style={styles.headerSubtitle}>
+              {allDone ? 'All done today!' : `${habitStats.completedToday}/${habitStats.total} completed`}
             </Text>
-          </TouchableOpacity>
+          </View>
         </View>
 
-        {priorityInsight && priorityInsight.priority === 'high' && (
-          <TouchableOpacity style={styles.insightBanner}>
-            <View style={styles.insightIconBg}>
-              <AlertTriangle size={14} color="#F59E0B" />
+        <View style={styles.statsRow}>
+          {habitStats.longestStreak > 0 && (
+            <View style={styles.statPill}>
+              <Flame size={11} color="#F59E0B" strokeWidth={2.5} />
+              <Text style={styles.statPillText}>{habitStats.longestStreak}d</Text>
             </View>
-            <View style={styles.insightContent}>
-              <Text style={styles.insightTitle}>{priorityInsight.title}</Text>
-              <Text style={styles.insightDesc} numberOfLines={1}>{priorityInsight.description}</Text>
-            </View>
-            <ChevronRight size={16} color="#F59E0B" />
-          </TouchableOpacity>
-        )}
-
-        <View style={styles.tabsContainer}>
-          <TouchableOpacity
-            style={[styles.tab, activeTab === 'stack' && styles.tabActive]}
-            onPress={() => setActiveTab('stack')}
-          >
-            <Link2 size={14} color={activeTab === 'stack' ? '#7c3aed' : COLORS.textLight} />
-            <Text style={[styles.tabText, activeTab === 'stack' && styles.tabTextActive]}>
-              Stack
+          )}
+          <View style={[styles.statPill, allDone ? styles.statPillDone : styles.statPillProgress]}>
+            <Text style={[styles.statPillText, allDone ? styles.statPillTextDone : styles.statPillTextProgress]}>
+              {habitStats.avgCompletion}%
             </Text>
-          </TouchableOpacity>
-          <TouchableOpacity
-            style={[styles.tab, activeTab === 'time' && styles.tabActive]}
-            onPress={() => setActiveTab('time')}
-          >
-            <Clock size={14} color={activeTab === 'time' ? '#7c3aed' : COLORS.textLight} />
-            <Text style={[styles.tabText, activeTab === 'time' && styles.tabTextActive]}>
-              Best Time
-            </Text>
-          </TouchableOpacity>
-          <TouchableOpacity
-            style={[styles.tab, activeTab === 'quick' && styles.tabActive]}
-            onPress={() => setActiveTab('quick')}
-          >
-            <Zap size={14} color={activeTab === 'quick' ? '#7c3aed' : COLORS.textLight} />
-            <Text style={[styles.tabText, activeTab === 'quick' && styles.tabTextActive]}>
-              2-Min
-            </Text>
-          </TouchableOpacity>
+          </View>
         </View>
+      </View>
 
-        {activeTab === 'stack' && (
-          <View style={styles.contentSection}>
-            {stackSuggestions.length > 0 ? (
-              stackSuggestions.slice(0, maxItems).map((stack, index) => (
-                <TouchableOpacity
-                  key={stack.id}
-                  style={styles.stackCard}
-                  onPress={() => handleStackPress(stack)}
-                  activeOpacity={0.8}
-                >
-                  <View style={styles.stackVisual}>
-                    <View style={[styles.habitDot, { backgroundColor: stack.anchorHabit.color || '#7c3aed' }]} />
-                    <View style={styles.stackArrow}>
-                      <ArrowRight size={12} color={COLORS.textLight} />
-                    </View>
-                    <View style={[styles.habitDot, { backgroundColor: stack.stackedHabit.color || '#06b6d4' }]} />
-                  </View>
-                  <View style={styles.stackContent}>
-                    <Text style={styles.stackTitle}>
-                      {stack.trigger === 'after' ? 'After' : 'Before'} {stack.anchorHabit.name}
-                    </Text>
-                    <Text style={styles.stackHabit}>{stack.stackedHabit.name}</Text>
-                    <Text style={styles.stackReason} numberOfLines={1}>{stack.reason}</Text>
-                  </View>
-                  <ChevronRight size={16} color={COLORS.textLight} />
-                </TouchableOpacity>
-              ))
-            ) : (
-              <View style={styles.emptyState}>
-                <Layers size={32} color={COLORS.textLight} />
-                <Text style={styles.emptyTitle}>No stacks yet</Text>
-                <Text style={styles.emptyText}>Add more habits to get stacking suggestions</Text>
-              </View>
-            )}
+      <View style={styles.coachSection}>
+        <View style={styles.coachBubble}>
+          <View style={styles.coachBubbleHeader}>
+            <MessageCircle size={13} color="#0F172A" strokeWidth={2.5} />
+            <Text style={styles.coachBubbleLabel}>Coach says</Text>
+            <TouchableOpacity
+              onPress={() => {
+                Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+                getCoaching();
+              }}
+              hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+              style={styles.refreshBtn}
+            >
+              {isLoadingCoach ? (
+                <ActivityIndicator size="small" color="#94A3B8" />
+              ) : (
+                <RefreshCw size={13} color="#94A3B8" strokeWidth={2} />
+              )}
+            </TouchableOpacity>
           </View>
-        )}
+          <Text style={styles.coachText}>
+            {isLoadingCoach && !coachMessage
+              ? 'Analyzing your habits...'
+              : coachMessage || getFallbackMessage()}
+          </Text>
+        </View>
+      </View>
 
-        {activeTab === 'time' && (
-          <View style={styles.contentSection}>
-            {optimalTimes.slice(0, maxItems).map((slot, index) => (
-              <View key={slot.habitId} style={styles.timeCard}>
-                <View style={[styles.timeIconBg, { backgroundColor: (slot.color || '#7c3aed') + '15' }]}>
-                  <Clock size={16} color={slot.color || '#7c3aed'} />
-                </View>
-                <View style={styles.timeContent}>
-                  <View style={styles.timeNameRow}>
-                    <Text style={styles.timeName}>{slot.habitName}</Text>
-                    {slot.peakProductivityMatch && (
-                      <View style={styles.peakBadge}>
-                        <Zap size={10} color="#F59E0B" />
-                        <Text style={styles.peakBadgeText}>Peak</Text>
-                      </View>
-                    )}
-                  </View>
-                  <Text style={styles.timeReason} numberOfLines={2}>{slot.reasoning}</Text>
-                  <View style={styles.timeMetrics}>
-                    {slot.successRate > 0 && (
-                      <View style={styles.metricChip}>
-                        <Target size={10} color="#10B981" />
-                        <Text style={styles.metricText}>{slot.successRate}% success</Text>
-                      </View>
-                    )}
-                    {slot.consistencyScore > 0 && (
-                      <View style={styles.metricChip}>
-                        <CheckCircle2 size={10} color="#7c3aed" />
-                        <Text style={styles.metricText}>{slot.consistencyScore}% consistent</Text>
-                      </View>
-                    )}
-                    {slot.suggestedReminder && (
-                      <View style={styles.metricChip}>
-                        <Clock size={10} color="#6B7280" />
-                        <Text style={styles.metricText}>Remind {slot.suggestedReminder}</Text>
-                      </View>
-                    )}
-                  </View>
-                </View>
-                <View style={styles.timeBadgeContainer}>
-                  <View style={[styles.timeBadge, slot.successRate >= 80 && styles.timeBadgeHigh]}>
-                    <Text style={[styles.timeLabel, slot.successRate >= 80 && styles.timeLabelHigh]}>{slot.optimalTimeLabel}</Text>
-                  </View>
-                  {slot.successRate === 0 && (
-                    <Text style={styles.timeBadgeHint}>suggested</Text>
-                  )}
-                </View>
-              </View>
-            ))}
-            {optimalTimes.length === 0 && (
-              <View style={styles.emptyState}>
-                <Clock size={32} color={COLORS.textLight} />
-                <Text style={styles.emptyTitle}>No timing data yet</Text>
-                <Text style={styles.emptyText}>Complete habits to discover your optimal times</Text>
-              </View>
-            )}
+      {habitStats.atRisk.length > 0 && !allDone && (
+        <View style={styles.alertSection}>
+          <View style={styles.alertHeader}>
+            <AlertTriangle size={14} color="#DC2626" strokeWidth={2.5} />
+            <Text style={styles.alertTitle}>Streaks at risk</Text>
           </View>
-        )}
-
-        {activeTab === 'quick' && (
-          <View style={styles.contentSection}>
-            <View style={styles.quickHeader}>
-              <Zap size={16} color="#F59E0B" />
-              <Text style={styles.quickHeaderText}>
-                {busyMode.isEnabled ? 'Tap to complete minimum version' : '2-minute versions when you\'re busy'}
-              </Text>
-            </View>
-            {minimalHabits.slice(0, maxItems).map((habit) => (
+          <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.alertScroll}>
+            {habitStats.atRisk.slice(0, 4).map((habit) => (
               <TouchableOpacity
                 key={habit.id}
-                style={[styles.quickCard, busyMode.isEnabled && styles.quickCardEnabled]}
-                onPress={() => busyMode.isEnabled ? handleQuickComplete(habit) : handleMinimalHabitPress(habit)}
+                style={styles.atRiskChip}
+                onPress={() => handleQuickComplete(habit.id)}
                 activeOpacity={0.7}
               >
-                <View style={[styles.quickIconBg, { backgroundColor: (habit.color || '#10B981') + '15' }]}>
-                  <Target size={16} color={habit.color || '#10B981'} />
-                </View>
-                <View style={styles.quickContent}>
-                  <Text style={styles.quickName}>{habit.name}</Text>
-                  <Text style={styles.quickMinimal}>{habit.minimalVersion}</Text>
-                  {habit.scientificReason && (
-                    <Text style={styles.quickReason} numberOfLines={1}>{habit.scientificReason}</Text>
-                  )}
-                </View>
-                <View style={styles.quickDuration}>
-                  <Timer size={12} color="#F59E0B" />
-                  <Text style={styles.quickDurationText}>{habit.minimalDuration}m</Text>
-                </View>
-                {busyMode.isEnabled && (
-                  <View style={styles.quickCompleteBtn}>
-                    <CheckCircle2 size={20} color="#10B981" />
-                  </View>
-                )}
+                <Flame size={12} color="#DC2626" strokeWidth={2.5} />
+                <Text style={styles.atRiskName} numberOfLines={1}>{habit.title}</Text>
+                <Text style={styles.atRiskStreak}>{habit.habitStreak}d</Text>
+                <ArrowRight size={10} color="#DC2626" />
               </TouchableOpacity>
             ))}
-          </View>
-        )}
-
-        <View style={styles.tipCard}>
-          <View style={styles.tipIcon}>
-            <Text style={styles.tipEmoji}>{todayTip.icon}</Text>
-          </View>
-          <View style={styles.tipContent}>
-            <Text style={styles.tipTitle}>{todayTip.title}</Text>
-            <Text style={styles.tipText}>{todayTip.tip}</Text>
-          </View>
+          </ScrollView>
         </View>
-      </LinearGradient>
+      )}
 
-      <Modal
-        visible={showDetailModal}
-        transparent
-        animationType="slide"
-        onRequestClose={() => setShowDetailModal(false)}
-      >
-        <View style={styles.modalOverlay}>
-          <View style={styles.modalContent}>
-            <View style={styles.modalHeader}>
-              <Text style={styles.modalTitle}>Habit Stack</Text>
-              <TouchableOpacity 
-                style={styles.modalClose}
-                onPress={() => setShowDetailModal(false)}
-              >
-                <X size={20} color={COLORS.text} />
-              </TouchableOpacity>
-            </View>
-            
-            {selectedStack && (
-              <View style={styles.modalBody}>
-                <View style={styles.stackDetailVisual}>
-                  <View style={styles.stackDetailHabit}>
-                    <View style={[styles.stackDetailDot, { backgroundColor: selectedStack.anchorHabit.color || '#7c3aed' }]} />
-                    <Text style={styles.stackDetailName}>{selectedStack.anchorHabit.name}</Text>
-                    <Text style={styles.stackDetailLabel}>Anchor Habit</Text>
-                  </View>
-                  
-                  <View style={styles.stackDetailArrow}>
-                    <View style={styles.arrowLine} />
-                    <Text style={styles.arrowText}>{selectedStack.trigger}</Text>
-                    <View style={styles.arrowLine} />
-                  </View>
-                  
-                  <View style={styles.stackDetailHabit}>
-                    <View style={[styles.stackDetailDot, { backgroundColor: selectedStack.stackedHabit.color || '#06b6d4' }]} />
-                    <Text style={styles.stackDetailName}>{selectedStack.stackedHabit.name}</Text>
-                    <Text style={styles.stackDetailLabel}>Stacked Habit</Text>
-                  </View>
+      {quickRoutine.length > 0 && !allDone && (
+        <View style={styles.quickSection}>
+          <View style={styles.quickHeader}>
+            <Zap size={14} color="#F59E0B" strokeWidth={2.5} />
+            <Text style={styles.quickTitle}>Quick wins</Text>
+            <Text style={styles.quickSubtitle}>Tap to complete in 2 min</Text>
+          </View>
+          {quickRoutine.map((item) => (
+            <TouchableOpacity
+              key={item.id}
+              style={styles.quickItem}
+              onPress={() => handleQuickComplete(item.id)}
+              activeOpacity={0.7}
+            >
+              <View style={[styles.quickDot, { backgroundColor: item.color }]} />
+              <View style={styles.quickItemInfo}>
+                <View style={styles.quickItemRow}>
+                  <Text style={styles.quickItemName} numberOfLines={1}>{item.title}</Text>
+                  {item.isAtRisk && (
+                    <View style={styles.riskBadge}>
+                      <Shield size={9} color="#DC2626" strokeWidth={2.5} />
+                    </View>
+                  )}
                 </View>
-                
-                <View style={styles.reasonCard}>
-                  <Lightbulb size={18} color="#F59E0B" />
-                  <Text style={styles.reasonText}>{selectedStack.reason}</Text>
-                </View>
-                
-                <View style={styles.formulaCard}>
-                  <Text style={styles.formulaTitle}>Your habit stack formula:</Text>
-                  <Text style={styles.formulaText}>
-                    &quot;{selectedStack.trigger === 'after' ? 'After I' : 'Before I'} <Text style={styles.formulaHighlight}>{selectedStack.anchorHabit.name.toLowerCase()}</Text>, I will <Text style={styles.formulaHighlight}>{selectedStack.stackedHabit.name.toLowerCase()}</Text>.&quot;
-                  </Text>
-                </View>
-                
-                <TouchableOpacity 
-                  style={styles.applyBtn}
-                  onPress={() => {
-                    Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
-                    setShowDetailModal(false);
-                  }}
-                >
-                  <LinearGradient
-                    colors={['#7c3aed', '#06b6d4']}
-                    start={{ x: 0, y: 0 }}
-                    end={{ x: 1, y: 0 }}
-                    style={styles.applyBtnGradient}
-                  >
-                    <Text style={styles.applyBtnText}>Got it!</Text>
-                  </LinearGradient>
-                </TouchableOpacity>
+                <Text style={styles.quickItemMinimal} numberOfLines={1}>{item.minimalVersion}</Text>
               </View>
-            )}
-          </View>
-        </View>
-      </Modal>
-
-      <Modal
-        visible={showBusyModeModal}
-        transparent
-        animationType="slide"
-        onRequestClose={() => setShowBusyModeModal(false)}
-      >
-        <View style={styles.modalOverlay}>
-          <View style={styles.modalContent}>
-            <View style={styles.modalHeader}>
-              <Text style={styles.modalTitle}>
-                {busyMode.isEnabled ? 'Busy Mode Active' : 'Enable Busy Mode'}
-              </Text>
-              <TouchableOpacity 
-                style={styles.modalClose}
-                onPress={() => setShowBusyModeModal(false)}
-              >
-                <X size={20} color={COLORS.text} />
-              </TouchableOpacity>
-            </View>
-            
-            <ScrollView style={styles.modalBody}>
-              {busyMode.isEnabled ? (
-                <>
-                  <View style={styles.busyModeActiveCard}>
-                    <Zap size={32} color="#F59E0B" />
-                    <Text style={styles.busyModeActiveTitle}>{busyMode.getBusyModeMessage()}</Text>
-                    {busyMode.getTimeRemaining() && (
-                      <Text style={styles.busyModeTimeLeft}>Time remaining: {busyMode.getTimeRemaining()}</Text>
-                    )}
-                  </View>
-                  
-                  <TouchableOpacity 
-                    style={styles.disableBusyModeBtn}
-                    onPress={async () => {
-                      await busyMode.disableBusyMode();
-                      setShowBusyModeModal(false);
-                    }}
-                  >
-                    <Text style={styles.disableBusyModeBtnText}>Turn Off Busy Mode</Text>
-                  </TouchableOpacity>
-                </>
-              ) : (
-                <>
-                  <Text style={styles.busyModeDesc}>
-                    When you&apos;re pressed for time, Busy Mode shows 2-minute versions of your habits to protect your streaks.
-                  </Text>
-                  
-                  <Text style={styles.busyModeQuestion}>What&apos;s your situation?</Text>
-                  
-                  <TouchableOpacity 
-                    style={styles.busyModeOption}
-                    onPress={() => handleEnableBusyMode('busy_day', 4)}
-                  >
-                    <View style={[styles.busyModeOptionIcon, { backgroundColor: '#FEF3C7' }]}>
-                      <Coffee size={20} color="#D97706" />
-                    </View>
-                    <View style={styles.busyModeOptionContent}>
-                      <Text style={styles.busyModeOptionTitle}>Busy Day</Text>
-                      <Text style={styles.busyModeOptionDesc}>Enable for 4 hours</Text>
-                    </View>
-                    <ChevronRight size={18} color={COLORS.textLight} />
-                  </TouchableOpacity>
-                  
-                  <TouchableOpacity 
-                    style={styles.busyModeOption}
-                    onPress={() => handleEnableBusyMode('low_energy', 8)}
-                  >
-                    <View style={[styles.busyModeOptionIcon, { backgroundColor: '#E0E7FF' }]}>
-                      <Battery size={20} color="#4F46E5" />
-                    </View>
-                    <View style={styles.busyModeOptionContent}>
-                      <Text style={styles.busyModeOptionTitle}>Low Energy</Text>
-                      <Text style={styles.busyModeOptionDesc}>Enable for 8 hours</Text>
-                    </View>
-                    <ChevronRight size={18} color={COLORS.textLight} />
-                  </TouchableOpacity>
-                  
-                  <TouchableOpacity 
-                    style={styles.busyModeOption}
-                    onPress={() => handleEnableBusyMode('time_crunch', 2)}
-                  >
-                    <View style={[styles.busyModeOptionIcon, { backgroundColor: '#FEE2E2' }]}>
-                      <Hourglass size={20} color="#DC2626" />
-                    </View>
-                    <View style={styles.busyModeOptionContent}>
-                      <Text style={styles.busyModeOptionTitle}>Time Crunch</Text>
-                      <Text style={styles.busyModeOptionDesc}>Enable for 2 hours</Text>
-                    </View>
-                    <ChevronRight size={18} color={COLORS.textLight} />
-                  </TouchableOpacity>
-                  
-                  <View style={styles.busyModeTip}>
-                    <Lightbulb size={16} color="#10B981" />
-                    <Text style={styles.busyModeTipText}>
-                      Completing the 2-minute version still counts toward your streak!
-                    </Text>
-                  </View>
-                </>
-              )}
-            </ScrollView>
-          </View>
-        </View>
-      </Modal>
-
-      <Modal
-        visible={!!selectedMinimalHabit}
-        transparent
-        animationType="slide"
-        onRequestClose={() => setSelectedMinimalHabit(null)}
-      >
-        <View style={styles.modalOverlay}>
-          <View style={styles.modalContent}>
-            <View style={styles.modalHeader}>
-              <Text style={styles.modalTitle}>Minimal Version</Text>
-              <TouchableOpacity 
-                style={styles.modalClose}
-                onPress={() => setSelectedMinimalHabit(null)}
-              >
-                <X size={20} color={COLORS.text} />
-              </TouchableOpacity>
-            </View>
-            
-            {selectedMinimalHabit && (
-              <View style={styles.modalBody}>
-                <View style={styles.minimalHabitHeader}>
-                  <View style={[styles.minimalHabitIcon, { backgroundColor: (selectedMinimalHabit.color || '#10B981') + '15' }]}>
-                    <Target size={28} color={selectedMinimalHabit.color || '#10B981'} />
-                  </View>
-                  <Text style={styles.minimalHabitName}>{selectedMinimalHabit.name}</Text>
+              <View style={styles.quickItemRight}>
+                <View style={styles.durationBadge}>
+                  <Clock size={10} color="#64748B" strokeWidth={2} />
+                  <Text style={styles.durationText}>{item.minimalDuration}m</Text>
                 </View>
-                
-                <View style={styles.minimalVersionCard}>
-                  <View style={styles.minimalVersionHeader}>
-                    <Timer size={16} color="#F59E0B" />
-                    <Text style={styles.minimalVersionTime}>{selectedMinimalHabit.minimalDuration} minutes</Text>
-                  </View>
-                  <Text style={styles.minimalVersionText}>{selectedMinimalHabit.minimalVersion}</Text>
+                <View style={styles.completeCircle}>
+                  <CheckCircle2 size={18} color="#10B981" strokeWidth={2} />
                 </View>
-                
-                {selectedMinimalHabit.scientificReason && (
-                  <View style={styles.scienceCard}>
-                    <View style={styles.scienceHeader}>
-                      <Brain size={16} color="#7C3AED" />
-                      <Text style={styles.scienceTitle}>Why It Works</Text>
-                    </View>
-                    <Text style={styles.scienceText}>{selectedMinimalHabit.scientificReason}</Text>
-                  </View>
-                )}
-                
-                {selectedMinimalHabit.motivationalTip && (
-                  <View style={styles.motivationCard}>
-                    <Text style={styles.motivationText}>&quot;{selectedMinimalHabit.motivationalTip}&quot;</Text>
-                  </View>
-                )}
-                
-                <TouchableOpacity 
-                  style={styles.applyBtn}
-                  onPress={() => {
-                    handleQuickComplete(selectedMinimalHabit);
-                    setSelectedMinimalHabit(null);
-                  }}
-                >
-                  <LinearGradient
-                    colors={['#10B981', '#059669']}
-                    start={{ x: 0, y: 0 }}
-                    end={{ x: 1, y: 0 }}
-                    style={styles.applyBtnGradient}
-                  >
-                    <CheckCircle2 size={18} color="#fff" />
-                    <Text style={styles.applyBtnText}>Complete Minimal Version</Text>
-                  </LinearGradient>
-                </TouchableOpacity>
               </View>
-            )}
+            </TouchableOpacity>
+          ))}
+        </View>
+      )}
+
+      {allDone && (
+        <View style={styles.celebrationSection}>
+          <View style={styles.celebrationContent}>
+            <Text style={styles.celebrationEmoji}>🎉</Text>
+            <Text style={styles.celebrationTitle}>Perfect day!</Text>
+            <Text style={styles.celebrationText}>
+              All {habitStats.total} habits completed. Keep this energy going tomorrow.
+            </Text>
           </View>
         </View>
-      </Modal>
+      )}
+
+      {insights.length > 0 && (
+        <View style={styles.insightSection}>
+          {insights.slice(0, 2).map((insight, idx) => (
+            <View
+              key={`${insight.habitId}-${idx}`}
+              style={[
+                styles.insightCard,
+                insight.priority === 'high' && styles.insightCardHigh,
+              ]}
+            >
+              <Text style={styles.insightIcon}>{insight.icon}</Text>
+              <View style={styles.insightContent}>
+                <Text style={styles.insightTitle}>{insight.title}</Text>
+                <Text style={styles.insightDesc} numberOfLines={2}>{insight.description}</Text>
+              </View>
+            </View>
+          ))}
+        </View>
+      )}
     </Animated.View>
   );
 }
@@ -640,527 +395,307 @@ const styles = StyleSheet.create({
   container: {
     marginHorizontal: 20,
     marginBottom: 20,
-    borderRadius: 24,
-    overflow: 'hidden',
+    borderRadius: 22,
     backgroundColor: '#fff',
-    shadowColor: '#7c3aed',
-    shadowOffset: { width: 0, height: 8 },
-    shadowOpacity: 0.12,
-    shadowRadius: 20,
-    elevation: 8,
+    borderWidth: 1,
+    borderColor: 'rgba(0,0,0,0.04)',
+    shadowColor: '#0F172A',
+    shadowOffset: { width: 0, height: 6 },
+    shadowOpacity: 0.07,
+    shadowRadius: 16,
+    elevation: 6,
+    overflow: 'hidden',
   },
-  gradientBg: {
-    padding: 20,
-  },
-  header: {
+  headerSection: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    marginBottom: 16,
+    paddingHorizontal: 18,
+    paddingTop: 18,
+    paddingBottom: 6,
   },
   headerLeft: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: 12,
+    flex: 1,
   },
   iconWrapper: {
-    width: 42,
-    height: 42,
-    borderRadius: 14,
-    overflow: 'hidden',
+    width: 40,
+    height: 40,
   },
-  iconGradient: {
-    width: '100%',
-    height: '100%',
+  iconBg: {
+    width: 40,
+    height: 40,
+    borderRadius: 13,
+    backgroundColor: '#0F172A',
     justifyContent: 'center',
     alignItems: 'center',
   },
+  iconBgDone: {
+    backgroundColor: '#059669',
+  },
   headerTitle: {
-    fontSize: 18,
+    fontSize: 17,
     fontWeight: '700' as const,
-    color: COLORS.text,
+    color: '#0F172A',
     letterSpacing: -0.3,
   },
   headerSubtitle: {
     fontSize: 12,
-    color: COLORS.textLight,
-    marginTop: 2,
+    color: '#94A3B8',
+    marginTop: 1,
   },
-  quickModeBtn: {
+  statsRow: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: 6,
-    backgroundColor: 'rgba(245, 158, 11, 0.12)',
-    paddingHorizontal: 12,
-    paddingVertical: 8,
-    borderRadius: 20,
-    borderWidth: 1,
-    borderColor: 'rgba(245, 158, 11, 0.2)',
   },
-  quickModeBtnActive: {
-    backgroundColor: '#F59E0B',
-    borderColor: '#F59E0B',
-  },
-  quickModeBtnText: {
-    fontSize: 12,
-    fontWeight: '600' as const,
-    color: '#F59E0B',
-  },
-  quickModeBtnTextActive: {
-    color: '#fff',
-  },
-  tabsContainer: {
-    flexDirection: 'row',
-    backgroundColor: 'rgba(124, 58, 237, 0.06)',
-    borderRadius: 12,
-    padding: 4,
-    marginBottom: 16,
-  },
-  tab: {
-    flex: 1,
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    gap: 6,
-    paddingVertical: 10,
-    borderRadius: 10,
-  },
-  tabActive: {
-    backgroundColor: '#fff',
-    shadowColor: '#7c3aed',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.1,
-    shadowRadius: 4,
-    elevation: 2,
-  },
-  tabText: {
-    fontSize: 13,
-    fontWeight: '600' as const,
-    color: COLORS.textLight,
-  },
-  tabTextActive: {
-    color: '#7c3aed',
-  },
-  contentSection: {
-    gap: 10,
-    marginBottom: 16,
-  },
-  stackCard: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: '#fff',
-    borderRadius: 16,
-    padding: 14,
-    borderWidth: 1,
-    borderColor: 'rgba(124, 58, 237, 0.1)',
-  },
-  stackVisual: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    marginRight: 12,
-  },
-  habitDot: {
-    width: 12,
-    height: 12,
-    borderRadius: 6,
-  },
-  stackArrow: {
-    marginHorizontal: 4,
-  },
-  stackContent: {
-    flex: 1,
-  },
-  stackTitle: {
-    fontSize: 11,
-    color: COLORS.textLight,
-    fontWeight: '500' as const,
-    textTransform: 'uppercase' as const,
-    letterSpacing: 0.5,
-  },
-  stackHabit: {
-    fontSize: 15,
-    fontWeight: '600' as const,
-    color: COLORS.text,
-    marginTop: 2,
-  },
-  stackReason: {
-    fontSize: 12,
-    color: COLORS.textSecondary,
-    marginTop: 4,
-  },
-  emptyState: {
-    alignItems: 'center',
-    padding: 24,
-  },
-  emptyTitle: {
-    fontSize: 16,
-    fontWeight: '600' as const,
-    color: COLORS.text,
-    marginTop: 12,
-  },
-  emptyText: {
-    fontSize: 13,
-    color: COLORS.textLight,
-    marginTop: 4,
-    textAlign: 'center' as const,
-  },
-  timeCard: {
-    flexDirection: 'row',
-    alignItems: 'flex-start',
-    backgroundColor: '#fff',
-    borderRadius: 16,
-    padding: 14,
-    borderWidth: 1,
-    borderColor: 'rgba(124, 58, 237, 0.08)',
-  },
-  timeIconBg: {
-    width: 40,
-    height: 40,
-    borderRadius: 12,
-    justifyContent: 'center',
-    alignItems: 'center',
-    marginRight: 12,
-    marginTop: 2,
-  },
-  timeContent: {
-    flex: 1,
-  },
-  timeNameRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 8,
-  },
-  timeName: {
-    fontSize: 15,
-    fontWeight: '600' as const,
-    color: COLORS.text,
-  },
-  peakBadge: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 3,
-    backgroundColor: 'rgba(245, 158, 11, 0.12)',
-    paddingHorizontal: 6,
-    paddingVertical: 2,
-    borderRadius: 6,
-  },
-  peakBadgeText: {
-    fontSize: 9,
-    fontWeight: '700' as const,
-    color: '#D97706',
-    textTransform: 'uppercase' as const,
-  },
-  timeReason: {
-    fontSize: 12,
-    color: COLORS.textLight,
-    marginTop: 4,
-    lineHeight: 16,
-  },
-  timeMetrics: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    gap: 6,
-    marginTop: 8,
-  },
-  metricChip: {
+  statPill: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: 4,
-    backgroundColor: 'rgba(0, 0, 0, 0.04)',
-    paddingHorizontal: 8,
-    paddingVertical: 4,
-    borderRadius: 6,
+    backgroundColor: 'rgba(245, 158, 11, 0.1)',
+    paddingHorizontal: 9,
+    paddingVertical: 5,
+    borderRadius: 10,
   },
-  metricText: {
-    fontSize: 10,
-    fontWeight: '600' as const,
-    color: COLORS.textSecondary,
+  statPillProgress: {
+    backgroundColor: 'rgba(0, 122, 255, 0.1)',
   },
-  timeBadgeContainer: {
-    alignItems: 'center',
-    marginLeft: 10,
+  statPillDone: {
+    backgroundColor: 'rgba(16, 185, 129, 0.12)',
   },
-  timeBadge: {
-    backgroundColor: 'rgba(124, 58, 237, 0.1)',
-    paddingHorizontal: 12,
-    paddingVertical: 8,
-    borderRadius: 12,
-  },
-  timeBadgeHigh: {
-    backgroundColor: 'rgba(16, 185, 129, 0.15)',
-    borderWidth: 1,
-    borderColor: 'rgba(16, 185, 129, 0.3)',
-  },
-  timeLabel: {
-    fontSize: 13,
+  statPillText: {
+    fontSize: 11,
     fontWeight: '700' as const,
-    color: '#7c3aed',
+    color: '#D97706',
   },
-  timeLabelHigh: {
+  statPillTextProgress: {
+    color: '#007AFF',
+  },
+  statPillTextDone: {
     color: '#059669',
   },
-  timeBadgeHint: {
-    fontSize: 9,
-    color: COLORS.textLight,
-    marginTop: 4,
-    fontStyle: 'italic' as const,
+  coachSection: {
+    paddingHorizontal: 18,
+    paddingTop: 14,
+    paddingBottom: 4,
+  },
+  coachBubble: {
+    backgroundColor: '#F8FAFC',
+    borderRadius: 16,
+    padding: 14,
+    borderWidth: 1,
+    borderColor: 'rgba(0,0,0,0.04)',
+  },
+  coachBubbleHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    marginBottom: 8,
+  },
+  coachBubbleLabel: {
+    fontSize: 11,
+    fontWeight: '600' as const,
+    color: '#64748B',
+    textTransform: 'uppercase' as const,
+    letterSpacing: 0.5,
+    flex: 1,
+  },
+  refreshBtn: {
+    width: 28,
+    height: 28,
+    borderRadius: 14,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  coachText: {
+    fontSize: 14,
+    color: '#1E293B',
+    lineHeight: 21,
+    fontWeight: '500' as const,
+  },
+  alertSection: {
+    paddingHorizontal: 18,
+    paddingTop: 14,
+  },
+  alertHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    marginBottom: 10,
+  },
+  alertTitle: {
+    fontSize: 13,
+    fontWeight: '600' as const,
+    color: '#DC2626',
+  },
+  alertScroll: {
+    flexDirection: 'row',
+  },
+  atRiskChip: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    backgroundColor: '#FEF2F2',
+    paddingHorizontal: 12,
+    paddingVertical: 9,
+    borderRadius: 12,
+    marginRight: 8,
+    borderWidth: 1,
+    borderColor: 'rgba(220, 38, 38, 0.12)',
+  },
+  atRiskName: {
+    fontSize: 13,
+    fontWeight: '600' as const,
+    color: '#991B1B',
+    maxWidth: 120,
+  },
+  atRiskStreak: {
+    fontSize: 11,
+    fontWeight: '700' as const,
+    color: '#DC2626',
+  },
+  quickSection: {
+    paddingHorizontal: 18,
+    paddingTop: 16,
+    paddingBottom: 4,
   },
   quickHeader: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 8,
-    marginBottom: 8,
+    gap: 6,
+    marginBottom: 12,
   },
-  quickHeaderText: {
-    fontSize: 13,
-    color: COLORS.textSecondary,
-  },
-  quickCard: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: '#fff',
-    borderRadius: 14,
-    padding: 14,
-    borderWidth: 1,
-    borderColor: 'rgba(0, 0, 0, 0.05)',
-  },
-  quickCardEnabled: {
-    borderColor: 'rgba(16, 185, 129, 0.3)',
-    backgroundColor: 'rgba(16, 185, 129, 0.03)',
-  },
-  quickIconBg: {
-    width: 40,
-    height: 40,
-    borderRadius: 12,
-    justifyContent: 'center',
-    alignItems: 'center',
-    marginRight: 12,
-  },
-  quickContent: {
-    flex: 1,
-  },
-  quickName: {
-    fontSize: 15,
-    fontWeight: '600' as const,
-    color: COLORS.text,
-  },
-  quickMinimal: {
-    fontSize: 12,
-    color: COLORS.textSecondary,
-    marginTop: 2,
-  },
-  quickReason: {
-    fontSize: 10,
-    color: COLORS.textLight,
-    marginTop: 2,
-    fontStyle: 'italic' as const,
-  },
-  quickDuration: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 4,
-    backgroundColor: 'rgba(245, 158, 11, 0.1)',
-    paddingHorizontal: 10,
-    paddingVertical: 5,
-    borderRadius: 8,
-  },
-  quickDurationText: {
-    fontSize: 12,
-    fontWeight: '700' as const,
-    color: '#F59E0B',
-  },
-  quickCompleteBtn: {
-    marginLeft: 10,
-  },
-  tipCard: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: 'rgba(245, 158, 11, 0.08)',
-    borderRadius: 14,
-    padding: 14,
-    borderWidth: 1,
-    borderColor: 'rgba(245, 158, 11, 0.15)',
-  },
-  tipIcon: {
-    width: 40,
-    height: 40,
-    borderRadius: 12,
-    backgroundColor: 'rgba(245, 158, 11, 0.15)',
-    justifyContent: 'center',
-    alignItems: 'center',
-    marginRight: 12,
-  },
-  tipEmoji: {
-    fontSize: 20,
-  },
-  tipContent: {
-    flex: 1,
-  },
-  tipTitle: {
+  quickTitle: {
     fontSize: 14,
     fontWeight: '700' as const,
-    color: '#92400E',
+    color: '#0F172A',
   },
-  tipText: {
-    fontSize: 12,
-    color: '#B45309',
-    marginTop: 2,
-    lineHeight: 18,
-  },
-  modalOverlay: {
-    flex: 1,
-    backgroundColor: 'rgba(0, 0, 0, 0.5)',
-    justifyContent: 'flex-end',
-  },
-  modalContent: {
-    backgroundColor: '#fff',
-    borderTopLeftRadius: 28,
-    borderTopRightRadius: 28,
-    paddingTop: 8,
-    paddingBottom: 40,
-    maxHeight: '80%',
-  },
-  modalHeader: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    paddingHorizontal: 20,
-    paddingVertical: 16,
-    borderBottomWidth: 1,
-    borderBottomColor: COLORS.border,
-  },
-  modalTitle: {
-    fontSize: 20,
-    fontWeight: '700' as const,
-    color: COLORS.text,
-  },
-  modalClose: {
-    width: 36,
-    height: 36,
-    borderRadius: 18,
-    backgroundColor: COLORS.surfaceSecondary,
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  modalBody: {
-    padding: 20,
-  },
-  stackDetailVisual: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    marginBottom: 24,
-  },
-  stackDetailHabit: {
-    alignItems: 'center',
-    flex: 1,
-  },
-  stackDetailDot: {
-    width: 48,
-    height: 48,
-    borderRadius: 24,
-    marginBottom: 10,
-  },
-  stackDetailName: {
-    fontSize: 15,
-    fontWeight: '600' as const,
-    color: COLORS.text,
-    textAlign: 'center' as const,
-  },
-  stackDetailLabel: {
+  quickSubtitle: {
     fontSize: 11,
-    color: COLORS.textLight,
-    marginTop: 4,
-    textTransform: 'uppercase' as const,
-    letterSpacing: 0.5,
+    color: '#94A3B8',
+    marginLeft: 'auto' as const,
   },
-  stackDetailArrow: {
+  quickItem: {
+    flexDirection: 'row',
     alignItems: 'center',
+    paddingVertical: 11,
     paddingHorizontal: 12,
-  },
-  arrowLine: {
-    width: 24,
-    height: 2,
-    backgroundColor: COLORS.border,
-    marginVertical: 4,
-  },
-  arrowText: {
-    fontSize: 11,
-    fontWeight: '600' as const,
-    color: COLORS.textLight,
-    textTransform: 'uppercase' as const,
-  },
-  reasonCard: {
-    flexDirection: 'row',
-    alignItems: 'flex-start',
-    backgroundColor: 'rgba(245, 158, 11, 0.08)',
+    backgroundColor: '#FAFBFC',
     borderRadius: 14,
-    padding: 16,
-    marginBottom: 16,
-    gap: 12,
-  },
-  reasonText: {
-    flex: 1,
-    fontSize: 14,
-    color: '#92400E',
-    lineHeight: 22,
-  },
-  formulaCard: {
-    backgroundColor: 'rgba(124, 58, 237, 0.06)',
-    borderRadius: 14,
-    padding: 16,
-    marginBottom: 24,
-  },
-  formulaTitle: {
-    fontSize: 12,
-    fontWeight: '600' as const,
-    color: COLORS.textLight,
     marginBottom: 8,
-    textTransform: 'uppercase' as const,
-    letterSpacing: 0.5,
+    borderWidth: 1,
+    borderColor: 'rgba(0,0,0,0.03)',
   },
-  formulaText: {
-    fontSize: 16,
-    color: COLORS.text,
-    lineHeight: 26,
-    fontStyle: 'italic' as const,
+  quickDot: {
+    width: 4,
+    height: 32,
+    borderRadius: 2,
+    marginRight: 12,
   },
-  formulaHighlight: {
-    fontWeight: '700' as const,
-    color: '#7c3aed',
+  quickItemInfo: {
+    flex: 1,
   },
-  applyBtn: {
-    borderRadius: 16,
-    overflow: 'hidden',
+  quickItemRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
   },
-  applyBtnGradient: {
-    paddingVertical: 16,
+  quickItemName: {
+    fontSize: 14,
+    fontWeight: '600' as const,
+    color: '#1E293B',
+    flex: 1,
+  },
+  riskBadge: {
+    width: 18,
+    height: 18,
+    borderRadius: 9,
+    backgroundColor: '#FEF2F2',
+    justifyContent: 'center',
     alignItems: 'center',
   },
-  applyBtnText: {
-    fontSize: 16,
-    fontWeight: '700' as const,
-    color: '#fff',
+  quickItemMinimal: {
+    fontSize: 12,
+    color: '#94A3B8',
+    marginTop: 2,
+  },
+  quickItemRight: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
     marginLeft: 8,
   },
-  insightBanner: {
+  durationBadge: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: 'rgba(245, 158, 11, 0.1)',
+    gap: 3,
+    backgroundColor: 'rgba(100, 116, 139, 0.08)',
+    paddingHorizontal: 7,
+    paddingVertical: 4,
+    borderRadius: 6,
+  },
+  durationText: {
+    fontSize: 10,
+    fontWeight: '600' as const,
+    color: '#64748B',
+  },
+  completeCircle: {
+    opacity: 0.7,
+  },
+  celebrationSection: {
+    paddingHorizontal: 18,
+    paddingTop: 14,
+  },
+  celebrationContent: {
+    alignItems: 'center',
+    backgroundColor: '#F0FDF4',
+    borderRadius: 16,
+    padding: 20,
+    borderWidth: 1,
+    borderColor: 'rgba(16, 185, 129, 0.15)',
+  },
+  celebrationEmoji: {
+    fontSize: 32,
+    marginBottom: 8,
+  },
+  celebrationTitle: {
+    fontSize: 18,
+    fontWeight: '700' as const,
+    color: '#065F46',
+    marginBottom: 4,
+  },
+  celebrationText: {
+    fontSize: 13,
+    color: '#047857',
+    textAlign: 'center' as const,
+    lineHeight: 19,
+  },
+  insightSection: {
+    paddingHorizontal: 18,
+    paddingTop: 12,
+    paddingBottom: 18,
+    gap: 8,
+  },
+  insightCard: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    backgroundColor: '#F8FAFC',
     borderRadius: 12,
     padding: 12,
-    marginBottom: 16,
+    gap: 10,
     borderWidth: 1,
-    borderColor: 'rgba(245, 158, 11, 0.2)',
+    borderColor: 'rgba(0,0,0,0.03)',
   },
-  insightIconBg: {
-    width: 32,
-    height: 32,
-    borderRadius: 10,
-    backgroundColor: 'rgba(245, 158, 11, 0.15)',
-    justifyContent: 'center',
-    alignItems: 'center',
-    marginRight: 10,
+  insightCardHigh: {
+    backgroundColor: '#FFFBEB',
+    borderColor: 'rgba(245, 158, 11, 0.15)',
+  },
+  insightIcon: {
+    fontSize: 16,
+    marginTop: 1,
   },
   insightContent: {
     flex: 1,
@@ -1168,180 +703,12 @@ const styles = StyleSheet.create({
   insightTitle: {
     fontSize: 13,
     fontWeight: '600' as const,
-    color: '#92400E',
+    color: '#1E293B',
   },
   insightDesc: {
-    fontSize: 11,
-    color: '#B45309',
-    marginTop: 2,
-  },
-  busyModeActiveCard: {
-    alignItems: 'center',
-    backgroundColor: 'rgba(245, 158, 11, 0.1)',
-    borderRadius: 16,
-    padding: 24,
-    marginBottom: 20,
-  },
-  busyModeActiveTitle: {
-    fontSize: 16,
-    fontWeight: '600' as const,
-    color: '#92400E',
-    marginTop: 12,
-    textAlign: 'center' as const,
-  },
-  busyModeTimeLeft: {
-    fontSize: 14,
-    color: '#B45309',
-    marginTop: 8,
-  },
-  disableBusyModeBtn: {
-    backgroundColor: '#FEF3C7',
-    borderRadius: 12,
-    padding: 16,
-    alignItems: 'center',
-    borderWidth: 1,
-    borderColor: '#F59E0B',
-  },
-  disableBusyModeBtnText: {
-    fontSize: 15,
-    fontWeight: '600' as const,
-    color: '#92400E',
-  },
-  busyModeDesc: {
-    fontSize: 14,
-    color: COLORS.textSecondary,
-    lineHeight: 22,
-    marginBottom: 20,
-  },
-  busyModeQuestion: {
-    fontSize: 15,
-    fontWeight: '600' as const,
-    color: COLORS.text,
-    marginBottom: 12,
-  },
-  busyModeOption: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: '#fff',
-    borderRadius: 14,
-    padding: 14,
-    marginBottom: 10,
-    borderWidth: 1,
-    borderColor: COLORS.border,
-  },
-  busyModeOptionIcon: {
-    width: 44,
-    height: 44,
-    borderRadius: 12,
-    justifyContent: 'center',
-    alignItems: 'center',
-    marginRight: 14,
-  },
-  busyModeOptionContent: {
-    flex: 1,
-  },
-  busyModeOptionTitle: {
-    fontSize: 15,
-    fontWeight: '600' as const,
-    color: COLORS.text,
-  },
-  busyModeOptionDesc: {
     fontSize: 12,
-    color: COLORS.textLight,
+    color: '#64748B',
     marginTop: 2,
-  },
-  busyModeTip: {
-    flexDirection: 'row',
-    alignItems: 'flex-start',
-    backgroundColor: 'rgba(16, 185, 129, 0.08)',
-    borderRadius: 12,
-    padding: 14,
-    marginTop: 10,
-    gap: 10,
-  },
-  busyModeTipText: {
-    flex: 1,
-    fontSize: 13,
-    color: '#059669',
-    lineHeight: 20,
-  },
-  minimalHabitHeader: {
-    alignItems: 'center',
-    marginBottom: 24,
-  },
-  minimalHabitIcon: {
-    width: 64,
-    height: 64,
-    borderRadius: 20,
-    justifyContent: 'center',
-    alignItems: 'center',
-    marginBottom: 12,
-  },
-  minimalHabitName: {
-    fontSize: 20,
-    fontWeight: '700' as const,
-    color: COLORS.text,
-    textAlign: 'center' as const,
-  },
-  minimalVersionCard: {
-    backgroundColor: 'rgba(245, 158, 11, 0.08)',
-    borderRadius: 14,
-    padding: 16,
-    marginBottom: 16,
-    borderWidth: 1,
-    borderColor: 'rgba(245, 158, 11, 0.15)',
-  },
-  minimalVersionHeader: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 8,
-    marginBottom: 10,
-  },
-  minimalVersionTime: {
-    fontSize: 14,
-    fontWeight: '700' as const,
-    color: '#92400E',
-  },
-  minimalVersionText: {
-    fontSize: 16,
-    color: '#78350F',
-    lineHeight: 24,
-    fontWeight: '500' as const,
-  },
-  scienceCard: {
-    backgroundColor: 'rgba(124, 58, 237, 0.06)',
-    borderRadius: 14,
-    padding: 16,
-    marginBottom: 16,
-  },
-  scienceHeader: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 8,
-    marginBottom: 8,
-  },
-  scienceTitle: {
-    fontSize: 13,
-    fontWeight: '600' as const,
-    color: '#7C3AED',
-  },
-  scienceText: {
-    fontSize: 14,
-    color: '#5B21B6',
-    lineHeight: 22,
-  },
-  motivationCard: {
-    backgroundColor: 'rgba(16, 185, 129, 0.06)',
-    borderRadius: 14,
-    padding: 16,
-    marginBottom: 24,
-    borderLeftWidth: 3,
-    borderLeftColor: '#10B981',
-  },
-  motivationText: {
-    fontSize: 15,
-    color: '#065F46',
-    fontStyle: 'italic' as const,
-    lineHeight: 24,
+    lineHeight: 17,
   },
 });
