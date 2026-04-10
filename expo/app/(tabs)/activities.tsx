@@ -373,33 +373,50 @@ export default function ActivitiesScreen() {
   const hasTeamsOrNations = favoriteTeamIds.length > 0 || nationalTeamIds.length > 0;
   const _hasFavoriteTeamNames = (profile?.favoriteTeams?.length ?? 0) > 0 || (profile?.nationalities?.length ?? 0) > 0;
 
+  const [upcomingEnabled, setUpcomingEnabled] = useState<boolean>(false);
+  const [resultsEnabled, setResultsEnabled] = useState<boolean>(false);
+
   const liveQuery = trpc.football.getMatches.useQuery(
     { type: 'live', teamIds: favoriteTeamIds.length > 0 ? favoriteTeamIds : undefined, leagueIds: queryLeagueIds, nationalTeamIds: nationalTeamIds.length > 0 ? nationalTeamIds : undefined, includeAfcon },
     { 
       refetchInterval: false,
-      staleTime: 2 * 60 * 1000,
-      gcTime: 10 * 60 * 1000,
+      staleTime: 3 * 60 * 1000,
+      gcTime: 15 * 60 * 1000,
       refetchOnMount: 'always' as const,
       refetchOnWindowFocus: false,
       refetchOnReconnect: true,
       retry: 3,
-      retryDelay: (attemptIndex: number) => Math.min(2000 * 2 ** attemptIndex, 15000),
+      retryDelay: (attemptIndex: number) => Math.min(3000 * 2 ** attemptIndex, 20000),
       enabled: true,
     }
   );
+
+  useEffect(() => {
+    if (!liveQuery.isLoading) {
+      const timer = setTimeout(() => setUpcomingEnabled(true), 1500);
+      return () => clearTimeout(timer);
+    }
+  }, [liveQuery.isLoading]);
+
+  useEffect(() => {
+    if (upcomingEnabled && !upcomingQuery.isLoading) {
+      const timer = setTimeout(() => setResultsEnabled(true), 1500);
+      return () => clearTimeout(timer);
+    }
+  }, [upcomingEnabled]);
 
   const upcomingQuery = trpc.football.getMatches.useQuery(
     { type: 'upcoming', days: 14, teamIds: favoriteTeamIds.length > 0 ? favoriteTeamIds : undefined, leagueIds: queryLeagueIds, nationalTeamIds: nationalTeamIds.length > 0 ? nationalTeamIds : undefined, includeAfcon },
     { 
       refetchInterval: false,
-      staleTime: 10 * 60 * 1000,
-      gcTime: 30 * 60 * 1000,
+      staleTime: 30 * 60 * 1000,
+      gcTime: 60 * 60 * 1000,
       refetchOnMount: true,
       refetchOnWindowFocus: false,
       refetchOnReconnect: true,
       retry: 3,
-      retryDelay: (attemptIndex: number) => Math.min(2000 * 2 ** attemptIndex, 15000),
-      enabled: true,
+      retryDelay: (attemptIndex: number) => Math.min(3000 * 2 ** attemptIndex, 20000),
+      enabled: upcomingEnabled,
     }
   );
 
@@ -407,14 +424,14 @@ export default function ActivitiesScreen() {
     { type: 'results', teamIds: favoriteTeamIds.length > 0 ? favoriteTeamIds : undefined, leagueIds: queryLeagueIds, nationalTeamIds: nationalTeamIds.length > 0 ? nationalTeamIds : undefined, includeAfcon },
     { 
       refetchInterval: false,
-      staleTime: 15 * 60 * 1000,
-      gcTime: 60 * 60 * 1000,
+      staleTime: 30 * 60 * 1000,
+      gcTime: 2 * 60 * 60 * 1000,
       refetchOnMount: true,
       refetchOnWindowFocus: false,
       refetchOnReconnect: true,
       retry: 3,
-      retryDelay: (attemptIndex: number) => Math.min(2000 * 2 ** attemptIndex, 15000),
-      enabled: true,
+      retryDelay: (attemptIndex: number) => Math.min(3000 * 2 ** attemptIndex, 20000),
+      enabled: resultsEnabled,
     }
   );
 

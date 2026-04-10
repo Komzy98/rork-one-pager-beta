@@ -33,17 +33,17 @@ const MAX_CACHE_SIZE = 500;
 const CACHE_EVICT_COUNT = 50;
 
 const CACHE_TTL: Record<string, number> = {
-  live: 60 * 1000,
-  upcoming: 30 * 60 * 1000,
+  live: 90 * 1000,
+  upcoming: 60 * 60 * 1000,
   today: 15 * 60 * 1000,
-  results: 2 * 60 * 60 * 1000,
+  results: 4 * 60 * 60 * 1000,
   standings: 60 * 60 * 1000,
   matchDetails: 5 * 60 * 1000,
 };
 
 let apiCallCount = 0;
 let apiCallWindowStart = Date.now();
-const API_CALL_BUDGET_PER_MINUTE = 25;
+const API_CALL_BUDGET_PER_MINUTE = 45;
 
 function canMakeApiCall(): boolean {
   const now = Date.now();
@@ -102,7 +102,11 @@ async function cachedFetch(url: string, headers: Record<string, string>, cacheKe
     console.warn(`🚫 API budget exceeded (${apiCallCount}/${API_CALL_BUDGET_PER_MINUTE}/min), using stale cache for ${cacheKey.substring(0, 60)}`);
     const stale = getStaleFromCache(cacheKey);
     if (stale) return stale;
-    return { response: [] };
+    await delay(2000);
+    if (!canMakeApiCall()) {
+      console.warn(`🚫 Still over budget after wait, returning empty for ${cacheKey.substring(0, 60)}`);
+      return { response: [] };
+    }
   }
 
   const maxRetries = 2;
@@ -112,7 +116,7 @@ async function cachedFetch(url: string, headers: Record<string, string>, cacheKe
     try {
       trackApiCall();
       const controller = new AbortController();
-      const timeoutId = setTimeout(() => controller.abort(), 15000);
+      const timeoutId = setTimeout(() => controller.abort(), 25000);
       const response = await fetch(url, { method: 'GET', headers, signal: controller.signal });
       clearTimeout(timeoutId);
 
@@ -325,15 +329,10 @@ export const getMatchesRoute = publicProcedure
 
       if (hasTeams) {
         const limitedTeams = targetTeams.slice(0, 5);
-        console.log(`⚽ Fetching ${limitedTeams.length} team-specific queries`);
+        console.log(`⚽ Fetching ${limitedTeams.length} team-specific queries (prioritized)`);
         limitedTeams.forEach(id => allPromises.push(fetchTeamMatches(id)));
-        if (hasUserSelectedLeagues) {
-          const limitedLeagues = leagueIds!.slice(0, 20);
-          console.log(`⚽ Also fetching ${limitedLeagues.length} user-selected leagues alongside teams`);
-          limitedLeagues.forEach(id => allPromises.push(fetchLeagueMatches(id)));
-        }
       } else if (hasUserSelectedLeagues) {
-        const limitedLeagues = leagueIds!.slice(0, 25);
+        const limitedLeagues = leagueIds!.slice(0, 15);
         console.log(`⚽ Fetching ${limitedLeagues.length} user-selected leagues`);
         limitedLeagues.forEach(id => allPromises.push(fetchLeagueMatches(id)));
       } else {
