@@ -2726,6 +2726,7 @@ const styles = StyleSheet.create({
   routineSection: {
     paddingHorizontal: 20,
     paddingTop: 26,
+    marginBottom: 16,
   },
   summarySection: {
     paddingHorizontal: 20,
