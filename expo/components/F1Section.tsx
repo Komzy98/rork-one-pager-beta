@@ -425,6 +425,21 @@ const ConstructorRow = React.memo(({ team, pos, maxPts }: {
               </View>
             )}
 
+            {team.logo ? (
+              <View style={[s.ctorLogoWrap, { borderColor: team.color + '30' }]}>
+                <Image
+                  source={{ uri: team.logo }}
+                  style={s.ctorLogoImg}
+                  contentFit="contain"
+                  cachePolicy="memory-disk"
+                />
+              </View>
+            ) : (
+              <View style={[s.ctorLogoFallback, { backgroundColor: team.color + '12' }]}>
+                <BarChart3 size={14} color={team.color} />
+              </View>
+            )}
+
             <View style={s.ctorNameCol}>
               <Text style={s.ctorName} numberOfLines={1}>{team.name}</Text>
               <View style={[s.ctorColorLine, { backgroundColor: team.color }]} />
@@ -520,26 +535,6 @@ export default function F1Section({ isDark, insets }: F1SectionProps) {
 
   return (
     <View style={s.root}>
-      <View style={s.header}>
-        <View style={s.logoBadge}>
-          <Text style={s.logoF1}>F1</Text>
-        </View>
-        <View style={s.headerText}>
-          <Text style={s.headerTitle}>Formula 1</Text>
-          <Text style={s.headerYear}>2026 SEASON</Text>
-        </View>
-        <View style={s.headerStatsWrap}>
-          <View style={s.headerStatItem}>
-            <Text style={s.headerStatNum}>{completed.length}</Text>
-            <Text style={s.headerStatLabel}>DONE</Text>
-          </View>
-          <View style={s.headerStatDivider} />
-          <View style={s.headerStatItem}>
-            <Text style={[s.headerStatNum, { color: F1_RED }]}>{upcoming.length}</Text>
-            <Text style={s.headerStatLabel}>LEFT</Text>
-          </View>
-        </View>
-      </View>
 
       <View style={s.tabBar}>
         <Animated.View
@@ -743,87 +738,6 @@ const s = StyleSheet.create({
   root: {
     flex: 1,
     backgroundColor: BG,
-  },
-
-  header: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    paddingHorizontal: 16,
-    paddingTop: 4,
-    paddingBottom: 16,
-    gap: 12,
-  },
-  logoBadge: {
-    width: 42,
-    height: 42,
-    borderRadius: 12,
-    backgroundColor: F1_RED,
-    justifyContent: 'center',
-    alignItems: 'center',
-    shadowColor: F1_RED,
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.3,
-    shadowRadius: 8,
-    elevation: 6,
-  },
-  logoF1: {
-    fontSize: 17,
-    fontWeight: '900' as const,
-    color: '#FFF',
-    letterSpacing: -1,
-  },
-  headerText: {
-    flex: 1,
-  },
-  headerTitle: {
-    fontSize: 22,
-    fontWeight: '800' as const,
-    color: TXT,
-    letterSpacing: -0.6,
-  },
-  headerYear: {
-    fontSize: 10,
-    fontWeight: '700' as const,
-    color: TXT_3,
-    letterSpacing: 2,
-    marginTop: 2,
-  },
-  headerStatsWrap: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: CARD,
-    paddingHorizontal: 14,
-    paddingVertical: 8,
-    borderRadius: 12,
-    gap: 10,
-    borderWidth: 1,
-    borderColor: CARD_BORDER,
-    shadowColor: SHADOW_COLOR,
-    shadowOffset: { width: 0, height: 1 },
-    shadowOpacity: 0.04,
-    shadowRadius: 3,
-    elevation: 1,
-  },
-  headerStatItem: {
-    alignItems: 'center' as const,
-  },
-  headerStatDivider: {
-    width: 1,
-    height: 20,
-    backgroundColor: DIVIDER,
-  },
-  headerStatNum: {
-    fontSize: 16,
-    fontWeight: '800' as const,
-    color: GREEN,
-    fontVariant: ['tabular-nums'] as any,
-  },
-  headerStatLabel: {
-    fontSize: 8,
-    fontWeight: '700' as const,
-    color: TXT_3,
-    letterSpacing: 0.8,
-    marginTop: 1,
   },
 
   tabBar: {
@@ -1514,6 +1428,27 @@ const s = StyleSheet.create({
     fontSize: 14,
     fontWeight: '700' as const,
     color: TXT_3,
+  },
+  ctorLogoWrap: {
+    width: 36,
+    height: 36,
+    borderRadius: 10,
+    borderWidth: 1,
+    overflow: 'hidden' as const,
+    justifyContent: 'center' as const,
+    alignItems: 'center' as const,
+    backgroundColor: '#FFF',
+  },
+  ctorLogoImg: {
+    width: 28,
+    height: 28,
+  },
+  ctorLogoFallback: {
+    width: 36,
+    height: 36,
+    borderRadius: 10,
+    justifyContent: 'center' as const,
+    alignItems: 'center' as const,
   },
   ctorNameCol: {
     flex: 1,
