@@ -805,9 +805,20 @@ export default function DiscoverScreen() {
       return;
     }
     
-    void Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
-    addCommunityHabit(communityHabit);
-    Alert.alert('Added!', `"${communityHabit.name}" is now in your routine`);
+    Alert.alert(
+      'Add to Routine?',
+      `Add "${communityHabit.name}" to your daily routine?`,
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Add',
+          onPress: () => {
+            void Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+            addCommunityHabit(communityHabit);
+          },
+        },
+      ]
+    );
   }, [isHabitSaved, addCommunityHabit, removeSavedHabit]);
 
   const handleHabitPress = useCallback((habit: CommunityHabit) => {
