@@ -2687,7 +2687,7 @@ const styles = StyleSheet.create({
   },
   cardInner: {
     borderRadius: 20,
-    padding: 16,
+    padding: 20,
     borderWidth: 1,
     borderColor: 'rgba(0, 0, 0, 0.04)',
   },
@@ -2773,12 +2773,13 @@ const styles = StyleSheet.create({
   matchBody: {
     flexDirection: 'row',
     alignItems: 'center',
+    paddingVertical: 8,
   },
   teamRowLeft: {
     flex: 1,
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 8,
+    gap: 10,
     minWidth: 0,
   },
   teamRowRight: {
@@ -2786,7 +2787,7 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'flex-end',
-    gap: 8,
+    gap: 10,
     minWidth: 0,
   },
   teamLogoBox: {
@@ -2802,9 +2803,9 @@ const styles = StyleSheet.create({
     resizeMode: 'contain',
   },
   teamNameHorizontal: {
-    fontSize: 11,
+    fontSize: 13,
     fontWeight: '600' as const,
-    lineHeight: 15,
+    lineHeight: 18,
     flexShrink: 1,
     flexGrow: 1,
   },
@@ -2825,7 +2826,7 @@ const styles = StyleSheet.create({
     marginLeft: 4,
   },
   scoreCenter: {
-    paddingHorizontal: 4,
+    paddingHorizontal: 8,
     flexShrink: 0,
   },
   scoreBlock: {
