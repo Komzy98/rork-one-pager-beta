@@ -1,4 +1,4 @@
-import React, { useMemo, useState, useRef, useEffect, useCallback } from 'react';
+import React, { useMemo, useState, useRef, useEffect, useCallback, memo } from 'react';
 import {
   StyleSheet,
   View,
@@ -12,6 +12,7 @@ import {
   Brain,
   Zap,
   ChevronRight,
+  ChevronDown,
   CheckCircle2,
   Flame,
   Target,
@@ -43,6 +44,83 @@ interface HabitFormationCoachProps {
   onComplete?: (habitId: string) => void;
   maxItems?: number;
 }
+
+interface QuickWinItemProps {
+  item: {
+    id: string;
+    title: string;
+    color: string;
+    streak: number;
+    minimalVersion: string;
+    minimalDuration: number;
+    isAtRisk: boolean;
+  };
+  onComplete: (id: string) => void;
+}
+
+const QuickWinItem = memo(function QuickWinItem({ item, onComplete }: QuickWinItemProps) {
+  const [expanded, setExpanded] = useState(false);
+  const rotateAnim = useRef(new Animated.Value(0)).current;
+
+  const toggleExpand = useCallback(() => {
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+    const next = !expanded;
+    setExpanded(next);
+    Animated.spring(rotateAnim, {
+      toValue: next ? 1 : 0,
+      tension: 80,
+      friction: 10,
+      useNativeDriver: true,
+    }).start();
+  }, [expanded, rotateAnim]);
+
+  const chevronRotation = rotateAnim.interpolate({
+    inputRange: [0, 1],
+    outputRange: ['0deg', '180deg'],
+  });
+
+  return (
+    <View style={styles.quickItemWrapper}>
+      <TouchableOpacity
+        style={styles.quickItem}
+        onPress={toggleExpand}
+        activeOpacity={0.7}
+      >
+        <View style={[styles.quickDot, { backgroundColor: item.color }]} />
+        <View style={styles.quickItemInfo}>
+          <View style={styles.quickItemRow}>
+            <Text style={styles.quickItemName} numberOfLines={expanded ? undefined : 1}>{item.title}</Text>
+            {item.isAtRisk && (
+              <View style={styles.riskBadge}>
+                <Shield size={9} color="#DC2626" strokeWidth={2.5} />
+              </View>
+            )}
+          </View>
+          <Text style={styles.quickItemMinimal} numberOfLines={expanded ? undefined : 1}>{item.minimalVersion}</Text>
+        </View>
+        <View style={styles.quickItemRight}>
+          <View style={styles.durationBadge}>
+            <Clock size={10} color="#64748B" strokeWidth={2} />
+            <Text style={styles.durationText}>{item.minimalDuration}m</Text>
+          </View>
+          <Animated.View style={{ transform: [{ rotate: chevronRotation }] }}>
+            <ChevronDown size={16} color="#94A3B8" strokeWidth={2} />
+          </Animated.View>
+        </View>
+      </TouchableOpacity>
+      {expanded && (
+        <TouchableOpacity
+          style={styles.quickCompleteBtn}
+          onPress={() => onComplete(item.id)}
+          activeOpacity={0.7}
+        >
+          <CheckCircle2 size={16} color="#fff" strokeWidth={2.5} />
+          <Text style={styles.quickCompleteBtnText}>Mark complete</Text>
+        </TouchableOpacity>
+      )}
+    </View>
+  );
+});
 
 export default function HabitFormationCoach({ onComplete, maxItems = 3 }: HabitFormationCoachProps) {
   const tasksContext = useTasks();
@@ -324,34 +402,11 @@ Rules:
             <Text style={styles.quickSubtitle}>Tap to complete in 2 min</Text>
           </View>
           {quickRoutine.map((item) => (
-            <TouchableOpacity
+            <QuickWinItem
               key={item.id}
-              style={styles.quickItem}
-              onPress={() => handleQuickComplete(item.id)}
-              activeOpacity={0.7}
-            >
-              <View style={[styles.quickDot, { backgroundColor: item.color }]} />
-              <View style={styles.quickItemInfo}>
-                <View style={styles.quickItemRow}>
-                  <Text style={styles.quickItemName} numberOfLines={1}>{item.title}</Text>
-                  {item.isAtRisk && (
-                    <View style={styles.riskBadge}>
-                      <Shield size={9} color="#DC2626" strokeWidth={2.5} />
-                    </View>
-                  )}
-                </View>
-                <Text style={styles.quickItemMinimal} numberOfLines={1}>{item.minimalVersion}</Text>
-              </View>
-              <View style={styles.quickItemRight}>
-                <View style={styles.durationBadge}>
-                  <Clock size={10} color="#64748B" strokeWidth={2} />
-                  <Text style={styles.durationText}>{item.minimalDuration}m</Text>
-                </View>
-                <View style={styles.completeCircle}>
-                  <CheckCircle2 size={18} color="#10B981" strokeWidth={2} />
-                </View>
-              </View>
-            </TouchableOpacity>
+              item={item}
+              onComplete={handleQuickComplete}
+            />
           ))}
         </View>
       )}
@@ -578,16 +633,35 @@ const styles = StyleSheet.create({
     color: '#94A3B8',
     marginLeft: 'auto' as const,
   },
-  quickItem: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    paddingVertical: 11,
-    paddingHorizontal: 12,
+  quickItemWrapper: {
     backgroundColor: '#FAFBFC',
     borderRadius: 14,
     marginBottom: 8,
     borderWidth: 1,
     borderColor: 'rgba(0,0,0,0.03)',
+    overflow: 'hidden',
+  },
+  quickItem: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingVertical: 11,
+    paddingHorizontal: 12,
+  },
+  quickCompleteBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 8,
+    backgroundColor: '#10B981',
+    marginHorizontal: 12,
+    marginBottom: 12,
+    paddingVertical: 10,
+    borderRadius: 10,
+  },
+  quickCompleteBtnText: {
+    fontSize: 13,
+    fontWeight: '600' as const,
+    color: '#fff',
   },
   quickDot: {
     width: 4,
@@ -642,9 +716,7 @@ const styles = StyleSheet.create({
     fontWeight: '600' as const,
     color: '#64748B',
   },
-  completeCircle: {
-    opacity: 0.7,
-  },
+
   celebrationSection: {
     paddingHorizontal: 18,
     paddingTop: 14,
