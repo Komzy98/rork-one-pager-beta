@@ -10,6 +10,7 @@ import {
   Platform,
   RefreshControl,
   Modal,
+  FlatList,
 } from 'react-native';
 import {
   Flag,
@@ -26,7 +27,10 @@ import {
   Gauge,
   CircleDot,
   Timer,
-  TrendingUp,
+  ChevronDown,
+  Target,
+  Flame,
+  ArrowRight,
 } from 'lucide-react-native';
 import { Image } from 'expo-image';
 import { LinearGradient } from 'expo-linear-gradient';
@@ -51,73 +55,73 @@ interface F1SectionProps {
   insets: { top: number; bottom: number };
 }
 
-const CARBON = '#08080F';
-const CARBON_SURFACE = '#0E0E1A';
-const CARBON_CARD = '#111120';
-const CARBON_ELEVATED = '#16162A';
-const CARBON_BORDER = 'rgba(255,255,255,0.06)';
+const NOIR = '#050508';
+const SURFACE = '#0C0C14';
+const CARD = '#101018';
+const CARD_ELEVATED = '#141420';
+const BORDER = 'rgba(255,255,255,0.05)';
+const BORDER_SUBTLE = 'rgba(255,255,255,0.03)';
 const F1_RED = '#E10600';
-const F1_RED_GLOW = 'rgba(225,6,0,0.15)';
-const GOLD = '#D4AF37';
-const SILVER = '#A8A8B8';
+const F1_RED_DARK = '#B80500';
+const F1_RED_GLOW = 'rgba(225,6,0,0.12)';
+const ACCENT_WARM = '#FF6B35';
+const GOLD = '#FFD700';
+const SILVER = '#C0C0D0';
 const BRONZE = '#CD7F32';
-const TEXT_PRIMARY = '#F2F2FA';
-const TEXT_SECONDARY = '#7B7B95';
-const TEXT_MUTED = '#4A4A68';
+const TEXT_PRIMARY = '#F0F0F8';
+const TEXT_SECONDARY = '#8888A0';
+const TEXT_DIM = '#505068';
+const TEXT_GHOST = '#35354A';
 
-const DriverHeadshot = React.memo(({
+const DriverAvatar = React.memo(({
   photo,
   teamColor,
   size,
   number,
-  showRing = false,
+  bordered = false,
 }: {
   photo?: string;
   teamColor: string;
   size: number;
   number: number;
-  showRing?: boolean;
+  bordered?: boolean;
 }) => {
-  const [imgError, setImgError] = useState(false);
+  const [err, setErr] = useState(false);
 
-  if (photo && !imgError) {
+  if (photo && !err) {
     return (
-      <View style={[
-        {
-          width: size,
-          height: size,
-          borderRadius: size / 2,
-          overflow: 'hidden' as const,
-          backgroundColor: teamColor + '10',
-          borderWidth: showRing ? 2.5 : 1.5,
-          borderColor: showRing ? teamColor : teamColor + '40',
-        },
-      ]}>
+      <View style={{
+        width: size,
+        height: size,
+        borderRadius: size / 2,
+        overflow: 'hidden' as const,
+        backgroundColor: teamColor + '10',
+        borderWidth: bordered ? 2.5 : 0,
+        borderColor: bordered ? teamColor : 'transparent',
+      }}>
         <Image
           source={{ uri: photo }}
           style={{ width: size, height: size }}
           contentFit="cover"
           transition={200}
           cachePolicy="memory-disk"
-          onError={() => setImgError(true)}
+          onError={() => setErr(true)}
         />
       </View>
     );
   }
 
   return (
-    <View style={[
-      {
-        width: size,
-        height: size,
-        borderRadius: size / 2,
-        backgroundColor: teamColor + '15',
-        borderWidth: showRing ? 2.5 : 1.5,
-        borderColor: showRing ? teamColor : teamColor + '30',
-        justifyContent: 'center' as const,
-        alignItems: 'center' as const,
-      },
-    ]}>
+    <View style={{
+      width: size,
+      height: size,
+      borderRadius: size / 2,
+      backgroundColor: teamColor + '14',
+      borderWidth: bordered ? 2.5 : 1,
+      borderColor: bordered ? teamColor : teamColor + '25',
+      justifyContent: 'center' as const,
+      alignItems: 'center' as const,
+    }}>
       <Text style={{ color: teamColor, fontWeight: '900' as const, fontSize: size * 0.35 }}>
         {number}
       </Text>
@@ -125,7 +129,7 @@ const DriverHeadshot = React.memo(({
   );
 });
 
-const TeamLogo = React.memo(({
+const TeamBadge = React.memo(({
   logo,
   teamColor,
   size,
@@ -136,9 +140,9 @@ const TeamLogo = React.memo(({
   size: number;
   name: string;
 }) => {
-  const [imgError, setImgError] = useState(false);
+  const [err, setErr] = useState(false);
 
-  if (logo && !imgError) {
+  if (logo && !err) {
     return (
       <View style={{
         width: size,
@@ -156,7 +160,7 @@ const TeamLogo = React.memo(({
           contentFit="contain"
           transition={200}
           cachePolicy="memory-disk"
-          onError={() => setImgError(true)}
+          onError={() => setErr(true)}
         />
       </View>
     );
@@ -167,7 +171,7 @@ const TeamLogo = React.memo(({
       width: size,
       height: size,
       borderRadius: size / 3,
-      backgroundColor: teamColor + '18',
+      backgroundColor: teamColor + '15',
       justifyContent: 'center' as const,
       alignItems: 'center' as const,
     }}>
@@ -178,18 +182,11 @@ const TeamLogo = React.memo(({
   );
 });
 
-const PremiumBadge = React.memo(({ label, color, icon: Icon }: { label: string; color: string; icon?: any }) => (
-  <View style={[s.premiumBadge, { backgroundColor: color + '12', borderColor: color + '20' }]}>
-    {Icon && <Icon size={9} color={color} strokeWidth={2.5} />}
-    <Text style={[s.premiumBadgeText, { color }]}>{label}</Text>
-  </View>
-));
-
-const F1Countdown = React.memo(({ race, isDark }: { race: F1Race; isDark: boolean }) => {
+const HeroCountdown = React.memo(({ race }: { race: F1Race }) => {
   const [timeLeft, setTimeLeft] = useState({ days: 0, hours: 0, mins: 0, secs: 0 });
-  const glowAnim = useRef(new Animated.Value(0.3)).current;
+  const pulseAnim = useRef(new Animated.Value(0.4)).current;
   const barAnim = useRef(new Animated.Value(0)).current;
-  const pulseAnim = useRef(new Animated.Value(1)).current;
+  const fadeAnim = useRef(new Animated.Value(0)).current;
 
   useEffect(() => {
     const calc = () => {
@@ -209,318 +206,201 @@ const F1Countdown = React.memo(({ race, isDark }: { race: F1Race; isDark: boolea
   }, [race.date, race.time]);
 
   useEffect(() => {
-    const pulse = Animated.loop(
+    Animated.timing(fadeAnim, { toValue: 1, duration: 600, useNativeDriver: true }).start();
+    const glow = Animated.loop(
       Animated.sequence([
-        Animated.timing(glowAnim, { toValue: 0.8, duration: 2000, useNativeDriver: true }),
-        Animated.timing(glowAnim, { toValue: 0.3, duration: 2000, useNativeDriver: true }),
+        Animated.timing(pulseAnim, { toValue: 1, duration: 2200, useNativeDriver: true }),
+        Animated.timing(pulseAnim, { toValue: 0.4, duration: 2200, useNativeDriver: true }),
       ])
     );
-    pulse.start();
-
-    const heartbeat = Animated.loop(
-      Animated.sequence([
-        Animated.timing(pulseAnim, { toValue: 1.02, duration: 1500, useNativeDriver: true }),
-        Animated.timing(pulseAnim, { toValue: 1, duration: 1500, useNativeDriver: true }),
-      ])
-    );
-    heartbeat.start();
-
-    Animated.timing(barAnim, {
-      toValue: 1,
-      duration: 1500,
-      useNativeDriver: false,
-    }).start();
-
-    return () => { pulse.stop(); heartbeat.stop(); };
-  }, [glowAnim, barAnim, pulseAnim]);
+    glow.start();
+    Animated.timing(barAnim, { toValue: 1, duration: 1200, useNativeDriver: false }).start();
+    return () => glow.stop();
+  }, [pulseAnim, barAnim, fadeAnim]);
 
   const seasonProgress = useMemo(() => {
     const completed = getCompletedRaces().length;
-    const total = F1_CALENDAR_2026.length;
-    return completed / total;
+    return completed / F1_CALENDAR_2026.length;
   }, []);
 
   return (
-    <Animated.View style={[s.countdownOuter, { transform: [{ scale: pulseAnim }] }]}>
+    <Animated.View style={[s.heroWrap, { opacity: fadeAnim }]}>
       {race.circuitImage && (
-        <View style={s.countdownImageWrap}>
+        <View style={s.heroImageWrap}>
           <Image
             source={{ uri: race.circuitImage }}
-            style={s.countdownImage}
+            style={s.heroImage}
             contentFit="cover"
-            transition={400}
+            transition={500}
             cachePolicy="memory-disk"
           />
           <LinearGradient
-            colors={['transparent', 'rgba(8,8,15,0.7)', 'rgba(8,8,15,0.95)']}
+            colors={['rgba(5,5,8,0.1)', 'rgba(5,5,8,0.6)', 'rgba(5,5,8,0.97)']}
+            locations={[0, 0.45, 1]}
             style={StyleSheet.absoluteFill}
           />
         </View>
       )}
-      <LinearGradient
-        colors={[CARBON, CARBON_SURFACE, CARBON]}
-        start={{ x: 0, y: 0 }}
-        end={{ x: 1, y: 1 }}
-        style={s.countdownGradient}
-      >
-        <Animated.View style={[s.countdownRedAccent, { opacity: glowAnim }]} />
 
-        <View style={s.countdownHeader}>
-          <View style={s.nextRaceBadge}>
-            <Zap size={10} color={F1_RED} fill={F1_RED} />
-            <Text style={s.nextRaceLabel}>LIGHTS OUT</Text>
+      <View style={s.heroContent}>
+        <View style={s.heroTopBar}>
+          <View style={s.lightsOutChip}>
+            <Animated.View style={{ opacity: pulseAnim }}>
+              <View style={s.lightsOutDot} />
+            </Animated.View>
+            <Text style={s.lightsOutText}>NEXT RACE</Text>
           </View>
-          <View style={s.roundPill}>
-            <Text style={s.roundPillText}>R{race.round}/{F1_CALENDAR_2026.length}</Text>
+          <View style={s.roundChip}>
+            <Text style={s.roundChipText}>ROUND {race.round}</Text>
           </View>
         </View>
 
-        <Text style={s.countdownRaceName}>{race.name}</Text>
+        <Text style={s.heroGrandPrix}>{race.name}</Text>
 
-        <View style={s.countdownMeta}>
-          <Text style={s.metaFlag}>{race.flag}</Text>
-          <Text style={s.metaText}>{race.city}, {race.country}</Text>
-          <View style={s.metaDivider} />
-          <MapPin size={10} color={TEXT_MUTED} />
-          <Text style={s.metaText}>{race.circuit}</Text>
+        <View style={s.heroLocation}>
+          <Text style={s.heroFlag}>{race.flag}</Text>
+          <Text style={s.heroLocationText}>{race.circuit}</Text>
         </View>
 
-        <View style={s.countdownTimerRow}>
+        <View style={s.timerRow}>
           {[
-            { value: timeLeft.days, label: 'DAYS' },
-            { value: timeLeft.hours, label: 'HRS' },
-            { value: timeLeft.mins, label: 'MIN' },
-            { value: timeLeft.secs, label: 'SEC' },
-          ].map((item, idx) => (
-            <React.Fragment key={item.label}>
-              {idx > 0 && <Text style={s.timerSep}>:</Text>}
-              <View style={s.timerBox}>
-                <LinearGradient
-                  colors={[F1_RED + '0C', F1_RED + '04']}
-                  style={s.timerBoxGradient}
-                >
-                  <Text style={s.timerValue}>
-                    {String(item.value).padStart(2, '0')}
-                  </Text>
-                  <Text style={s.timerUnit}>{item.label}</Text>
-                </LinearGradient>
+            { val: timeLeft.days, unit: 'D' },
+            { val: timeLeft.hours, unit: 'H' },
+            { val: timeLeft.mins, unit: 'M' },
+            { val: timeLeft.secs, unit: 'S' },
+          ].map((t, i) => (
+            <React.Fragment key={t.unit}>
+              {i > 0 && <Text style={s.timerColon}>:</Text>}
+              <View style={s.timerBlock}>
+                <Text style={s.timerNum}>{String(t.val).padStart(2, '0')}</Text>
+                <Text style={s.timerLabel}>{t.unit}</Text>
               </View>
             </React.Fragment>
           ))}
         </View>
 
-        <View style={s.countdownInfoRow}>
-          <View style={s.countdownInfoChip}>
-            <CircleDot size={10} color={TEXT_MUTED} />
-            <Text style={s.countdownInfoText}>{race.laps} laps</Text>
+        <View style={s.heroChipsRow}>
+          <View style={s.heroChip}>
+            <CircleDot size={10} color={TEXT_DIM} />
+            <Text style={s.heroChipText}>{race.laps} Laps</Text>
           </View>
-          <View style={s.countdownInfoDot} />
-          <View style={s.countdownInfoChip}>
-            <Gauge size={10} color={TEXT_MUTED} />
-            <Text style={s.countdownInfoText}>{race.circuitLength}</Text>
+          <View style={s.heroChipDot} />
+          <View style={s.heroChip}>
+            <Gauge size={10} color={TEXT_DIM} />
+            <Text style={s.heroChipText}>{race.circuitLength}</Text>
+          </View>
+          <View style={s.heroChipDot} />
+          <View style={s.heroChip}>
+            <Calendar size={10} color={TEXT_DIM} />
+            <Text style={s.heroChipText}>
+              {new Date(race.date).toLocaleDateString('en-GB', { month: 'short', day: 'numeric' })}
+            </Text>
           </View>
         </View>
 
-        <View style={s.seasonProgressWrap}>
-          <View style={s.seasonProgressRow}>
-            <Text style={s.seasonProgressLabel}>SEASON PROGRESS</Text>
-            <Text style={s.seasonProgressPct}>{Math.round(seasonProgress * 100)}%</Text>
+        <View style={s.progressSection}>
+          <View style={s.progressLabelRow}>
+            <Text style={s.progressLabel}>SEASON</Text>
+            <Text style={s.progressPct}>{Math.round(seasonProgress * 100)}%</Text>
           </View>
-          <View style={s.seasonProgressTrack}>
+          <View style={s.progressTrack}>
             <Animated.View
-              style={[
-                s.seasonProgressFill,
-                {
-                  width: barAnim.interpolate({
-                    inputRange: [0, 1],
-                    outputRange: ['0%', `${seasonProgress * 100}%`],
-                  }),
-                },
-              ]}
-            />
-            <Animated.View style={[
-              s.seasonProgressGlow,
-              {
-                left: barAnim.interpolate({
+              style={[s.progressFill, {
+                width: barAnim.interpolate({
                   inputRange: [0, 1],
-                  outputRange: ['0%', `${Math.max(0, seasonProgress * 100 - 2)}%`],
+                  outputRange: ['0%', `${seasonProgress * 100}%`],
                 }),
-                opacity: glowAnim,
-              }
-            ]} />
+              }]}
+            />
           </View>
         </View>
-
-        <View style={s.countdownDateRow}>
-          <Calendar size={11} color={F1_RED} />
-          <Text style={s.countdownDate}>
-            {new Date(race.date).toLocaleDateString('en-GB', {
-              weekday: 'long',
-              day: 'numeric',
-              month: 'long',
-              year: 'numeric',
-            })}
-          </Text>
-        </View>
-      </LinearGradient>
+      </View>
     </Animated.View>
   );
 });
 
-const F1RaceCard = React.memo(({
+const RaceListItem = React.memo(({
   race,
-  isDark,
   onPress,
 }: {
   race: F1Race;
-  isDark: boolean;
   onPress: () => void;
 }) => {
   const isCompleted = race.status === 'completed';
   const scaleAnim = useRef(new Animated.Value(1)).current;
 
-  const getDaysUntil = () => {
+  const getDaysLabel = () => {
     const now = new Date();
     const d = new Date(race.date);
     const diff = Math.ceil((d.getTime() - now.getTime()) / (1000 * 60 * 60 * 24));
     if (diff === 0) return 'TODAY';
-    if (diff === 1) return 'TOMORROW';
-    if (diff > 0) return `IN ${diff}D`;
-    return `${Math.abs(diff)}D AGO`;
+    if (diff === 1) return 'TMR';
+    if (diff > 0) return `${diff}D`;
+    return '';
   };
 
-  const getFormattedDate = () => {
-    const d = new Date(race.date);
-    return {
-      day: d.getDate(),
-      month: d.toLocaleDateString('en-GB', { month: 'short' }).toUpperCase(),
-    };
-  };
-
-  const dateInfo = getFormattedDate();
-
-  const handlePressIn = () => {
-    Animated.spring(scaleAnim, { toValue: 0.97, tension: 300, friction: 20, useNativeDriver: true }).start();
-  };
-  const handlePressOut = () => {
-    Animated.spring(scaleAnim, { toValue: 1, tension: 300, friction: 20, useNativeDriver: true }).start();
-  };
+  const dateObj = new Date(race.date);
+  const day = dateObj.getDate();
+  const month = dateObj.toLocaleDateString('en-GB', { month: 'short' }).toUpperCase();
 
   return (
-    <Animated.View style={[s.raceCardOuter, { transform: [{ scale: scaleAnim }] }]}>
+    <Animated.View style={[s.raceItemOuter, { transform: [{ scale: scaleAnim }] }]}>
       <TouchableOpacity
-        onPress={onPress}
-        onPressIn={handlePressIn}
-        onPressOut={handlePressOut}
+        onPress={() => {
+          if (Platform.OS !== 'web') void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+          onPress();
+        }}
+        onPressIn={() => Animated.spring(scaleAnim, { toValue: 0.97, tension: 300, friction: 20, useNativeDriver: true }).start()}
+        onPressOut={() => Animated.spring(scaleAnim, { toValue: 1, tension: 300, friction: 20, useNativeDriver: true }).start()}
         activeOpacity={1}
       >
-        <View style={s.raceCard}>
-          {race.circuitImage && (
-            <View style={s.raceCardImageSection}>
-              <Image
-                source={{ uri: race.circuitImage }}
-                style={s.raceCardImage}
-                contentFit="cover"
-                transition={300}
-                cachePolicy="memory-disk"
-              />
-              <LinearGradient
-                colors={['transparent', CARBON_CARD + 'CC', CARBON_CARD]}
-                locations={[0, 0.6, 1]}
-                style={s.raceCardImageFade}
-              />
-              <View style={s.raceCardImageOverlayBadges}>
-                <View style={s.raceCardRoundChip}>
-                  <Text style={s.raceCardRoundChipText}>R{race.round}</Text>
-                </View>
-                {isCompleted ? (
-                  <View style={s.raceCardCompletedChip}>
-                    <CheckCircle2 size={10} color="#10B981" />
-                    <Text style={s.raceCardCompletedText}>COMPLETE</Text>
-                  </View>
-                ) : (
-                  <View style={s.raceCardUpcomingChip}>
-                    <Timer size={10} color={F1_RED} />
-                    <Text style={s.raceCardUpcomingText}>{getDaysUntil()}</Text>
-                  </View>
-                )}
-              </View>
+        <View style={s.raceItem}>
+          <View style={s.raceItemLeft}>
+            <View style={[s.raceItemDateBox, isCompleted && s.raceItemDateBoxDone]}>
+              <Text style={[s.raceItemDay, { color: isCompleted ? '#10B981' : F1_RED }]}>{day}</Text>
+              <Text style={[s.raceItemMonth, { color: isCompleted ? '#10B98170' : F1_RED + '70' }]}>{month}</Text>
             </View>
-          )}
+          </View>
 
-          <View style={s.raceCardInner}>
-            <View style={s.raceCardDateBlock}>
-              <LinearGradient
-                colors={isCompleted ? ['#10B98112', '#10B98108'] : [F1_RED + '12', F1_RED + '06']}
-                style={s.raceCardDateBox}
-              >
-                <Text style={[
-                  s.raceCardDateDay,
-                  { color: isCompleted ? '#10B981' : F1_RED },
-                ]}>{dateInfo.day}</Text>
-                <Text style={[
-                  s.raceCardDateMonth,
-                  { color: isCompleted ? '#10B98180' : F1_RED + '80' },
-                ]}>{dateInfo.month}</Text>
-              </LinearGradient>
-            </View>
-
-            <View style={s.raceCardBody}>
-              <View style={s.raceCardTopRow}>
-                <Text style={s.raceCardFlag}>{race.flag}</Text>
-                <Text style={s.raceCardCountryLabel}>{race.country}</Text>
-              </View>
-
-              <Text style={s.raceCardTitle} numberOfLines={1}>
-                {race.name}
-              </Text>
-
-              <View style={s.raceCardMetaRow}>
-                <MapPin size={9} color={TEXT_MUTED} />
-                <Text style={s.raceCardMetaText} numberOfLines={1}>
-                  {race.circuit}
-                </Text>
-              </View>
-
-              {isCompleted && race.podium ? (
-                <View style={s.raceCardPodium}>
-                  {race.podium.map((driver, idx) => {
-                    const driverData = getDriverStandings().find(d => d.name === driver);
-                    const medals = [GOLD, SILVER, BRONZE];
-                    return (
-                      <View key={driver} style={s.podiumSlot}>
-                        <DriverHeadshot
-                          photo={driverData?.photo}
-                          teamColor={driverData?.teamColor || '#888'}
-                          size={18}
-                          number={driverData?.number || 0}
-                        />
-                        <View style={[s.podiumPos, { backgroundColor: medals[idx] + '18' }]}>
-                          <Text style={[s.podiumPosText, { color: medals[idx] }]}>P{idx + 1}</Text>
-                        </View>
-                        <Text style={s.podiumName} numberOfLines={1}>
-                          {driver.split(' ').pop()}
-                        </Text>
-                      </View>
-                    );
-                  })}
+          <View style={s.raceItemBody}>
+            <View style={s.raceItemTopRow}>
+              <Text style={s.raceItemFlag}>{race.flag}</Text>
+              <Text style={s.raceItemCountry}>{race.country}</Text>
+              {!isCompleted && getDaysLabel() && (
+                <View style={s.raceItemDaysChip}>
+                  <Text style={s.raceItemDaysText}>{getDaysLabel()}</Text>
                 </View>
-              ) : (
-                <View style={s.raceCardFooter}>
-                  <View style={s.raceCardInfoChips}>
-                    <View style={s.raceInfoChip}>
-                      <Flag size={8} color={TEXT_MUTED} />
-                      <Text style={s.raceInfoChipText}>{race.laps} laps</Text>
-                    </View>
-                    <View style={s.raceInfoChip}>
-                      <Gauge size={8} color={TEXT_MUTED} />
-                      <Text style={s.raceInfoChipText}>{race.circuitLength}</Text>
-                    </View>
-                  </View>
-                  <ChevronRight size={14} color={TEXT_MUTED + '60'} />
+              )}
+              {isCompleted && (
+                <View style={s.raceItemDoneChip}>
+                  <CheckCircle2 size={9} color="#10B981" />
                 </View>
               )}
             </View>
+            <Text style={s.raceItemName} numberOfLines={1}>{race.name}</Text>
+            <Text style={s.raceItemCircuit} numberOfLines={1}>{race.circuit}</Text>
+
+            {isCompleted && race.podium && (
+              <View style={s.raceItemPodiumRow}>
+                {race.podium.map((driver, idx) => {
+                  const dd = getDriverStandings().find(d => d.name === driver);
+                  const medals = [GOLD, SILVER, BRONZE];
+                  return (
+                    <View key={driver} style={s.raceItemPodiumSlot}>
+                      <View style={[s.raceItemPodiumMedal, { backgroundColor: medals[idx] + '18' }]}>
+                        <Text style={[s.raceItemPodiumPos, { color: medals[idx] }]}>{idx + 1}</Text>
+                      </View>
+                      <Text style={s.raceItemPodiumName} numberOfLines={1}>{driver.split(' ').pop()}</Text>
+                    </View>
+                  );
+                })}
+              </View>
+            )}
+          </View>
+
+          <View style={s.raceItemRight}>
+            <Text style={s.raceItemRound}>R{race.round}</Text>
+            <ChevronRight size={14} color={TEXT_GHOST} />
           </View>
         </View>
       </TouchableOpacity>
@@ -528,374 +408,307 @@ const F1RaceCard = React.memo(({
   );
 });
 
-const DriverStandingRow = React.memo(({
+const TopDriverPodium = React.memo(({ drivers }: { drivers: F1Driver[] }) => {
+  if (drivers.length < 3) return null;
+  const [second, first, third] = [drivers[1], drivers[0], drivers[2]];
+  const podiumData = [
+    { driver: second, pos: 2, color: SILVER, height: 70 },
+    { driver: first, pos: 1, color: GOLD, height: 90 },
+    { driver: third, pos: 3, color: BRONZE, height: 55 },
+  ];
+
+  return (
+    <View style={s.podiumWrap}>
+      {podiumData.map(({ driver, pos, color, height }) => (
+        <View key={driver.id} style={s.podiumColumn}>
+          <DriverAvatar
+            photo={driver.photo}
+            teamColor={driver.teamColor}
+            size={pos === 1 ? 56 : 44}
+            number={driver.number}
+            bordered
+          />
+          <Text style={s.podiumDriverName} numberOfLines={1}>{driver.name.split(' ').pop()}</Text>
+          <View style={[s.podiumTeamDot, { backgroundColor: driver.teamColor }]} />
+          <Text style={s.podiumPts}>{driver.points}<Text style={s.podiumPtsUnit}> pts</Text></Text>
+          <View style={[s.podiumBar, { height, backgroundColor: color + '20', borderTopColor: color }]}>
+            <Text style={[s.podiumPosition, { color }]}>{pos}</Text>
+            {driver.wins > 0 && (
+              <View style={s.podiumWinsRow}>
+                <Trophy size={9} color={GOLD} />
+                <Text style={s.podiumWinsNum}>{driver.wins}</Text>
+              </View>
+            )}
+          </View>
+        </View>
+      ))}
+    </View>
+  );
+});
+
+const DriverRow = React.memo(({
   driver,
   position,
-  isDark,
   maxPoints,
 }: {
   driver: F1Driver;
   position: number;
-  isDark: boolean;
   maxPoints: number;
 }) => {
-  const barWidth = maxPoints > 0 ? (driver.points / maxPoints) * 100 : 0;
-  const isTop3 = position <= 3;
-  const tierColors = [GOLD, SILVER, BRONZE];
-  const tierColor = isTop3 ? tierColors[position - 1] : undefined;
+  const barW = maxPoints > 0 ? (driver.points / maxPoints) * 100 : 0;
 
   return (
-    <View style={[
-      s.driverRow,
-      isTop3 && { borderLeftWidth: 3, borderLeftColor: tierColor },
-    ]}>
-      <View style={s.driverPos}>
-        {isTop3 ? (
-          <View style={[s.posMedalBg, { backgroundColor: (tierColor || '#888') + '18' }]}>
-            <Text style={[s.posMedalText, { color: tierColor }]}>{position}</Text>
-          </View>
-        ) : (
-          <Text style={s.posText}>{position}</Text>
-        )}
-      </View>
-
-      <DriverHeadshot
+    <View style={s.driverRow}>
+      <Text style={s.driverPos}>{position}</Text>
+      <DriverAvatar
         photo={driver.photo}
         teamColor={driver.teamColor}
-        size={40}
+        size={36}
         number={driver.number}
-        showRing={isTop3}
       />
-
       <View style={s.driverInfo}>
         <View style={s.driverNameRow}>
           <Text style={s.driverName}>{driver.name}</Text>
           <Text style={s.driverFlag}>{driver.nationalityFlag}</Text>
         </View>
         <View style={s.driverTeamRow}>
-          <View style={[s.teamColorBar, { backgroundColor: driver.teamColor }]} />
-          <Text style={s.driverTeam}>{driver.team}</Text>
+          <View style={[s.teamDot, { backgroundColor: driver.teamColor }]} />
+          <Text style={s.driverTeamLabel}>{driver.team}</Text>
         </View>
         {driver.points > 0 && (
-          <View style={s.pointsBarWrap}>
-            <View style={s.pointsBarTrack}>
-              <LinearGradient
-                colors={[driver.teamColor, driver.teamColor + '60']}
-                start={{ x: 0, y: 0 }}
-                end={{ x: 1, y: 0 }}
-                style={[s.pointsBarFill, { width: `${barWidth}%` }]}
-              />
-            </View>
+          <View style={s.barTrack}>
+            <LinearGradient
+              colors={[driver.teamColor, driver.teamColor + '40']}
+              start={{ x: 0, y: 0 }}
+              end={{ x: 1, y: 0 }}
+              style={[s.barFill, { width: `${barW}%` }]}
+            />
           </View>
         )}
       </View>
-
-      <View style={s.driverStats}>
-        <Text style={s.driverPoints}>{driver.points}</Text>
+      <View style={s.driverPtsCol}>
+        <Text style={s.driverPts}>{driver.points}</Text>
         <Text style={s.driverPtsLabel}>PTS</Text>
-        {driver.wins > 0 && (
-          <View style={s.winsRow}>
-            <Trophy size={9} color={GOLD} />
-            <Text style={s.winsText}>{driver.wins}</Text>
-          </View>
-        )}
       </View>
     </View>
   );
 });
 
-const ConstructorRow = React.memo(({
+const ConstructorCard = React.memo(({
   team,
   position,
-  isDark,
   maxPoints,
 }: {
   team: { name: string; color: string; points: number; drivers: string[]; logo?: string };
   position: number;
-  isDark: boolean;
   maxPoints: number;
 }) => {
-  const barWidth = maxPoints > 0 ? (team.points / maxPoints) * 100 : 0;
-  const scaleAnim = useRef(new Animated.Value(1)).current;
+  const barW = maxPoints > 0 ? (team.points / maxPoints) * 100 : 0;
   const isTop3 = position <= 3;
   const tierColors = [GOLD, SILVER, BRONZE];
   const tierColor = isTop3 ? tierColors[position - 1] : undefined;
-
-  const handlePressIn = () => {
-    Animated.spring(scaleAnim, { toValue: 0.97, tension: 300, friction: 20, useNativeDriver: true }).start();
-  };
-  const handlePressOut = () => {
-    Animated.spring(scaleAnim, { toValue: 1, tension: 300, friction: 20, useNativeDriver: true }).start();
-  };
+  const scaleAnim = useRef(new Animated.Value(1)).current;
 
   return (
-    <Animated.View style={[{ transform: [{ scale: scaleAnim }], marginBottom: 10 }]}>
+    <Animated.View style={[s.ctorOuter, { transform: [{ scale: scaleAnim }] }]}>
       <TouchableOpacity
         activeOpacity={1}
-        onPressIn={handlePressIn}
-        onPressOut={handlePressOut}
+        onPressIn={() => Animated.spring(scaleAnim, { toValue: 0.97, tension: 300, friction: 20, useNativeDriver: true }).start()}
+        onPressOut={() => Animated.spring(scaleAnim, { toValue: 1, tension: 300, friction: 20, useNativeDriver: true }).start()}
       >
-        <View style={[
-          s.ctorCard,
-          isTop3 && { borderColor: (tierColor || '#888') + '25' },
-        ]}>
-          <LinearGradient
-            colors={[team.color + '06', 'transparent']}
-            start={{ x: 0, y: 0 }}
-            end={{ x: 1, y: 1 }}
-            style={StyleSheet.absoluteFill}
-          />
+        <View style={[s.ctorCard, isTop3 && { borderColor: (tierColor || '') + '20' }]}>
+          <View style={[s.ctorAccentStripe, { backgroundColor: team.color }]} />
 
-          <View style={s.ctorTopRow}>
-            <View style={s.ctorRankSection}>
+          <View style={s.ctorTop}>
+            <View style={s.ctorRank}>
               {isTop3 ? (
-                <LinearGradient
-                  colors={[(tierColor || '#888') + '25', (tierColor || '#888') + '10']}
-                  style={s.ctorRankBadge}
-                >
-                  <Text style={[s.ctorRankText, { color: tierColor }]}>{position}</Text>
-                </LinearGradient>
-              ) : (
-                <View style={s.ctorRankBadge}>
-                  <Text style={[s.ctorRankText, { color: TEXT_MUTED }]}>{position}</Text>
+                <View style={[s.ctorRankBadge, { backgroundColor: (tierColor || '') + '15' }]}>
+                  <Text style={[s.ctorRankNum, { color: tierColor }]}>{position}</Text>
                 </View>
+              ) : (
+                <Text style={s.ctorRankPlain}>{position}</Text>
               )}
             </View>
 
-            <View style={s.ctorLogoWrap}>
-              <TeamLogo
-                logo={team.logo}
-                teamColor={team.color}
-                size={44}
-                name={team.name}
-              />
-            </View>
+            <TeamBadge logo={team.logo} teamColor={team.color} size={40} name={team.name} />
 
             <View style={s.ctorMainInfo}>
               <Text style={s.ctorName} numberOfLines={1}>{team.name}</Text>
-              <View style={s.ctorColorLine}>
+              <View style={[s.ctorColorBar, { backgroundColor: team.color }]} />
+            </View>
+
+            <View style={s.ctorPtsBlock}>
+              <Text style={[s.ctorPtsNum, { color: team.color }]}>{team.points}</Text>
+              <Text style={s.ctorPtsUnit}>PTS</Text>
+            </View>
+          </View>
+
+          <View style={s.ctorSeparator} />
+
+          <View style={s.ctorBottom}>
+            {team.drivers.map((dName) => {
+              const dd = getDriverStandings().find(d => d.name === dName);
+              return (
+                <View key={dName} style={s.ctorDriverPill}>
+                  <DriverAvatar
+                    photo={dd?.photo}
+                    teamColor={team.color}
+                    size={26}
+                    number={dd?.number || 0}
+                  />
+                  <View style={s.ctorDriverTextCol}>
+                    <Text style={s.ctorDriverName} numberOfLines={1}>{dName.split(' ').pop()}</Text>
+                    <Text style={s.ctorDriverPts}>{dd?.points ?? 0} pts</Text>
+                  </View>
+                  {(dd?.wins ?? 0) > 0 && (
+                    <View style={s.ctorDriverWinBadge}>
+                      <Trophy size={8} color={GOLD} />
+                      <Text style={s.ctorDriverWinText}>{dd?.wins}</Text>
+                    </View>
+                  )}
+                </View>
+              );
+            })}
+          </View>
+
+          {team.points > 0 && (
+            <View style={s.ctorBarWrap}>
+              <View style={s.ctorBarTrack}>
                 <LinearGradient
-                  colors={[team.color, team.color + '20']}
+                  colors={[team.color, team.color + '30']}
                   start={{ x: 0, y: 0 }}
                   end={{ x: 1, y: 0 }}
-                  style={s.ctorColorStripe}
+                  style={[s.ctorBarFill, { width: `${barW}%` }]}
                 />
               </View>
             </View>
-
-            <View style={s.ctorPointsBlock}>
-              <Text style={[s.ctorPointsValue, { color: team.color }]}>{team.points}</Text>
-              <Text style={s.ctorPointsUnit}>PTS</Text>
-            </View>
-          </View>
-
-          <View style={s.ctorDivider} />
-
-          <View style={s.ctorBottomRow}>
-            <View style={s.ctorDriversSection}>
-              {team.drivers.map((driver) => {
-                const driverData = getDriverStandings().find(d => d.name === driver);
-                const driverPts = driverData?.points ?? 0;
-                return (
-                  <View key={driver} style={s.ctorDriverCard}>
-                    <DriverHeadshot
-                      photo={driverData?.photo}
-                      teamColor={team.color}
-                      size={28}
-                      number={driverData?.number || 0}
-                    />
-                    <View style={s.ctorDriverInfo}>
-                      <Text style={s.ctorDriverName} numberOfLines={1}>
-                        {driver.split(' ').pop()}
-                      </Text>
-                      <Text style={s.ctorDriverPts}>{driverPts} pts</Text>
-                    </View>
-                    {(driverData?.wins ?? 0) > 0 && (
-                      <View style={s.ctorDriverWins}>
-                        <Trophy size={8} color={GOLD} />
-                        <Text style={s.ctorDriverWinsText}>{driverData?.wins}</Text>
-                      </View>
-                    )}
-                  </View>
-                );
-              })}
-            </View>
-
-            {team.points > 0 && (
-              <View style={s.ctorBarSection}>
-                <View style={s.ctorBarTrack}>
-                  <LinearGradient
-                    colors={[team.color, team.color + '40']}
-                    start={{ x: 0, y: 0 }}
-                    end={{ x: 1, y: 0 }}
-                    style={[s.ctorBarFill, { width: `${barWidth}%` }]}
-                  />
-                </View>
-                <Text style={s.ctorBarPct}>{Math.round(barWidth)}%</Text>
-              </View>
-            )}
-          </View>
+          )}
         </View>
       </TouchableOpacity>
     </Animated.View>
   );
 });
 
-type F1Tab = 'calendar' | 'drivers' | 'constructors';
+type F1Tab = 'races' | 'drivers' | 'teams';
 
 export default function F1Section({ isDark, insets }: F1SectionProps) {
-  const [f1Tab, setF1Tab] = useState<F1Tab>('calendar');
+  const [activeTab, setActiveTab] = useState<F1Tab>('races');
   const [calendarFilter, setCalendarFilter] = useState<'upcoming' | 'results'>('upcoming');
   const [selectedRace, setSelectedRace] = useState<F1Race | null>(null);
-  const [showRaceModal, setShowRaceModal] = useState(false);
+  const [showModal, setShowModal] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
-  const indicatorAnim = useRef(new Animated.Value(0)).current;
+  const slideAnim = useRef(new Animated.Value(0)).current;
+  const fadeIn = useRef(new Animated.Value(0)).current;
 
   const tabs: { key: F1Tab; label: string; icon: any }[] = [
-    { key: 'calendar', label: 'Races', icon: Flag },
+    { key: 'races', label: 'Races', icon: Flag },
     { key: 'drivers', label: 'Drivers', icon: Users },
-    { key: 'constructors', label: 'Teams', icon: Award },
+    { key: 'teams', label: 'Teams', icon: Award },
   ];
 
-  const tabIndex = tabs.findIndex(t => t.key === f1Tab);
+  const tabIdx = tabs.findIndex(t => t.key === activeTab);
+  const tabWidth = (SCREEN_WIDTH - 40) / tabs.length;
 
   useEffect(() => {
-    Animated.spring(indicatorAnim, {
-      toValue: tabIndex,
-      tension: 90,
-      friction: 14,
-      useNativeDriver: true,
-    }).start();
-  }, [tabIndex, indicatorAnim]);
+    Animated.spring(slideAnim, { toValue: tabIdx, tension: 100, friction: 14, useNativeDriver: true }).start();
+  }, [tabIdx, slideAnim]);
+
+  useEffect(() => {
+    Animated.timing(fadeIn, { toValue: 1, duration: 400, useNativeDriver: true }).start();
+  }, [fadeIn]);
 
   const nextRace = useMemo(() => getNextRace(), []);
   const upcomingRaces = useMemo(() => getUpcomingRaces(), []);
   const completedRaces = useMemo(() => getCompletedRaces(), []);
   const driverStandings = useMemo(() => getDriverStandings(), []);
   const constructorStandings = useMemo(() => getConstructorStandings(), []);
-
   const maxDriverPts = useMemo(() => Math.max(...driverStandings.map(d => d.points), 1), [driverStandings]);
-  const maxConstructorPts = useMemo(() => Math.max(...constructorStandings.map(t => t.points), 1), [constructorStandings]);
-
+  const maxCtorPts = useMemo(() => Math.max(...constructorStandings.map(t => t.points), 1), [constructorStandings]);
   const calendarRaces = calendarFilter === 'upcoming' ? upcomingRaces : completedRaces;
 
-  const handleTabPress = useCallback(async (tab: F1Tab) => {
-    if (Platform.OS !== 'web') {
-      await Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
-    }
-    setF1Tab(tab);
+  const handleTabPress = useCallback((tab: F1Tab) => {
+    if (Platform.OS !== 'web') void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+    setActiveTab(tab);
   }, []);
 
   const handleRacePress = useCallback((race: F1Race) => {
-    if (Platform.OS !== 'web') {
-      void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-    }
+    if (Platform.OS !== 'web') void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
     setSelectedRace(race);
-    setShowRaceModal(true);
+    setShowModal(true);
   }, []);
 
   const onRefresh = useCallback(async () => {
     setRefreshing(true);
-    if (Platform.OS !== 'web') {
-      await Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
-    }
+    if (Platform.OS !== 'web') await Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
     await new Promise(resolve => setTimeout(resolve, 500));
     setRefreshing(false);
   }, []);
 
-  const tabWidth = (SCREEN_WIDTH - 40 - 8) / tabs.length;
-
   return (
-    <View style={{ flex: 1 }}>
-      <View style={s.f1Header}>
-        <View style={s.f1BrandRow}>
-          <View style={s.f1LogoWrap}>
-            <LinearGradient
-              colors={[F1_RED, '#CC0500']}
-              style={s.f1LogoBg}
-            >
-              <Text style={s.f1LogoText}>F1</Text>
+    <Animated.View style={[{ flex: 1, backgroundColor: NOIR }, { opacity: fadeIn }]}>
+      <View style={s.header}>
+        <View style={s.headerLeft}>
+          <View style={s.logoPill}>
+            <LinearGradient colors={[F1_RED, F1_RED_DARK]} style={s.logoBg}>
+              <Text style={s.logoText}>F1</Text>
             </LinearGradient>
           </View>
           <View>
-            <Text style={s.f1BrandTitle}>Formula 1</Text>
-            <Text style={s.f1BrandSeason}>2026 Season</Text>
+            <Text style={s.headerTitle}>Formula 1</Text>
+            <Text style={s.headerSub}>2026 World Championship</Text>
           </View>
         </View>
       </View>
 
-      <View style={s.tabBar}>
-        <View style={s.tabTrack}>
-          <Animated.View style={[
-            s.tabIndicator,
-            {
-              width: tabWidth,
-              transform: [{ translateX: Animated.multiply(indicatorAnim, tabWidth) }],
-            }
-          ]}>
-            <LinearGradient
-              colors={[F1_RED + '18', F1_RED + '08']}
-              style={s.tabIndicatorInner}
-            />
-          </Animated.View>
-          {tabs.map((tab) => {
-            const Icon = tab.icon;
-            const isActive = f1Tab === tab.key;
-            return (
-              <TouchableOpacity
-                key={tab.key}
-                style={s.tabItem}
-                onPress={() => handleTabPress(tab.key)}
-                activeOpacity={0.6}
-              >
-                <Icon
-                  size={14}
-                  color={isActive ? F1_RED : TEXT_MUTED}
-                  strokeWidth={isActive ? 2.5 : 1.8}
-                />
-                <Text style={[
-                  s.tabLabel,
-                  { color: isActive ? TEXT_PRIMARY : TEXT_MUTED },
-                  isActive && { fontWeight: '700' as const },
-                ]}>
-                  {tab.label}
-                </Text>
-              </TouchableOpacity>
-            );
-          })}
-        </View>
+      <View style={s.tabContainer}>
+        <Animated.View style={[
+          s.tabSlider,
+          {
+            width: tabWidth,
+            transform: [{ translateX: Animated.multiply(slideAnim, tabWidth) }],
+          },
+        ]}>
+          <LinearGradient colors={[F1_RED + '20', F1_RED + '08']} style={s.tabSliderInner} />
+        </Animated.View>
+
+        {tabs.map((tab) => {
+          const Icon = tab.icon;
+          const active = activeTab === tab.key;
+          return (
+            <TouchableOpacity
+              key={tab.key}
+              style={s.tabBtn}
+              onPress={() => handleTabPress(tab.key)}
+              activeOpacity={0.6}
+            >
+              <Icon size={14} color={active ? F1_RED : TEXT_DIM} strokeWidth={active ? 2.5 : 1.8} />
+              <Text style={[s.tabText, active && s.tabTextActive]}>{tab.label}</Text>
+            </TouchableOpacity>
+          );
+        })}
       </View>
 
-      {f1Tab === 'calendar' && (
+      {activeTab === 'races' && (
         <View style={s.filterRow}>
-          {(['upcoming', 'results'] as const).map(filter => {
-            const isActive = calendarFilter === filter;
+          {(['upcoming', 'results'] as const).map(f => {
+            const active = calendarFilter === f;
             return (
               <TouchableOpacity
-                key={filter}
-                style={[
-                  s.filterChip,
-                  isActive && s.filterChipActive,
-                  !isActive && s.filterChipInactive,
-                ]}
+                key={f}
+                style={[s.filterPill, active && s.filterPillActive]}
                 onPress={() => {
-                  if (Platform.OS !== 'web') {
-                    void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-                  }
-                  setCalendarFilter(filter);
+                  if (Platform.OS !== 'web') void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+                  setCalendarFilter(f);
                 }}
                 activeOpacity={0.7}
               >
-                {filter === 'upcoming' ? (
-                  <Calendar size={11} color={isActive ? F1_RED : TEXT_MUTED} />
+                {f === 'upcoming' ? (
+                  <Calendar size={11} color={active ? F1_RED : TEXT_DIM} />
                 ) : (
-                  <Trophy size={11} color={isActive ? F1_RED : TEXT_MUTED} />
+                  <Trophy size={11} color={active ? F1_RED : TEXT_DIM} />
                 )}
-                <Text style={[
-                  s.filterChipText,
-                  { color: isActive ? F1_RED : TEXT_MUTED },
-                ]}>
-                  {filter === 'upcoming' ? `Upcoming (${upcomingRaces.length})` : `Results (${completedRaces.length})`}
+                <Text style={[s.filterText, active && s.filterTextActive]}>
+                  {f === 'upcoming' ? `Upcoming (${upcomingRaces.length})` : `Results (${completedRaces.length})`}
                 </Text>
               </TouchableOpacity>
             );
@@ -905,247 +718,166 @@ export default function F1Section({ isDark, insets }: F1SectionProps) {
 
       <ScrollView
         style={{ flex: 1 }}
-        contentContainerStyle={{ paddingHorizontal: 20, paddingBottom: insets.bottom + 100 }}
+        contentContainerStyle={{ paddingBottom: insets.bottom + 110, paddingHorizontal: 16 }}
         showsVerticalScrollIndicator={false}
         refreshControl={
           <RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={F1_RED} colors={[F1_RED]} />
         }
       >
-        {f1Tab === 'calendar' && (
+        {activeTab === 'races' && (
           <>
             {calendarFilter === 'upcoming' && nextRace && (
-              <F1Countdown race={nextRace} isDark={isDark} />
+              <HeroCountdown race={nextRace} />
             )}
             {calendarRaces.map(race => (
-              <F1RaceCard
-                key={race.id}
-                race={race}
-                isDark={isDark}
-                onPress={() => handleRacePress(race)}
-              />
+              <RaceListItem key={race.id} race={race} onPress={() => handleRacePress(race)} />
             ))}
             {calendarRaces.length === 0 && (
-              <View style={s.emptyState}>
-                <View style={s.emptyIconWrap}>
-                  <Flag size={28} color={F1_RED} />
+              <View style={s.emptyWrap}>
+                <View style={s.emptyIcon}>
+                  <Flag size={26} color={F1_RED} />
                 </View>
-                <Text style={s.emptyTitle}>
-                  No {calendarFilter === 'upcoming' ? 'Upcoming' : 'Completed'} Races
-                </Text>
-                <Text style={s.emptySub}>
-                  {calendarFilter === 'upcoming' ? 'The season calendar will be updated soon' : 'No race results yet'}
-                </Text>
+                <Text style={s.emptyTitle}>No {calendarFilter === 'upcoming' ? 'Upcoming' : 'Completed'} Races</Text>
+                <Text style={s.emptySub}>Check back soon for updates</Text>
               </View>
             )}
           </>
         )}
 
-        {f1Tab === 'drivers' && (
+        {activeTab === 'drivers' && (
           <>
-            <View style={s.standingsHeader}>
+            <View style={s.sectionHeader}>
               <View>
-                <Text style={s.standingsTitle}>Driver Championship</Text>
-                <Text style={s.standingsSub}>
-                  {completedRaces.length} of {F1_CALENDAR_2026.length} races completed
-                </Text>
+                <Text style={s.sectionTitle}>Driver Standings</Text>
+                <Text style={s.sectionSub}>{completedRaces.length}/{F1_CALENDAR_2026.length} races completed</Text>
               </View>
-              <View style={s.standingsSeasonBadge}>
-                <Text style={s.standingsSeasonText}>2026</Text>
+              <View style={s.seasonBadge}>
+                <Text style={s.seasonBadgeText}>2026</Text>
               </View>
             </View>
 
-            {driverStandings.length > 0 && (
-              <View style={s.topThreeSection}>
-                {driverStandings.slice(0, 3).map((driver, idx) => {
-                  const colors = [GOLD, SILVER, BRONZE];
-                  const sizes = [64, 52, 52];
-                  const posLabels = ['1st', '2nd', '3rd'];
-                  return (
-                    <View key={driver.id} style={[s.topDriverCard, idx === 0 && s.topDriverCardFirst]}>
-                      <LinearGradient
-                        colors={[colors[idx] + '12', 'transparent']}
-                        start={{ x: 0.5, y: 0 }}
-                        end={{ x: 0.5, y: 1 }}
-                        style={[
-                          s.topDriverGradient,
-                          { borderColor: colors[idx] + '20', borderWidth: 1 },
-                        ]}
-                      >
-                        <View style={[s.topDriverPosBadge, { backgroundColor: colors[idx] + '20' }]}>
-                          <Text style={[s.topDriverPosText, { color: colors[idx] }]}>{posLabels[idx]}</Text>
-                        </View>
-                        <DriverHeadshot
-                          photo={driver.photo}
-                          teamColor={driver.teamColor}
-                          size={sizes[idx]}
-                          number={driver.number}
-                          showRing
-                        />
-                        <Text style={s.topDriverName} numberOfLines={1}>
-                          {driver.name.split(' ').pop()}
-                        </Text>
-                        <View style={[s.topDriverTeamPill, { backgroundColor: driver.teamColor + '12' }]}>
-                          <View style={[s.topDriverTeamDot, { backgroundColor: driver.teamColor }]} />
-                          <Text style={[s.topDriverTeamText, { color: driver.teamColor }]} numberOfLines={1}>
-                            {driver.team.length > 12 ? driver.team.substring(0, 12) + '..' : driver.team}
-                          </Text>
-                        </View>
-                        <Text style={s.topDriverPts}>
-                          {driver.points}
-                          <Text style={s.topDriverPtsUnit}> PTS</Text>
-                        </Text>
-                        {driver.wins > 0 && (
-                          <View style={s.topDriverWinsRow}>
-                            <Trophy size={10} color={GOLD} />
-                            <Text style={s.topDriverWinsText}>{driver.wins} wins</Text>
-                          </View>
-                        )}
-                      </LinearGradient>
-                    </View>
-                  );
-                })}
-              </View>
+            {driverStandings.length >= 3 && (
+              <TopDriverPodium drivers={driverStandings} />
             )}
 
+            <View style={s.driverListHeader}>
+              <Text style={s.driverListTitle}>Full Standings</Text>
+            </View>
+
             {driverStandings.slice(3).map((driver, idx) => (
-              <DriverStandingRow
-                key={driver.id}
-                driver={driver}
-                position={idx + 4}
-                isDark={isDark}
-                maxPoints={maxDriverPts}
-              />
+              <DriverRow key={driver.id} driver={driver} position={idx + 4} maxPoints={maxDriverPts} />
             ))}
           </>
         )}
 
-        {f1Tab === 'constructors' && (
+        {activeTab === 'teams' && (
           <>
-            <View style={s.standingsHeader}>
+            <View style={s.sectionHeader}>
               <View>
-                <Text style={s.standingsTitle}>Constructor Championship</Text>
-                <Text style={s.standingsSub}>
-                  {completedRaces.length} of {F1_CALENDAR_2026.length} races completed
-                </Text>
+                <Text style={s.sectionTitle}>Constructor Standings</Text>
+                <Text style={s.sectionSub}>{completedRaces.length}/{F1_CALENDAR_2026.length} races completed</Text>
               </View>
-              <View style={s.standingsSeasonBadge}>
-                <Text style={s.standingsSeasonText}>2026</Text>
+              <View style={s.seasonBadge}>
+                <Text style={s.seasonBadgeText}>2026</Text>
               </View>
             </View>
+
             {constructorStandings.map((team, idx) => (
-              <ConstructorRow
-                key={team.name}
-                team={team}
-                position={idx + 1}
-                isDark={isDark}
-                maxPoints={maxConstructorPts}
-              />
+              <ConstructorCard key={team.name} team={team} position={idx + 1} maxPoints={maxCtorPts} />
             ))}
           </>
         )}
       </ScrollView>
 
       <Modal
-        visible={showRaceModal}
+        visible={showModal}
         animationType="slide"
         transparent
-        onRequestClose={() => setShowRaceModal(false)}
+        onRequestClose={() => setShowModal(false)}
       >
         <View style={s.modalOverlay}>
-          <TouchableOpacity style={StyleSheet.absoluteFill} activeOpacity={1} onPress={() => setShowRaceModal(false)} />
-          <View style={s.modalContainer}>
+          <TouchableOpacity style={StyleSheet.absoluteFill} activeOpacity={1} onPress={() => setShowModal(false)} />
+          <View style={s.modalSheet}>
             <View style={s.modalHandle} />
 
             {selectedRace && (
               <ScrollView style={{ flex: 1 }} showsVerticalScrollIndicator={false}>
                 {selectedRace.circuitImage && (
-                  <View style={s.modalHeroWrap}>
+                  <View style={s.modalHero}>
                     <Image
                       source={{ uri: selectedRace.circuitImage }}
-                      style={s.modalHeroImage}
+                      style={s.modalHeroImg}
                       contentFit="cover"
                       transition={400}
                       cachePolicy="memory-disk"
                     />
                     <LinearGradient
-                      colors={['transparent', CARBON_ELEVATED]}
+                      colors={['transparent', CARD_ELEVATED]}
                       style={s.modalHeroFade}
                     />
                   </View>
                 )}
 
-                <View style={s.modalHeader}>
-                  <Text style={s.modalTitle} numberOfLines={1}>
-                    {selectedRace.name}
-                  </Text>
-                  <TouchableOpacity
-                    onPress={() => setShowRaceModal(false)}
-                    style={s.modalCloseBtn}
-                  >
+                <View style={s.modalTop}>
+                  <View style={{ flex: 1 }}>
+                    <View style={s.modalFlagRow}>
+                      <Text style={s.modalBigFlag}>{selectedRace.flag}</Text>
+                      <View style={s.modalRoundTag}>
+                        <Text style={s.modalRoundTagText}>R{selectedRace.round}</Text>
+                      </View>
+                    </View>
+                    <Text style={s.modalName}>{selectedRace.name}</Text>
+                    <Text style={s.modalLocation}>{selectedRace.city}, {selectedRace.country}</Text>
+                  </View>
+                  <TouchableOpacity onPress={() => setShowModal(false)} style={s.modalCloseBtn}>
                     <X size={16} color={TEXT_SECONDARY} />
                   </TouchableOpacity>
                 </View>
 
-                <View style={{ padding: 20 }}>
-                  <View style={s.modalFlagSection}>
-                    <Text style={s.modalBigFlag}>{selectedRace.flag}</Text>
-                    <View style={{ flex: 1 }}>
-                      <Text style={s.modalCountry}>{selectedRace.name}</Text>
-                      <Text style={s.modalCity}>
-                        {selectedRace.city}, {selectedRace.country} · Round {selectedRace.round}
-                      </Text>
-                    </View>
-                  </View>
-
+                <View style={s.modalBody}>
                   <View style={s.modalInfoGrid}>
                     {[
                       { label: 'Circuit', value: selectedRace.circuit, icon: MapPin },
-                      { label: 'Race Date', value: new Date(selectedRace.date).toLocaleDateString('en-GB', { weekday: 'long', day: 'numeric', month: 'long' }), icon: Calendar },
-                      { label: 'Race Laps', value: String(selectedRace.laps), icon: Flag },
-                      { label: 'Track Length', value: selectedRace.circuitLength, icon: Gauge },
+                      { label: 'Race Date', value: new Date(selectedRace.date).toLocaleDateString('en-GB', { weekday: 'short', day: 'numeric', month: 'long' }), icon: Calendar },
+                      { label: 'Laps', value: String(selectedRace.laps), icon: Flag },
+                      { label: 'Length', value: selectedRace.circuitLength, icon: Gauge },
                     ].map(item => (
-                      <View key={item.label} style={s.modalInfoCard}>
-                        <LinearGradient
-                          colors={[F1_RED + '15', F1_RED + '05']}
-                          style={s.modalInfoIconWrap}
-                        >
+                      <View key={item.label} style={s.modalInfoItem}>
+                        <View style={s.modalInfoIconWrap}>
                           <item.icon size={14} color={F1_RED} />
-                        </LinearGradient>
+                        </View>
                         <Text style={s.modalInfoLabel}>{item.label}</Text>
-                        <Text style={s.modalInfoValue} numberOfLines={2}>{item.value}</Text>
+                        <Text style={s.modalInfoVal} numberOfLines={2}>{item.value}</Text>
                       </View>
                     ))}
                   </View>
 
                   {selectedRace.status === 'completed' && selectedRace.podium && (
                     <View style={s.modalPodiumSection}>
-                      <Text style={s.modalSectionTitle}>Podium Finishers</Text>
+                      <Text style={s.modalSectionLabel}>PODIUM</Text>
                       {selectedRace.podium.map((driver, idx) => {
-                        const driverData = driverStandings.find(d => d.name === driver);
-                        const positions = ['1st Place', '2nd Place', '3rd Place'];
-                        const tierColorsArr = [GOLD, SILVER, BRONZE];
+                        const dd = driverStandings.find(d => d.name === driver);
+                        const medals = [GOLD, SILVER, BRONZE];
+                        const positions = ['1st', '2nd', '3rd'];
                         return (
-                          <View key={driver} style={[
-                            s.modalPodiumCard,
-                            { borderLeftWidth: 3, borderLeftColor: tierColorsArr[idx] },
-                          ]}>
-                            <DriverHeadshot
-                              photo={driverData?.photo}
-                              teamColor={driverData?.teamColor || '#888'}
-                              size={44}
-                              number={driverData?.number || 0}
-                              showRing
+                          <View key={driver} style={[s.modalPodiumRow, { borderLeftColor: medals[idx], borderLeftWidth: 3 }]}>
+                            <DriverAvatar
+                              photo={dd?.photo}
+                              teamColor={dd?.teamColor || '#888'}
+                              size={40}
+                              number={dd?.number || 0}
+                              bordered
                             />
                             <View style={{ flex: 1 }}>
-                              <Text style={s.modalPodiumDriverName}>{driver}</Text>
-                              <View style={s.modalPodiumTeamRow}>
-                                <View style={[s.modalPodiumTeamDot, { backgroundColor: driverData?.teamColor || '#888' }]} />
-                                <Text style={s.modalPodiumTeamName}>
-                                  {driverData?.team || 'Unknown'} · {positions[idx]}
-                                </Text>
+                              <Text style={s.modalPodiumName}>{driver}</Text>
+                              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 5, marginTop: 2 }}>
+                                <View style={[s.teamDot, { backgroundColor: dd?.teamColor || '#888' }]} />
+                                <Text style={s.modalPodiumTeam}>{dd?.team || 'Unknown'}</Text>
                               </View>
                             </View>
-                            <Text style={s.modalPodiumDriverFlag}>{driverData?.nationalityFlag}</Text>
+                            <View style={[s.modalPodiumPosBadge, { backgroundColor: medals[idx] + '15' }]}>
+                              <Text style={[s.modalPodiumPosText, { color: medals[idx] }]}>{positions[idx]}</Text>
+                            </View>
                           </View>
                         );
                       })}
@@ -1157,98 +889,82 @@ export default function F1Section({ isDark, insets }: F1SectionProps) {
           </View>
         </View>
       </Modal>
-    </View>
+    </Animated.View>
   );
 }
 
 const s = StyleSheet.create({
-  f1Header: {
-    paddingHorizontal: 20,
+  header: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingHorizontal: 16,
     paddingTop: 4,
-    paddingBottom: 16,
+    paddingBottom: 14,
   },
-  f1BrandRow: {
+  headerLeft: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: 12,
   },
-  f1LogoWrap: {
+  logoPill: {
     shadowColor: F1_RED,
     shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.4,
-    shadowRadius: 12,
+    shadowOpacity: 0.5,
+    shadowRadius: 14,
     elevation: 8,
   },
-  f1LogoBg: {
-    width: 40,
-    height: 40,
-    borderRadius: 12,
+  logoBg: {
+    width: 38,
+    height: 38,
+    borderRadius: 10,
     justifyContent: 'center',
     alignItems: 'center',
   },
-  f1LogoText: {
-    fontSize: 16,
+  logoText: {
+    fontSize: 15,
     fontWeight: '900' as const,
-    color: '#FFFFFF',
+    color: '#FFF',
     letterSpacing: -0.5,
   },
-  f1BrandTitle: {
-    fontSize: 20,
+  headerTitle: {
+    fontSize: 19,
     fontWeight: '800' as const,
     color: TEXT_PRIMARY,
     letterSpacing: -0.5,
   },
-  f1BrandSeason: {
-    fontSize: 12,
+  headerSub: {
+    fontSize: 11,
     fontWeight: '600' as const,
-    color: TEXT_MUTED,
-    letterSpacing: 0.5,
+    color: TEXT_DIM,
+    letterSpacing: 0.3,
     marginTop: 1,
   },
 
-  premiumBadge: {
+  tabContainer: {
     flexDirection: 'row',
-    alignItems: 'center',
-    gap: 4,
-    paddingHorizontal: 8,
-    paddingVertical: 4,
-    borderRadius: 6,
+    marginHorizontal: 16,
+    marginBottom: 12,
+    borderRadius: 12,
+    backgroundColor: SURFACE,
     borderWidth: 1,
-  },
-  premiumBadgeText: {
-    fontSize: 9,
-    fontWeight: '800' as const,
-    letterSpacing: 0.8,
-  },
-
-  tabBar: {
-    paddingHorizontal: 20,
-    marginBottom: 14,
-  },
-  tabTrack: {
-    flexDirection: 'row',
-    borderRadius: 14,
-    padding: 4,
+    borderColor: BORDER,
     position: 'relative' as const,
-    backgroundColor: CARBON_SURFACE,
-    borderWidth: 1,
-    borderColor: CARBON_BORDER,
-  },
-  tabIndicator: {
-    position: 'absolute' as const,
-    top: 4,
-    left: 4,
-    bottom: 4,
-    borderRadius: 10,
     overflow: 'hidden' as const,
   },
-  tabIndicatorInner: {
-    flex: 1,
-    borderRadius: 10,
-    borderWidth: 1,
-    borderColor: F1_RED + '20',
+  tabSlider: {
+    position: 'absolute' as const,
+    top: 0,
+    left: 0,
+    bottom: 0,
+    borderRadius: 12,
+    overflow: 'hidden' as const,
   },
-  tabItem: {
+  tabSliderInner: {
+    flex: 1,
+    borderRadius: 12,
+  },
+  tabBtn: {
     flex: 1,
     flexDirection: 'row',
     alignItems: 'center',
@@ -1257,606 +973,465 @@ const s = StyleSheet.create({
     gap: 6,
     zIndex: 1,
   },
-  tabLabel: {
+  tabText: {
     fontSize: 13,
     fontWeight: '600' as const,
-    letterSpacing: -0.2,
+    color: TEXT_DIM,
+    letterSpacing: -0.1,
+  },
+  tabTextActive: {
+    color: TEXT_PRIMARY,
+    fontWeight: '700' as const,
   },
 
   filterRow: {
     flexDirection: 'row',
-    paddingHorizontal: 20,
+    paddingHorizontal: 16,
     gap: 8,
-    marginBottom: 14,
+    marginBottom: 12,
   },
-  filterChip: {
+  filterPill: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: 6,
     paddingHorizontal: 14,
-    paddingVertical: 9,
+    paddingVertical: 8,
     borderRadius: 10,
+    backgroundColor: SURFACE,
     borderWidth: 1,
+    borderColor: BORDER,
   },
-  filterChipActive: {
+  filterPillActive: {
     backgroundColor: F1_RED + '0C',
-    borderColor: F1_RED + '25',
+    borderColor: F1_RED + '22',
   },
-  filterChipInactive: {
-    backgroundColor: CARBON_SURFACE,
-    borderColor: CARBON_BORDER,
-  },
-  filterChipText: {
+  filterText: {
     fontSize: 12,
     fontWeight: '600' as const,
+    color: TEXT_DIM,
+  },
+  filterTextActive: {
+    color: F1_RED,
   },
 
-  countdownOuter: {
-    marginBottom: 20,
-    borderRadius: 24,
+  heroWrap: {
+    borderRadius: 22,
     overflow: 'hidden' as const,
+    marginBottom: 18,
     borderWidth: 1,
-    borderColor: F1_RED + '15',
-    shadowColor: F1_RED,
-    shadowOpacity: 0.25,
-    shadowRadius: 30,
-    shadowOffset: { width: 0, height: 12 },
-    elevation: 12,
+    borderColor: F1_RED + '12',
+    backgroundColor: CARD,
   },
-  countdownImageWrap: {
-    height: 160,
+  heroImageWrap: {
+    height: 180,
     overflow: 'hidden' as const,
   },
-  countdownImage: {
+  heroImage: {
     width: '100%' as any,
     height: '100%' as any,
   },
-  countdownGradient: {
-    paddingVertical: 24,
-    paddingHorizontal: 22,
-    position: 'relative' as const,
+  heroContent: {
+    padding: 20,
+    marginTop: -30,
   },
-  countdownRedAccent: {
-    position: 'absolute' as const,
-    top: 0,
-    left: 0,
-    right: 0,
-    height: 3,
-    backgroundColor: F1_RED,
-    shadowColor: F1_RED,
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.6,
-    shadowRadius: 12,
-  },
-  countdownHeader: {
+  heroTopBar: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-    marginBottom: 16,
+    marginBottom: 14,
   },
-  nextRaceBadge: {
+  lightsOutChip: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 6,
-    backgroundColor: F1_RED + '15',
+    gap: 7,
+    backgroundColor: F1_RED + '14',
     paddingHorizontal: 12,
     paddingVertical: 6,
     borderRadius: 8,
-    borderWidth: 1,
-    borderColor: F1_RED + '20',
   },
-  nextRaceLabel: {
+  lightsOutDot: {
+    width: 6,
+    height: 6,
+    borderRadius: 3,
+    backgroundColor: F1_RED,
+  },
+  lightsOutText: {
     fontSize: 10,
     fontWeight: '800' as const,
     color: F1_RED,
-    letterSpacing: 1.8,
+    letterSpacing: 1.5,
   },
-  roundPill: {
+  roundChip: {
     backgroundColor: 'rgba(255,255,255,0.05)',
     paddingHorizontal: 10,
     paddingVertical: 5,
     borderRadius: 6,
-    borderWidth: 1,
-    borderColor: 'rgba(255,255,255,0.06)',
   },
-  roundPillText: {
+  roundChipText: {
     fontSize: 10,
     fontWeight: '800' as const,
-    color: TEXT_MUTED,
+    color: TEXT_DIM,
     letterSpacing: 1,
   },
-  countdownRaceName: {
-    fontSize: 26,
+  heroGrandPrix: {
+    fontSize: 24,
     fontWeight: '800' as const,
     color: TEXT_PRIMARY,
     letterSpacing: -0.8,
-    marginBottom: 10,
+    marginBottom: 8,
   },
-  countdownMeta: {
+  heroLocation: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: 8,
-    marginBottom: 6,
-    flexWrap: 'wrap',
+    marginBottom: 22,
   },
-  metaFlag: {
-    fontSize: 14,
+  heroFlag: {
+    fontSize: 16,
   },
-  metaText: {
-    fontSize: 12,
-    color: TEXT_SECONDARY,
+  heroLocationText: {
+    fontSize: 13,
     fontWeight: '500' as const,
+    color: TEXT_SECONDARY,
   },
-  metaDivider: {
-    width: 3,
-    height: 3,
-    borderRadius: 1.5,
-    backgroundColor: TEXT_MUTED + '60',
-  },
-  countdownTimerRow: {
+  timerRow: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
-    gap: 6,
-    marginTop: 24,
-    marginBottom: 20,
+    gap: 4,
+    marginBottom: 18,
   },
-  timerBox: {
-    borderRadius: 14,
-    overflow: 'hidden' as const,
-    minWidth: 62,
+  timerBlock: {
+    minWidth: 58,
+    paddingVertical: 12,
+    paddingHorizontal: 6,
+    borderRadius: 12,
+    backgroundColor: F1_RED + '08',
     borderWidth: 1,
-    borderColor: F1_RED + '12',
-  },
-  timerBoxGradient: {
-    paddingVertical: 14,
-    paddingHorizontal: 8,
+    borderColor: F1_RED + '10',
     alignItems: 'center' as const,
   },
-  timerValue: {
-    fontSize: 26,
+  timerNum: {
+    fontSize: 24,
     fontWeight: '900' as const,
     color: F1_RED,
     letterSpacing: -0.5,
     fontVariant: ['tabular-nums'] as any,
   },
-  timerUnit: {
-    fontSize: 8,
+  timerLabel: {
+    fontSize: 9,
     fontWeight: '700' as const,
-    color: TEXT_MUTED,
-    letterSpacing: 1.5,
-    marginTop: 4,
+    color: TEXT_DIM,
+    letterSpacing: 1,
+    marginTop: 3,
   },
-  timerSep: {
-    fontSize: 22,
+  timerColon: {
+    fontSize: 20,
     fontWeight: '300' as const,
-    color: TEXT_MUTED + '60',
-    marginTop: -8,
+    color: TEXT_GHOST,
+    marginTop: -6,
   },
-  countdownInfoRow: {
+  heroChipsRow: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
-    gap: 8,
+    gap: 6,
     marginBottom: 18,
   },
-  countdownInfoChip: {
+  heroChip: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: 5,
   },
-  countdownInfoText: {
+  heroChipText: {
     fontSize: 11,
-    color: TEXT_MUTED,
     fontWeight: '600' as const,
+    color: TEXT_DIM,
   },
-  countdownInfoDot: {
+  heroChipDot: {
     width: 3,
     height: 3,
     borderRadius: 1.5,
-    backgroundColor: TEXT_MUTED + '50',
+    backgroundColor: TEXT_GHOST,
   },
-  seasonProgressWrap: {
-    marginBottom: 18,
-  },
-  seasonProgressRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    marginBottom: 8,
-  },
-  seasonProgressLabel: {
-    fontSize: 9,
-    fontWeight: '700' as const,
-    color: TEXT_MUTED,
-    letterSpacing: 1.5,
-  },
-  seasonProgressPct: {
-    fontSize: 10,
-    fontWeight: '800' as const,
-    color: F1_RED,
-  },
-  seasonProgressTrack: {
-    height: 4,
-    backgroundColor: 'rgba(255,255,255,0.04)',
-    borderRadius: 2,
-    overflow: 'hidden' as const,
-    position: 'relative' as const,
-  },
-  seasonProgressFill: {
-    height: '100%' as any,
-    backgroundColor: F1_RED,
-    borderRadius: 2,
-  },
-  seasonProgressGlow: {
-    position: 'absolute' as const,
-    top: -2,
-    width: 8,
-    height: 8,
-    borderRadius: 4,
-    backgroundColor: F1_RED,
-    shadowColor: F1_RED,
-    shadowOffset: { width: 0, height: 0 },
-    shadowOpacity: 0.8,
-    shadowRadius: 6,
-  },
-  countdownDateRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 8,
-    justifyContent: 'center',
-  },
-  countdownDate: {
-    fontSize: 13,
-    fontWeight: '600' as const,
-    color: TEXT_SECONDARY,
-  },
-
-  raceCardOuter: {
-    marginBottom: 12,
-  },
-  raceCard: {
-    borderRadius: 20,
-    borderWidth: 1,
-    borderColor: CARBON_BORDER,
-    backgroundColor: CARBON_CARD,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 8 },
-    shadowOpacity: 0.2,
-    shadowRadius: 24,
-    elevation: 6,
-    overflow: 'hidden' as const,
-  },
-  raceCardImageSection: {
-    height: 110,
-    overflow: 'hidden' as const,
-    position: 'relative' as const,
-  },
-  raceCardImage: {
-    width: '100%' as any,
-    height: '100%' as any,
-  },
-  raceCardImageFade: {
-    position: 'absolute' as const,
-    bottom: 0,
-    left: 0,
-    right: 0,
-    height: 60,
-  },
-  raceCardImageOverlayBadges: {
-    position: 'absolute' as const,
-    top: 10,
-    left: 10,
-    right: 10,
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-  },
-  raceCardRoundChip: {
-    backgroundColor: 'rgba(0,0,0,0.6)',
-    paddingHorizontal: 8,
-    paddingVertical: 4,
-    borderRadius: 6,
-    borderWidth: 1,
-    borderColor: 'rgba(255,255,255,0.1)',
-  },
-  raceCardRoundChipText: {
-    fontSize: 10,
-    fontWeight: '800' as const,
-    color: '#FFFFFF',
-    letterSpacing: 0.5,
-  },
-  raceCardCompletedChip: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 4,
-    backgroundColor: 'rgba(16, 185, 129, 0.2)',
-    paddingHorizontal: 8,
-    paddingVertical: 4,
-    borderRadius: 6,
-    borderWidth: 1,
-    borderColor: 'rgba(16, 185, 129, 0.3)',
-  },
-  raceCardCompletedText: {
-    fontSize: 9,
-    fontWeight: '800' as const,
-    color: '#10B981',
-    letterSpacing: 0.8,
-  },
-  raceCardUpcomingChip: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 4,
-    backgroundColor: 'rgba(225, 6, 0, 0.2)',
-    paddingHorizontal: 8,
-    paddingVertical: 4,
-    borderRadius: 6,
-    borderWidth: 1,
-    borderColor: F1_RED + '30',
-  },
-  raceCardUpcomingText: {
-    fontSize: 9,
-    fontWeight: '800' as const,
-    color: F1_RED,
-    letterSpacing: 0.8,
-  },
-  raceCardInner: {
-    flexDirection: 'row',
-    padding: 14,
-  },
-  raceCardDateBlock: {
-    marginRight: 12,
-  },
-  raceCardDateBox: {
-    width: 50,
-    height: 58,
-    borderRadius: 14,
-    justifyContent: 'center' as const,
-    alignItems: 'center' as const,
-  },
-  raceCardDateDay: {
-    fontSize: 22,
-    fontWeight: '900' as const,
-    letterSpacing: -0.5,
-    lineHeight: 26,
-  },
-  raceCardDateMonth: {
-    fontSize: 9,
-    fontWeight: '700' as const,
-    letterSpacing: 1.5,
+  progressSection: {
     marginTop: 2,
   },
-  raceCardBody: {
-    flex: 1,
-  },
-  raceCardTopRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 6,
-    marginBottom: 4,
-  },
-  raceCardFlag: {
-    fontSize: 16,
-  },
-  raceCardCountryLabel: {
-    fontSize: 10,
-    fontWeight: '700' as const,
-    color: TEXT_MUTED,
-    letterSpacing: 0.5,
-    textTransform: 'uppercase' as const,
-  },
-  raceCardTitle: {
-    fontSize: 16,
-    fontWeight: '700' as const,
-    color: TEXT_PRIMARY,
-    letterSpacing: -0.3,
-    marginBottom: 4,
-  },
-  raceCardMetaRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 4,
-    marginBottom: 10,
-  },
-  raceCardMetaText: {
-    fontSize: 11,
-    fontWeight: '500' as const,
-    color: TEXT_MUTED,
-    flex: 1,
-  },
-  raceCardPodium: {
-    flexDirection: 'row',
-    paddingTop: 8,
-    borderTopWidth: StyleSheet.hairlineWidth,
-    borderTopColor: CARBON_BORDER,
-    gap: 4,
-  },
-  podiumSlot: {
-    flex: 1,
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 3,
-  },
-  podiumPos: {
-    paddingHorizontal: 4,
-    paddingVertical: 2,
-    borderRadius: 4,
-  },
-  podiumPosText: {
-    fontSize: 8,
-    fontWeight: '900' as const,
-  },
-  podiumName: {
-    fontSize: 9,
-    fontWeight: '600' as const,
-    color: TEXT_SECONDARY,
-    flex: 1,
-  },
-  raceCardFooter: {
+  progressLabelRow: {
     flexDirection: 'row',
     justifyContent: 'space-between',
-    alignItems: 'center',
-  },
-  raceCardInfoChips: {
-    flexDirection: 'row',
-    gap: 6,
-  },
-  raceInfoChip: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 4,
-    paddingHorizontal: 8,
-    paddingVertical: 4,
-    borderRadius: 8,
-    backgroundColor: 'rgba(255,255,255,0.03)',
-  },
-  raceInfoChipText: {
-    fontSize: 10,
-    fontWeight: '600' as const,
-    color: TEXT_MUTED,
-  },
-
-  standingsHeader: {
-    flexDirection: 'row',
-    alignItems: 'flex-start',
-    justifyContent: 'space-between',
-    marginBottom: 18,
-    marginTop: 4,
-  },
-  standingsTitle: {
-    fontSize: 22,
-    fontWeight: '800' as const,
-    color: TEXT_PRIMARY,
-    letterSpacing: -0.5,
-  },
-  standingsSub: {
-    fontSize: 13,
-    fontWeight: '500' as const,
-    color: TEXT_MUTED,
-    marginTop: 3,
-  },
-  standingsSeasonBadge: {
-    paddingHorizontal: 12,
-    paddingVertical: 6,
-    borderRadius: 8,
-    backgroundColor: F1_RED + '10',
-    borderWidth: 1,
-    borderColor: F1_RED + '18',
-  },
-  standingsSeasonText: {
-    fontSize: 12,
-    fontWeight: '800' as const,
-    color: F1_RED,
-    letterSpacing: 0.5,
-  },
-
-  topThreeSection: {
-    flexDirection: 'row',
-    gap: 8,
-    marginBottom: 16,
-  },
-  topDriverCard: {
-    flex: 1,
-  },
-  topDriverCardFirst: {
-    flex: 1,
-  },
-  topDriverGradient: {
-    borderRadius: 18,
-    padding: 12,
-    alignItems: 'center' as const,
-    minHeight: 185,
-    justifyContent: 'center' as const,
-    backgroundColor: CARBON_CARD,
-  },
-  topDriverPosBadge: {
-    paddingHorizontal: 10,
-    paddingVertical: 4,
-    borderRadius: 8,
-    marginBottom: 8,
-  },
-  topDriverPosText: {
-    fontSize: 10,
-    fontWeight: '800' as const,
-    letterSpacing: 0.5,
-  },
-  topDriverName: {
-    fontSize: 12,
-    fontWeight: '700' as const,
-    color: TEXT_PRIMARY,
-    textAlign: 'center' as const,
-    marginTop: 8,
-    marginBottom: 4,
-  },
-  topDriverTeamPill: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 4,
-    paddingHorizontal: 6,
-    paddingVertical: 3,
-    borderRadius: 6,
     marginBottom: 6,
   },
-  topDriverTeamDot: {
-    width: 5,
-    height: 5,
-    borderRadius: 2.5,
-  },
-  topDriverTeamText: {
-    fontSize: 8,
-    fontWeight: '600' as const,
-  },
-  topDriverPts: {
-    fontSize: 16,
-    fontWeight: '800' as const,
-    color: TEXT_PRIMARY,
-  },
-  topDriverPtsUnit: {
-    fontSize: 10,
-    fontWeight: '600' as const,
-    color: TEXT_MUTED,
-  },
-  topDriverWinsRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 3,
-    marginTop: 4,
-  },
-  topDriverWinsText: {
+  progressLabel: {
     fontSize: 9,
     fontWeight: '700' as const,
-    color: GOLD,
+    color: TEXT_DIM,
+    letterSpacing: 1.5,
+  },
+  progressPct: {
+    fontSize: 10,
+    fontWeight: '800' as const,
+    color: F1_RED,
+  },
+  progressTrack: {
+    height: 3,
+    borderRadius: 2,
+    backgroundColor: 'rgba(255,255,255,0.04)',
+    overflow: 'hidden' as const,
+  },
+  progressFill: {
+    height: '100%' as any,
+    borderRadius: 2,
+    backgroundColor: F1_RED,
   },
 
-  driverRow: {
+  raceItemOuter: {
+    marginBottom: 8,
+  },
+  raceItem: {
     flexDirection: 'row',
     alignItems: 'center',
     padding: 14,
     borderRadius: 16,
-    marginBottom: 6,
+    backgroundColor: CARD,
     borderWidth: 1,
-    borderColor: CARBON_BORDER,
-    backgroundColor: CARBON_CARD,
+    borderColor: BORDER,
+    gap: 12,
+  },
+  raceItemLeft: {},
+  raceItemDateBox: {
+    width: 44,
+    height: 52,
+    borderRadius: 12,
+    justifyContent: 'center' as const,
+    alignItems: 'center' as const,
+    backgroundColor: F1_RED + '08',
+  },
+  raceItemDateBoxDone: {
+    backgroundColor: '#10B98108',
+  },
+  raceItemDay: {
+    fontSize: 18,
+    fontWeight: '900' as const,
+    letterSpacing: -0.5,
+  },
+  raceItemMonth: {
+    fontSize: 9,
+    fontWeight: '700' as const,
+    letterSpacing: 1,
+    marginTop: 1,
+  },
+  raceItemBody: {
+    flex: 1,
+  },
+  raceItemTopRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 5,
+    marginBottom: 3,
+  },
+  raceItemFlag: {
+    fontSize: 13,
+  },
+  raceItemCountry: {
+    fontSize: 10,
+    fontWeight: '700' as const,
+    color: TEXT_DIM,
+    letterSpacing: 0.3,
+    textTransform: 'uppercase' as const,
+  },
+  raceItemDaysChip: {
+    marginLeft: 'auto' as any,
+    backgroundColor: F1_RED + '12',
+    paddingHorizontal: 7,
+    paddingVertical: 2,
+    borderRadius: 5,
+  },
+  raceItemDaysText: {
+    fontSize: 9,
+    fontWeight: '800' as const,
+    color: F1_RED,
+    letterSpacing: 0.5,
+  },
+  raceItemDoneChip: {
+    marginLeft: 'auto' as any,
+  },
+  raceItemName: {
+    fontSize: 15,
+    fontWeight: '700' as const,
+    color: TEXT_PRIMARY,
+    letterSpacing: -0.3,
+    marginBottom: 2,
+  },
+  raceItemCircuit: {
+    fontSize: 11,
+    fontWeight: '500' as const,
+    color: TEXT_DIM,
+  },
+  raceItemPodiumRow: {
+    flexDirection: 'row',
+    marginTop: 8,
+    paddingTop: 8,
+    borderTopWidth: StyleSheet.hairlineWidth,
+    borderTopColor: BORDER,
+    gap: 6,
+  },
+  raceItemPodiumSlot: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+  },
+  raceItemPodiumMedal: {
+    width: 16,
+    height: 16,
+    borderRadius: 4,
+    justifyContent: 'center' as const,
+    alignItems: 'center' as const,
+  },
+  raceItemPodiumPos: {
+    fontSize: 8,
+    fontWeight: '900' as const,
+  },
+  raceItemPodiumName: {
+    fontSize: 10,
+    fontWeight: '600' as const,
+    color: TEXT_SECONDARY,
+  },
+  raceItemRight: {
+    alignItems: 'center' as const,
+    gap: 4,
+  },
+  raceItemRound: {
+    fontSize: 10,
+    fontWeight: '800' as const,
+    color: TEXT_GHOST,
+    letterSpacing: 0.5,
+  },
+
+  sectionHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'flex-start',
+    marginBottom: 16,
+    marginTop: 4,
+  },
+  sectionTitle: {
+    fontSize: 20,
+    fontWeight: '800' as const,
+    color: TEXT_PRIMARY,
+    letterSpacing: -0.5,
+  },
+  sectionSub: {
+    fontSize: 12,
+    fontWeight: '500' as const,
+    color: TEXT_DIM,
+    marginTop: 3,
+  },
+  seasonBadge: {
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    borderRadius: 8,
+    backgroundColor: F1_RED + '0C',
+    borderWidth: 1,
+    borderColor: F1_RED + '15',
+  },
+  seasonBadgeText: {
+    fontSize: 12,
+    fontWeight: '800' as const,
+    color: F1_RED,
+    letterSpacing: 0.5,
+  },
+
+  podiumWrap: {
+    flexDirection: 'row',
+    alignItems: 'flex-end',
+    justifyContent: 'center',
+    marginBottom: 24,
+    paddingTop: 10,
+    gap: 6,
+  },
+  podiumColumn: {
+    flex: 1,
+    alignItems: 'center' as const,
+  },
+  podiumDriverName: {
+    fontSize: 12,
+    fontWeight: '700' as const,
+    color: TEXT_PRIMARY,
+    marginTop: 6,
+    textAlign: 'center' as const,
+  },
+  podiumTeamDot: {
+    width: 16,
+    height: 3,
+    borderRadius: 1.5,
+    marginTop: 4,
+    marginBottom: 4,
+  },
+  podiumPts: {
+    fontSize: 14,
+    fontWeight: '800' as const,
+    color: TEXT_PRIMARY,
+    marginBottom: 6,
+  },
+  podiumPtsUnit: {
+    fontSize: 10,
+    fontWeight: '600' as const,
+    color: TEXT_DIM,
+  },
+  podiumBar: {
+    width: '100%' as any,
+    borderTopWidth: 3,
+    borderRadius: 8,
+    borderBottomLeftRadius: 0,
+    borderBottomRightRadius: 0,
+    alignItems: 'center' as const,
+    justifyContent: 'center' as const,
+    paddingVertical: 6,
+    gap: 3,
+  },
+  podiumPosition: {
+    fontSize: 22,
+    fontWeight: '900' as const,
+  },
+  podiumWinsRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 2,
+  },
+  podiumWinsNum: {
+    fontSize: 10,
+    fontWeight: '700' as const,
+    color: GOLD,
+  },
+
+  driverListHeader: {
+    marginBottom: 10,
+  },
+  driverListTitle: {
+    fontSize: 14,
+    fontWeight: '700' as const,
+    color: TEXT_SECONDARY,
+    letterSpacing: -0.2,
+  },
+  driverRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    padding: 12,
+    borderRadius: 14,
+    marginBottom: 6,
+    backgroundColor: CARD,
+    borderWidth: 1,
+    borderColor: BORDER,
     gap: 10,
   },
   driverPos: {
-    width: 28,
-    alignItems: 'center' as const,
-  },
-  posMedalBg: {
-    width: 26,
-    height: 26,
-    borderRadius: 8,
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  posMedalText: {
+    width: 22,
+    textAlign: 'center' as const,
     fontSize: 13,
-    fontWeight: '900' as const,
-  },
-  posText: {
-    fontSize: 14,
-    fontWeight: '700' as const,
-    color: TEXT_MUTED,
+    fontWeight: '800' as const,
+    color: TEXT_DIM,
+    fontVariant: ['tabular-nums'] as any,
   },
   driverInfo: {
     flex: 1,
@@ -1879,168 +1454,147 @@ const s = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     gap: 5,
-    marginTop: 3,
+    marginTop: 2,
   },
-  teamColorBar: {
-    width: 12,
+  teamDot: {
+    width: 8,
     height: 3,
     borderRadius: 1.5,
   },
-  driverTeam: {
+  driverTeamLabel: {
     fontSize: 11,
     fontWeight: '500' as const,
-    color: TEXT_MUTED,
+    color: TEXT_DIM,
   },
-  pointsBarWrap: {
-    marginTop: 6,
-  },
-  pointsBarTrack: {
+  barTrack: {
     height: 3,
     borderRadius: 1.5,
-    overflow: 'hidden' as const,
     backgroundColor: 'rgba(255,255,255,0.04)',
+    overflow: 'hidden' as const,
+    marginTop: 6,
   },
-  pointsBarFill: {
+  barFill: {
     height: '100%' as any,
     borderRadius: 1.5,
   },
-  driverStats: {
+  driverPtsCol: {
     alignItems: 'center' as const,
-    minWidth: 44,
+    minWidth: 40,
   },
-  driverPoints: {
-    fontSize: 18,
+  driverPts: {
+    fontSize: 17,
     fontWeight: '800' as const,
     color: TEXT_PRIMARY,
     letterSpacing: -0.5,
+    fontVariant: ['tabular-nums'] as any,
   },
   driverPtsLabel: {
     fontSize: 9,
     fontWeight: '600' as const,
-    color: TEXT_MUTED,
+    color: TEXT_DIM,
     letterSpacing: 0.5,
   },
-  winsRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 3,
-    marginTop: 3,
-  },
-  winsText: {
-    fontSize: 10,
-    fontWeight: '700' as const,
-    color: GOLD,
-  },
 
-  ctorCard: {
-    borderRadius: 20,
-    borderWidth: 1,
-    borderColor: CARBON_BORDER,
-    backgroundColor: CARBON_CARD,
-    overflow: 'hidden' as const,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 8 },
-    shadowOpacity: 0.15,
-    shadowRadius: 24,
-    elevation: 6,
+  ctorOuter: {
+    marginBottom: 10,
   },
-  ctorTopRow: {
+  ctorCard: {
+    borderRadius: 18,
+    borderWidth: 1,
+    borderColor: BORDER,
+    backgroundColor: CARD,
+    overflow: 'hidden' as const,
+  },
+  ctorAccentStripe: {
+    height: 3,
+    width: '100%' as any,
+  },
+  ctorTop: {
     flexDirection: 'row',
     alignItems: 'center',
-    paddingHorizontal: 16,
-    paddingTop: 16,
+    paddingHorizontal: 14,
+    paddingTop: 14,
     paddingBottom: 12,
-    gap: 12,
+    gap: 10,
   },
-  ctorRankSection: {
+  ctorRank: {
+    width: 28,
     alignItems: 'center' as const,
   },
   ctorRankBadge: {
-    width: 30,
-    height: 30,
-    borderRadius: 10,
+    width: 26,
+    height: 26,
+    borderRadius: 8,
     justifyContent: 'center' as const,
     alignItems: 'center' as const,
-    backgroundColor: 'rgba(255,255,255,0.04)',
   },
-  ctorRankText: {
-    fontSize: 14,
+  ctorRankNum: {
+    fontSize: 13,
     fontWeight: '900' as const,
   },
-  ctorLogoWrap: {
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 3 },
-    shadowOpacity: 0.2,
-    shadowRadius: 8,
-    elevation: 4,
+  ctorRankPlain: {
+    fontSize: 14,
+    fontWeight: '700' as const,
+    color: TEXT_DIM,
   },
   ctorMainInfo: {
     flex: 1,
     gap: 5,
   },
   ctorName: {
-    fontSize: 16,
+    fontSize: 15,
     fontWeight: '800' as const,
     color: TEXT_PRIMARY,
     letterSpacing: -0.3,
   },
-  ctorColorLine: {
+  ctorColorBar: {
     height: 3,
     borderRadius: 1.5,
-    overflow: 'hidden' as const,
-    maxWidth: 80,
+    maxWidth: 70,
   },
-  ctorColorStripe: {
-    width: '100%' as any,
-    height: '100%' as any,
-    borderRadius: 1.5,
-  },
-  ctorPointsBlock: {
+  ctorPtsBlock: {
     alignItems: 'flex-end' as const,
   },
-  ctorPointsValue: {
-    fontSize: 22,
+  ctorPtsNum: {
+    fontSize: 20,
     fontWeight: '900' as const,
     letterSpacing: -0.8,
     fontVariant: ['tabular-nums'] as any,
   },
-  ctorPointsUnit: {
+  ctorPtsUnit: {
     fontSize: 9,
     fontWeight: '700' as const,
-    color: TEXT_MUTED,
+    color: TEXT_DIM,
     letterSpacing: 1,
     marginTop: -1,
   },
-  ctorDivider: {
+  ctorSeparator: {
     height: StyleSheet.hairlineWidth,
-    marginHorizontal: 16,
-    backgroundColor: CARBON_BORDER,
+    marginHorizontal: 14,
+    backgroundColor: BORDER,
   },
-  ctorBottomRow: {
-    paddingHorizontal: 16,
-    paddingTop: 12,
-    paddingBottom: 14,
-    gap: 10,
-  },
-  ctorDriversSection: {
+  ctorBottom: {
     flexDirection: 'row',
-    gap: 8,
+    gap: 6,
+    paddingHorizontal: 14,
+    paddingTop: 10,
+    paddingBottom: 8,
   },
-  ctorDriverCard: {
+  ctorDriverPill: {
     flex: 1,
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 8,
-    paddingVertical: 8,
-    paddingHorizontal: 10,
-    borderRadius: 12,
-    backgroundColor: 'rgba(255,255,255,0.025)',
+    gap: 7,
+    paddingVertical: 6,
+    paddingHorizontal: 8,
+    borderRadius: 10,
+    backgroundColor: 'rgba(255,255,255,0.02)',
   },
-  ctorDriverInfo: {
+  ctorDriverTextCol: {
     flex: 1,
   },
   ctorDriverName: {
-    fontSize: 12,
+    fontSize: 11,
     fontWeight: '700' as const,
     color: TEXT_SECONDARY,
     letterSpacing: -0.1,
@@ -2048,103 +1602,90 @@ const s = StyleSheet.create({
   ctorDriverPts: {
     fontSize: 10,
     fontWeight: '500' as const,
-    color: TEXT_MUTED,
+    color: TEXT_DIM,
     marginTop: 1,
   },
-  ctorDriverWins: {
+  ctorDriverWinBadge: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: 2,
-    backgroundColor: GOLD + '12',
+    backgroundColor: GOLD + '10',
     paddingHorizontal: 5,
     paddingVertical: 2,
     borderRadius: 5,
   },
-  ctorDriverWinsText: {
+  ctorDriverWinText: {
     fontSize: 9,
     fontWeight: '800' as const,
     color: GOLD,
   },
-  ctorBarSection: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 8,
+  ctorBarWrap: {
+    paddingHorizontal: 14,
+    paddingBottom: 12,
   },
   ctorBarTrack: {
-    flex: 1,
-    height: 5,
-    borderRadius: 3,
-    overflow: 'hidden' as const,
+    height: 4,
+    borderRadius: 2,
     backgroundColor: 'rgba(255,255,255,0.04)',
+    overflow: 'hidden' as const,
   },
   ctorBarFill: {
     height: '100%' as any,
-    borderRadius: 3,
-  },
-  ctorBarPct: {
-    fontSize: 10,
-    fontWeight: '700' as const,
-    color: TEXT_MUTED,
-    minWidth: 28,
-    textAlign: 'right' as const,
-    fontVariant: ['tabular-nums'] as any,
+    borderRadius: 2,
   },
 
-  emptyState: {
+  emptyWrap: {
     alignItems: 'center',
     paddingVertical: 60,
-    gap: 12,
+    gap: 10,
   },
-  emptyIconWrap: {
-    width: 60,
-    height: 60,
-    borderRadius: 30,
-    backgroundColor: F1_RED + '0C',
+  emptyIcon: {
+    width: 56,
+    height: 56,
+    borderRadius: 28,
+    backgroundColor: F1_RED + '0A',
     justifyContent: 'center',
     alignItems: 'center',
     marginBottom: 4,
     borderWidth: 1,
-    borderColor: F1_RED + '15',
+    borderColor: F1_RED + '12',
   },
   emptyTitle: {
-    fontSize: 18,
+    fontSize: 17,
     fontWeight: '700' as const,
     color: TEXT_PRIMARY,
   },
   emptySub: {
-    fontSize: 14,
-    textAlign: 'center' as const,
-    color: TEXT_MUTED,
-    paddingHorizontal: 20,
+    fontSize: 13,
+    color: TEXT_DIM,
   },
 
   modalOverlay: {
     flex: 1,
-    backgroundColor: 'rgba(0, 0, 0, 0.7)',
+    backgroundColor: 'rgba(0,0,0,0.75)',
     justifyContent: 'flex-end',
   },
-  modalContainer: {
-    borderTopLeftRadius: 28,
-    borderTopRightRadius: 28,
-    maxHeight: '85%',
-    backgroundColor: CARBON_ELEVATED,
+  modalSheet: {
+    borderTopLeftRadius: 26,
+    borderTopRightRadius: 26,
+    maxHeight: '88%',
+    backgroundColor: CARD_ELEVATED,
   },
   modalHandle: {
-    width: 36,
+    width: 34,
     height: 4,
-    backgroundColor: TEXT_MUTED + '40',
+    backgroundColor: TEXT_GHOST,
     borderRadius: 2,
     alignSelf: 'center',
     marginTop: 10,
-    marginBottom: 6,
+    marginBottom: 4,
     zIndex: 10,
   },
-  modalHeroWrap: {
+  modalHero: {
     height: 180,
-    position: 'relative' as const,
     overflow: 'hidden' as const,
   },
-  modalHeroImage: {
+  modalHeroImg: {
     width: '100%' as any,
     height: '100%' as any,
   },
@@ -2155,83 +1696,92 @@ const s = StyleSheet.create({
     right: 0,
     height: 80,
   },
-  modalHeader: {
+  modalTop: {
     flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
+    alignItems: 'flex-start',
     paddingHorizontal: 20,
     paddingVertical: 14,
     borderBottomWidth: 1,
-    borderBottomColor: CARBON_BORDER,
+    borderBottomColor: BORDER,
   },
-  modalTitle: {
+  modalFlagRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    marginBottom: 6,
+  },
+  modalBigFlag: {
+    fontSize: 36,
+  },
+  modalRoundTag: {
+    backgroundColor: F1_RED + '14',
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+    borderRadius: 6,
+  },
+  modalRoundTagText: {
+    fontSize: 10,
+    fontWeight: '800' as const,
+    color: F1_RED,
+    letterSpacing: 0.5,
+  },
+  modalName: {
     fontSize: 18,
     fontWeight: '700' as const,
     color: TEXT_PRIMARY,
-    flex: 1,
-    marginRight: 12,
+    letterSpacing: -0.3,
   },
-  modalCloseBtn: {
-    width: 36,
-    height: 36,
-    borderRadius: 18,
-    justifyContent: 'center',
-    alignItems: 'center',
-    backgroundColor: CARBON_SURFACE,
-    borderWidth: 1,
-    borderColor: CARBON_BORDER,
-  },
-  modalFlagSection: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 16,
-    marginBottom: 22,
-  },
-  modalBigFlag: {
-    fontSize: 48,
-  },
-  modalCountry: {
-    fontSize: 20,
-    fontWeight: '800' as const,
-    color: TEXT_PRIMARY,
-    letterSpacing: -0.5,
-  },
-  modalCity: {
+  modalLocation: {
     fontSize: 13,
     fontWeight: '500' as const,
-    color: TEXT_MUTED,
+    color: TEXT_DIM,
     marginTop: 3,
+  },
+  modalCloseBtn: {
+    width: 34,
+    height: 34,
+    borderRadius: 17,
+    justifyContent: 'center',
+    alignItems: 'center',
+    backgroundColor: SURFACE,
+    borderWidth: 1,
+    borderColor: BORDER,
+    marginLeft: 12,
+  },
+  modalBody: {
+    padding: 20,
   },
   modalInfoGrid: {
     flexDirection: 'row',
     flexWrap: 'wrap',
-    gap: 10,
+    gap: 8,
     marginBottom: 22,
   },
-  modalInfoCard: {
-    width: (SCREEN_WIDTH - 40 - 30) / 2,
+  modalInfoItem: {
+    width: (SCREEN_WIDTH - 40 - 28) / 2,
     padding: 14,
-    borderRadius: 16,
-    backgroundColor: CARBON_SURFACE,
-    gap: 8,
+    borderRadius: 14,
+    backgroundColor: SURFACE,
+    gap: 7,
     borderWidth: 1,
-    borderColor: CARBON_BORDER,
+    borderColor: BORDER,
   },
   modalInfoIconWrap: {
-    width: 32,
-    height: 32,
-    borderRadius: 10,
+    width: 30,
+    height: 30,
+    borderRadius: 9,
+    backgroundColor: F1_RED + '0C',
     justifyContent: 'center',
     alignItems: 'center',
   },
   modalInfoLabel: {
     fontSize: 10,
     fontWeight: '600' as const,
-    color: TEXT_MUTED,
+    color: TEXT_DIM,
     textTransform: 'uppercase' as const,
     letterSpacing: 0.5,
   },
-  modalInfoValue: {
+  modalInfoVal: {
     fontSize: 14,
     fontWeight: '600' as const,
     color: TEXT_PRIMARY,
@@ -2240,44 +1790,40 @@ const s = StyleSheet.create({
   modalPodiumSection: {
     gap: 8,
   },
-  modalSectionTitle: {
-    fontSize: 17,
-    fontWeight: '700' as const,
-    color: TEXT_PRIMARY,
-    marginBottom: 6,
+  modalSectionLabel: {
+    fontSize: 10,
+    fontWeight: '800' as const,
+    color: TEXT_DIM,
+    letterSpacing: 1.5,
+    marginBottom: 4,
   },
-  modalPodiumCard: {
+  modalPodiumRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    padding: 14,
+    padding: 12,
     borderRadius: 14,
-    backgroundColor: CARBON_SURFACE,
+    backgroundColor: SURFACE,
     gap: 12,
     borderWidth: 1,
-    borderColor: CARBON_BORDER,
+    borderColor: BORDER,
   },
-  modalPodiumDriverName: {
+  modalPodiumName: {
     fontSize: 15,
     fontWeight: '700' as const,
     color: TEXT_PRIMARY,
   },
-  modalPodiumTeamRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 5,
-    marginTop: 3,
-  },
-  modalPodiumTeamDot: {
-    width: 6,
-    height: 6,
-    borderRadius: 3,
-  },
-  modalPodiumTeamName: {
+  modalPodiumTeam: {
     fontSize: 12,
     fontWeight: '500' as const,
-    color: TEXT_MUTED,
+    color: TEXT_DIM,
   },
-  modalPodiumDriverFlag: {
-    fontSize: 22,
+  modalPodiumPosBadge: {
+    paddingHorizontal: 10,
+    paddingVertical: 5,
+    borderRadius: 8,
+  },
+  modalPodiumPosText: {
+    fontSize: 11,
+    fontWeight: '800' as const,
   },
 });
