@@ -25,7 +25,7 @@ import { HabitsEnhancementProvider } from "@/hooks/useHabitsEnhancement";
 import { BusyModeProvider } from "@/hooks/useBusyMode";
 import { BackgroundServicesProvider } from "@/hooks/useBackgroundServices";
 import { WalkthroughProvider } from "@/hooks/useWalkthrough";
-import { ScreenTimeProvider } from "@/hooks/useScreenTime";
+
 import { trpc, trpcReactClient } from "@/lib/trpc";
 
 SplashScreen.preventAutoHideAsync().catch(() => {
@@ -199,10 +199,8 @@ export default function RootLayout() {
                               <SafeProvider provider={BusyModeProvider}>
                                 <SafeProvider provider={BackgroundServicesProvider}>
                                   <SafeProvider provider={WalkthroughProvider}>
-                                    <SafeProvider provider={ScreenTimeProvider}>
                                       <StatusBarManager />
                                       <RootLayoutNav />
-                                    </SafeProvider>
                                   </SafeProvider>
                                 </SafeProvider>
                               </SafeProvider>

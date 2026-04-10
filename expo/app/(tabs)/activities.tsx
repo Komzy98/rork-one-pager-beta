@@ -19,7 +19,7 @@ import EventKitManager from '@/components/EventKitManager';
 import ModernSportsSection from '@/components/ModernSportsSection';
 import MatchDetailsModal from '@/components/MatchDetailsModal';
 import MatchScoreWidget from '@/components/MatchScoreWidget';
-import ScreenTimeBlocker from '@/components/ScreenTimeBlocker';
+
 
 import EnhancedLoadingState from '@/components/EnhancedLoadingState';
 
@@ -1985,8 +1985,7 @@ export default function ActivitiesScreen() {
               }}
             />
 
-            {/* Screen Time Blocks */}
-            <ScreenTimeBlocker />
+
 
 
 

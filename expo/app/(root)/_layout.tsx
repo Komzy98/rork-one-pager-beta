@@ -54,13 +54,6 @@ export default function RootLayout() {
           title: "Terms of Use",
         }} 
       />
-      <Stack.Screen 
-        name="new-time-block" 
-        options={{ 
-          headerShown: false,
-          title: "New Time Block",
-        }} 
-      />
     </Stack>
   );
 }
