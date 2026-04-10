@@ -12,11 +12,12 @@ const mmaCache = new Map<string, CacheEntry>();
 
 const MMA_CACHE_TTL: Record<string, number> = {
   fights: 5 * 60 * 1000,
-  upcoming: 15 * 60 * 1000,
-  results: 30 * 60 * 1000,
-  season: 30 * 60 * 1000,
+  upcoming: 10 * 60 * 1000,
+  results: 15 * 60 * 1000,
+  season: 20 * 60 * 1000,
   date: 10 * 60 * 1000,
-  status: 60 * 60 * 1000,
+  status: 10 * 60 * 1000,
+  statusFail: 3 * 60 * 1000,
 };
 
 function getMmaCacheKey(type: string, params: Record<string, any>): string {
@@ -147,15 +148,18 @@ async function checkMmaApiStatus(headers: Record<string, string>): Promise<{ ava
 
     if (!response.ok) {
       console.error(`❌ MMA API status check failed: ${response.status}`);
-      const result = { available: false, message: `MMA API returned ${response.status}` };
-      setMmaCache(cacheKey, result);
+      if (response.status === 403 || response.status === 401) {
+        const result = { available: false, message: `MMA API auth failed (${response.status}). The MMA API requires a separate subscription on api-sports.io.` };
+        setMmaCache(cacheKey, result);
+        return result;
+      }
+      const result = { available: true, message: `MMA API status returned ${response.status}, attempting data fetch anyway` };
       return result;
     }
 
     const data = await response.json();
     console.log(`🥊 MMA API Status response: ${JSON.stringify(data).substring(0, 500)}`);
 
-    const account = data.response?.account;
     const subscription = data.response?.subscription;
     const requests = data.response?.requests;
 
@@ -174,8 +178,7 @@ async function checkMmaApiStatus(headers: Record<string, string>): Promise<{ ava
     return result;
   } catch (error: any) {
     console.error(`💥 MMA API status check error:`, error.message);
-    const result = { available: false, message: `MMA API unreachable: ${error.message}` };
-    setMmaCache(cacheKey, result);
+    const result = { available: true, message: `MMA API status check failed (${error.message}), attempting data fetch anyway` };
     return result;
   }
 }
@@ -210,6 +213,14 @@ async function fetchFightsByDate(dateStr: string, headers: Record<string, string
   return fights;
 }
 
+function isUpcomingStatus(status: string | undefined): boolean {
+  return status === 'NS' || status === 'PF' || status === 'TBD' || !status;
+}
+
+function isCompletedStatus(status: string | undefined): boolean {
+  return status === 'FT' || status === 'EOR' || status === 'AW';
+}
+
 async function fetchFightsMultipleStrategies(
   type: 'upcoming' | 'results',
   headers: Record<string, string>,
@@ -220,48 +231,54 @@ async function fetchFightsMultipleStrategies(
   const seenIds = new Set<number>();
 
   const addFights = (fights: any[]) => {
+    let added = 0;
     for (const fight of fights) {
       const fightId = fight.id;
       if (fightId && !seenIds.has(fightId)) {
         seenIds.add(fightId);
         allFights.push(fight);
+        added++;
       }
     }
+    return added;
   };
+
+  const filterFn = type === 'upcoming'
+    ? (f: any) => {
+        const status = f.status?.short;
+        if (!isUpcomingStatus(status)) return false;
+        const fightDate = new Date(f.date);
+        return fightDate.getTime() >= now.getTime() - (24 * 60 * 60 * 1000);
+      }
+    : (f: any) => isCompletedStatus(f.status?.short);
 
   console.log(`🥊 Strategy 1: Season ${currentYear} query...`);
   const seasonFights = await fetchSeasonFights(String(currentYear), headers);
+  const seasonFiltered = seasonFights.filter(filterFn);
+  addFights(seasonFiltered);
+  console.log(`🥊 Season ${currentYear} ${type}: ${seasonFiltered.length}/${seasonFights.length}`);
 
-  if (type === 'upcoming') {
-    const filtered = seasonFights.filter((f: any) => {
-      const status = f.status?.short;
-      if (status !== 'NS' && status !== 'PF' && status !== 'TBD') return false;
-      const fightDate = new Date(f.date);
-      return fightDate.getTime() >= now.getTime() - (24 * 60 * 60 * 1000);
-    });
-    addFights(filtered);
-    console.log(`🥊 Season ${currentYear} upcoming: ${filtered.length}/${seasonFights.length}`);
-  } else {
-    const filtered = seasonFights.filter((f: any) => {
-      const status = f.status?.short;
-      return status === 'FT' || status === 'EOR' || status === 'AW';
-    });
-    addFights(filtered);
-    console.log(`🥊 Season ${currentYear} results: ${filtered.length}/${seasonFights.length}`);
+  const altYear = type === 'upcoming' ? currentYear + 1 : currentYear - 1;
+  if (allFights.length < 10) {
+    console.log(`🥊 Strategy 1b: Alt year ${altYear} season query...`);
+    const altFights = await fetchSeasonFights(String(altYear), headers);
+    const altFiltered = altFights.filter(filterFn);
+    const altAdded = addFights(altFiltered);
+    console.log(`🥊 Alt year ${altYear}: ${altAdded} added (${altFiltered.length} filtered/${altFights.length} total)`);
   }
 
-  if (allFights.length === 0) {
-    console.log(`🥊 Strategy 2: Date-based queries...`);
+  if (allFights.length < 5) {
+    console.log(`🥊 Strategy 2: Date-based queries (found only ${allFights.length} so far)...`);
     const datesToCheck: string[] = [];
 
     if (type === 'upcoming') {
-      for (let i = 0; i <= 60; i++) {
+      for (let i = 0; i <= 90; i++) {
         const d = new Date(now);
         d.setDate(d.getDate() + i);
         datesToCheck.push(formatDate(d));
       }
     } else {
-      for (let i = 0; i <= 30; i++) {
+      for (let i = 0; i <= 60; i++) {
         const d = new Date(now);
         d.setDate(d.getDate() - i);
         datesToCheck.push(formatDate(d));
@@ -271,55 +288,36 @@ async function fetchFightsMultipleStrategies(
     const weekends = datesToCheck.filter(dateStr => {
       const d = new Date(dateStr + 'T12:00:00Z');
       const day = d.getUTCDay();
-      return day === 6 || day === 0 || day === 5;
+      return day === 5 || day === 6 || day === 0;
     });
 
-    const sampled = weekends.length > 0 ? weekends.slice(0, 12) : datesToCheck.slice(0, 8);
-    console.log(`🥊 Checking ${sampled.length} dates (prioritizing weekends)...`);
+    const sampled = [
+      ...weekends.slice(0, 20),
+      ...datesToCheck.filter(d => !weekends.includes(d)).slice(0, 10),
+    ];
+    const uniqueSampled = [...new Set(sampled)];
+    console.log(`🥊 Checking ${uniqueSampled.length} dates (${weekends.length} weekends + extras)...`);
 
-    for (const dateStr of sampled) {
+    for (const dateStr of uniqueSampled) {
       const fights = await fetchFightsByDate(dateStr, headers);
-      if (type === 'upcoming') {
-        const filtered = fights.filter((f: any) => {
-          const status = f.status?.short;
-          return status === 'NS' || status === 'PF' || status === 'TBD' || !status;
-        });
-        addFights(filtered);
-      } else {
-        const filtered = fights.filter((f: any) => {
-          const status = f.status?.short;
-          return status === 'FT' || status === 'EOR' || status === 'AW';
-        });
-        addFights(filtered);
-      }
+      const filtered = fights.filter(filterFn);
+      addFights(filtered);
 
-      if (allFights.length >= 20) {
+      if (allFights.length >= 30) {
         console.log(`🥊 Found ${allFights.length} fights, stopping date queries early`);
         break;
       }
     }
-    console.log(`🥊 Date-based strategy: ${allFights.length} fights`);
+    console.log(`🥊 Date-based strategy total: ${allFights.length} fights`);
   }
 
-  if (allFights.length < 5) {
-    const altYear = type === 'upcoming' ? currentYear + 1 : currentYear - 1;
-    console.log(`🥊 Strategy 3: Alt year ${altYear}...`);
-    const altFights = await fetchSeasonFights(String(altYear), headers);
-
-    if (type === 'upcoming') {
-      const filtered = altFights.filter((f: any) => {
-        const status = f.status?.short;
-        return status === 'NS' || status === 'PF' || status === 'TBD';
-      });
-      addFights(filtered);
-    } else {
-      const filtered = altFights.filter((f: any) => {
-        const status = f.status?.short;
-        return status === 'FT' || status === 'EOR' || status === 'AW';
-      });
-      addFights(filtered);
-    }
-    console.log(`🥊 Alt year ${altYear}: added to total ${allFights.length}`);
+  if (type === 'results' && allFights.length < 5) {
+    const moreYear = currentYear - 2;
+    console.log(`🥊 Strategy 3: Even older year ${moreYear}...`);
+    const moreFights = await fetchSeasonFights(String(moreYear), headers);
+    const moreFiltered = moreFights.filter(filterFn);
+    addFights(moreFiltered);
+    console.log(`🥊 Year ${moreYear}: added to total ${allFights.length}`);
   }
 
   return allFights;

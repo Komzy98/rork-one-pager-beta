@@ -753,8 +753,8 @@ const EMPTY_CONFIG = {
 };
 
 const UFC_EMPTY_CONFIG = {
-  upcoming: { icon: Calendar, color: '#D4AF37', bg: ['#D4AF37', '#F0D060'] as [string, string], title: 'No Upcoming Fights', sub: 'The MMA API subscription may need to be activated separately on api-sports.io (free plan available). Your football API key works for football but MMA requires its own subscription.' },
-  results: { icon: Trophy, color: '#34C759', bg: ['#34C759', '#6FE08A'] as [string, string], title: 'No Recent Results', sub: 'The MMA API subscription may need to be activated separately on api-sports.io (free plan available). Your football API key works for football but MMA requires its own subscription.' },
+  upcoming: { icon: Calendar, color: '#D4AF37', bg: ['#D4AF37', '#F0D060'] as [string, string], title: 'No Upcoming Fights', sub: 'No upcoming MMA fights found. Pull down to refresh or check back later.' },
+  results: { icon: Trophy, color: '#34C759', bg: ['#34C759', '#6FE08A'] as [string, string], title: 'No Recent Results', sub: 'No recent MMA results found. Pull down to refresh or check back later.' },
 };
 
 const UFCCountdown = React.memo(({ fight, isDark }: { fight: UFCFight; isDark: boolean }) => {
@@ -2144,21 +2144,37 @@ export default function SportsScreen() {
                 {UFC_EMPTY_CONFIG[ufcTab].title}
               </Text>
               <Text style={ufcStyles.emptyHeroSub}>
-                {UFC_EMPTY_CONFIG[ufcTab].sub}
+                {hasConfigError
+                  ? 'The MMA API requires a separate subscription on api-sports.io (free plan available). Your football API key works for football but MMA needs its own activation.'
+                  : UFC_EMPTY_CONFIG[ufcTab].sub}
               </Text>
-              <View style={ufcStyles.emptyHeroDivider} />
-              <View style={ufcStyles.emptyHeroInfoRow}>
-                <AlertCircle size={14} color="#D4AF37" />
-                <Text style={ufcStyles.emptyHeroInfoText}>
-                  Visit api-sports.io, log in with your account, and subscribe to the MMA API (free plan available with 100 requests/day).
-                </Text>
-              </View>
-              <View style={[ufcStyles.emptyHeroInfoRow, { marginTop: 8 }]}>
-                <RefreshCw size={14} color="#6B6B85" />
-                <Text style={ufcStyles.emptyHeroInfoText}>
-                  After subscribing, pull down to refresh.
-                </Text>
-              </View>
+              {hasConfigError ? (
+                <>
+                  <View style={ufcStyles.emptyHeroDivider} />
+                  <View style={ufcStyles.emptyHeroInfoRow}>
+                    <AlertCircle size={14} color="#D4AF37" />
+                    <Text style={ufcStyles.emptyHeroInfoText}>
+                      Visit api-sports.io, log in with your account, and subscribe to the MMA API (free plan with 100 requests/day).
+                    </Text>
+                  </View>
+                  <View style={[ufcStyles.emptyHeroInfoRow, { marginTop: 8 }]}>
+                    <RefreshCw size={14} color="#6B6B85" />
+                    <Text style={ufcStyles.emptyHeroInfoText}>
+                      After subscribing, pull down to refresh.
+                    </Text>
+                  </View>
+                </>
+              ) : (
+                <>
+                  <View style={ufcStyles.emptyHeroDivider} />
+                  <View style={ufcStyles.emptyHeroInfoRow}>
+                    <RefreshCw size={14} color="#6B6B85" />
+                    <Text style={ufcStyles.emptyHeroInfoText}>
+                      Pull down to refresh and try again.
+                    </Text>
+                  </View>
+                </>
+              )
             </LinearGradient>
           </View>
         </ScrollView>
