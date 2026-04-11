@@ -77,8 +77,6 @@ export const footballApi = {
               const home = match.homeTeam.toLowerCase().trim();
               const away = match.awayTeam.toLowerCase().trim();
               return home === teamName || away === teamName ||
-                home.includes(teamName) && !home.replace(teamName, '').trim().length ||
-                away.includes(teamName) && !away.replace(teamName, '').trim().length ||
                 (match as any).homeTeamId === id || (match as any).awayTeamId === id;
             })
           );
