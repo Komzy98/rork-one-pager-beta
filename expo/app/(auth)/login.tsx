@@ -463,8 +463,8 @@ export default function LoginScreen() {
               resizeMode="contain"
             />
           </View>
-          <Text style={styles.title}>Welcome Back</Text>
-          <Text style={styles.subtitle}>Sign in to continue your journey</Text>
+          <Text style={styles.title}>Sign In</Text>
+          <Text style={styles.subtitle}>Enter your credentials to continue</Text>
         </View>
 
         <View style={styles.form}>
