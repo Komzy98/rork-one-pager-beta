@@ -52,11 +52,11 @@ import LeagueStandingsModal from '@/components/LeagueStandingsModal';
 import TabWalkthrough from '@/components/TabWalkthrough';
 import UFCFightDetailModal from '@/components/UFCFightDetailModal';
 import F1Section from '@/components/F1Section';
-import BoxingSection from '@/components/BoxingSection';
+import NBASection from '@/components/NBASection';
 
 const { width: SCREEN_WIDTH } = Dimensions.get('window');
 
-type SportMode = 'football' | 'ufc' | 'f1' | 'boxing';
+type SportMode = 'football' | 'ufc' | 'f1' | 'nba';
 
 interface UFCFight {
   id: number;
@@ -1772,15 +1772,15 @@ export default function SportsScreen() {
               ? ['#0A1A0F', '#0D1A14', '#0D0D1A'] 
               : sportMode === 'f1'
                 ? ['#1A0505', '#180A0A', '#0D0D1A']
-                : sportMode === 'boxing'
-                  ? ['#1A0508', '#140A12', '#0D0D1A']
+                : sportMode === 'nba'
+                  ? ['#0A0A1E', '#0D1225', '#0D0D1A']
                   : ['#1A0A08', '#1A0D10', '#0D0D1A'])
             : (sportMode === 'football'
               ? ['#E8F5EC', '#F0F5F2', '#F2F2F7']
               : sportMode === 'f1'
                 ? ['#F5E8E8', '#F5F0F0', '#F2F2F7']
-                : sportMode === 'boxing'
-                  ? ['#F5E8EB', '#F5F0F2', '#F2F2F7']
+                : sportMode === 'nba'
+                  ? ['#E8EEF5', '#F0F2F5', '#F2F2F7']
                   : ['#F5EDE8', '#F5F0EC', '#F2F2F7'])}
           start={{ x: 0, y: 0 }}
           end={{ x: 1, y: 1 }}
@@ -1789,7 +1789,7 @@ export default function SportsScreen() {
           <View style={styles.headerTop}>
             <View style={styles.titleArea}>
               <Text style={[styles.headerTitle, { color: isDark ? '#FFFFFF' : '#1C1C1E' }]}>
-                {sportMode === 'football' ? 'Football' : sportMode === 'f1' ? 'Formula 1' : sportMode === 'boxing' ? 'Boxing' : 'UFC'}
+                {sportMode === 'football' ? 'Football' : sportMode === 'f1' ? 'Formula 1' : sportMode === 'nba' ? 'NBA' : 'UFC'}
               </Text>
               <Text style={[styles.headerSubtitle, { color: isDark ? '#6B6B85' : '#8E8E93' }]}>
                 {sportMode === 'football'
@@ -1798,8 +1798,8 @@ export default function SportsScreen() {
                       : 'Matches & results')
                   : sportMode === 'f1'
                     ? 'Races & standings'
-                    : sportMode === 'boxing'
-                      ? 'Fights & rankings'
+                    : sportMode === 'nba'
+                      ? 'Games & standings'
                       : (ufcUpcomingFights.length > 0
                           ? `${ufcUpcomingFights.length} upcoming`
                           : 'Fights & results')
@@ -1901,28 +1901,28 @@ export default function SportsScreen() {
               <TouchableOpacity
                 style={[
                   sportToggleStyles.option,
-                  sportMode === 'boxing' && sportToggleStyles.optionActive,
-                  sportMode === 'boxing' && {
-                    backgroundColor: isDark ? 'rgba(196, 30, 58, 0.12)' : '#FFFFFF',
-                    shadowColor: isDark ? '#C41E3A' : '#000',
+                  sportMode === 'nba' && sportToggleStyles.optionActive,
+                  sportMode === 'nba' && {
+                    backgroundColor: isDark ? 'rgba(29, 66, 138, 0.12)' : '#FFFFFF',
+                    shadowColor: isDark ? '#1D428A' : '#000',
                     shadowOpacity: isDark ? 0.2 : 0.06,
                     shadowRadius: 8,
                     shadowOffset: { width: 0, height: 2 },
                     elevation: 3,
                   },
                 ]}
-                onPress={() => handleSportModeChange('boxing')}
+                onPress={() => handleSportModeChange('nba')}
                 activeOpacity={0.7}
               >
-                <Crosshair size={15} color={sportMode === 'boxing' ? (isDark ? '#C41E3A' : '#8B0020') : (isDark ? '#555570' : '#AEAEB2')} />
+                <Trophy size={15} color={sportMode === 'nba' ? (isDark ? '#F26522' : '#1D428A') : (isDark ? '#555570' : '#AEAEB2')} />
                 <Text style={[
                   sportToggleStyles.optionLabel,
-                  { color: sportMode === 'boxing'
-                    ? (isDark ? '#C41E3A' : '#8B0020')
+                  { color: sportMode === 'nba'
+                    ? (isDark ? '#F26522' : '#1D428A')
                     : (isDark ? '#555570' : '#AEAEB2')
                   },
-                  sportMode === 'boxing' && { fontWeight: '700' as const },
-                ]}>Boxing</Text>
+                  sportMode === 'nba' && { fontWeight: '700' as const },
+                ]}>NBA</Text>
               </TouchableOpacity>
             </View>
           </View>
@@ -2294,8 +2294,8 @@ export default function SportsScreen() {
         <F1Section isDark={isDark} insets={insets} />
       )}
 
-      {sportMode === 'boxing' && (
-        <BoxingSection isDark={isDark} insets={insets} />
+      {sportMode === 'nba' && (
+        <NBASection isDark={isDark} insets={insets} />
       )}
       
       {selectedMatch && showMatchModal && (

@@ -22,7 +22,7 @@ const CARD_WIDTH = (width - 32 * 2 - 12) / 2;
 const INTERESTS = [
   { id: 'football', name: 'Football', emoji: '⚽' },
   { id: 'ufc', name: 'UFC / MMA', emoji: '🥊' },
-  { id: 'boxing', name: 'Boxing', emoji: '🥇' },
+  { id: 'nba', name: 'NBA', emoji: '🏀' },
   { id: 'f1', name: 'Formula 1', emoji: '🏎️' },
   { id: 'fitness', name: 'Fitness', emoji: '💪' },
   { id: 'movies', name: 'Movies & TV', emoji: '🎬' },

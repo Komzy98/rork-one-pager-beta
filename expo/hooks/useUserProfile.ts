@@ -573,7 +573,7 @@ export const [UserProfileProvider, useUserProfile] = createContextHook(() => {
       'football': ['sports'],
       'f1': ['sports'],
       'ufc': ['sports'],
-      'boxing': ['sports'],
+      'nba': ['sports'],
       'fitness': ['habits', 'tasks'],
       'movies': ['shows'],
       'cooking': ['cooking'],
