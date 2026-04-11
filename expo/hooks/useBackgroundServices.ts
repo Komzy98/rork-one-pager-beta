@@ -236,7 +236,8 @@ export const [BackgroundServicesProvider, useBackgroundServices] = createContext
   }, []);
 
   const todayActivities = useMemo(() => {
-    const today = new Date().toISOString().split('T')[0];
+    const now = new Date();
+    const today = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
     return unifiedActivities.filter(activity => {
       if (activity.scheduledTime) return activity.scheduledTime.startsWith(today);
       return activity.type === 'habit' || (activity.type === 'task' && !activity.scheduledTime);
@@ -305,7 +306,8 @@ export const [BackgroundServicesProvider, useBackgroundServices] = createContext
   }, [unifiedActivities]);
 
   const todayTimeline = useMemo(() => {
-    const today = new Date().toISOString().split('T')[0];
+    const now2 = new Date();
+    const today = `${now2.getFullYear()}-${String(now2.getMonth() + 1).padStart(2, '0')}-${String(now2.getDate()).padStart(2, '0')}`;
     return timeline.find(t => t.date === today);
   }, [timeline]);
 

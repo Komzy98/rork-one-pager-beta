@@ -157,7 +157,7 @@ export const TaskEditModal: React.FC<TaskEditModalProps> = ({
       updates.color = habitColor;
       updates.icon = habitIcon;
     } else {
-      updates.dueDate = dueDate ? dueDate.toISOString().split('T')[0] : undefined;
+      updates.dueDate = dueDate ? `${dueDate.getFullYear()}-${String(dueDate.getMonth() + 1).padStart(2, '0')}-${String(dueDate.getDate()).padStart(2, '0')}` : undefined;
       updates.isRecurring = isRecurring;
       if (isRecurring) {
         if (recurringType === 'custom') {

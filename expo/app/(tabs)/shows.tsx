@@ -1580,7 +1580,7 @@ export default function ShowsScreen() {
     const airDate = latestEpisode.air_date
       ? new Date(latestEpisode.air_date).toLocaleDateString('en-GB', { day: 'numeric', month: 'short' })
       : null;
-    const isToday = latestEpisode.air_date === new Date().toISOString().split('T')[0];
+    const isToday = latestEpisode.air_date === (() => { const d = new Date(); return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`; })();
     const inUserList = isInList(show.id, 'tv');
 
     return (

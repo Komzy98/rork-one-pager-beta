@@ -29,7 +29,8 @@ export default function HabitDetailScreen() {
   }, [habit, getStreakFreezeInfo]);
 
   const isTodayFrozen = useMemo(() => {
-    const today = new Date().toISOString().split('T')[0];
+    const d = new Date();
+    const today = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
     return freezeInfo.frozenDates.includes(today);
   }, [freezeInfo]);
 
@@ -571,7 +572,7 @@ export default function HabitDetailScreen() {
                   const isCompleted = habit.completions[dateStr];
                   const isFrozen = habit.streakFreeze?.frozenDates?.includes(dateStr) ?? false;
                   const dayName = getDayName(dateStr);
-                  const isToday = dateStr === new Date().toISOString().split('T')[0];
+                  const isToday = dateStr === (() => { const d = new Date(); return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`; })();
                   
                   return (
                     <View key={dateStr} style={styles.weekDayItem}>

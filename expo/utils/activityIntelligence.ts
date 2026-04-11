@@ -6,6 +6,7 @@ import {
   CrossActivityInsight,
   UnifiedTimeline,
 } from '@/types/activity';
+import { getLocalDateStr } from '@/utils/dateUtils';
 
 class ActivityIntelligenceService {
   unifyActivities(
@@ -270,7 +271,7 @@ class ActivityIntelligenceService {
     recommendations: SmartRecommendation[]
   ): Promise<UnifiedTimeline[]> {
     const dateMap = new Map<string, UnifiedActivity[]>();
-    const today = new Date().toISOString().split('T')[0];
+    const today = getLocalDateStr();
 
     for (const activity of activities) {
       const date = activity.scheduledTime

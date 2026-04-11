@@ -245,7 +245,7 @@ const RoutineItem = ({ habit, communityInfo, minimalVersion, isBusyMode, onToggl
   const slideAnim = useRef(new Animated.Value(20)).current;
   const checkAnim = useRef(new Animated.Value(0)).current;
   const [isExpanded, setIsExpanded] = React.useState(false);
-  const today = new Date().toISOString().split('T')[0];
+  const today = (() => { const d = new Date(); return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`; })();
   const isCompleted = habit.habitCompletions?.[today] || false;
   const hasProgram = !!(communityInfo?.weeks || (habit as Task).programData?.weeks);
   const habitColor = habit.color || COLORS.primary;
@@ -783,7 +783,8 @@ export default function TodaysRoutine({
   }, [todayHabits, savedHabits, maxItems, minimalHabitsMap]);
 
   const completedHabitsCount = useMemo(() => {
-    const today = new Date().toISOString().split('T')[0];
+    const d = new Date();
+    const today = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
     return todayHabits.filter((h: RoutineHabit) => h.habitCompletions?.[today]).length;
   }, [todayHabits]);
   
@@ -822,7 +823,8 @@ export default function TodaysRoutine({
     const habit = taskBasedHabits.find((h: Task) => h.id === habitId);
     if (!habit) return;
     
-    const today = new Date().toISOString().split('T')[0];
+    const d2 = new Date();
+    const today = `${d2.getFullYear()}-${String(d2.getMonth() + 1).padStart(2, '0')}-${String(d2.getDate()).padStart(2, '0')}`;
     const updatedCompletions = { ...(habit.habitCompletions || {}) };
     
     if (updatedCompletions[today]) {

@@ -252,7 +252,7 @@ export const [HabitsEnhancementProvider, useHabitsEnhancement] = createContextHo
     const programStartDate = isProgramHabit ? new Date().toISOString() : undefined;
     const weekStart = new Date();
     weekStart.setDate(weekStart.getDate() - weekStart.getDay());
-    const weekStartStr = weekStart.toISOString().split('T')[0];
+    const weekStartStr = `${weekStart.getFullYear()}-${String(weekStart.getMonth() + 1).padStart(2, '0')}-${String(weekStart.getDate()).padStart(2, '0')}`;
 
     const frequencyType = communityHabit.frequency.type || 'specific_days';
     const timesPerWeek = communityHabit.frequency.timesPerWeek;

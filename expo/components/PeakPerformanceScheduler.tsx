@@ -124,7 +124,7 @@ export const PeakPerformanceScheduler: React.FC<PeakPerformanceSchedulerProps> =
         const scheduledDate = new Date(currentDate);
         scheduledDate.setHours(peakStartHour, currentMinute, 0, 0);
         
-        const dueDate = scheduledDate.toISOString().split('T')[0];
+        const dueDate = `${scheduledDate.getFullYear()}-${String(scheduledDate.getMonth() + 1).padStart(2, '0')}-${String(scheduledDate.getDate()).padStart(2, '0')}`;
         const scheduledTime = `${String(peakStartHour).padStart(2, '0')}:${String(currentMinute).padStart(2, '0')}`;
         
         updateTask(taskId, {

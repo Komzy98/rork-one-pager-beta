@@ -519,7 +519,10 @@ export function getHabitFormationTip(): { title: string; tip: string; icon: stri
 export function generateHabitInsights(habits: Task[]): HabitInsight[] {
   const insights: HabitInsight[] = [];
   const today = new Date();
-  const todayStr = today.toISOString().split('T')[0];
+  const year = today.getFullYear();
+  const month = String(today.getMonth() + 1).padStart(2, '0');
+  const day = String(today.getDate()).padStart(2, '0');
+  const todayStr = `${year}-${month}-${day}`;
   const dayOfWeek = today.getDay();
   
   habits.forEach(habit => {

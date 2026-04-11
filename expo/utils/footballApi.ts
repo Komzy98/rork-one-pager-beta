@@ -1,5 +1,6 @@
 import { ApiFootballResponse, ApiFootballFixture, LiveFootballMatch } from '@/types/habit';
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import { getLocalDateStr } from '@/utils/dateUtils';
 
 // Using API-Football (api-football.com) - the only football data source
 // Dashboard: https://dashboard.api-football.com
@@ -102,7 +103,7 @@ export const footballApi = {
     }
     
     try {
-      const today = new Date().toISOString().split('T')[0];
+      const today = getLocalDateStr();
       let url = `${BASE_URL}/fixtures?date=${today}`;
       
       if (leagueIds && leagueIds.length > 0) {
@@ -141,7 +142,7 @@ export const footballApi = {
     }
     
     try {
-      const today = new Date().toISOString().split('T')[0];
+      const today = getLocalDateStr();
       let url = `${BASE_URL}/fixtures?date=${today}`;
       
       if (leagueIds && leagueIds.length > 0) {
@@ -183,8 +184,8 @@ export const footballApi = {
     }
     
     try {
-      const today = new Date().toISOString().split('T')[0];
-      const futureDate = new Date(Date.now() + days * 24 * 60 * 60 * 1000).toISOString().split('T')[0];
+      const today = getLocalDateStr();
+      const futureDate = getLocalDateStr(new Date(Date.now() + days * 24 * 60 * 60 * 1000));
       
       let allMatches: LiveFootballMatch[] = [];
       

@@ -49,7 +49,8 @@ export default function SportsDebugScreen() {
     queryKey: ['debugTodayFootball'],
     queryFn: () => {
       console.log('🚀 Debug: Fetching today matches with debug info');
-      console.log('Current date:', new Date().toISOString().split('T')[0]);
+      const _dd = new Date();
+      console.log('Current date:', `${_dd.getFullYear()}-${String(_dd.getMonth() + 1).padStart(2, '0')}-${String(_dd.getDate()).padStart(2, '0')}`);
       console.log('Current timezone:', Intl.DateTimeFormat().resolvedOptions().timeZone);
       console.log('Current time:', new Date().toLocaleString());
       return combinedFootballApi.getTodayMatches(undefined, undefined, true);
@@ -161,7 +162,7 @@ export default function SportsDebugScreen() {
             <View style={styles.debugContainer}>
               <Text style={styles.debugTitle}>Platform & Environment:</Text>
               <Text style={styles.debugTextDetail}>Platform: {Platform.OS}</Text>
-              <Text style={styles.debugTextDetail}>Current Date: {new Date().toISOString().split('T')[0]}</Text>
+              <Text style={styles.debugTextDetail}>Current Date: {(() => { const d = new Date(); return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`; })()}</Text>
               <Text style={styles.debugTextDetail}>Current Time: {new Date().toLocaleTimeString()}</Text>
               <Text style={styles.debugTextDetail}>Timezone: {Intl.DateTimeFormat().resolvedOptions().timeZone}</Text>
               <Text style={styles.debugTextDetail}>Development Mode: {__DEV__ ? 'Yes' : 'No'}</Text>
@@ -351,11 +352,14 @@ export default function SportsDebugScreen() {
                       });
                     } else {
                       console.log('⚠️ No today matches found');
-                      console.log('Current date being used:', new Date().toISOString().split('T')[0]);
+                      const _dbg = new Date();
+                      console.log('Current date being used:', `${_dbg.getFullYear()}-${String(_dbg.getMonth() + 1).padStart(2, '0')}-${String(_dbg.getDate()).padStart(2, '0')}`);
                       console.log('Current timezone:', Intl.DateTimeFormat().resolvedOptions().timeZone);
                     }
                     
-                    alert(`Today Matches Test Results:\n\nFound: ${todayResult.length} matches\nDate: ${new Date().toISOString().split('T')[0]}\nTimezone: ${Intl.DateTimeFormat().resolvedOptions().timeZone}\n\nCheck console for detailed match list.`);
+                    const _da2 = new Date();
+                    const localDate = `${_da2.getFullYear()}-${String(_da2.getMonth() + 1).padStart(2, '0')}-${String(_da2.getDate()).padStart(2, '0')}`;
+                    alert(`Today Matches Test Results:\n\nFound: ${todayResult.length} matches\nDate: ${localDate}\nTimezone: ${Intl.DateTimeFormat().resolvedOptions().timeZone}\n\nCheck console for detailed match list.`);
                   } catch (error) {
                     console.error('❌ Today matches test failed:', error);
                     alert(`Today matches test failed: ${error}`);

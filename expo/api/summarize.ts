@@ -5,7 +5,7 @@ const DATE_REGEX = /^\d{4}-\d{2}-\d{2}$/;
 
 function getFallback(date?: string) {
   return {
-    date: date && DATE_REGEX.test(date) ? date : new Date().toISOString().split('T')[0],
+    date: date && DATE_REGEX.test(date) ? date : (() => { const d = new Date(); return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`; })(),
     summary: "Keep building momentum with your daily activities and habits!",
     wins: ["Stayed consistent with tracking"],
     challenges: ["Continue building routines"],

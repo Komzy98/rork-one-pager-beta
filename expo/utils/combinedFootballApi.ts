@@ -1,5 +1,6 @@
 import { LiveFootballMatch } from '@/types/habit';
 import { footballApi } from './footballApi';
+import { getLocalDateStr } from '@/utils/dateUtils';
 
 // Football API service using API-Football (api-football.com)
 export const combinedFootballApi = {
@@ -34,8 +35,8 @@ export const combinedFootballApi = {
     console.log('🔄 Football API: Getting upcoming matches...');
     console.log('📅 Date range:', {
       days,
-      from: new Date().toISOString().split('T')[0],
-      to: new Date(Date.now() + days * 24 * 60 * 60 * 1000).toISOString().split('T')[0]
+      from: getLocalDateStr(),
+      to: getLocalDateStr(new Date(Date.now() + days * 24 * 60 * 60 * 1000))
     });
     
     try {

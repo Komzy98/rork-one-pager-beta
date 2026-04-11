@@ -643,7 +643,8 @@ export default function ActivitiesScreen() {
   const stats = useMemo(() => {
     // Combine both task-based habits AND legacy habits (like TodaysRoutine does)
     const today = new Date().getDay();
-    const todayDate = new Date().toISOString().split('T')[0];
+    const _d = new Date();
+    const todayDate = `${_d.getFullYear()}-${String(_d.getMonth() + 1).padStart(2, '0')}-${String(_d.getDate()).padStart(2, '0')}`;
     
     // Task-based habits
     const taskHabits = tasksContext?.allTasks?.filter(task => {
@@ -836,7 +837,8 @@ export default function ActivitiesScreen() {
   const generateDailySummary = useCallback(async () => {
     setIsGeneratingSummary(true);
     try {
-      const today = new Date().toISOString().split('T')[0];
+      const _ds = new Date();
+      const today = `${_ds.getFullYear()}-${String(_ds.getMonth() + 1).padStart(2, '0')}-${String(_ds.getDate()).padStart(2, '0')}`;
       
       const legacyHabits = appContext?.todayHabits || [];
       const taskHabits = tasksContext?.allTasks?.filter(task => {
@@ -1646,7 +1648,8 @@ export default function ActivitiesScreen() {
                   const isCompleted = 'completedToday' in habit 
                     ? habit.completedToday 
                     : (() => {
-                        const today = new Date().toISOString().split('T')[0];
+                        const _dh = new Date();
+                        const today = `${_dh.getFullYear()}-${String(_dh.getMonth() + 1).padStart(2, '0')}-${String(_dh.getDate()).padStart(2, '0')}`;
                         return habit.habitCompletions?.[today] || false;
                       })();
                   
@@ -1662,7 +1665,8 @@ export default function ActivitiesScreen() {
                         if ('name' in habit) {
                           appContext?.toggleHabitCompletion(habit.id);
                         } else {
-                          const today = new Date().toISOString().split('T')[0];
+                          const _dt = new Date();
+                          const today = `${_dt.getFullYear()}-${String(_dt.getMonth() + 1).padStart(2, '0')}-${String(_dt.getDate()).padStart(2, '0')}`;
                           const updatedCompletions = { ...habit.habitCompletions };
                           if (updatedCompletions?.[today]) {
                             delete updatedCompletions[today];
@@ -1882,7 +1886,8 @@ export default function ActivitiesScreen() {
                       if (activity.metadata.source === 'tasks') {
                         const task = tasksContext.tasks.find(t => t.id === habitId && t.isHabit);
                         if (task) {
-                          const today = new Date().toISOString().split('T')[0];
+                          const _da = new Date();
+                          const today = `${_da.getFullYear()}-${String(_da.getMonth() + 1).padStart(2, '0')}-${String(_da.getDate()).padStart(2, '0')}`;
                           const updatedCompletions = { ...task.habitCompletions };
                           
                           if (updatedCompletions?.[today]) {
