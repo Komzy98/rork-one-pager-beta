@@ -243,14 +243,23 @@ Rules:
     try {
       const prompt = buildCoachPrompt();
       console.log('🧠 [HabitCoach] Requesting coaching...');
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), 15000);
       const response = await generateText({
         messages: [{ role: 'user', content: prompt }],
       });
-      setCoachMessage(response);
+      clearTimeout(timeoutId);
+      if (response && typeof response === 'string' && response.trim().length > 0) {
+        setCoachMessage(response);
+        console.log('✅ [HabitCoach] Got coaching response');
+      } else {
+        console.log('⚠️ [HabitCoach] Empty response, using fallback');
+        setCoachMessage(getFallbackMessage());
+      }
       setHasLoadedOnce(true);
-      console.log('✅ [HabitCoach] Got coaching response');
-    } catch (error) {
-      console.error('❌ [HabitCoach] Error:', error);
+    } catch (error: unknown) {
+      const errorMessage = error instanceof Error ? error.message : String(error);
+      console.warn('⚠️ [HabitCoach] AI unavailable, using fallback:', errorMessage);
       setCoachMessage(getFallbackMessage());
       setHasLoadedOnce(true);
     } finally {
@@ -273,8 +282,11 @@ Rules:
     return "Today is a fresh page. Pick your easiest habit and knock it out right now — momentum builds from one small win.";
   };
 
+  const retryCountRef = useRef(0);
+
   useEffect(() => {
-    if (allHabits.length > 0 && !hasLoadedOnce && !isLoadingCoach) {
+    if (allHabits.length > 0 && !hasLoadedOnce && !isLoadingCoach && retryCountRef.current < 2) {
+      retryCountRef.current += 1;
       getCoaching();
     }
   }, [allHabits.length, hasLoadedOnce, isLoadingCoach, getCoaching]);
