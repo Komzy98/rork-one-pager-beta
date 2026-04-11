@@ -18,7 +18,10 @@ import { useAuth } from '@/hooks/useAuth';
 import { useFirebaseSync } from '@/utils/firebaseUserSync';
 
 const formatDateStr = (date: Date): string => {
-  return date.toISOString().split('T')[0];
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, '0');
+  const day = String(date.getDate()).padStart(2, '0');
+  return `${year}-${month}-${day}`;
 };
 
 const isScheduledDayForTask = (
@@ -470,7 +473,7 @@ export const [TaskProvider, useTasks] = createContextHook(() => {
       console.log('💾 [Tasks] Saving updated tasks to storage');
       saveTasksMutate(workingTasks);
     }
-  }, [tasks.length]); // Only run when tasks array length changes
+  }, [tasks.length, formatDateStr(new Date())]); // Run when tasks change or day changes
 
   // Filtered Tasks
   const filteredTasks = useMemo(() => {
