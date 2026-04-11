@@ -193,6 +193,22 @@ class TMDBApi {
     return this.makeRequest(`/tv/on_the_air?page=${page}`);
   }
 
+  async getTrendingMoviesByRegion(region: string, timeWindow: 'day' | 'week' = 'week'): Promise<TMDBSearchResponse<TMDBMovie>> {
+    return this.makeRequest(`/trending/movie/${timeWindow}?region=${region}`);
+  }
+
+  async getTrendingTVShowsByRegion(region: string, timeWindow: 'day' | 'week' = 'week'): Promise<TMDBSearchResponse<TMDBTVShow>> {
+    return this.makeRequest(`/trending/tv/${timeWindow}?region=${region}`);
+  }
+
+  async getPopularMoviesByRegion(region: string, page: number = 1): Promise<TMDBSearchResponse<TMDBMovie>> {
+    return this.makeRequest(`/movie/popular?page=${page}&region=${region}`);
+  }
+
+  async getPopularTVShowsByRegion(region: string, page: number = 1): Promise<TMDBSearchResponse<TMDBTVShow>> {
+    return this.makeRequest(`/tv/popular?page=${page}&watch_region=${region}`);
+  }
+
   getImageUrl(path: string | null, size: 'w200' | 'w300' | 'w500' | 'w780' | 'original' = 'w500'): string | null {
     if (!path) return null;
     return `https://image.tmdb.org/t/p/${size}${path}`;

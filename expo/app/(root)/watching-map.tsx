@@ -103,6 +103,51 @@ export default function WatchingMapScreen() {
   }, [headerAnim]);
 
   useEffect(() => {
+    const centerOnUserLocation = () => {
+      if (Platform.OS === 'web') {
+        if (navigator.geolocation) {
+          navigator.geolocation.getCurrentPosition(
+            (position) => {
+              const { latitude, longitude } = position.coords;
+              console.log('📍 Auto-centering map on user location:', latitude, longitude);
+              mapRef.current?.animateToRegion({
+                latitude,
+                longitude,
+                latitudeDelta: 0.08,
+                longitudeDelta: 0.08,
+              }, 1000);
+            },
+            (err) => console.log('📍 Geolocation denied, using default region:', err.message)
+          );
+        }
+      } else {
+        void import('expo-location').then(async (Location) => {
+          try {
+            const { status } = await Location.requestForegroundPermissionsAsync();
+            if (status !== 'granted') {
+              console.log('📍 Location permission denied, using default region');
+              return;
+            }
+            const loc = await Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.Balanced });
+            console.log('📍 Auto-centering map on user location:', loc.coords.latitude, loc.coords.longitude);
+            mapRef.current?.animateToRegion({
+              latitude: loc.coords.latitude,
+              longitude: loc.coords.longitude,
+              latitudeDelta: 0.08,
+              longitudeDelta: 0.08,
+            }, 1000);
+          } catch (e) {
+            console.log('📍 Location error, using default region:', e);
+          }
+        });
+      }
+    };
+
+    const timer = setTimeout(centerOnUserLocation, 800);
+    return () => clearTimeout(timer);
+  }, []);
+
+  useEffect(() => {
     const pulse = Animated.loop(
       Animated.sequence([
         Animated.timing(pulseAnim, {

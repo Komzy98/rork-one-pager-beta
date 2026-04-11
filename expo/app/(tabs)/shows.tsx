@@ -63,6 +63,7 @@ import { openStreamingApp, getStreamingPlatform } from '@/utils/streamingLinks';
 import { WatchProvider } from '@/utils/tmdbApi';
 
 import { episodeNotificationService, TrackedShow } from '@/utils/episodeNotificationService';
+import { useUserProfile } from '@/hooks/useUserProfile';
 import { likedContentService } from '@/utils/likedContentService';
 import WatchProviders from '@/components/WatchProviders';
 
@@ -808,6 +809,36 @@ export default function ShowsScreen() {
     staleTime: 1000 * 60 * 30,
   });
 
+  const { profile } = useUserProfile();
+  const userCountryCode = useMemo(() => {
+    if (profile?.favoriteCountries && profile.favoriteCountries.length > 0) {
+      return profile.favoriteCountries[0].code;
+    }
+    return null;
+  }, [profile?.favoriteCountries]);
+
+  const userCountryName = useMemo(() => {
+    if (profile?.favoriteCountries && profile.favoriteCountries.length > 0) {
+      return profile.favoriteCountries[0].name;
+    }
+    return null;
+  }, [profile?.favoriteCountries]);
+
+  const regionTrendingQuery = useQuery({
+    queryKey: ['region-trending', userCountryCode],
+    queryFn: async () => {
+      if (!userCountryCode) return null;
+      const [movies, tvShows] = await Promise.all([
+        tmdbApi.getTrendingMoviesByRegion(userCountryCode, 'week'),
+        tmdbApi.getTrendingTVShowsByRegion(userCountryCode, 'week'),
+      ]);
+      console.log(`🌍 Loaded trending for ${userCountryCode}: ${movies.results.length} movies, ${tvShows.results.length} TV shows`);
+      return { movies: movies.results, tvShows: tvShows.results };
+    },
+    enabled: !!userCountryCode,
+    staleTime: 1000 * 60 * 30,
+  });
+
   const nowPlayingQuery = useQuery({
     queryKey: ['now-playing-movies'],
     queryFn: async () => {
@@ -949,6 +980,7 @@ export default function ShowsScreen() {
   const { refetch: refetchOnTheAir } = onTheAirQuery;
   const { refetch: refetchUpcoming } = upcomingMoviesQuery;
   const { refetch: refetchNewEpisodes } = newEpisodesQuery;
+  const { refetch: refetchRegionTrending } = regionTrendingQuery;
 
   const onRefresh = useCallback(async () => {
     setRefreshing(true);
@@ -961,9 +993,10 @@ export default function ShowsScreen() {
       refetchOnTheAir(),
       refetchUpcoming(),
       refetchNewEpisodes(),
+      refetchRegionTrending(),
     ]);
     setRefreshing(false);
-  }, [refetchTrending, refetchPopular, refetchTopRated, refetchNowPlaying, refetchAiringToday, refetchOnTheAir, refetchUpcoming, refetchNewEpisodes]);
+  }, [refetchTrending, refetchPopular, refetchTopRated, refetchNowPlaying, refetchAiringToday, refetchOnTheAir, refetchUpcoming, refetchNewEpisodes, refetchRegionTrending]);
 
   const heroItems = useMemo(() => {
     if (!trendingQuery.data) return [];
@@ -1882,6 +1915,24 @@ export default function ShowsScreen() {
                     })}
                   </View>
                 </View>
+              )}
+
+              {regionTrendingQuery.data && userCountryName && (
+                <>
+                  {renderSection(
+                    `Trending in ${userCountryName}`,
+                    <Globe size={18} color={'#00D1FF'} />,
+                    regionTrendingQuery.data.movies.slice(0, 10) || [],
+                    'movie',
+                    true
+                  )}
+                  {renderSection(
+                    `Popular TV in ${userCountryName}`,
+                    <Tv size={18} color={'#00D1FF'} />,
+                    regionTrendingQuery.data.tvShows.slice(0, 10) || [],
+                    'tv'
+                  )}
+                </>
               )}
 
               {renderSection(
