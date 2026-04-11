@@ -83,7 +83,8 @@ export default function ChronotypeScreen() {
     void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
     updateProfile({ chronotype: selected });
 
-    if (profile?.interests?.includes('football')) {
+    const hasSportsInterest = profile?.interests?.includes('football') || profile?.interests?.includes('nba');
+    if (hasSportsInterest) {
       router.push('/(onboarding)/nationality' as any);
     } else {
       router.push('/(onboarding)/complete' as any);
@@ -96,7 +97,8 @@ export default function ChronotypeScreen() {
 
   const handleSkip = useCallback(() => {
     void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-    if (profile?.interests?.includes('football')) {
+    const hasSportsInterest = profile?.interests?.includes('football') || profile?.interests?.includes('nba');
+    if (hasSportsInterest) {
       router.push('/(onboarding)/nationality' as any);
     } else {
       router.push('/(onboarding)/complete' as any);

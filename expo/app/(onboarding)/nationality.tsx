@@ -80,6 +80,8 @@ export default function NationalityScreen() {
     }
     if (profile?.interests?.includes('football')) {
       router.push('/(onboarding)/countries' as any);
+    } else if (profile?.interests?.includes('nba')) {
+      router.push('/(onboarding)/nba-teams' as any);
     } else {
       router.push('/(onboarding)/complete' as any);
     }
@@ -88,6 +90,8 @@ export default function NationalityScreen() {
   const handleSkip = useCallback(() => {
     if (profile?.interests?.includes('football')) {
       router.push('/(onboarding)/countries' as any);
+    } else if (profile?.interests?.includes('nba')) {
+      router.push('/(onboarding)/nba-teams' as any);
     } else {
       router.push('/(onboarding)/complete' as any);
     }

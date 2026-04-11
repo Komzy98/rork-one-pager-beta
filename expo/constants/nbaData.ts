@@ -468,6 +468,76 @@ export function getTeamLogo(abbreviation: string): string {
   return logos[abbreviation] || '';
 }
 
+export interface NBATeamInfo {
+  id: string;
+  name: string;
+  abbreviation: string;
+  conference: 'Eastern' | 'Western';
+  logo: string;
+  color: string;
+}
+
+export const ALL_NBA_TEAMS: NBATeamInfo[] = [
+  { id: 'atl', name: 'Atlanta Hawks', abbreviation: 'ATL', conference: 'Eastern', logo: 'https://a.espncdn.com/i/teamlogos/nba/500/atl.png', color: '#E03A3E' },
+  { id: 'bos', name: 'Boston Celtics', abbreviation: 'BOS', conference: 'Eastern', logo: 'https://a.espncdn.com/i/teamlogos/nba/500/bos.png', color: '#007A33' },
+  { id: 'bkn', name: 'Brooklyn Nets', abbreviation: 'BKN', conference: 'Eastern', logo: 'https://a.espncdn.com/i/teamlogos/nba/500/bkn.png', color: '#000000' },
+  { id: 'cha', name: 'Charlotte Hornets', abbreviation: 'CHA', conference: 'Eastern', logo: 'https://a.espncdn.com/i/teamlogos/nba/500/cha.png', color: '#1D1160' },
+  { id: 'chi', name: 'Chicago Bulls', abbreviation: 'CHI', conference: 'Eastern', logo: 'https://a.espncdn.com/i/teamlogos/nba/500/chi.png', color: '#CE1141' },
+  { id: 'cle', name: 'Cleveland Cavaliers', abbreviation: 'CLE', conference: 'Eastern', logo: 'https://a.espncdn.com/i/teamlogos/nba/500/cle.png', color: '#860038' },
+  { id: 'dal', name: 'Dallas Mavericks', abbreviation: 'DAL', conference: 'Western', logo: 'https://a.espncdn.com/i/teamlogos/nba/500/dal.png', color: '#00538C' },
+  { id: 'den', name: 'Denver Nuggets', abbreviation: 'DEN', conference: 'Western', logo: 'https://a.espncdn.com/i/teamlogos/nba/500/den.png', color: '#0E2240' },
+  { id: 'det', name: 'Detroit Pistons', abbreviation: 'DET', conference: 'Eastern', logo: 'https://a.espncdn.com/i/teamlogos/nba/500/det.png', color: '#C8102E' },
+  { id: 'gsw', name: 'Golden State Warriors', abbreviation: 'GSW', conference: 'Western', logo: 'https://a.espncdn.com/i/teamlogos/nba/500/gs.png', color: '#1D428A' },
+  { id: 'hou', name: 'Houston Rockets', abbreviation: 'HOU', conference: 'Western', logo: 'https://a.espncdn.com/i/teamlogos/nba/500/hou.png', color: '#CE1141' },
+  { id: 'ind', name: 'Indiana Pacers', abbreviation: 'IND', conference: 'Eastern', logo: 'https://a.espncdn.com/i/teamlogos/nba/500/ind.png', color: '#002D62' },
+  { id: 'lac', name: 'LA Clippers', abbreviation: 'LAC', conference: 'Western', logo: 'https://a.espncdn.com/i/teamlogos/nba/500/lac.png', color: '#C8102E' },
+  { id: 'lal', name: 'Los Angeles Lakers', abbreviation: 'LAL', conference: 'Western', logo: 'https://a.espncdn.com/i/teamlogos/nba/500/lal.png', color: '#552583' },
+  { id: 'mem', name: 'Memphis Grizzlies', abbreviation: 'MEM', conference: 'Western', logo: 'https://a.espncdn.com/i/teamlogos/nba/500/mem.png', color: '#5D76A9' },
+  { id: 'mia', name: 'Miami Heat', abbreviation: 'MIA', conference: 'Eastern', logo: 'https://a.espncdn.com/i/teamlogos/nba/500/mia.png', color: '#98002E' },
+  { id: 'mil', name: 'Milwaukee Bucks', abbreviation: 'MIL', conference: 'Eastern', logo: 'https://a.espncdn.com/i/teamlogos/nba/500/mil.png', color: '#00471B' },
+  { id: 'min', name: 'Minnesota Timberwolves', abbreviation: 'MIN', conference: 'Western', logo: 'https://a.espncdn.com/i/teamlogos/nba/500/min.png', color: '#0C2340' },
+  { id: 'nop', name: 'New Orleans Pelicans', abbreviation: 'NOP', conference: 'Western', logo: 'https://a.espncdn.com/i/teamlogos/nba/500/no.png', color: '#0C2340' },
+  { id: 'nyk', name: 'New York Knicks', abbreviation: 'NYK', conference: 'Eastern', logo: 'https://a.espncdn.com/i/teamlogos/nba/500/ny.png', color: '#006BB6' },
+  { id: 'okc', name: 'Oklahoma City Thunder', abbreviation: 'OKC', conference: 'Western', logo: 'https://a.espncdn.com/i/teamlogos/nba/500/okc.png', color: '#007AC1' },
+  { id: 'orl', name: 'Orlando Magic', abbreviation: 'ORL', conference: 'Eastern', logo: 'https://a.espncdn.com/i/teamlogos/nba/500/orl.png', color: '#0077C0' },
+  { id: 'phi', name: 'Philadelphia 76ers', abbreviation: 'PHI', conference: 'Eastern', logo: 'https://a.espncdn.com/i/teamlogos/nba/500/phi.png', color: '#006BB6' },
+  { id: 'phx', name: 'Phoenix Suns', abbreviation: 'PHX', conference: 'Western', logo: 'https://a.espncdn.com/i/teamlogos/nba/500/phx.png', color: '#1D1160' },
+  { id: 'por', name: 'Portland Trail Blazers', abbreviation: 'POR', conference: 'Western', logo: 'https://a.espncdn.com/i/teamlogos/nba/500/por.png', color: '#E03A3E' },
+  { id: 'sac', name: 'Sacramento Kings', abbreviation: 'SAC', conference: 'Western', logo: 'https://a.espncdn.com/i/teamlogos/nba/500/sac.png', color: '#5A2D81' },
+  { id: 'sas', name: 'San Antonio Spurs', abbreviation: 'SAS', conference: 'Western', logo: 'https://a.espncdn.com/i/teamlogos/nba/500/sa.png', color: '#C4CED4' },
+  { id: 'tor', name: 'Toronto Raptors', abbreviation: 'TOR', conference: 'Eastern', logo: 'https://a.espncdn.com/i/teamlogos/nba/500/tor.png', color: '#CE1141' },
+  { id: 'uta', name: 'Utah Jazz', abbreviation: 'UTA', conference: 'Western', logo: 'https://a.espncdn.com/i/teamlogos/nba/500/uta.png', color: '#002B5C' },
+  { id: 'was', name: 'Washington Wizards', abbreviation: 'WAS', conference: 'Eastern', logo: 'https://a.espncdn.com/i/teamlogos/nba/500/wsh.png', color: '#002B5C' },
+];
+
+export function searchNBATeams(query: string): NBATeamInfo[] {
+  const q = query.toLowerCase().trim();
+  if (!q) return ALL_NBA_TEAMS;
+  return ALL_NBA_TEAMS.filter(team =>
+    team.name.toLowerCase().includes(q) ||
+    team.abbreviation.toLowerCase().includes(q) ||
+    team.conference.toLowerCase().includes(q)
+  );
+}
+
+export function getNBATeamsByConference(conference: 'Eastern' | 'Western'): NBATeamInfo[] {
+  return ALL_NBA_TEAMS.filter(team => team.conference === conference);
+}
+
+export function getUpcomingGamesForTeam(teamAbbreviation: string): NBAGame[] {
+  return getUpcomingGames().filter(game =>
+    game.team1.abbreviation === teamAbbreviation ||
+    game.team2.abbreviation === teamAbbreviation
+  );
+}
+
+export function getCompletedGamesForTeam(teamAbbreviation: string): NBAGame[] {
+  return getCompletedGames().filter(game =>
+    game.team1.abbreviation === teamAbbreviation ||
+    game.team2.abbreviation === teamAbbreviation
+  );
+}
+
 export function getTeamColor(abbreviation: string): string {
   const colors: Record<string, string> = {
     CLE: '#860038',

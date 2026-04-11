@@ -18,6 +18,7 @@ export default function OnboardingLayout() {
       <Stack.Screen name="nationality" />
       <Stack.Screen name="countries" />
       <Stack.Screen name="teams" />
+      <Stack.Screen name="nba-teams" />
       <Stack.Screen name="complete" options={{ animation: 'fade' }} />
     </Stack>
   );

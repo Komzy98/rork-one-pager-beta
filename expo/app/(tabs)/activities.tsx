@@ -39,6 +39,7 @@ import PeakPerformanceScheduler from '@/components/PeakPerformanceScheduler';
 import HabitFormationCoach from '@/components/HabitFormationCoach';
 import { getChronotypeInfo, getChronotypeGreetingTip } from '@/constants/chronotypes';
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import NBAUpcomingSection from '@/components/NBAUpcomingSection';
 
 type AvailableSpeechVoice = Awaited<ReturnType<typeof Speech.getAvailableVoicesAsync>>[number];
 
@@ -626,9 +627,18 @@ export default function ActivitiesScreen() {
   }, [profile?.interests]);
 
   const hasSportsInterest = useMemo(() => {
-    if (!profile?.interests?.length) return true; // Show by default if no interests set
+    if (!profile?.interests?.length) return true;
     return profile.interests.includes('football');
   }, [profile?.interests]);
+
+  const hasNBAInterest = useMemo(() => {
+    if (!profile?.interests?.length) return false;
+    return profile.interests.includes('nba');
+  }, [profile?.interests]);
+
+  const favoriteNBATeams = useMemo(() => {
+    return profile?.favoriteNBATeams || [];
+  }, [profile?.favoriteNBATeams]);
 
   const stats = useMemo(() => {
     // Combine both task-based habits AND legacy habits (like TodaysRoutine does)
@@ -2408,6 +2418,11 @@ export default function ActivitiesScreen() {
               }}
               rawUpcomingCount={upcomingQuery.data?.response?.length || 0}
             />
+            )}
+
+            {/* NBA Section */}
+            {hasNBAInterest && (
+              <NBAUpcomingSection favoriteNBATeams={favoriteNBATeams} />
             )}
           </View>
         )}

@@ -337,6 +337,14 @@ export interface UserTeam {
   isNationalTeam?: boolean;
 }
 
+export interface NBAFavoriteTeam {
+  id: string;
+  name: string;
+  abbreviation: string;
+  conference: 'Eastern' | 'Western';
+  logo?: string;
+}
+
 export interface UserCountry {
   id: string;
   name: string;
@@ -375,6 +383,7 @@ export interface UserProfile {
   name: string;
   avatar?: string;
   favoriteTeams: UserTeam[];
+  favoriteNBATeams?: NBAFavoriteTeam[];
   favoriteCountries: UserCountry[];
   favoriteLeagues: number[];
   favoriteBooks: Book[];
