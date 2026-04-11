@@ -532,7 +532,8 @@ export function generateHabitInsights(habits: Task[]): HabitInsight[] {
     const streak = habit.habitStreak || 0;
     const completionDates = Object.keys(completions).sort();
     
-    if (streak >= 5 && streak < 10 && !completions[todayStr]) {
+    const currentHour = today.getHours();
+    if (streak >= 5 && streak < 10 && !completions[todayStr] && currentHour >= 18) {
       insights.push({
         type: 'streak_risk',
         habitId: habit.id,

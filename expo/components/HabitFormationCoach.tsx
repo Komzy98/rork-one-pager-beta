@@ -171,9 +171,10 @@ export default function HabitFormationCoach({ onComplete, maxItems = 3 }: HabitF
   const habitStats = useMemo(() => {
     const total = allHabits.length;
     const completedToday = allHabits.filter(h => h.habitCompletions?.[today]).length;
+    const currentHour = new Date().getHours();
     const atRisk = allHabits.filter(h => {
       const streak = h.habitStreak || 0;
-      return streak >= 3 && !h.habitCompletions?.[today];
+      return streak >= 3 && !h.habitCompletions?.[today] && currentHour >= 18;
     });
     const longestStreak = Math.max(0, ...allHabits.map(h => h.habitStreak || 0));
     const avgCompletion = total > 0 ? Math.round((completedToday / total) * 100) : 0;

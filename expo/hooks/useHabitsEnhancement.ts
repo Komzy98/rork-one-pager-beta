@@ -396,7 +396,7 @@ export const [HabitsEnhancementProvider, useHabitsEnhancement] = createContextHo
       currentStreak: habit.streak,
       longestStreak: Math.max(habit.streak, habit.totalCompletions),
       lastCompletedAt: Object.keys(habit.completions).sort().pop(),
-      isAtRisk: habit.streak > 0 && !habit.completedToday,
+      isAtRisk: habit.streak > 0 && !habit.completedToday && new Date().getHours() >= 18,
       streakFreezeAvailable: false,
     }));
   }, [habitsWithStats]);
