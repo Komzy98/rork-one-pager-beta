@@ -72,6 +72,32 @@ function pastDate(daysAgo: number): string {
 
 export const BOXING_UPCOMING_FIGHTS: BoxingFight[] = [
   {
+    id: 1000,
+    date: '2026-04-11T21:07:00.000Z',
+    status: 'upcoming',
+    event: 'The Ring - Netflix Boxing',
+    venue: 'Tottenham Hotspur Stadium',
+    city: 'London',
+    country: 'United Kingdom',
+    division: 'Heavyweight',
+    rounds: 10,
+    titleFight: false,
+    fighter1: {
+      name: 'Tyson Fury',
+      nickname: 'The Gypsy King',
+      record: '34-2-1',
+      country: 'United Kingdom',
+      countryFlag: '🇬🇧',
+    },
+    fighter2: {
+      name: 'Arslanbek Makhmudov',
+      nickname: 'The Lion',
+      record: '21-2-0',
+      country: 'Russia',
+      countryFlag: '🇷🇺',
+    },
+  },
+  {
     id: 1001,
     date: futureDate(12),
     status: 'upcoming',
