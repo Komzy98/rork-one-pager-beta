@@ -412,18 +412,26 @@ Rules:
 
       {quickRoutine.length > 0 && !allDone && (
         <View style={styles.quickSection}>
-          <View style={styles.quickHeader}>
-            <Zap size={14} color="#F59E0B" strokeWidth={2.5} />
-            <Text style={styles.quickTitle}>Quick wins</Text>
-            <Text style={styles.quickSubtitle}>Simplified versions to keep your streak</Text>
+          <View style={styles.quickHeaderRow}>
+            <View style={styles.quickIconWrap}>
+              <Zap size={13} color="#fff" strokeWidth={2.5} />
+            </View>
+            <View style={styles.quickHeaderText}>
+              <Text style={styles.quickTitle}>Quick wins</Text>
+              <Text style={styles.quickSubtitle}>Simplified versions to keep your streak</Text>
+            </View>
           </View>
-          {quickRoutine.map((item) => (
-            <QuickWinItem
-              key={item.id}
-              item={item}
-              onComplete={handleQuickComplete}
-            />
-          ))}
+          <View style={styles.quickList}>
+            {quickRoutine.map((item, index) => (
+              <React.Fragment key={item.id}>
+                <QuickWinItem
+                  item={item}
+                  onComplete={handleQuickComplete}
+                />
+                {index < quickRoutine.length - 1 && <View style={styles.quickDivider} />}
+              </React.Fragment>
+            ))}
+          </View>
         </View>
       )}
 
@@ -441,21 +449,42 @@ Rules:
 
       {insights.length > 0 && (
         <View style={styles.insightSection}>
-          {insights.slice(0, 2).map((insight, idx) => (
-            <View
-              key={`${insight.habitId}-${idx}`}
-              style={[
-                styles.insightCard,
-                insight.priority === 'high' && styles.insightCardHigh,
-              ]}
-            >
-              <Text style={styles.insightIcon}>{insight.icon}</Text>
-              <View style={styles.insightContent}>
-                <Text style={styles.insightTitle}>{insight.title}</Text>
-                <Text style={styles.insightDesc} numberOfLines={2}>{insight.description}</Text>
+          {insights.slice(0, 2).map((insight, idx) => {
+            const isHigh = insight.priority === 'high';
+            const isMomentum = insight.type === 'momentum';
+            return (
+              <View
+                key={`${insight.habitId}-${idx}`}
+                style={[
+                  styles.insightCard,
+                  isHigh && styles.insightCardHigh,
+                  isMomentum && styles.insightCardMomentum,
+                ]}
+              >
+                <View style={[
+                  styles.insightIconWrap,
+                  isHigh && styles.insightIconWrapHigh,
+                  isMomentum && styles.insightIconWrapMomentum,
+                ]}>
+                  {isHigh ? (
+                    <Flame size={14} color="#DC2626" strokeWidth={2.5} />
+                  ) : isMomentum ? (
+                    <Trophy size={14} color="#D97706" strokeWidth={2.5} />
+                  ) : (
+                    <TrendingUp size={14} color="#3B82F6" strokeWidth={2.5} />
+                  )}
+                </View>
+                <View style={styles.insightContent}>
+                  <Text style={[
+                    styles.insightTitle,
+                    isHigh && styles.insightTitleHigh,
+                    isMomentum && styles.insightTitleMomentum,
+                  ]}>{insight.title}</Text>
+                  <Text style={styles.insightDesc} numberOfLines={2}>{insight.description}</Text>
+                </View>
               </View>
-            </View>
-          ))}
+            );
+          })}
         </View>
       )}
     </Animated.View>
@@ -633,55 +662,75 @@ const styles = StyleSheet.create({
     paddingTop: 16,
     paddingBottom: 4,
   },
-  quickHeader: {
+  quickHeaderRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 6,
-    marginBottom: 12,
+    gap: 10,
+    marginBottom: 14,
+  },
+  quickIconWrap: {
+    width: 28,
+    height: 28,
+    borderRadius: 8,
+    backgroundColor: '#F59E0B',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  quickHeaderText: {
+    flex: 1,
   },
   quickTitle: {
     fontSize: 14,
     fontWeight: '700' as const,
     color: '#0F172A',
+    letterSpacing: -0.2,
   },
   quickSubtitle: {
     fontSize: 11,
     color: '#94A3B8',
-    marginLeft: 'auto' as const,
+    marginTop: 1,
+  },
+  quickList: {
+    backgroundColor: '#F8FAFC',
+    borderRadius: 14,
+    borderWidth: 1,
+    borderColor: 'rgba(0,0,0,0.04)',
+    overflow: 'hidden',
+  },
+  quickDivider: {
+    height: 1,
+    backgroundColor: 'rgba(0,0,0,0.04)',
+    marginHorizontal: 12,
   },
   quickItemWrapper: {
-    backgroundColor: '#FAFBFC',
-    borderRadius: 14,
-    marginBottom: 8,
-    borderWidth: 1,
-    borderColor: 'rgba(0,0,0,0.03)',
     overflow: 'hidden',
   },
   quickItem: {
     flexDirection: 'row',
     alignItems: 'center',
-    paddingVertical: 11,
-    paddingHorizontal: 12,
+    paddingVertical: 12,
+    paddingHorizontal: 14,
   },
   quickCompleteBtn: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
     gap: 8,
-    backgroundColor: '#10B981',
-    marginHorizontal: 12,
+    backgroundColor: '#0F172A',
+    marginHorizontal: 14,
     marginBottom: 12,
-    paddingVertical: 10,
+    paddingVertical: 11,
     borderRadius: 10,
   },
   quickCompleteBtnText: {
     fontSize: 13,
     fontWeight: '600' as const,
     color: '#fff',
+    letterSpacing: -0.1,
   },
   quickDot: {
-    width: 4,
-    height: 32,
+    width: 3,
+    height: 28,
     borderRadius: 2,
     marginRight: 12,
   },
@@ -698,6 +747,7 @@ const styles = StyleSheet.create({
     fontWeight: '600' as const,
     color: '#1E293B',
     flex: 1,
+    letterSpacing: -0.1,
   },
   riskBadge: {
     width: 18,
@@ -723,7 +773,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     gap: 3,
     backgroundColor: 'rgba(100, 116, 139, 0.08)',
-    paddingHorizontal: 7,
+    paddingHorizontal: 8,
     paddingVertical: 4,
     borderRadius: 6,
   },
@@ -771,32 +821,54 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'flex-start',
     backgroundColor: '#F8FAFC',
-    borderRadius: 12,
-    padding: 12,
-    gap: 10,
+    borderRadius: 14,
+    padding: 14,
+    gap: 12,
     borderWidth: 1,
-    borderColor: 'rgba(0,0,0,0.03)',
+    borderColor: 'rgba(0,0,0,0.04)',
   },
   insightCardHigh: {
-    backgroundColor: '#FFFBEB',
-    borderColor: 'rgba(245, 158, 11, 0.15)',
+    backgroundColor: '#FEF2F2',
+    borderColor: 'rgba(220, 38, 38, 0.1)',
   },
-  insightIcon: {
-    fontSize: 16,
-    marginTop: 1,
+  insightCardMomentum: {
+    backgroundColor: '#FFFBEB',
+    borderColor: 'rgba(217, 119, 6, 0.12)',
+  },
+  insightIconWrap: {
+    width: 32,
+    height: 32,
+    borderRadius: 10,
+    backgroundColor: 'rgba(59, 130, 246, 0.1)',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  insightIconWrapHigh: {
+    backgroundColor: 'rgba(220, 38, 38, 0.1)',
+  },
+  insightIconWrapMomentum: {
+    backgroundColor: 'rgba(217, 119, 6, 0.1)',
   },
   insightContent: {
     flex: 1,
+    paddingTop: 2,
   },
   insightTitle: {
     fontSize: 13,
-    fontWeight: '600' as const,
+    fontWeight: '700' as const,
     color: '#1E293B',
+    letterSpacing: -0.1,
+  },
+  insightTitleHigh: {
+    color: '#991B1B',
+  },
+  insightTitleMomentum: {
+    color: '#92400E',
   },
   insightDesc: {
     fontSize: 12,
     color: '#64748B',
-    marginTop: 2,
+    marginTop: 3,
     lineHeight: 17,
   },
 });
