@@ -235,7 +235,8 @@ Rules:
 - If streaks are at risk, mention them urgently
 - If all done, celebrate genuinely
 - Give one actionable tip
-- Sound human, warm, direct. No fluff.`;
+- Sound human, warm, direct. No fluff.
+- Do NOT use any markdown formatting like ** or * or # — output plain text only`;
   }, [allHabits, habitStats, today]);
 
   const getCoaching = useCallback(async () => {
