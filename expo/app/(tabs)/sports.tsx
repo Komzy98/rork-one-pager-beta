@@ -1956,45 +1956,33 @@ export default function SportsScreen() {
       )}
 
       {sportMode === 'football' && (
-        <View style={styles.actionBar}>
-          <CompetitionFilter
-            selectedLeagues={selectedLeagues}
-            onLeaguesChange={setSelectedLeagues}
-            favoriteLeagues={favoriteLeagues}
-            onToggleFavorite={toggleFavoriteLeague}
-          />
-          
-          {selectedLeagues.length > 0 && (
-            <TouchableOpacity
-              style={styles.clearFilterBadge}
-              onPress={() => {
-                if (Platform.OS !== 'web') {
-                  void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-                }
-                setSelectedLeagues([]);
-              }}
+        <View style={styles.filterArea}>
+          <View style={styles.filterRow}>
+            <View style={{ flex: 1 }}>
+              <CompetitionFilter
+                selectedLeagues={selectedLeagues}
+                onLeaguesChange={setSelectedLeagues}
+                favoriteLeagues={favoriteLeagues}
+                onToggleFavorite={toggleFavoriteLeague}
+                isDark={isDark}
+              />
+            </View>
+          </View>
+          <View style={styles.filterActionsRow}>
+            <TouchableOpacity 
+              style={[
+                styles.standingsBtn,
+                { backgroundColor: isDark ? 'rgba(52, 199, 89, 0.12)' : 'rgba(52, 199, 89, 0.08)' },
+                availableLeaguesForStandings.length === 0 && { opacity: 0.3 }
+              ]}
+              onPress={handleLeagueTablesPress}
               activeOpacity={0.7}
+              disabled={availableLeaguesForStandings.length === 0}
             >
-              <Text style={styles.clearFilterText}>{selectedLeagues.length}</Text>
-              <X size={12} color="#FFF" strokeWidth={3} />
+              <BarChart3 size={15} color="#34C759" />
+              <Text style={styles.standingsBtnText}>Tables</Text>
             </TouchableOpacity>
-          )}
-          
-          <View style={{ flex: 1 }} />
-          
-          <TouchableOpacity 
-            style={[
-              styles.standingsBtn,
-              { backgroundColor: isDark ? 'rgba(52, 199, 89, 0.12)' : 'rgba(52, 199, 89, 0.08)' },
-              availableLeaguesForStandings.length === 0 && { opacity: 0.3 }
-            ]}
-            onPress={handleLeagueTablesPress}
-            activeOpacity={0.7}
-            disabled={availableLeaguesForStandings.length === 0}
-          >
-            <BarChart3 size={15} color="#34C759" />
-            <Text style={styles.standingsBtnText}>Tables</Text>
-          </TouchableOpacity>
+          </View>
         </View>
       )}
 
@@ -2610,26 +2598,19 @@ const styles = StyleSheet.create({
     fontSize: 10,
     fontWeight: '800' as const,
   },
-  actionBar: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    paddingHorizontal: 20,
+  filterArea: {
     marginBottom: 12,
     gap: 8,
   },
-  clearFilterBadge: {
+  filterRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 3,
-    backgroundColor: '#007AFF',
-    paddingHorizontal: 8,
-    paddingVertical: 6,
-    borderRadius: 10,
   },
-  clearFilterText: {
-    fontSize: 12,
-    fontWeight: '700' as const,
-    color: '#FFF',
+  filterActionsRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 20,
+    gap: 8,
   },
   standingsBtn: {
     flexDirection: 'row',
