@@ -251,7 +251,8 @@ Rules:
       });
       clearTimeout(timeoutId);
       if (response && typeof response === 'string' && response.trim().length > 0) {
-        setCoachMessage(response);
+        const cleaned = response.replace(/\*\*/g, '');
+        setCoachMessage(cleaned);
         console.log('✅ [HabitCoach] Got coaching response');
       } else {
         console.log('⚠️ [HabitCoach] Empty response, using fallback');

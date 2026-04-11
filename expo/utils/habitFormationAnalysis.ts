@@ -525,6 +525,8 @@ export function generateHabitInsights(habits: Task[]): HabitInsight[] {
   const todayStr = `${year}-${month}-${day}`;
   const dayOfWeek = today.getDay();
   
+  const momentumByStreak: Record<number, string[]> = {};
+
   habits.forEach(habit => {
     if (!habit.isHabit) return;
     
@@ -547,16 +549,10 @@ export function generateHabitInsights(habits: Task[]): HabitInsight[] {
     }
     
     if (streak >= 7) {
-      insights.push({
-        type: 'momentum',
-        habitId: habit.id,
-        habitName: habit.title,
-        title: `Amazing ${streak}-day streak!`,
-        description: `You're building a real habit with "${habit.title}". Keep it up!`,
-        actionable: false,
-        priority: 'low',
-        icon: '⭐',
-      });
+      if (!momentumByStreak[streak]) {
+        momentumByStreak[streak] = [];
+      }
+      momentumByStreak[streak].push(habit.title);
     }
     
     if (completionDates.length >= 14) {
@@ -582,6 +578,36 @@ export function generateHabitInsights(habits: Task[]): HabitInsight[] {
           icon: '📅',
         });
       }
+    }
+  });
+
+  Object.entries(momentumByStreak).forEach(([streakStr, habitNames]) => {
+    const streak = parseInt(streakStr);
+    if (habitNames.length === 1) {
+      insights.push({
+        type: 'momentum',
+        habitId: habitNames[0],
+        habitName: habitNames[0],
+        title: `Amazing ${streak}-day streak!`,
+        description: `You're building a real habit with "${habitNames[0]}". Keep it up!`,
+        actionable: false,
+        priority: 'low',
+        icon: '⭐',
+      });
+    } else {
+      const lastHabit = habitNames[habitNames.length - 1];
+      const otherHabits = habitNames.slice(0, -1);
+      const namesList = otherHabits.map(n => `"${n}"`).join(', ') + ` and "${lastHabit}"`;
+      insights.push({
+        type: 'momentum',
+        habitId: 'combined-momentum',
+        habitName: habitNames.join(', '),
+        title: `Amazing ${streak}-day streak!`,
+        description: `You're building real habits with ${namesList}. Keep it up!`,
+        actionable: false,
+        priority: 'low',
+        icon: '⭐',
+      });
     }
   });
   
