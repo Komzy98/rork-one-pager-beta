@@ -10,6 +10,7 @@ import {
   RefreshControl,
   FlatList,
   Image,
+  ActivityIndicator,
 } from 'react-native';
 import {
   Calendar,
@@ -22,20 +23,22 @@ import {
   Tv,
   Flame,
   Zap,
+  Radio,
+  AlertCircle,
+  RefreshCw,
 } from 'lucide-react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import * as Haptics from 'expo-haptics';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
 import {
   NBAGame,
   NBATeamStanding,
-  getNextGame,
-  getUpcomingGames,
-  getCompletedGames,
   getTeamColor,
   getTeamLogo,
   NBA_EASTERN_STANDINGS,
   NBA_WESTERN_STANDINGS,
 } from '@/constants/nbaData';
+import { fetchNBAGamesMultipleDays, fetchNBAStandings } from '@/utils/nbaApi';
 
 const { width: SCREEN_WIDTH } = Dimensions.get('window');
 
@@ -509,37 +512,91 @@ const TabPill = React.memo(({ activeTab, onTabChange, isDark, counts }: {
   );
 });
 
+const LiveBadge = React.memo(({ quarter, timeRemaining, isDark }: { quarter?: number; timeRemaining?: string; isDark: boolean }) => {
+  const pulseAnim = useRef(new Animated.Value(1)).current;
+
+  useEffect(() => {
+    const pulse = Animated.loop(
+      Animated.sequence([
+        Animated.timing(pulseAnim, { toValue: 0.4, duration: 800, useNativeDriver: true }),
+        Animated.timing(pulseAnim, { toValue: 1, duration: 800, useNativeDriver: true }),
+      ])
+    );
+    pulse.start();
+    return () => pulse.stop();
+  }, [pulseAnim]);
+
+  return (
+    <View style={[s.liveBadge, { backgroundColor: isDark ? 'rgba(239,68,68,0.15)' : 'rgba(239,68,68,0.1)' }]}>
+      <Animated.View style={[s.liveDot, { opacity: pulseAnim }]} />
+      <Text style={s.liveText}>LIVE</Text>
+      {quarter != null && (
+        <Text style={s.liveDetail}>Q{quarter} {timeRemaining || ''}</Text>
+      )}
+    </View>
+  );
+});
+
 export default function NBASection({ isDark, insets }: NBASectionProps) {
   const [activeTab, setActiveTab] = useState<NBATab>('upcoming');
-  const [refreshing, setRefreshing] = useState(false);
+  const queryClient = useQueryClient();
 
-  const nextGame = useMemo(() => getNextGame(), []);
-  const upcomingGames = useMemo(() => getUpcomingGames(), []);
-  const completedGames = useMemo(() => getCompletedGames(), []);
+  const gamesQuery = useQuery({
+    queryKey: ['nba-games'],
+    queryFn: () => fetchNBAGamesMultipleDays(5, 7),
+    refetchInterval: 30000,
+    staleTime: 15000,
+  });
+
+  const standingsQuery = useQuery({
+    queryKey: ['nba-standings'],
+    queryFn: fetchNBAStandings,
+    staleTime: 5 * 60 * 1000,
+  });
+
+  const liveGames = useMemo(() => gamesQuery.data?.live ?? [], [gamesQuery.data?.live]);
+  const upcomingGames = useMemo(() => gamesQuery.data?.upcoming ?? [], [gamesQuery.data?.upcoming]);
+  const completedGames = useMemo(() => gamesQuery.data?.completed ?? [], [gamesQuery.data?.completed]);
+
+  const nextGame = useMemo(() => {
+    if (liveGames.length > 0) return liveGames[0];
+    return upcomingGames.length > 0 ? upcomingGames[0] : null;
+  }, [liveGames, upcomingGames]);
+
+  const easternStandings = useMemo(() => standingsQuery.data?.eastern ?? NBA_EASTERN_STANDINGS, [standingsQuery.data?.eastern]);
+  const westernStandings = useMemo(() => standingsQuery.data?.western ?? NBA_WESTERN_STANDINGS, [standingsQuery.data?.western]);
 
   const counts: Record<string, number> = useMemo(() => ({
-    upcoming: upcomingGames.length,
+    upcoming: liveGames.length + upcomingGames.length,
     results: completedGames.length,
-    standings: NBA_EASTERN_STANDINGS.length + NBA_WESTERN_STANDINGS.length,
-  }), [upcomingGames.length, completedGames.length]);
+    standings: easternStandings.length + westernStandings.length,
+  }), [liveGames.length, upcomingGames.length, completedGames.length, easternStandings.length, westernStandings.length]);
+
+  const isLoading = gamesQuery.isLoading;
+  const isError = gamesQuery.isError && !gamesQuery.data;
+  const refreshing = gamesQuery.isRefetching;
 
   const onRefresh = useCallback(async () => {
-    setRefreshing(true);
     if (Platform.OS !== 'web') {
       await Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
     }
-    setTimeout(() => setRefreshing(false), 800);
-  }, []);
+    queryClient.invalidateQueries({ queryKey: ['nba-games'] });
+    queryClient.invalidateQueries({ queryKey: ['nba-standings'] });
+  }, [queryClient]);
 
   const statsBar = useMemo(() => {
-    const totalGames = upcomingGames.length + completedGames.length;
-    const playoffGames = [...upcomingGames, ...completedGames].filter(g => g.season.includes('Playoff')).length;
-    return { total: totalGames, playoff: playoffGames, completed: completedGames.length };
-  }, [upcomingGames, completedGames]);
+    const allGames = [...liveGames, ...upcomingGames, ...completedGames];
+    const totalGames = allGames.length;
+    const playoffGames = allGames.filter(g => g.season.toLowerCase().includes('playoff') || g.season.toLowerCase().includes('finals')).length;
+    return { total: totalGames, live: liveGames.length, playoff: playoffGames, completed: completedGames.length };
+  }, [liveGames, upcomingGames, completedGames]);
 
   type ListItem =
     | { type: 'hero'; game: NBAGame; key: string }
     | { type: 'stats'; key: string }
+    | { type: 'loading'; key: string }
+    | { type: 'error'; key: string }
+    | { type: 'liveHeader'; key: string }
     | { type: 'game'; game: NBAGame; key: string }
     | { type: 'conference'; conference: string; teams: NBATeamStanding[]; key: string }
     | { type: 'empty'; key: string };
@@ -547,12 +604,30 @@ export default function NBASection({ isDark, insets }: NBASectionProps) {
   const listData = useMemo<ListItem[]>(() => {
     const items: ListItem[] = [];
 
+    if (isLoading) {
+      items.push({ type: 'loading', key: 'loading' });
+      return items;
+    }
+
+    if (isError) {
+      items.push({ type: 'error', key: 'error' });
+      return items;
+    }
+
     if (activeTab === 'upcoming') {
       if (nextGame) {
         items.push({ type: 'hero', game: nextGame, key: 'hero-game' });
       }
       items.push({ type: 'stats', key: 'stats-bar' });
-      if (upcomingGames.length === 0) {
+
+      if (liveGames.length > 0) {
+        items.push({ type: 'liveHeader', key: 'live-header' });
+        liveGames.forEach((game, idx) => {
+          items.push({ type: 'game', game, key: `live-${game.id}-${idx}` });
+        });
+      }
+
+      if (upcomingGames.length === 0 && liveGames.length === 0) {
         items.push({ type: 'empty', key: 'empty' });
       } else {
         upcomingGames.forEach((game, idx) => {
@@ -569,20 +644,57 @@ export default function NBASection({ isDark, insets }: NBASectionProps) {
         });
       }
     } else {
-      items.push({ type: 'conference', conference: 'Eastern', teams: NBA_EASTERN_STANDINGS, key: 'eastern' });
-      items.push({ type: 'conference', conference: 'Western', teams: NBA_WESTERN_STANDINGS, key: 'western' });
+      if (standingsQuery.isLoading) {
+        items.push({ type: 'loading', key: 'loading' });
+      } else {
+        items.push({ type: 'conference', conference: 'Eastern', teams: easternStandings, key: 'eastern' });
+        items.push({ type: 'conference', conference: 'Western', teams: westernStandings, key: 'western' });
+      }
     }
 
     return items;
-  }, [activeTab, nextGame, upcomingGames, completedGames]);
+  }, [activeTab, nextGame, liveGames, upcomingGames, completedGames, easternStandings, westernStandings, isLoading, isError, standingsQuery.isLoading]);
 
   const renderItem = useCallback(({ item }: { item: ListItem }) => {
     switch (item.type) {
       case 'hero':
         return <HeroGameCard game={item.game} isDark={isDark} />;
+      case 'loading':
+        return (
+          <View style={s.loadingState}>
+            <ActivityIndicator size="large" color={NBA_ORANGE} />
+            <Text style={[s.loadingText, { color: isDark ? '#8B8BA7' : '#6B7A99' }]}>Loading NBA scores...</Text>
+          </View>
+        );
+      case 'error':
+        return (
+          <View style={s.emptyState}>
+            <View style={[s.emptyIcon, { backgroundColor: '#C9082A' }]}>
+              <AlertCircle size={28} color="#FFFFFF" />
+            </View>
+            <Text style={[s.emptyTitle, { color: isDark ? '#E4E4ED' : '#1C1C1E' }]}>Failed to load scores</Text>
+            <Text style={[s.emptySub, { color: isDark ? '#6B6B85' : '#8E8E93' }]}>Pull down to refresh and try again</Text>
+          </View>
+        );
+      case 'liveHeader':
+        return (
+          <View style={s.liveHeaderRow}>
+            <Radio size={14} color="#EF4444" />
+            <Text style={[s.liveHeaderText, { color: isDark ? '#F0F0FA' : '#1C1C1E' }]}>Live Now</Text>
+            <View style={[s.liveHeaderCount, { backgroundColor: 'rgba(239,68,68,0.15)' }]}>
+              <Text style={s.liveHeaderCountText}>{liveGames.length}</Text>
+            </View>
+          </View>
+        );
       case 'stats':
         return (
           <View style={s.statsBar}>
+            {statsBar.live > 0 && (
+              <View style={[s.statItem, { backgroundColor: isDark ? '#1A0A0A' : '#FEF2F2', borderColor: 'rgba(239,68,68,0.15)' }]}>
+                <Text style={[s.statValue, { color: '#EF4444' }]}>{statsBar.live}</Text>
+                <Text style={[s.statLabel, { color: isDark ? '#6B6B85' : '#8E8E93' }]}>LIVE</Text>
+              </View>
+            )}
             <View style={[s.statItem, { backgroundColor: isDark ? '#111125' : '#F5F5FA' }]}>
               <Text style={[s.statValue, { color: isDark ? NBA_BLUE : '#1A3A6E' }]}>{statsBar.total}</Text>
               <Text style={[s.statLabel, { color: isDark ? '#6B6B85' : '#8E8E93' }]}>GAMES</Text>
@@ -598,7 +710,14 @@ export default function NBASection({ isDark, insets }: NBASectionProps) {
           </View>
         );
       case 'game':
-        return <GameCard game={item.game} isDark={isDark} />;
+        return (
+          <View>
+            {item.game.status === 'live' && (
+              <LiveBadge quarter={item.game.quarter} timeRemaining={item.game.timeRemaining} isDark={isDark} />
+            )}
+            <GameCard game={item.game} isDark={isDark} />
+          </View>
+        );
       case 'conference':
         return <ConferenceStandings conference={item.conference} teams={item.teams} isDark={isDark} />;
       case 'empty':
@@ -618,7 +737,7 @@ export default function NBASection({ isDark, insets }: NBASectionProps) {
       default:
         return null;
     }
-  }, [isDark, activeTab, statsBar]);
+  }, [isDark, activeTab, statsBar, liveGames.length]);
 
   const keyExtractor = useCallback((item: ListItem) => item.key, []);
 
@@ -1240,5 +1359,63 @@ const s = StyleSheet.create({
     fontSize: 14,
     textAlign: 'center' as const,
     lineHeight: 20,
+  },
+  loadingState: {
+    alignItems: 'center' as const,
+    paddingVertical: 80,
+    gap: 16,
+  },
+  loadingText: {
+    fontSize: 14,
+    fontWeight: '600' as const,
+  },
+  liveBadge: {
+    flexDirection: 'row' as const,
+    alignItems: 'center' as const,
+    alignSelf: 'flex-start' as const,
+    paddingHorizontal: 10,
+    paddingVertical: 5,
+    borderRadius: 8,
+    gap: 6,
+    marginBottom: 6,
+  },
+  liveDot: {
+    width: 8,
+    height: 8,
+    borderRadius: 4,
+    backgroundColor: '#EF4444',
+  },
+  liveText: {
+    fontSize: 11,
+    fontWeight: '800' as const,
+    color: '#EF4444',
+    letterSpacing: 1,
+  },
+  liveDetail: {
+    fontSize: 11,
+    fontWeight: '600' as const,
+    color: '#EF4444',
+  },
+  liveHeaderRow: {
+    flexDirection: 'row' as const,
+    alignItems: 'center' as const,
+    gap: 8,
+    marginBottom: 10,
+    marginTop: 4,
+  },
+  liveHeaderText: {
+    fontSize: 15,
+    fontWeight: '700' as const,
+    letterSpacing: -0.2,
+  },
+  liveHeaderCount: {
+    paddingHorizontal: 7,
+    paddingVertical: 2,
+    borderRadius: 8,
+  },
+  liveHeaderCountText: {
+    fontSize: 11,
+    fontWeight: '800' as const,
+    color: '#EF4444',
   },
 });
