@@ -143,6 +143,68 @@ const getUserStorageKey = (baseKey: string, userId?: string) => {
   return `${baseKey}_${userIdentifier}`;
 };
 
+const resetRecurringTasks = (tasks: Task[]): { tasks: Task[]; changed: boolean } => {
+  const now = new Date();
+  const todayStart = new Date(now);
+  todayStart.setHours(0, 0, 0, 0);
+
+  let changed = false;
+  const updated = tasks.map(task => {
+    if (
+      task.isRecurring &&
+      task.recurringPattern &&
+      task.status === 'completed' &&
+      task.completedAt
+    ) {
+      const completedDate = new Date(task.completedAt);
+      const completedDayStart = new Date(completedDate);
+      completedDayStart.setHours(0, 0, 0, 0);
+
+      if (completedDayStart.getTime() < todayStart.getTime()) {
+        const shouldResetToday = isRecurringDueToday(task.recurringPattern, now);
+        if (shouldResetToday) {
+          console.log(`🔄 [Tasks] Resetting recurring task "${task.title}" for today`);
+          changed = true;
+          return {
+            ...task,
+            status: 'todo' as TaskStatus,
+            completedAt: undefined,
+            updatedAt: now.toISOString(),
+          };
+        }
+      }
+    }
+    return task;
+  });
+
+  return { tasks: updated, changed };
+};
+
+const isRecurringDueToday = (
+  pattern: NonNullable<Task['recurringPattern']>,
+  date: Date
+): boolean => {
+  const dayOfWeek = date.getDay();
+
+  switch (pattern.type) {
+    case 'daily':
+      return true;
+    case 'weekly':
+      if (pattern.daysOfWeek && pattern.daysOfWeek.length > 0) {
+        return pattern.daysOfWeek.includes(dayOfWeek);
+      }
+      return true;
+    case 'monthly': {
+      return true;
+    }
+    case 'yearly': {
+      return true;
+    }
+    default:
+      return true;
+  }
+};
+
 // Initial data for first-time users - empty so users start fresh
 const initialTasks: Task[] = [];
 
@@ -368,35 +430,45 @@ export const [TaskProvider, useTasks] = createContextHook(() => {
   const projects = projectsQuery.data || [];
   const timeEntries = timeEntriesQuery.data || [];
   
-  // Recalculate streaks for all habit tasks on load
+  // Reset recurring tasks and recalculate streaks on load
   useEffect(() => {
     if (!tasks || tasks.length === 0) return;
-    
-    const habitsNeedingStreakUpdate = tasks.filter(task => 
+
+    let workingTasks = [...tasks];
+    let needsSave = false;
+
+    // Reset recurring tasks that were completed on a previous day
+    const recurringResult = resetRecurringTasks(workingTasks);
+    if (recurringResult.changed) {
+      workingTasks = recurringResult.tasks;
+      needsSave = true;
+      console.log('🔄 [Tasks] Recurring tasks reset for today');
+    }
+
+    // Recalculate streaks for habit tasks
+    const habitsNeedingStreakUpdate = workingTasks.filter(task => 
       task.isHabit && task.habitCompletions && Object.keys(task.habitCompletions).length > 0
     );
     
     if (habitsNeedingStreakUpdate.length > 0) {
       console.log('🔄 [Tasks] Checking streaks for', habitsNeedingStreakUpdate.length, 'habits');
       
-      let hasChanges = false;
-      const updatedTasks = tasks.map(task => {
+      workingTasks = workingTasks.map(task => {
         if (task.isHabit && task.habitCompletions) {
           const newStreak = calculateHabitStreak(task.habitCompletions, task);
           if (task.habitStreak !== newStreak) {
             console.log(`📊 [Tasks] Updating streak for "${task.title}" from ${task.habitStreak || 0} to ${newStreak}`);
-            hasChanges = true;
+            needsSave = true;
             return { ...task, habitStreak: newStreak };
           }
         }
         return task;
       });
-      
-      
-      if (hasChanges) {
-        console.log('💾 [Tasks] Saving updated task streaks to storage');
-        saveTasksMutate(updatedTasks);
-      }
+    }
+
+    if (needsSave) {
+      console.log('💾 [Tasks] Saving updated tasks to storage');
+      saveTasksMutate(workingTasks);
     }
   }, [tasks.length]); // Only run when tasks array length changes
 
