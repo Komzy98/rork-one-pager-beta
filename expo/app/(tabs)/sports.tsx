@@ -36,6 +36,7 @@ import {
   Pin,
   Swords,
   Flag,
+  Crosshair,
 } from 'lucide-react-native';
 import { router } from 'expo-router';
 import * as Haptics from 'expo-haptics';
@@ -51,10 +52,11 @@ import LeagueStandingsModal from '@/components/LeagueStandingsModal';
 import TabWalkthrough from '@/components/TabWalkthrough';
 import UFCFightDetailModal from '@/components/UFCFightDetailModal';
 import F1Section from '@/components/F1Section';
+import BoxingSection from '@/components/BoxingSection';
 
 const { width: SCREEN_WIDTH } = Dimensions.get('window');
 
-type SportMode = 'football' | 'ufc' | 'f1';
+type SportMode = 'football' | 'ufc' | 'f1' | 'boxing';
 
 interface UFCFight {
   id: number;
@@ -1710,13 +1712,19 @@ export default function SportsScreen() {
 
   const isLoading = sportMode === 'football'
     ? (liveQuery.isLoading || upcomingQuery.isLoading || resultsQuery.isLoading)
-    : (ufcUpcomingQuery.isLoading || ufcResultsQuery.isLoading);
+    : sportMode === 'ufc'
+      ? (ufcUpcomingQuery.isLoading || ufcResultsQuery.isLoading)
+      : false;
   const hasError = sportMode === 'football'
     ? ((liveQuery.isError || upcomingQuery.isError || resultsQuery.isError) && !isLoading)
-    : ((ufcUpcomingQuery.isError || ufcResultsQuery.isError) && !isLoading);
+    : sportMode === 'ufc'
+      ? ((ufcUpcomingQuery.isError || ufcResultsQuery.isError) && !isLoading)
+      : false;
   const hasConfigError = sportMode === 'football'
     ? (liveQuery.data?.errors?.config || upcomingQuery.data?.errors?.config || resultsQuery.data?.errors?.config)
-    : (ufcUpcomingQuery.data?.errors?.config || ufcResultsQuery.data?.errors?.config);
+    : sportMode === 'ufc'
+      ? (ufcUpcomingQuery.data?.errors?.config || ufcResultsQuery.data?.errors?.config)
+      : null;
 
   const tabs = [
     { key: 'live', label: 'Live', icon: Flame, color: '#FF3B30' },
@@ -1764,12 +1772,16 @@ export default function SportsScreen() {
               ? ['#0A1A0F', '#0D1A14', '#0D0D1A'] 
               : sportMode === 'f1'
                 ? ['#1A0505', '#180A0A', '#0D0D1A']
-                : ['#1A0A08', '#1A0D10', '#0D0D1A'])
+                : sportMode === 'boxing'
+                  ? ['#1A0508', '#140A12', '#0D0D1A']
+                  : ['#1A0A08', '#1A0D10', '#0D0D1A'])
             : (sportMode === 'football'
               ? ['#E8F5EC', '#F0F5F2', '#F2F2F7']
               : sportMode === 'f1'
                 ? ['#F5E8E8', '#F5F0F0', '#F2F2F7']
-                : ['#F5EDE8', '#F5F0EC', '#F2F2F7'])}
+                : sportMode === 'boxing'
+                  ? ['#F5E8EB', '#F5F0F2', '#F2F2F7']
+                  : ['#F5EDE8', '#F5F0EC', '#F2F2F7'])}
           start={{ x: 0, y: 0 }}
           end={{ x: 1, y: 1 }}
           style={styles.headerGradient}
@@ -1777,7 +1789,7 @@ export default function SportsScreen() {
           <View style={styles.headerTop}>
             <View style={styles.titleArea}>
               <Text style={[styles.headerTitle, { color: isDark ? '#FFFFFF' : '#1C1C1E' }]}>
-                {sportMode === 'football' ? 'Football' : sportMode === 'f1' ? 'Formula 1' : 'UFC'}
+                {sportMode === 'football' ? 'Football' : sportMode === 'f1' ? 'Formula 1' : sportMode === 'boxing' ? 'Boxing' : 'UFC'}
               </Text>
               <Text style={[styles.headerSubtitle, { color: isDark ? '#6B6B85' : '#8E8E93' }]}>
                 {sportMode === 'football'
@@ -1786,9 +1798,11 @@ export default function SportsScreen() {
                       : 'Matches & results')
                   : sportMode === 'f1'
                     ? 'Races & standings'
-                    : (ufcUpcomingFights.length > 0
-                        ? `${ufcUpcomingFights.length} upcoming`
-                        : 'Fights & results')
+                    : sportMode === 'boxing'
+                      ? 'Fights & rankings'
+                      : (ufcUpcomingFights.length > 0
+                          ? `${ufcUpcomingFights.length} upcoming`
+                          : 'Fights & results')
                 }
               </Text>
             </View>
@@ -1883,6 +1897,32 @@ export default function SportsScreen() {
                   },
                   sportMode === 'f1' && { fontWeight: '700' as const },
                 ]}>F1</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={[
+                  sportToggleStyles.option,
+                  sportMode === 'boxing' && sportToggleStyles.optionActive,
+                  sportMode === 'boxing' && {
+                    backgroundColor: isDark ? 'rgba(196, 30, 58, 0.12)' : '#FFFFFF',
+                    shadowColor: isDark ? '#C41E3A' : '#000',
+                    shadowOpacity: isDark ? 0.2 : 0.06,
+                    shadowRadius: 8,
+                    shadowOffset: { width: 0, height: 2 },
+                    elevation: 3,
+                  },
+                ]}
+                onPress={() => handleSportModeChange('boxing')}
+                activeOpacity={0.7}
+              >
+                <Crosshair size={15} color={sportMode === 'boxing' ? (isDark ? '#C41E3A' : '#8B0020') : (isDark ? '#555570' : '#AEAEB2')} />
+                <Text style={[
+                  sportToggleStyles.optionLabel,
+                  { color: sportMode === 'boxing'
+                    ? (isDark ? '#C41E3A' : '#8B0020')
+                    : (isDark ? '#555570' : '#AEAEB2')
+                  },
+                  sportMode === 'boxing' && { fontWeight: '700' as const },
+                ]}>Boxing</Text>
               </TouchableOpacity>
             </View>
           </View>
@@ -2252,6 +2292,10 @@ export default function SportsScreen() {
 
       {sportMode === 'f1' && (
         <F1Section isDark={isDark} insets={insets} />
+      )}
+
+      {sportMode === 'boxing' && (
+        <BoxingSection isDark={isDark} insets={insets} />
       )}
       
       {selectedMatch && showMatchModal && (
