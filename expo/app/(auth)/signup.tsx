@@ -37,9 +37,11 @@ export default function SignupScreen() {
   const [googleLoading, setGoogleLoading] = useState<boolean>(false);
 
   const redirectUri = AuthSession.makeRedirectUri({
-    scheme: 'expo',
+    scheme: 'lifesync',
     path: 'auth',
   });
+
+  console.log('🔗 Google OAuth redirect URI:', redirectUri);
 
   const handleGoogleSignUp = async () => {
     if (!googleAuthConfig.isConfigured) {

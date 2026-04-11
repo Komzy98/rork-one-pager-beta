@@ -107,9 +107,11 @@ export default function LoginScreen() {
   };
 
   const redirectUri = AuthSession.makeRedirectUri({
-    scheme: 'expo',
+    scheme: 'lifesync',
     path: 'auth',
   });
+
+  console.log('🔗 Google OAuth redirect URI:', redirectUri);
 
   const handleGoogleSignIn = async () => {
     if (!googleAuthConfig.isConfigured) {
