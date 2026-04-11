@@ -28,6 +28,10 @@ export interface NBAGame {
   quarter?: number;
   timeRemaining?: string;
   highlights?: string;
+  highlightPlayer?: {
+    name: string;
+    image: string;
+  };
 }
 
 export interface NBATeamStanding {
@@ -260,6 +264,10 @@ export const NBA_COMPLETED_GAMES: NBAGame[] = [
       winner: false,
     },
     highlights: 'Donovan Mitchell: 35 PTS, 8 AST',
+    highlightPlayer: {
+      name: 'Donovan Mitchell',
+      image: 'https://a.espncdn.com/combiner/i?img=/i/headshots/nba/players/full/3468.png&w=350&h=254',
+    },
   },
   {
     id: 4002,
@@ -287,6 +295,10 @@ export const NBA_COMPLETED_GAMES: NBAGame[] = [
       winner: false,
     },
     highlights: 'Shai Gilgeous-Alexander: 42 PTS, 6 REB',
+    highlightPlayer: {
+      name: 'Shai Gilgeous-Alexander',
+      image: 'https://a.espncdn.com/combiner/i?img=/i/headshots/nba/players/full/4278104.png&w=350&h=254',
+    },
   },
   {
     id: 4003,
@@ -314,6 +326,10 @@ export const NBA_COMPLETED_GAMES: NBAGame[] = [
       winner: true,
     },
     highlights: 'Paolo Banchero: 28 PTS, 10 REB',
+    highlightPlayer: {
+      name: 'Paolo Banchero',
+      image: 'https://a.espncdn.com/combiner/i?img=/i/headshots/nba/players/full/4706013.png&w=350&h=254',
+    },
   },
   {
     id: 4004,
@@ -341,6 +357,10 @@ export const NBA_COMPLETED_GAMES: NBAGame[] = [
       winner: false,
     },
     highlights: 'Jalen Brunson: 38 PTS, 12 AST',
+    highlightPlayer: {
+      name: 'Jalen Brunson',
+      image: 'https://a.espncdn.com/combiner/i?img=/i/headshots/nba/players/full/3934672.png&w=350&h=254',
+    },
   },
   {
     id: 4005,
@@ -368,6 +388,10 @@ export const NBA_COMPLETED_GAMES: NBAGame[] = [
       winner: false,
     },
     highlights: 'LeBron James: 30 PTS, 9 REB, 7 AST',
+    highlightPlayer: {
+      name: 'LeBron James',
+      image: 'https://a.espncdn.com/combiner/i?img=/i/headshots/nba/players/full/1966.png&w=350&h=254',
+    },
   },
   {
     id: 4006,
@@ -395,6 +419,10 @@ export const NBA_COMPLETED_GAMES: NBAGame[] = [
       winner: false,
     },
     highlights: 'Tyrese Haliburton: 29 PTS, 14 AST',
+    highlightPlayer: {
+      name: 'Tyrese Haliburton',
+      image: 'https://a.espncdn.com/combiner/i?img=/i/headshots/nba/players/full/4433218.png&w=350&h=254',
+    },
   },
 ];
 
@@ -416,6 +444,28 @@ export function getUpcomingGames(): NBAGame[] {
 export function getCompletedGames(): NBAGame[] {
   return NBA_COMPLETED_GAMES
     .sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
+}
+
+export function getTeamLogo(abbreviation: string): string {
+  const logos: Record<string, string> = {
+    CLE: 'https://a.espncdn.com/i/teamlogos/nba/500/cle.png',
+    BOS: 'https://a.espncdn.com/i/teamlogos/nba/500/bos.png',
+    NYK: 'https://a.espncdn.com/i/teamlogos/nba/500/ny.png',
+    IND: 'https://a.espncdn.com/i/teamlogos/nba/500/ind.png',
+    MIL: 'https://a.espncdn.com/i/teamlogos/nba/500/mil.png',
+    DET: 'https://a.espncdn.com/i/teamlogos/nba/500/det.png',
+    ORL: 'https://a.espncdn.com/i/teamlogos/nba/500/orl.png',
+    MIA: 'https://a.espncdn.com/i/teamlogos/nba/500/mia.png',
+    OKC: 'https://a.espncdn.com/i/teamlogos/nba/500/okc.png',
+    HOU: 'https://a.espncdn.com/i/teamlogos/nba/500/hou.png',
+    LAC: 'https://a.espncdn.com/i/teamlogos/nba/500/lac.png',
+    LAL: 'https://a.espncdn.com/i/teamlogos/nba/500/lal.png',
+    DEN: 'https://a.espncdn.com/i/teamlogos/nba/500/den.png',
+    MIN: 'https://a.espncdn.com/i/teamlogos/nba/500/min.png',
+    GSW: 'https://a.espncdn.com/i/teamlogos/nba/500/gs.png',
+    MEM: 'https://a.espncdn.com/i/teamlogos/nba/500/mem.png',
+  };
+  return logos[abbreviation] || '';
 }
 
 export function getTeamColor(abbreviation: string): string {

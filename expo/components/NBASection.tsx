@@ -9,6 +9,7 @@ import {
   Platform,
   RefreshControl,
   FlatList,
+  Image,
 } from 'react-native';
 import {
   Calendar,
@@ -31,6 +32,7 @@ import {
   getUpcomingGames,
   getCompletedGames,
   getTeamColor,
+  getTeamLogo,
   NBA_EASTERN_STANDINGS,
   NBA_WESTERN_STANDINGS,
 } from '@/constants/nbaData';
@@ -119,12 +121,13 @@ const HeroGameCard = React.memo(({ game, isDark }: { game: NBAGame; isDark: bool
         <View style={s.heroTeams}>
           <View style={s.heroTeamSide}>
             <View style={s.heroAvatarWrap}>
-              <LinearGradient
-                colors={[team1Color, team1Color + 'AA']}
-                style={s.heroAvatar}
-              >
-                <Text style={s.heroAvatarText}>{game.team1.abbreviation}</Text>
-              </LinearGradient>
+              <View style={[s.heroAvatar, { backgroundColor: team1Color + '25', borderColor: team1Color + '40' }]}>
+                <Image
+                  source={{ uri: getTeamLogo(game.team1.abbreviation) }}
+                  style={s.teamLogoImg}
+                  resizeMode="contain"
+                />
+              </View>
             </View>
             <Text style={s.heroTeamName} numberOfLines={2}>{game.team1.name}</Text>
             {game.team1.record && (
@@ -143,12 +146,13 @@ const HeroGameCard = React.memo(({ game, isDark }: { game: NBAGame; isDark: bool
 
           <View style={s.heroTeamSide}>
             <View style={s.heroAvatarWrap}>
-              <LinearGradient
-                colors={[team2Color, team2Color + 'AA']}
-                style={s.heroAvatar}
-              >
-                <Text style={s.heroAvatarText}>{game.team2.abbreviation}</Text>
-              </LinearGradient>
+              <View style={[s.heroAvatar, { backgroundColor: team2Color + '25', borderColor: team2Color + '40' }]}>
+                <Image
+                  source={{ uri: getTeamLogo(game.team2.abbreviation) }}
+                  style={s.teamLogoImg}
+                  resizeMode="contain"
+                />
+              </View>
             </View>
             <Text style={s.heroTeamName} numberOfLines={2}>{game.team2.name}</Text>
             {game.team2.record && (
@@ -254,14 +258,13 @@ const GameCard = React.memo(({ game, isDark }: { game: NBAGame; isDark: boolean 
               isCompleted && game.team1.winner && { borderColor: '#10B981', borderWidth: 2 },
               isCompleted && !game.team1.winner && game.team2.winner && { opacity: 0.5 },
             ]}>
-              <LinearGradient
-                colors={[team1Color + '40', team1Color + '15']}
-                style={s.teamAvatar}
-              >
-                <Text style={[s.teamInitials, { color: team1Color }]}>
-                  {game.team1.abbreviation}
-                </Text>
-              </LinearGradient>
+              <View style={[s.teamAvatar, { backgroundColor: team1Color + '15' }]}>
+                <Image
+                  source={{ uri: getTeamLogo(game.team1.abbreviation) }}
+                  style={s.teamLogoSmall}
+                  resizeMode="contain"
+                />
+              </View>
             </View>
             <Text style={[
               s.teamName,
@@ -303,14 +306,13 @@ const GameCard = React.memo(({ game, isDark }: { game: NBAGame; isDark: boolean 
               isCompleted && game.team2.winner && { borderColor: '#10B981', borderWidth: 2 },
               isCompleted && !game.team2.winner && game.team1.winner && { opacity: 0.5 },
             ]}>
-              <LinearGradient
-                colors={[team2Color + '40', team2Color + '15']}
-                style={s.teamAvatar}
-              >
-                <Text style={[s.teamInitials, { color: team2Color }]}>
-                  {game.team2.abbreviation}
-                </Text>
-              </LinearGradient>
+              <View style={[s.teamAvatar, { backgroundColor: team2Color + '15' }]}>
+                <Image
+                  source={{ uri: getTeamLogo(game.team2.abbreviation) }}
+                  style={s.teamLogoSmall}
+                  resizeMode="contain"
+                />
+              </View>
             </View>
             <Text style={[
               s.teamName,
@@ -330,8 +332,24 @@ const GameCard = React.memo(({ game, isDark }: { game: NBAGame; isDark: boolean 
 
         {isCompleted && game.highlights && (
           <View style={[s.highlightsRow, { borderTopColor: isDark ? '#1A1A32' : '#F0F0F5' }]}>
-            <Zap size={11} color={NBA_ORANGE} />
-            <Text style={[s.highlightsText, { color: isDark ? '#8B8BA7' : '#6B7A99' }]}>{game.highlights}</Text>
+            {game.highlightPlayer?.image ? (
+              <View style={s.playerImageWrap}>
+                <Image
+                  source={{ uri: game.highlightPlayer.image }}
+                  style={s.playerHeadshot}
+                  resizeMode="cover"
+                />
+              </View>
+            ) : (
+              <Zap size={11} color={NBA_ORANGE} />
+            )}
+            <View style={s.highlightsTextWrap}>
+              <View style={s.highlightsLabelRow}>
+                <Zap size={9} color={NBA_ORANGE} />
+                <Text style={[s.highlightsLabel, { color: NBA_ORANGE }]}>TOP PERFORMER</Text>
+              </View>
+              <Text style={[s.highlightsText, { color: isDark ? '#8B8BA7' : '#6B7A99' }]}>{game.highlights}</Text>
+            </View>
           </View>
         )}
 
@@ -360,7 +378,11 @@ const StandingRow = React.memo(({ team, rank, isDark }: { team: NBATeamStanding;
           <Text style={[s.standingRankText, { color: rank <= 3 ? NBA_ORANGE : (isDark ? '#6B6B85' : '#8E8E93') }]}>{rank}</Text>
         </View>
         <View style={[s.standingTeamBadge, { backgroundColor: teamColor + '20' }]}>
-          <Text style={[s.standingTeamAbbr, { color: teamColor }]}>{team.abbreviation}</Text>
+          <Image
+            source={{ uri: getTeamLogo(team.abbreviation) }}
+            style={s.standingTeamLogo}
+            resizeMode="contain"
+          />
         </View>
         <View style={s.standingTeamInfo}>
           <Text style={[s.standingTeamName, { color: isDark ? '#F0F0FA' : '#1C1C1E' }]} numberOfLines={1}>{team.name}</Text>
@@ -774,11 +796,9 @@ const s = StyleSheet.create({
     borderWidth: 2,
     borderColor: 'rgba(255,255,255,0.1)',
   },
-  heroAvatarText: {
-    fontSize: 16,
-    fontWeight: '900' as const,
-    color: '#FFFFFF',
-    letterSpacing: 0.5,
+  teamLogoImg: {
+    width: 42,
+    height: 42,
   },
   heroTeamName: {
     fontSize: 13,
@@ -970,10 +990,9 @@ const s = StyleSheet.create({
     justifyContent: 'center',
     alignItems: 'center',
   },
-  teamInitials: {
-    fontSize: 14,
-    fontWeight: '800' as const,
-    letterSpacing: 0.5,
+  teamLogoSmall: {
+    width: 36,
+    height: 36,
   },
   teamName: {
     fontSize: 12,
@@ -1040,10 +1059,37 @@ const s = StyleSheet.create({
   highlightsRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 6,
+    gap: 10,
     marginTop: 10,
     paddingTop: 10,
     borderTopWidth: StyleSheet.hairlineWidth,
+  },
+  playerImageWrap: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    overflow: 'hidden' as const,
+    backgroundColor: 'rgba(242,101,34,0.08)',
+    borderWidth: 2,
+    borderColor: 'rgba(242,101,34,0.2)',
+  },
+  playerHeadshot: {
+    width: 40,
+    height: 40,
+  },
+  highlightsTextWrap: {
+    flex: 1,
+    gap: 2,
+  },
+  highlightsLabelRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 3,
+  },
+  highlightsLabel: {
+    fontSize: 9,
+    fontWeight: '800' as const,
+    letterSpacing: 1,
   },
   highlightsText: {
     fontSize: 12,
@@ -1132,10 +1178,9 @@ const s = StyleSheet.create({
     justifyContent: 'center',
     alignItems: 'center',
   },
-  standingTeamAbbr: {
-    fontSize: 11,
-    fontWeight: '800' as const,
-    letterSpacing: 0.3,
+  standingTeamLogo: {
+    width: 26,
+    height: 26,
   },
   standingTeamInfo: {
     flex: 1,
