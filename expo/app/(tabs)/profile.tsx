@@ -1276,7 +1276,7 @@ export default function ProfileScreen() {
                     }}
                     activeOpacity={0.7}
                   >
-                    {(() => { const IconComp = INTEREST_ICONS[interest.id] || Sparkles; return <IconComp size={22} color={isSelected ? interest.color : colors.textSecondary} />; })()}
+                    {(() => { const IconComp = INTEREST_ICONS[interest.id] || Sparkles; return <IconComp size={22} color={isSelected ? interest.color : colors.textSecondary} style={{ marginRight: 12 }} />; })()}
                     <View style={styles.interestOptionInfo}>
                       <Text style={[styles.interestOptionName, { color: isSelected ? interest.color : colors.text }]}>{interest.name}</Text>
                       <Text style={[styles.interestOptionTabs, { color: colors.textTertiary }]}>
