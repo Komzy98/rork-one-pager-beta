@@ -7,7 +7,11 @@ import {
   Image,
   ScrollView,
   Platform,
+  Dimensions,
 } from 'react-native';
+
+const { width: SCREEN_WIDTH } = Dimensions.get('window');
+const CARD_WIDTH = SCREEN_WIDTH - 40;
 import { ChevronRight, Calendar, MapPin, Tv } from 'lucide-react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import { router } from 'expo-router';
@@ -306,7 +310,7 @@ const styles = StyleSheet.create({
     paddingBottom: 4,
   },
   gameCard: {
-    width: 220,
+    width: CARD_WIDTH,
     borderRadius: 18,
     overflow: 'hidden',
     ...Platform.select({
@@ -320,91 +324,93 @@ const styles = StyleSheet.create({
     }),
   },
   gameCardGradient: {
-    padding: 16,
+    padding: 20,
     borderRadius: 18,
   },
   gameHeader: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    marginBottom: 14,
+    marginBottom: 18,
   },
   dateBadge: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 4,
+    gap: 5,
     backgroundColor: 'rgba(242, 101, 34, 0.12)',
-    paddingHorizontal: 8,
-    paddingVertical: 3,
-    borderRadius: 8,
+    paddingHorizontal: 10,
+    paddingVertical: 5,
+    borderRadius: 10,
   },
   dateText: {
-    fontSize: 10,
+    fontSize: 12,
     fontWeight: '600' as const,
     color: '#F26522',
   },
   broadcastBadge: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 3,
+    gap: 4,
     backgroundColor: 'rgba(148, 163, 184, 0.12)',
-    paddingHorizontal: 6,
-    paddingVertical: 3,
-    borderRadius: 6,
+    paddingHorizontal: 8,
+    paddingVertical: 5,
+    borderRadius: 10,
   },
   broadcastText: {
-    fontSize: 9,
+    fontSize: 10,
     fontWeight: '600' as const,
     color: '#94A3B8',
   },
   matchupRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    justifyContent: 'space-between',
-    marginBottom: 12,
+    justifyContent: 'space-around',
+    marginBottom: 16,
+    paddingVertical: 4,
   },
   teamColumn: {
     alignItems: 'center',
     flex: 1,
   },
   teamLogoCircle: {
-    width: 44,
-    height: 44,
-    borderRadius: 22,
+    width: 58,
+    height: 58,
+    borderRadius: 29,
     backgroundColor: 'rgba(255,255,255,0.08)',
     justifyContent: 'center',
     alignItems: 'center',
-    marginBottom: 6,
+    marginBottom: 8,
   },
   teamLogoImg: {
-    width: 30,
-    height: 30,
+    width: 40,
+    height: 40,
   },
   teamAbbr: {
-    fontSize: 13,
+    fontSize: 16,
     fontWeight: '700' as const,
-    color: 'rgba(255,255,255,0.8)',
+    color: 'rgba(255,255,255,0.9)',
+    letterSpacing: 0.3,
   },
   teamRecord: {
-    fontSize: 10,
+    fontSize: 11,
     color: '#64748B',
-    marginTop: 1,
+    marginTop: 2,
   },
   vsColumn: {
     alignItems: 'center',
     paddingHorizontal: 8,
   },
   timeText: {
-    fontSize: 11,
+    fontSize: 15,
     fontWeight: '700' as const,
     color: '#F26522',
-    marginBottom: 2,
+    marginBottom: 4,
   },
   vsText: {
-    fontSize: 10,
+    fontSize: 12,
     fontWeight: '800' as const,
     color: '#64748B',
-    letterSpacing: 1,
+    letterSpacing: 1.5,
   },
   seriesText: {
     fontSize: 9,
@@ -415,10 +421,13 @@ const styles = StyleSheet.create({
   venueRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 4,
+    gap: 6,
+    paddingTop: 12,
+    borderTopWidth: 1,
+    borderTopColor: 'rgba(255,255,255,0.06)',
   },
   venueText: {
-    fontSize: 10,
+    fontSize: 12,
     color: '#64748B',
     flex: 1,
   },
@@ -428,8 +437,8 @@ const styles = StyleSheet.create({
   },
   resultCard: {
     backgroundColor: '#FFFFFF',
-    borderRadius: 14,
-    padding: 12,
+    borderRadius: 16,
+    padding: 16,
     borderWidth: 1,
     borderColor: 'rgba(0,0,0,0.04)',
     ...Platform.select({
@@ -446,7 +455,7 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-    paddingVertical: 4,
+    paddingVertical: 6,
   },
   resultTeamInfo: {
     flexDirection: 'row',
@@ -454,11 +463,11 @@ const styles = StyleSheet.create({
     gap: 8,
   },
   resultTeamLogo: {
-    width: 22,
-    height: 22,
+    width: 28,
+    height: 28,
   },
   resultTeamName: {
-    fontSize: 14,
+    fontSize: 15,
     fontWeight: '600' as const,
     color: '#64748B',
   },
@@ -467,7 +476,7 @@ const styles = StyleSheet.create({
     fontWeight: '700' as const,
   },
   resultScore: {
-    fontSize: 16,
+    fontSize: 20,
     fontWeight: '600' as const,
     color: '#94A3B8',
   },
