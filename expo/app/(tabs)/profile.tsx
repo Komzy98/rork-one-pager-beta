@@ -75,8 +75,9 @@ import { ChallengeLeaderboard } from '@/components/ChallengeLeaderboard';
 import { MOCK_CHALLENGES } from '@/mocks/socialData';
 import { ThemeSettings } from '@/components/ThemeSettings';
 
-import { UserTeam, UserCountry } from '@/types/habit';
+import { UserTeam, UserCountry, NBAFavoriteTeam } from '@/types/habit';
 import { FOOTBALL_COUNTRIES, FOOTBALL_TEAMS, searchTeams as searchAllTeams } from '@/constants/footballData';
+import { ALL_NBA_TEAMS, searchNBATeams, NBATeamInfo } from '@/constants/nbaData';
 import TabWalkthrough from '@/components/TabWalkthrough';
 import { useWalkthrough } from '@/hooks/useWalkthrough';
 import { ALL_NATIONS, Nation } from '@/constants/nations';
@@ -153,10 +154,12 @@ export default function ProfileScreen() {
   } = useNotificationsSafe();
 
   const [showTeamModal, setShowTeamModal] = useState<boolean>(false);
+  const [showNBATeamModal, setShowNBATeamModal] = useState<boolean>(false);
   const [showCountryModal, setShowCountryModal] = useState<boolean>(false);
   const [showInterestsModal, setShowInterestsModal] = useState<boolean>(false);
   const [showNationalityModal, setShowNationalityModal] = useState<boolean>(false);
   const [teamSearch, setTeamSearch] = useState<string>('');
+  const [nbaTeamSearch, setNbaTeamSearch] = useState<string>('');
   const [countrySearch, setCountrySearch] = useState<string>('');
   const [nationalitySearch, setNationalitySearch] = useState<string>('');
   const [editingName, setEditingName] = useState<boolean>(false);
@@ -169,6 +172,7 @@ export default function ProfileScreen() {
 
   const hasInterest = (interestId: string) => profile?.interests?.includes(interestId) ?? false;
   const hasSportsInterest = hasInterest('football');
+  const hasNBAInterest = hasInterest('nba');
   const unlockedBadgesCount = badges.filter(b => b.unlockedAt).length;
 
   const toggleSection = useCallback((section: ExpandedSection) => {
@@ -286,6 +290,10 @@ export default function ProfileScreen() {
     ? searchAllTeams(teamSearch)
     : FOOTBALL_TEAMS.slice(0, 50);
 
+  const filteredNBATeams = nbaTeamSearch.trim()
+    ? searchNBATeams(nbaTeamSearch)
+    : ALL_NBA_TEAMS;
+
   const filteredCountries = FOOTBALL_COUNTRIES.filter(country =>
     country.name.toLowerCase().includes(countrySearch.toLowerCase()) ||
     country.leagues.some(league => league.toLowerCase().includes(countrySearch.toLowerCase()))
@@ -315,6 +323,37 @@ export default function ProfileScreen() {
       setShowTeamModal(false);
       setTeamSearch('');
     }
+  };
+
+  const handleAddNBATeam = (team: NBATeamInfo) => {
+    const existing = profile.favoriteNBATeams || [];
+    const isAlreadyAdded = existing.some(t => t.id === team.id);
+    if (!isAlreadyAdded) {
+      const newTeam: NBAFavoriteTeam = {
+        id: team.id,
+        name: team.name,
+        abbreviation: team.abbreviation,
+        conference: team.conference,
+        logo: team.logo,
+      };
+      updateProfile({ favoriteNBATeams: [...existing, newTeam] });
+      setShowNBATeamModal(false);
+      setNbaTeamSearch('');
+    }
+  };
+
+  const handleRemoveNBATeam = (teamId: string) => {
+    Alert.alert('Remove Team', 'Remove this NBA team from your favourites?', [
+      { text: 'Cancel', style: 'cancel' },
+      {
+        text: 'Remove',
+        style: 'destructive',
+        onPress: () => {
+          const updated = (profile.favoriteNBATeams || []).filter(t => t.id !== teamId);
+          updateProfile({ favoriteNBATeams: updated });
+        },
+      },
+    ]);
   };
 
   const handleRemoveCountry = (countryId: string) => {
@@ -555,7 +594,7 @@ export default function ProfileScreen() {
             <Text style={[styles.sectionTitle, { color: colors.text }]}>Settings</Text>
             
             {/* Favorites (if sports interest) */}
-            {hasSportsInterest && (
+            {(hasSportsInterest || hasNBAInterest) && (
               <TouchableOpacity 
                 style={[styles.settingsItem, { backgroundColor: colors.card, borderColor: colors.border }]}
                 onPress={() => toggleSection('favorites')}
@@ -567,7 +606,7 @@ export default function ProfileScreen() {
                 <View style={styles.settingsItemContent}>
                   <Text style={[styles.settingsItemTitle, { color: colors.text }]}>Favorite Teams</Text>
                   <Text style={[styles.settingsItemSubtitle, { color: colors.textTertiary }]}>
-                    {profile.favoriteTeams.length + (profile.nationalities?.length || 0)} teams, {profile.favoriteCountries.length} leagues
+                    {profile.favoriteTeams.length + (profile.favoriteNBATeams?.length || 0) + (profile.nationalities?.length || 0)} teams, {profile.favoriteCountries.length} leagues
                   </Text>
                 </View>
                 {expandedSection === 'favorites' ? (
@@ -578,9 +617,37 @@ export default function ProfileScreen() {
               </TouchableOpacity>
             )}
 
-            {expandedSection === 'favorites' && hasSportsInterest && (
+            {expandedSection === 'favorites' && (hasSportsInterest || hasNBAInterest) && (
               <View style={[styles.expandedContent, { backgroundColor: colors.surfaceSecondary }]}>
+                {/* NBA Teams */}
+                {hasNBAInterest && (
+                  <View style={styles.favSubSection}>
+                    <View style={styles.favSubHeader}>
+                      <Text style={[styles.favSubTitle, { color: colors.text }]}>NBA Teams</Text>
+                      <TouchableOpacity style={[styles.addSmallBtn, { backgroundColor: '#F26522' + '15' }]} onPress={() => setShowNBATeamModal(true)}>
+                        <Plus size={14} color="#F26522" />
+                      </TouchableOpacity>
+                    </View>
+                    {(profile.favoriteNBATeams?.length || 0) > 0 ? (
+                      <View style={styles.favChipsList}>
+                        {profile.favoriteNBATeams?.map(team => (
+                          <View key={team.id} style={[styles.favChip, { backgroundColor: colors.card, borderColor: colors.border }]}>
+                            <Trophy size={12} color="#F26522" />
+                            <Text style={[styles.favChipText, { color: colors.text }]} numberOfLines={1}>{team.name}</Text>
+                            <TouchableOpacity onPress={() => handleRemoveNBATeam(team.id)} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
+                              <X size={12} color={colors.textTertiary} />
+                            </TouchableOpacity>
+                          </View>
+                        ))}
+                      </View>
+                    ) : (
+                      <Text style={[styles.emptyFavText, { color: colors.textTertiary }]}>No NBA teams added</Text>
+                    )}
+                  </View>
+                )}
+
                 {/* Club Teams */}
+                {hasSportsInterest && (<>
                 <View style={styles.favSubSection}>
                   <View style={styles.favSubHeader}>
                     <Text style={[styles.favSubTitle, { color: colors.text }]}>Club Teams</Text>
@@ -654,6 +721,7 @@ export default function ProfileScreen() {
                     <Text style={[styles.emptyFavText, { color: colors.textTertiary }]}>No leagues added</Text>
                   )}
                 </View>
+                </>)}
               </View>
             )}
 
@@ -1022,6 +1090,48 @@ export default function ProfileScreen() {
         </ScrollView>
 
         {/* Modals */}
+        <Modal visible={showNBATeamModal} animationType="slide" presentationStyle="pageSheet">
+          <View style={[styles.modalContainer, { backgroundColor: colors.background }]}>
+            <View style={[styles.modalHeader, { borderBottomColor: colors.border }]}>
+              <Text style={[styles.modalTitle, { color: colors.text }]}>Add NBA Team</Text>
+              <TouchableOpacity style={[styles.modalClose, { backgroundColor: colors.surfaceSecondary }]} onPress={() => { setShowNBATeamModal(false); setNbaTeamSearch(''); }}>
+                <X size={20} color={colors.text} />
+              </TouchableOpacity>
+            </View>
+            <View style={[styles.searchBox, { backgroundColor: colors.surfaceSecondary }]}>
+              <TextInput
+                style={[styles.searchInput, { color: colors.text }]}
+                placeholder="Search NBA teams..."
+                placeholderTextColor={colors.textTertiary}
+                value={nbaTeamSearch}
+                onChangeText={setNbaTeamSearch}
+              />
+            </View>
+            <ScrollView style={styles.modalList}>
+              {filteredNBATeams.map((team) => {
+                const isAdded = (profile.favoriteNBATeams || []).some(t => t.id === team.id);
+                return (
+                  <TouchableOpacity
+                    key={team.id}
+                    style={[styles.modalOption, { borderBottomColor: colors.border }, isAdded && styles.modalOptionDisabled]}
+                    onPress={() => handleAddNBATeam(team)}
+                    disabled={isAdded}
+                  >
+                    <View style={[styles.modalOptionIcon, { backgroundColor: colors.surfaceSecondary }]}>
+                      <Trophy size={18} color={isAdded ? colors.textTertiary : '#F26522'} />
+                    </View>
+                    <View style={styles.modalOptionInfo}>
+                      <Text style={[styles.modalOptionName, { color: isAdded ? colors.textTertiary : colors.text }]}>{team.name}</Text>
+                      <Text style={[styles.modalOptionSub, { color: colors.textTertiary }]}>{team.conference} Conference</Text>
+                    </View>
+                    {isAdded && <Text style={[styles.addedLabel, { color: colors.primary }]}>Added</Text>}
+                  </TouchableOpacity>
+                );
+              })}
+            </ScrollView>
+          </View>
+        </Modal>
+
         <Modal visible={showTeamModal} animationType="slide" presentationStyle="pageSheet">
           <View style={[styles.modalContainer, { backgroundColor: colors.background }]}>
             <View style={[styles.modalHeader, { borderBottomColor: colors.border }]}>
