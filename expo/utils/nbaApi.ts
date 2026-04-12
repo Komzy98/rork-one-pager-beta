@@ -177,7 +177,15 @@ function mapESPNEventToGame(event: ESPNEvent): NBAGame | null {
 
   if (status === 'live') {
     game.quarter = comp.status.period;
-    game.timeRemaining = comp.status.displayClock;
+    const rawClock = comp.status.displayClock || '';
+    const clockMatch = rawClock.match(/^(\d+):(\d+)/);
+    if (clockMatch) {
+      const mins = clockMatch[1];
+      const secs = clockMatch[2].slice(0, 2);
+      game.timeRemaining = `${mins}:${secs}`;
+    } else {
+      game.timeRemaining = rawClock;
+    }
   }
 
   if (status === 'upcoming') {
