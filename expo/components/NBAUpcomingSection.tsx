@@ -78,7 +78,12 @@ export default function NBAUpcomingSection({ favoriteNBATeams }: NBAUpcomingSect
     const team2Fav = isFavorite(game.team2.abbreviation);
 
     return (
-      <View key={game.id} style={[styles.gameCard, index === 0 && { marginLeft: 0 }]}>
+      <TouchableOpacity
+        key={game.id}
+        activeOpacity={0.85}
+        onPress={() => router.push('/sports' as any)}
+        style={[styles.gameCard, index === 0 && { marginLeft: 0 }]}
+      >
         <LinearGradient
           colors={['#1A1A2E', '#16213E']}
           start={{ x: 0, y: 0 }}
@@ -129,7 +134,7 @@ export default function NBAUpcomingSection({ favoriteNBATeams }: NBAUpcomingSect
             </View>
           )}
         </LinearGradient>
-      </View>
+      </TouchableOpacity>
     );
   };
 
@@ -138,7 +143,7 @@ export default function NBAUpcomingSection({ favoriteNBATeams }: NBAUpcomingSect
     const team2Won = game.team2.winner === true;
 
     return (
-      <View key={game.id} style={styles.resultCard}>
+      <TouchableOpacity key={game.id} activeOpacity={0.85} onPress={() => router.push('/sports' as any)} style={styles.resultCard}>
         <View style={styles.resultTeamRow}>
           <View style={styles.resultTeamInfo}>
             <Image source={{ uri: getTeamLogo(game.team1.abbreviation) }} style={styles.resultTeamLogo} resizeMode="contain" />
@@ -159,7 +164,7 @@ export default function NBAUpcomingSection({ favoriteNBATeams }: NBAUpcomingSect
             <Text style={styles.highlightText} numberOfLines={1}>{game.highlights}</Text>
           </View>
         )}
-      </View>
+      </TouchableOpacity>
     );
   };
 
