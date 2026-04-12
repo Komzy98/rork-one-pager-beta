@@ -340,6 +340,9 @@ export const [UserProfileProvider, useUserProfile] = createContextHook(() => {
   const saveProfile = async (newProfile: UserProfile) => {
     if (!user) return;
     
+    setProfile(newProfile);
+    console.log('✅ [Profile] Profile state updated optimistically');
+    
     try {
       const storageKey = `@user_profile_${user.id}`;
       console.log('💾 [Profile] Saving profile:', {
@@ -351,9 +354,6 @@ export const [UserProfileProvider, useUserProfile] = createContextHook(() => {
       
       await unifiedStorage.setItem(storageKey, JSON.stringify(newProfile));
       console.log('✅ [Profile] Profile saved to storage on', Platform.OS);
-      
-      setProfile(newProfile);
-      console.log('✅ [Profile] Profile state updated');
       
       if (userId && firebaseSync.saveToFirebase) {
         try {
