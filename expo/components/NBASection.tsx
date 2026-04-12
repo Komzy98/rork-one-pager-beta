@@ -43,6 +43,7 @@ import {
   NBA_WESTERN_STANDINGS,
 } from '@/constants/nbaData';
 import { fetchNBAGamesMultipleDays, fetchNBAStandings } from '@/utils/nbaApi';
+import NBAGameDetailsModal from './NBAGameDetailsModal';
 
 const { width: SCREEN_WIDTH } = Dimensions.get('window');
 
@@ -300,7 +301,7 @@ const LiveGameBadge = React.memo(({ quarter, timeRemaining, isDark }: { quarter?
   );
 });
 
-const GameCard = React.memo(({ game, isDark }: { game: NBAGame; isDark: boolean }) => {
+const GameCard = React.memo(({ game, isDark, onPress }: { game: NBAGame; isDark: boolean; onPress?: (game: NBAGame) => void }) => {
   const isCompleted = game.status === 'completed';
   const isLive = game.status === 'live';
   const isUpcoming = game.status === 'upcoming';
@@ -337,8 +338,16 @@ const GameCard = React.memo(({ game, isDark }: { game: NBAGame; isDark: boolean 
     return d.toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit', hour12: true });
   };
 
+  const handlePress = useCallback(() => {
+    if (Platform.OS !== 'web') {
+      Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+    }
+    onPress?.(game);
+  }, [game, onPress]);
+
   return (
     <Animated.View style={[s.gameCardWrap, { opacity: opacityAnim, transform: [{ scale: scaleAnim }] }]}>
+      <TouchableOpacity activeOpacity={0.85} onPress={handlePress}>
       <View style={[
         s.gameCard,
         { backgroundColor: isDark ? '#111125' : '#FFFFFF' },
@@ -517,6 +526,7 @@ const GameCard = React.memo(({ game, isDark }: { game: NBAGame; isDark: boolean 
           </Text>
         </View>
       </View>
+      </TouchableOpacity>
     </Animated.View>
   );
 });
@@ -688,7 +698,14 @@ const LiveBadge = React.memo(({ quarter, timeRemaining, isDark }: { quarter?: nu
 
 export default function NBASection({ isDark, insets }: NBASectionProps) {
   const [activeTab, setActiveTab] = useState<NBATab>('upcoming');
+  const [selectedGame, setSelectedGame] = useState<NBAGame | null>(null);
+  const [showGameModal, setShowGameModal] = useState<boolean>(false);
   const queryClient = useQueryClient();
+
+  const handleGamePress = useCallback((game: NBAGame) => {
+    setSelectedGame(game);
+    setShowGameModal(true);
+  }, []);
 
   const gamesQuery = useQuery({
     queryKey: ['nba-games'],
@@ -859,7 +876,7 @@ export default function NBASection({ isDark, insets }: NBASectionProps) {
           </View>
         );
       case 'game':
-        return <GameCard game={item.game} isDark={isDark} />;
+        return <GameCard game={item.game} isDark={isDark} onPress={handleGamePress} />;
       case 'conference':
         return <ConferenceStandings conference={item.conference} teams={item.teams} isDark={isDark} />;
       case 'empty':
@@ -879,7 +896,7 @@ export default function NBASection({ isDark, insets }: NBASectionProps) {
       default:
         return null;
     }
-  }, [isDark, activeTab, statsBar, liveGames.length]);
+  }, [isDark, activeTab, statsBar, liveGames.length, handleGamePress]);
 
   const keyExtractor = useCallback((item: ListItem) => item.key, []);
 
@@ -902,6 +919,12 @@ export default function NBASection({ isDark, insets }: NBASectionProps) {
         refreshControl={
           <RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={NBA_ORANGE} colors={[NBA_ORANGE]} />
         }
+      />
+
+      <NBAGameDetailsModal
+        visible={showGameModal}
+        onClose={() => { setShowGameModal(false); setSelectedGame(null); }}
+        game={selectedGame}
       />
     </View>
   );

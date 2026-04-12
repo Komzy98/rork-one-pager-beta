@@ -1,4 +1,4 @@
-import React, { useMemo } from 'react';
+import React, { useMemo, useState, useCallback } from 'react';
 import {
   StyleSheet,
   View,
@@ -23,12 +23,21 @@ import {
   getTeamColor,
 } from '@/constants/nbaData';
 import { NBAFavoriteTeam } from '@/types/habit';
+import NBAGameDetailsModal from './NBAGameDetailsModal';
 
 interface NBAUpcomingSectionProps {
   favoriteNBATeams: NBAFavoriteTeam[];
 }
 
 export default function NBAUpcomingSection({ favoriteNBATeams }: NBAUpcomingSectionProps) {
+  const [selectedGame, setSelectedGame] = useState<NBAGame | null>(null);
+  const [showGameModal, setShowGameModal] = useState<boolean>(false);
+
+  const handleGamePress = useCallback((game: NBAGame) => {
+    setSelectedGame(game);
+    setShowGameModal(true);
+  }, []);
+
   const favoriteAbbreviations = useMemo(() => {
     return new Set(favoriteNBATeams.map(t => t.abbreviation));
   }, [favoriteNBATeams]);
@@ -81,7 +90,7 @@ export default function NBAUpcomingSection({ favoriteNBATeams }: NBAUpcomingSect
       <TouchableOpacity
         key={game.id}
         activeOpacity={0.85}
-        onPress={() => router.push('/sports' as any)}
+        onPress={() => handleGamePress(game)}
         style={[styles.gameCard, index === 0 && { marginLeft: 0 }]}
       >
         <LinearGradient
@@ -143,7 +152,7 @@ export default function NBAUpcomingSection({ favoriteNBATeams }: NBAUpcomingSect
     const team2Won = game.team2.winner === true;
 
     return (
-      <TouchableOpacity key={game.id} activeOpacity={0.85} onPress={() => router.push('/sports' as any)} style={styles.resultCard}>
+      <TouchableOpacity key={game.id} activeOpacity={0.85} onPress={() => handleGamePress(game)} style={styles.resultCard}>
         <View style={styles.resultTeamRow}>
           <View style={styles.resultTeamInfo}>
             <Image source={{ uri: getTeamLogo(game.team1.abbreviation) }} style={styles.resultTeamLogo} resizeMode="contain" />
@@ -222,6 +231,12 @@ export default function NBAUpcomingSection({ favoriteNBATeams }: NBAUpcomingSect
           </View>
         </>
       )}
+
+      <NBAGameDetailsModal
+        visible={showGameModal}
+        onClose={() => { setShowGameModal(false); setSelectedGame(null); }}
+        game={selectedGame}
+      />
     </View>
   );
 }
