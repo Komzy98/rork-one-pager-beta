@@ -668,8 +668,6 @@ function ModernSportsSectionComponent({
   }, [liveMatches, completedMatches, upcomingMatches, isNationalTeamMatch]);
 
   const teamsCount = profile?.favoriteTeams?.length || 0;
-  const liveCount = liveMatches.length;
-  const upcomingCount = upcomingMatches.length;
 
   const teamStatsMap = useMemo(() => {
     const map = new Map<string, ReturnType<typeof getTeamStats>>();
@@ -712,7 +710,7 @@ function ModernSportsSectionComponent({
     return matches;
   }, [profile?.nationalities, getNationalTeamMatches]);
 
-  const filteredMatches = useMemo(() => {
+  const uniqueTeamMatches = useMemo(() => {
     const combinedMatches = [...allTeamMatches, ...allNationalTeamMatches.map(m => ({ match: m.match, teamName: m.nationName }))];
     const uniqueMatches: { match: LiveFootballMatch; teamName: string }[] = [];
     const seenIds = new Set<string>();
@@ -722,26 +720,32 @@ function ModernSportsSectionComponent({
         uniqueMatches.push(m);
       }
     });
+    return uniqueMatches;
+  }, [allTeamMatches, allNationalTeamMatches]);
 
+  const liveCount = useMemo(() => uniqueTeamMatches.filter(m => m.match.status === 'Live').length, [uniqueTeamMatches]);
+  const upcomingCount = useMemo(() => uniqueTeamMatches.filter(m => m.match.status === 'Upcoming').length, [uniqueTeamMatches]);
+
+  const filteredMatches = useMemo(() => {
     let matches: { match: LiveFootballMatch; teamName: string }[] = [];
     switch (selectedTab) {
       case 'live':
-        matches = uniqueMatches.filter(m => m.match.status === 'Live');
+        matches = uniqueTeamMatches.filter(m => m.match.status === 'Live');
         matches.sort((a, b) => new Date(a.match.date).getTime() - new Date(b.match.date).getTime());
         break;
       case 'next':
-        matches = uniqueMatches.filter(m => m.match.status === 'Upcoming');
+        matches = uniqueTeamMatches.filter(m => m.match.status === 'Upcoming');
         matches.sort((a, b) => new Date(a.match.date).getTime() - new Date(b.match.date).getTime());
         break;
       case 'results':
-        matches = uniqueMatches.filter(m => m.match.status === 'Completed');
+        matches = uniqueTeamMatches.filter(m => m.match.status === 'Completed');
         matches.sort((a, b) => new Date(b.match.date).getTime() - new Date(a.match.date).getTime());
         break;
       default:
         return [];
     }
     return matches;
-  }, [allTeamMatches, allNationalTeamMatches, selectedTab]);
+  }, [uniqueTeamMatches, selectedTab]);
 
   if (isLoading || profileLoading) {
     return (
