@@ -55,6 +55,8 @@ import {
   Zap,
   Briefcase,
   Swords,
+  Car,
+  Ticket,
 } from 'lucide-react-native';
 import * as Haptics from 'expo-haptics';
 import { router } from 'expo-router';
@@ -88,10 +90,13 @@ if (Platform.OS === 'android' && UIManager.setLayoutAnimationEnabledExperimental
 const INTEREST_ICONS: Record<string, React.ComponentType<any>> = {
   'football': Trophy,
   'ufc': Swords,
+  'nba': Trophy,
+  'f1': Car,
   'fitness': Dumbbell,
   'movies': Clapperboard,
   'cooking': CookingPot,
   'learning': GraduationCap,
+  'events': Ticket,
   'productivity': Zap,
   'work': Briefcase,
 };
@@ -99,10 +104,13 @@ const INTEREST_ICONS: Record<string, React.ComponentType<any>> = {
 const AVAILABLE_INTERESTS = [
   { id: 'football', name: 'Football', color: '#34C759', tabs: ['sports'] },
   { id: 'ufc', name: 'UFC', color: '#D32F2F', tabs: ['sports'] },
+  { id: 'nba', name: 'NBA', color: '#F57C00', tabs: ['sports'] },
+  { id: 'f1', name: 'Formula 1', color: '#E10600', tabs: ['sports'] },
   { id: 'fitness', name: 'Fitness', color: '#FF9500', tabs: ['habits', 'tasks'] },
   { id: 'movies', name: 'Movies & TV', color: '#FF2D55', tabs: ['shows'] },
   { id: 'cooking', name: 'Cooking', color: '#00C7BE', tabs: ['habits'] },
   { id: 'learning', name: 'Learning', color: '#FF9500', tabs: ['activities', 'tasks'] },
+  { id: 'events', name: 'Events', color: '#AF52DE', tabs: ['events'] },
   { id: 'productivity', name: 'Productivity', color: '#007AFF', tabs: ['tasks'] },
   { id: 'work', name: 'Work', color: '#8E8E93', tabs: ['tasks'] },
 ];
