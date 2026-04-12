@@ -338,7 +338,13 @@ export const getMatchesRoute = publicProcedure
     try {
       const allPromises: Promise<any[]>[] = [];
 
-      if (hasTeams) {
+      if (hasTeams && hasUserSelectedLeagues) {
+        const limitedTeams = targetTeams.slice(0, 5);
+        console.log(`⚽ Fetching ${limitedTeams.length} team-specific queries + ${leagueIds!.length} user-selected leagues`);
+        limitedTeams.forEach(id => allPromises.push(fetchTeamMatches(id)));
+        const limitedLeagues = leagueIds!.slice(0, 15);
+        limitedLeagues.forEach(id => allPromises.push(fetchLeagueMatches(id)));
+      } else if (hasTeams) {
         const limitedTeams = targetTeams.slice(0, 5);
         console.log(`⚽ Fetching ${limitedTeams.length} team-specific queries (prioritized)`);
         limitedTeams.forEach(id => allPromises.push(fetchTeamMatches(id)));
