@@ -178,19 +178,23 @@ function mapESPNEventToGame(event: ESPNEvent): NBAGame | null {
   if (status === 'live') {
     game.quarter = comp.status.period;
     const rawClock = comp.status.displayClock || '';
-    const clockMatch = rawClock.match(/^(\d+):(\d+)/);
+    const clockMatch = rawClock.match(/^(\d+):(\d{2})/);
     if (clockMatch) {
-      const mins = clockMatch[1];
-      const secs = clockMatch[2].slice(0, 2);
-      game.timeRemaining = `${mins}:${secs}`;
+      game.timeRemaining = `${clockMatch[1]}:${clockMatch[2]}`;
     } else {
-      game.timeRemaining = rawClock;
+      const cleanClock = rawClock.replace(/[^0-9:.]/g, '').trim();
+      game.timeRemaining = cleanClock || rawClock;
     }
   }
 
   if (status === 'upcoming') {
     const d = new Date(comp.date || event.date);
-    game.startTime = d.toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit', hour12: true });
+    const hours = d.getHours();
+    const minutes = d.getMinutes();
+    const period = hours >= 12 ? 'PM' : 'AM';
+    const displayHour = hours % 12 || 12;
+    const displayMin = String(minutes).padStart(2, '0');
+    game.startTime = `${displayHour}:${displayMin} ${period}`;
   }
 
   return game;
