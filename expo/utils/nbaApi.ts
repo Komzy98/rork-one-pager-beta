@@ -1,4 +1,4 @@
-import { NBAGame, NBATeamStanding, getTeamLogo, getTeamColor } from '@/constants/nbaData';
+import { NBAGame, NBATeamStanding, NBAPlayer, NBALineups, getTeamLogo, getTeamColor } from '@/constants/nbaData';
 
 const ESPN_BASE = 'https://site.api.espn.com/apis/site/v2/sports/basketball/nba';
 
@@ -81,6 +81,43 @@ interface ESPNStandingsGroup {
   };
 }
 
+async function fetchGameLineups(eventId: string): Promise<NBALineups | undefined> {
+  try {
+    const url = `${ESPN_BASE}/summary?event=${eventId}`;
+    console.log('[NBA API] Fetching lineups for event:', eventId);
+    const response = await fetch(url);
+    if (!response.ok) return undefined;
+
+    const data = await response.json();
+    const rosters = data.rosters || [];
+    const homeRoster = rosters[0];
+    const awayRoster = rosters[1];
+
+    const mapPlayers = (roster: any): NBAPlayer[] => {
+      if (!roster?.roster) return [];
+      return roster.roster
+        .filter((p: any) => p.starter)
+        .slice(0, 5)
+        .map((p: any) => ({
+          id: p.playerId?.toString() || String(Math.random()),
+          name: p.displayName || p.shortDisplayName || 'Unknown',
+          position: p.position?.abbreviation || p.position?.name || '',
+          jersey: p.jersey || '',
+          image: p.athlete?.headshot?.href || `https://a.espncdn.com/combiner/i?img=/i/headshots/nba/players/full/${p.playerId}.png&w=350&h=254`,
+        }));
+    };
+
+    const home = mapPlayers(homeRoster);
+    const away = mapPlayers(awayRoster);
+
+    if (home.length === 0 && away.length === 0) return undefined;
+    return { home, away };
+  } catch (error) {
+    console.log('[NBA API] Failed to fetch lineups for event:', eventId, error);
+    return undefined;
+  }
+}
+
 function mapGameStatus(state: string, completed: boolean): 'upcoming' | 'completed' | 'live' {
   if (completed) return 'completed';
   if (state === 'in') return 'live';
@@ -141,6 +178,11 @@ function mapESPNEventToGame(event: ESPNEvent): NBAGame | null {
   if (status === 'live') {
     game.quarter = comp.status.period;
     game.timeRemaining = comp.status.displayClock;
+  }
+
+  if (status === 'upcoming') {
+    const d = new Date(comp.date || event.date);
+    game.startTime = d.toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit', hour12: true });
   }
 
   return game;
@@ -218,6 +260,18 @@ export async function fetchNBAGamesMultipleDays(daysBefore: number = 3, daysAfte
     const completed = unique
       .filter(g => g.status === 'completed')
       .sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
+
+    const lineupsToFetch = [...live, ...upcoming.slice(0, 3)];
+    if (lineupsToFetch.length > 0) {
+      const lineupResults = await Promise.allSettled(
+        lineupsToFetch.map(g => fetchGameLineups(String(g.id)))
+      );
+      lineupResults.forEach((result, idx) => {
+        if (result.status === 'fulfilled' && result.value) {
+          lineupsToFetch[idx].lineups = result.value;
+        }
+      });
+    }
 
     console.log('[NBA API] Results - Live:', live.length, 'Upcoming:', upcoming.length, 'Completed:', completed.length);
 

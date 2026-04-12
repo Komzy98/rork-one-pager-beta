@@ -1,3 +1,16 @@
+export interface NBAPlayer {
+  id: string;
+  name: string;
+  position: string;
+  jersey?: string;
+  image?: string;
+}
+
+export interface NBALineups {
+  home: NBAPlayer[];
+  away: NBAPlayer[];
+}
+
 export interface NBAGame {
   id: number;
   date: string;
@@ -32,6 +45,8 @@ export interface NBAGame {
     name: string;
     image: string;
   };
+  startTime?: string;
+  lineups?: NBALineups;
 }
 
 export interface NBATeamStanding {

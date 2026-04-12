@@ -26,6 +26,9 @@ import {
   Radio,
   AlertCircle,
   RefreshCw,
+  Users,
+  ChevronDown,
+  ChevronUp,
 } from 'lucide-react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import * as Haptics from 'expo-haptics';
@@ -33,6 +36,7 @@ import { useQuery, useQueryClient } from '@tanstack/react-query';
 import {
   NBAGame,
   NBATeamStanding,
+  NBAPlayer,
   getTeamColor,
   getTeamLogo,
   NBA_EASTERN_STANDINGS,
@@ -191,8 +195,115 @@ const HeroGameCard = React.memo(({ game, isDark }: { game: NBAGame; isDark: bool
   );
 });
 
+const InlinePlayerRow = React.memo(({ player, isDark, teamColor }: { player: NBAPlayer; isDark: boolean; teamColor: string }) => (
+  <View style={s.lineupPlayerRow}>
+    {player.image ? (
+      <View style={[s.lineupPlayerImgWrap, { borderColor: teamColor + '40' }]}>
+        <Image source={{ uri: player.image }} style={s.lineupPlayerImg} resizeMode="cover" />
+      </View>
+    ) : (
+      <View style={[s.lineupPlayerImgWrap, { borderColor: teamColor + '40', backgroundColor: teamColor + '15' }]}>
+        <Text style={[s.lineupPlayerInitial, { color: teamColor }]}>{player.name.charAt(0)}</Text>
+      </View>
+    )}
+    <View style={s.lineupPlayerInfo}>
+      <Text style={[s.lineupPlayerName, { color: isDark ? '#E4E4ED' : '#1C1C1E' }]} numberOfLines={1}>{player.name}</Text>
+      <Text style={[s.lineupPlayerPos, { color: isDark ? '#5A5A7A' : '#AEAEB2' }]}>{player.position}{player.jersey ? ` #${player.jersey}` : ''}</Text>
+    </View>
+  </View>
+));
+
+const LineupsSection = React.memo(({ game, isDark }: { game: NBAGame; isDark: boolean }) => {
+  const [expanded, setExpanded] = useState<boolean>(false);
+  const rotateAnim = useRef(new Animated.Value(0)).current;
+
+  const toggleExpanded = useCallback(() => {
+    if (Platform.OS !== 'web') {
+      Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+    }
+    const toVal = expanded ? 0 : 1;
+    Animated.spring(rotateAnim, { toValue: toVal, tension: 100, friction: 12, useNativeDriver: true }).start();
+    setExpanded(!expanded);
+  }, [expanded, rotateAnim]);
+
+  if (!game.lineups || (game.lineups.home.length === 0 && game.lineups.away.length === 0)) return null;
+
+  const team1Color = getTeamColor(game.team1.abbreviation);
+  const team2Color = getTeamColor(game.team2.abbreviation);
+
+  const rotate = rotateAnim.interpolate({ inputRange: [0, 1], outputRange: ['0deg', '180deg'] });
+
+  return (
+    <View style={[s.lineupsContainer, { borderTopColor: isDark ? '#1A1A32' : '#F0F0F5' }]}>
+      <TouchableOpacity onPress={toggleExpanded} activeOpacity={0.7} style={s.lineupsToggle}>
+        <View style={s.lineupsToggleLeft}>
+          <Users size={12} color={isDark ? '#5B8DEF' : NBA_BLUE} />
+          <Text style={[s.lineupsToggleText, { color: isDark ? '#5B8DEF' : NBA_BLUE }]}>Starting Lineups</Text>
+        </View>
+        <Animated.View style={{ transform: [{ rotate }] }}>
+          <ChevronDown size={14} color={isDark ? '#5B8DEF' : NBA_BLUE} />
+        </Animated.View>
+      </TouchableOpacity>
+
+      {expanded && (
+        <View style={s.lineupsContent}>
+          {game.lineups.home.length > 0 && (
+            <View style={s.lineupTeamBlock}>
+              <View style={s.lineupTeamHeader}>
+                <Image source={{ uri: getTeamLogo(game.team1.abbreviation) }} style={s.lineupTeamLogo} resizeMode="contain" />
+                <Text style={[s.lineupTeamName, { color: isDark ? '#F0F0FA' : '#1C1C1E' }]}>{game.team1.abbreviation}</Text>
+              </View>
+              {game.lineups.home.map((player) => (
+                <InlinePlayerRow key={player.id} player={player} isDark={isDark} teamColor={team1Color} />
+              ))}
+            </View>
+          )}
+          {game.lineups.away.length > 0 && (
+            <View style={[s.lineupTeamBlock, { marginTop: 10 }]}>
+              <View style={s.lineupTeamHeader}>
+                <Image source={{ uri: getTeamLogo(game.team2.abbreviation) }} style={s.lineupTeamLogo} resizeMode="contain" />
+                <Text style={[s.lineupTeamName, { color: isDark ? '#F0F0FA' : '#1C1C1E' }]}>{game.team2.abbreviation}</Text>
+              </View>
+              {game.lineups.away.map((player) => (
+                <InlinePlayerRow key={player.id} player={player} isDark={isDark} teamColor={team2Color} />
+              ))}
+            </View>
+          )}
+        </View>
+      )}
+    </View>
+  );
+});
+
+const LiveGameBadge = React.memo(({ quarter, timeRemaining, isDark }: { quarter?: number; timeRemaining?: string; isDark: boolean }) => {
+  const pulseAnim = useRef(new Animated.Value(1)).current;
+
+  useEffect(() => {
+    const pulse = Animated.loop(
+      Animated.sequence([
+        Animated.timing(pulseAnim, { toValue: 0.4, duration: 800, useNativeDriver: true }),
+        Animated.timing(pulseAnim, { toValue: 1, duration: 800, useNativeDriver: true }),
+      ])
+    );
+    pulse.start();
+    return () => pulse.stop();
+  }, [pulseAnim]);
+
+  return (
+    <View style={s.liveGameBadge}>
+      <Animated.View style={[s.liveGameDot, { opacity: pulseAnim }]} />
+      <Text style={s.liveGameText}>LIVE</Text>
+      {quarter != null && (
+        <Text style={s.liveGameDetail}>Q{quarter}{timeRemaining ? ` ${timeRemaining}` : ''}</Text>
+      )}
+    </View>
+  );
+});
+
 const GameCard = React.memo(({ game, isDark }: { game: NBAGame; isDark: boolean }) => {
   const isCompleted = game.status === 'completed';
+  const isLive = game.status === 'live';
+  const isUpcoming = game.status === 'upcoming';
   const scaleAnim = useRef(new Animated.Value(0.96)).current;
   const opacityAnim = useRef(new Animated.Value(0)).current;
 
@@ -220,13 +331,22 @@ const GameCard = React.memo(({ game, isDark }: { game: NBAGame; isDark: boolean 
     return d.toLocaleDateString('en-GB', { month: 'short', day: 'numeric' });
   };
 
+  const getStartTime = () => {
+    if (game.startTime) return game.startTime;
+    const d = new Date(game.date);
+    return d.toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit', hour12: true });
+  };
+
   return (
     <Animated.View style={[s.gameCardWrap, { opacity: opacityAnim, transform: [{ scale: scaleAnim }] }]}>
       <View style={[
         s.gameCard,
         { backgroundColor: isDark ? '#111125' : '#FFFFFF' },
         isDark && { borderColor: 'rgba(29,66,138,0.08)' },
+        isLive && { borderColor: isDark ? 'rgba(239,68,68,0.2)' : 'rgba(239,68,68,0.15)' },
       ]}>
+        {isLive && <View style={s.liveAccentBar} />}
+
         <View style={s.gameHeader}>
           <View style={s.gameHeaderLeft}>
             {game.series && (
@@ -241,7 +361,9 @@ const GameCard = React.memo(({ game, isDark }: { game: NBAGame; isDark: boolean 
               </View>
             )}
           </View>
-          {isCompleted ? (
+          {isLive ? (
+            <LiveGameBadge quarter={game.quarter} timeRemaining={game.timeRemaining} isDark={isDark} />
+          ) : isCompleted ? (
             <View style={[s.statusBadge, { backgroundColor: isDark ? '#0D2818' : '#ECFDF5' }]}>
               <CheckCircle2 size={11} color="#10B981" />
               <Text style={[s.statusText, { color: '#10B981' }]}>Final</Text>
@@ -254,12 +376,20 @@ const GameCard = React.memo(({ game, isDark }: { game: NBAGame; isDark: boolean 
           )}
         </View>
 
+        {isUpcoming && (
+          <View style={[s.startTimeRow, { backgroundColor: isDark ? 'rgba(29,66,138,0.06)' : 'rgba(29,66,138,0.04)' }]}>
+            <Clock size={12} color={isDark ? NBA_ORANGE : '#E85D10'} />
+            <Text style={[s.startTimeText, { color: isDark ? NBA_ORANGE : '#E85D10' }]}>Tip-Off: {getStartTime()}</Text>
+          </View>
+        )}
+
         <View style={s.teamsRow}>
           <View style={s.teamSide}>
             <View style={[
               s.teamAvatarOuter,
               isCompleted && game.team1.winner && { borderColor: '#10B981', borderWidth: 2 },
               isCompleted && !game.team1.winner && game.team2.winner && { opacity: 0.5 },
+              isLive && { borderColor: '#EF4444', borderWidth: 1.5 },
             ]}>
               <View style={[s.teamAvatar, { backgroundColor: team1Color + '15' }]}>
                 <Image
@@ -286,11 +416,25 @@ const GameCard = React.memo(({ game, isDark }: { game: NBAGame; isDark: boolean 
 
           <View style={s.vsCenter}>
             <View style={[s.vsLine, { backgroundColor: isDark ? 'rgba(29,66,138,0.15)' : 'rgba(29,66,138,0.1)' }]} />
-            {isCompleted && game.team1.score != null && game.team2.score != null ? (
-              <View style={[s.scoreBox, { backgroundColor: isDark ? 'rgba(29,66,138,0.08)' : 'rgba(29,66,138,0.05)' }]}>
-                <Text style={[s.scoreNum, { color: isDark ? '#F0F0FA' : '#1C1C1E' }, game.team1.winner && { color: '#10B981' }]}>{game.team1.score}</Text>
+            {(isCompleted || isLive) && game.team1.score != null && game.team2.score != null ? (
+              <View style={[s.scoreBox, {
+                backgroundColor: isLive
+                  ? (isDark ? 'rgba(239,68,68,0.1)' : 'rgba(239,68,68,0.06)')
+                  : (isDark ? 'rgba(29,66,138,0.08)' : 'rgba(29,66,138,0.05)'),
+              }]}>
+                <Text style={[
+                  s.scoreNum,
+                  { color: isDark ? '#F0F0FA' : '#1C1C1E' },
+                  isCompleted && game.team1.winner && { color: '#10B981' },
+                  isLive && { color: '#EF4444' },
+                ]}>{game.team1.score}</Text>
                 <Text style={[s.scoreDash, { color: isDark ? '#3A3A5A' : '#BEBEC4' }]}>-</Text>
-                <Text style={[s.scoreNum, { color: isDark ? '#F0F0FA' : '#1C1C1E' }, game.team2.winner && { color: '#10B981' }]}>{game.team2.score}</Text>
+                <Text style={[
+                  s.scoreNum,
+                  { color: isDark ? '#F0F0FA' : '#1C1C1E' },
+                  isCompleted && game.team2.winner && { color: '#10B981' },
+                  isLive && { color: '#EF4444' },
+                ]}>{game.team2.score}</Text>
               </View>
             ) : (
               <LinearGradient
@@ -308,6 +452,7 @@ const GameCard = React.memo(({ game, isDark }: { game: NBAGame; isDark: boolean 
               s.teamAvatarOuter,
               isCompleted && game.team2.winner && { borderColor: '#10B981', borderWidth: 2 },
               isCompleted && !game.team2.winner && game.team1.winner && { opacity: 0.5 },
+              isLive && { borderColor: '#EF4444', borderWidth: 1.5 },
             ]}>
               <View style={[s.teamAvatar, { backgroundColor: team2Color + '15' }]}>
                 <Image
@@ -354,6 +499,10 @@ const GameCard = React.memo(({ game, isDark }: { game: NBAGame; isDark: boolean 
               <Text style={[s.highlightsText, { color: isDark ? '#8B8BA7' : '#6B7A99' }]}>{game.highlights}</Text>
             </View>
           </View>
+        )}
+
+        {(isLive || isUpcoming) && game.lineups && (
+          <LineupsSection game={game} isDark={isDark} />
         )}
 
         <View style={[s.gameFooter, { borderTopColor: isDark ? '#1A1A32' : '#F0F0F5' }]}>
@@ -710,14 +859,7 @@ export default function NBASection({ isDark, insets }: NBASectionProps) {
           </View>
         );
       case 'game':
-        return (
-          <View>
-            {item.game.status === 'live' && (
-              <LiveBadge quarter={item.game.quarter} timeRemaining={item.game.timeRemaining} isDark={isDark} />
-            )}
-            <GameCard game={item.game} isDark={isDark} />
-          </View>
-        );
+        return <GameCard game={item.game} isDark={isDark} />;
       case 'conference':
         return <ConferenceStandings conference={item.conference} teams={item.teams} isDark={isDark} />;
       case 'empty':
@@ -1417,5 +1559,137 @@ const s = StyleSheet.create({
     fontSize: 11,
     fontWeight: '800' as const,
     color: '#EF4444',
+  },
+  liveAccentBar: {
+    position: 'absolute' as const,
+    top: 0,
+    left: 0,
+    right: 0,
+    height: 3,
+    backgroundColor: '#EF4444',
+    borderTopLeftRadius: 18,
+    borderTopRightRadius: 18,
+  },
+  liveGameBadge: {
+    flexDirection: 'row' as const,
+    alignItems: 'center' as const,
+    backgroundColor: 'rgba(239,68,68,0.12)',
+    paddingHorizontal: 10,
+    paddingVertical: 5,
+    borderRadius: 20,
+    gap: 5,
+  },
+  liveGameDot: {
+    width: 7,
+    height: 7,
+    borderRadius: 3.5,
+    backgroundColor: '#EF4444',
+  },
+  liveGameText: {
+    fontSize: 11,
+    fontWeight: '800' as const,
+    color: '#EF4444',
+    letterSpacing: 0.8,
+  },
+  liveGameDetail: {
+    fontSize: 10,
+    fontWeight: '700' as const,
+    color: '#EF4444',
+  },
+  startTimeRow: {
+    flexDirection: 'row' as const,
+    alignItems: 'center' as const,
+    gap: 6,
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    borderRadius: 10,
+    marginBottom: 10,
+  },
+  startTimeText: {
+    fontSize: 13,
+    fontWeight: '700' as const,
+    letterSpacing: -0.1,
+  },
+  lineupsContainer: {
+    marginTop: 10,
+    paddingTop: 10,
+    borderTopWidth: StyleSheet.hairlineWidth,
+  },
+  lineupsToggle: {
+    flexDirection: 'row' as const,
+    alignItems: 'center' as const,
+    justifyContent: 'space-between' as const,
+    paddingVertical: 6,
+  },
+  lineupsToggleLeft: {
+    flexDirection: 'row' as const,
+    alignItems: 'center' as const,
+    gap: 6,
+  },
+  lineupsToggleText: {
+    fontSize: 12,
+    fontWeight: '700' as const,
+    letterSpacing: -0.1,
+  },
+  lineupsContent: {
+    marginTop: 8,
+  },
+  lineupTeamBlock: {
+    gap: 4,
+  },
+  lineupTeamHeader: {
+    flexDirection: 'row' as const,
+    alignItems: 'center' as const,
+    gap: 6,
+    marginBottom: 4,
+  },
+  lineupTeamLogo: {
+    width: 18,
+    height: 18,
+  },
+  lineupTeamName: {
+    fontSize: 12,
+    fontWeight: '700' as const,
+    letterSpacing: 0.5,
+  },
+  lineupPlayerRow: {
+    flexDirection: 'row' as const,
+    alignItems: 'center' as const,
+    gap: 8,
+    paddingVertical: 4,
+    paddingHorizontal: 4,
+  },
+  lineupPlayerImgWrap: {
+    width: 28,
+    height: 28,
+    borderRadius: 14,
+    overflow: 'hidden' as const,
+    borderWidth: 1.5,
+    justifyContent: 'center' as const,
+    alignItems: 'center' as const,
+  },
+  lineupPlayerImg: {
+    width: 28,
+    height: 28,
+  },
+  lineupPlayerInitial: {
+    fontSize: 12,
+    fontWeight: '800' as const,
+  },
+  lineupPlayerInfo: {
+    flex: 1,
+    flexDirection: 'row' as const,
+    alignItems: 'center' as const,
+    justifyContent: 'space-between' as const,
+  },
+  lineupPlayerName: {
+    fontSize: 12,
+    fontWeight: '600' as const,
+    flex: 1,
+  },
+  lineupPlayerPos: {
+    fontSize: 10,
+    fontWeight: '600' as const,
+    letterSpacing: 0.3,
   },
 });
