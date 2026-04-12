@@ -287,12 +287,23 @@ export const getMatchesRoute = publicProcedure
       } else if (type === 'results') {
         url = `${BASE_URL}/fixtures?team=${teamId}&last=20`;
       } else {
-        url = `${BASE_URL}/fixtures?team=${teamId}&next=20`;
+        url = `${BASE_URL}/fixtures?team=${teamId}&from=${fromDate}&to=${toDate}`;
       }
-      const ck = `team:${teamId}:${type}:${today}`;
+      const ck = `team:${teamId}:${type}:${fromDate}:${toDate}`;
       const data = await cachedFetch(url, headers, ck, topLevelTtl);
       const matches = data.response || [];
-      console.log(`⚽ Team ${teamId} ${type}: ${matches.length} matches`);
+      console.log(`⚽ Team ${teamId} ${type}: ${matches.length} matches (url: ${url.replace(apiKey!, 'HIDDEN')})`);
+
+      if (matches.length === 0 && type === 'upcoming') {
+        console.log(`⚠️ Team ${teamId}: No upcoming matches with from/to, trying next=10 fallback`);
+        const fallbackUrl = `${BASE_URL}/fixtures?team=${teamId}&next=10`;
+        const fallbackCk = `team:${teamId}:upcoming:next10`;
+        const fallbackData = await cachedFetch(fallbackUrl, headers, fallbackCk, topLevelTtl);
+        const fallbackMatches = fallbackData.response || [];
+        console.log(`⚽ Team ${teamId} fallback: ${fallbackMatches.length} matches`);
+        return fallbackMatches;
+      }
+
       return matches;
     };
 
