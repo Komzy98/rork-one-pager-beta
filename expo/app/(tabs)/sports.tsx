@@ -1690,6 +1690,23 @@ export default function SportsScreen() {
 
   const ufcFlatListKeyExtractor = useCallback((item: UFCFlatListItem) => item.key, []);
 
+  const enabledSports = useMemo((): SportMode[] => {
+    const interests = profile?.interests || [];
+    const sports: SportMode[] = [];
+    if (interests.includes('football')) sports.push('football');
+    if (interests.includes('ufc')) sports.push('ufc');
+    if (interests.includes('f1')) sports.push('f1');
+    if (interests.includes('nba')) sports.push('nba');
+    if (sports.length === 0) sports.push('football');
+    return sports;
+  }, [profile?.interests]);
+
+  useEffect(() => {
+    if (!enabledSports.includes(sportMode)) {
+      setSportMode(enabledSports[0]);
+    }
+  }, [enabledSports, sportMode]);
+
   const handleSportModeChange = useCallback(async (mode: SportMode) => {
     if (Platform.OS !== 'web') {
       await Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
@@ -1815,11 +1832,13 @@ export default function SportsScreen() {
             </TouchableOpacity>
           </View>
 
+          {enabledSports.length > 1 && (
           <View style={sportToggleStyles.container}>
             <View style={[
               sportToggleStyles.track,
               { backgroundColor: isDark ? 'rgba(255,255,255,0.04)' : 'rgba(0,0,0,0.04)' },
             ]}>
+              {enabledSports.includes('football') && (
               <TouchableOpacity
                 style={[
                   sportToggleStyles.option,
@@ -1846,6 +1865,8 @@ export default function SportsScreen() {
                   sportMode === 'football' && { fontWeight: '700' as const },
                 ]}>Football</Text>
               </TouchableOpacity>
+              )}
+              {enabledSports.includes('ufc') && (
               <TouchableOpacity
                 style={[
                   sportToggleStyles.option,
@@ -1872,6 +1893,8 @@ export default function SportsScreen() {
                   sportMode === 'ufc' && { fontWeight: '700' as const },
                 ]}>UFC</Text>
               </TouchableOpacity>
+              )}
+              {enabledSports.includes('f1') && (
               <TouchableOpacity
                 style={[
                   sportToggleStyles.option,
@@ -1898,6 +1921,8 @@ export default function SportsScreen() {
                   sportMode === 'f1' && { fontWeight: '700' as const },
                 ]}>F1</Text>
               </TouchableOpacity>
+              )}
+              {enabledSports.includes('nba') && (
               <TouchableOpacity
                 style={[
                   sportToggleStyles.option,
@@ -1924,8 +1949,10 @@ export default function SportsScreen() {
                   sportMode === 'nba' && { fontWeight: '700' as const },
                 ]}>NBA</Text>
               </TouchableOpacity>
+              )}
             </View>
           </View>
+          )}
 
         </LinearGradient>
       </Animated.View>
