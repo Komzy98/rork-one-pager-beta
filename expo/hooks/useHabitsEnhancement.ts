@@ -749,6 +749,7 @@ export const [HabitsEnhancementProvider, useHabitsEnhancement] = createContextHo
 // Re-export hooks for backward compatibility
 export const useSavedHabits = () => {
   const ctx = useHabitsEnhancement();
+  if (!ctx) return undefined;
   return {
     savedHabits: ctx.savedHabits,
     isLoading: ctx.isLoading,
@@ -764,6 +765,7 @@ export const useSavedHabits = () => {
 
 export const useGamification = () => {
   const ctx = useHabitsEnhancement();
+  if (!ctx) return undefined;
   return {
     badges: ctx.badges,
     achievements: ctx.achievements,
