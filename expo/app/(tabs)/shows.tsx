@@ -69,6 +69,8 @@ import WatchProviders from '@/components/WatchProviders';
 
 import TabWalkthrough from '@/components/TabWalkthrough';
 import { useRouter } from 'expo-router';
+import { useYounify } from '@/hooks/useYounify';
+import { Link2, Wifi } from 'lucide-react-native';
 
 
 
@@ -740,6 +742,114 @@ function DetailModal({ visible, item, mediaType, onClose, onAddToList, isInList,
     </Modal>
   );
 }
+
+function StreamingCTA() {
+  const router = useRouter();
+  const { connectionStatus } = useYounify();
+  const isConnected = connectionStatus === 'connected';
+  const pulseAnim = React.useRef(new RNAnimated.Value(0)).current;
+
+  React.useEffect(() => {
+    if (!isConnected) {
+      const loop = RNAnimated.loop(
+        RNAnimated.sequence([
+          RNAnimated.timing(pulseAnim, { toValue: 1, duration: 2000, useNativeDriver: Platform.OS !== 'web' }),
+          RNAnimated.timing(pulseAnim, { toValue: 0, duration: 2000, useNativeDriver: Platform.OS !== 'web' }),
+        ])
+      );
+      loop.start();
+      return () => loop.stop();
+    }
+  }, [isConnected, pulseAnim]);
+
+  const glowOpacity = pulseAnim.interpolate({
+    inputRange: [0, 1],
+    outputRange: [0.4, 0.9],
+  });
+
+  return (
+    <TouchableOpacity
+      style={ctaStyles.container}
+      onPress={() => {
+        if (Platform.OS !== 'web') {
+          void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+        }
+        router.push('/streaming-services' as any);
+      }}
+      activeOpacity={0.85}
+      testID="streaming-cta"
+    >
+      <LinearGradient
+        colors={isConnected ? ['#064E3B', '#065F46', '#047857'] : ['#1E1B4B', '#312E81', '#3730A3']}
+        start={{ x: 0, y: 0 }}
+        end={{ x: 1, y: 1 }}
+        style={ctaStyles.gradient}
+      >
+        {!isConnected && (
+          <RNAnimated.View style={[ctaStyles.glowOverlay, { opacity: glowOpacity }]} />
+        )}
+        <View style={ctaStyles.iconWrap}>
+          {isConnected ? (
+            <Wifi size={20} color="#4ADE80" />
+          ) : (
+            <Link2 size={20} color="#A5B4FC" />
+          )}
+        </View>
+        <View style={ctaStyles.textWrap}>
+          <Text style={ctaStyles.title}>
+            {isConnected ? 'Streaming Connected' : 'Connect Streaming Services'}
+          </Text>
+          <Text style={ctaStyles.subtitle}>
+            {isConnected ? 'Tap to manage your connections' : 'Sync watchlists & get recommendations'}
+          </Text>
+        </View>
+        <ChevronRight size={18} color={isConnected ? '#4ADE80' : '#A5B4FC'} />
+      </LinearGradient>
+    </TouchableOpacity>
+  );
+}
+
+const ctaStyles = StyleSheet.create({
+  container: {
+    marginHorizontal: 16,
+    marginTop: 12,
+    marginBottom: 8,
+    borderRadius: 16,
+    overflow: 'hidden' as const,
+  },
+  gradient: {
+    flexDirection: 'row' as const,
+    alignItems: 'center' as const,
+    paddingVertical: 14,
+    paddingHorizontal: 16,
+    gap: 12,
+  },
+  glowOverlay: {
+    ...StyleSheet.absoluteFillObject,
+    backgroundColor: 'rgba(99, 102, 241, 0.08)',
+  },
+  iconWrap: {
+    width: 40,
+    height: 40,
+    borderRadius: 12,
+    backgroundColor: 'rgba(255,255,255,0.1)',
+    alignItems: 'center' as const,
+    justifyContent: 'center' as const,
+  },
+  textWrap: {
+    flex: 1,
+  },
+  title: {
+    fontSize: 14,
+    fontWeight: '700' as const,
+    color: '#F5F5F7',
+    marginBottom: 2,
+  },
+  subtitle: {
+    fontSize: 12,
+    color: 'rgba(255,255,255,0.6)',
+  },
+});
 
 export default function ShowsScreen() {
   const appContext = useApp();
@@ -1862,6 +1972,8 @@ export default function ShowsScreen() {
             />
           }
         >
+          <StreamingCTA />
+
           {trendingQuery.isLoading ? (
             <View style={styles.loadingSection}>
               <ActivityIndicator size="large" color={THEME.primary} />
