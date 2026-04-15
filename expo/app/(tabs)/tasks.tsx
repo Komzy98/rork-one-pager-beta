@@ -1196,11 +1196,12 @@ const styles = StyleSheet.create({
     paddingHorizontal: 14,
     borderRadius: 12,
     borderWidth: 1.5,
+    width: '47%' as unknown as number,
   },
   habitChipText: {
-    fontSize: 14,
+    fontSize: 13,
     fontWeight: '600' as const,
-    maxWidth: 100,
+    flexShrink: 1,
   },
   miniStreak: {
     flexDirection: 'row',
