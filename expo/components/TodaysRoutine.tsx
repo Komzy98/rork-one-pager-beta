@@ -1,4 +1,4 @@
-import React, { useMemo, useRef, useEffect } from 'react';
+import React, { useMemo, useRef, useEffect, useState } from 'react';
 import {
   StyleSheet,
   View,
@@ -694,6 +694,7 @@ export default function TodaysRoutine({
   const appContext = useApp();
   const busyMode = useBusyModeSafe();
   const progressAnim = useRef(new Animated.Value(0)).current;
+  const [habitsExpanded, setHabitsExpanded] = useState(false);
   
   const savedHabits = useMemo(() => savedHabitsContext?.savedHabits || [], [savedHabitsContext?.savedHabits]);
   const updateTask = tasksContext?.updateTask || (() => {});
@@ -771,7 +772,8 @@ export default function TodaysRoutine({
   }, [tasksContext?.allTasks]);
 
   const routineItems = useMemo(() => {
-    return todayHabits.slice(0, maxItems).map(habit => {
+    const limit = habitsExpanded ? todayHabits.length : maxItems;
+    return todayHabits.slice(0, limit).map(habit => {
       const savedEntry = savedHabits.find(sh => sh.habitId === habit.id);
       const communityInfo = savedEntry 
         ? COMMUNITY_HABITS.find(ch => ch.id === savedEntry.communityHabitId)
@@ -780,7 +782,7 @@ export default function TodaysRoutine({
       
       return { habit, communityInfo, minimalVersion };
     });
-  }, [todayHabits, savedHabits, maxItems, minimalHabitsMap]);
+  }, [todayHabits, savedHabits, maxItems, habitsExpanded, minimalHabitsMap]);
 
   const completedHabitsCount = useMemo(() => {
     const d = new Date();
@@ -983,10 +985,10 @@ export default function TodaysRoutine({
         ))}
       </View>
 
-      {todayHabits.length > maxItems && (
+      {todayHabits.length > maxItems && !habitsExpanded && (
         <TouchableOpacity 
           style={styles.moreBtn}
-          onPress={onViewAll}
+          onPress={() => setHabitsExpanded(true)}
           activeOpacity={0.7}
         >
           <Text style={styles.moreBtnText}>
