@@ -404,7 +404,7 @@ export default function ActivitiesScreen() {
       const timer = setTimeout(() => setResultsEnabled(true), 1500);
       return () => clearTimeout(timer);
     }
-  }, [upcomingEnabled]);
+  }, [upcomingEnabled, upcomingQuery.isLoading]);
 
   const upcomingQuery = trpc.football.getMatches.useQuery(
     { type: 'upcoming', days: 14, teamIds: favoriteTeamIds.length > 0 ? favoriteTeamIds : undefined, leagueIds: queryLeagueIds, nationalTeamIds: nationalTeamIds.length > 0 ? nationalTeamIds : undefined, includeAfcon },

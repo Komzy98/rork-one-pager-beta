@@ -725,6 +725,7 @@ function ModernSportsSectionComponent({
 
   const liveCount = useMemo(() => uniqueTeamMatches.filter(m => m.match.status === 'Live').length, [uniqueTeamMatches]);
   const upcomingCount = useMemo(() => uniqueTeamMatches.filter(m => m.match.status === 'Upcoming').length, [uniqueTeamMatches]);
+  const resultsCount = useMemo(() => uniqueTeamMatches.filter(m => m.match.status === 'Completed').length, [uniqueTeamMatches]);
 
   const filteredMatches = useMemo(() => {
     let matches: { match: LiveFootballMatch; teamName: string }[] = [];
@@ -942,7 +943,7 @@ function ModernSportsSectionComponent({
     { key: 'teams' as const, label: 'Clubs', count: teamsCount, icon: Heart },
     { key: 'live' as const, label: 'Live', count: liveCount, icon: Zap, isLive: true },
     { key: 'next' as const, label: 'Next', count: upcomingCount, icon: Clock },
-    { key: 'results' as const, label: 'Results', count: null as number | null, icon: Trophy },
+    { key: 'results' as const, label: 'Results', count: resultsCount, icon: Trophy },
   ];
 
   const activeTabIndex = tabItems.findIndex(t => t.key === selectedTab);
