@@ -40,6 +40,7 @@ import HabitFormationCoach from '@/components/HabitFormationCoach';
 import { getChronotypeInfo, getChronotypeGreetingTip } from '@/constants/chronotypes';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import NBAUpcomingSection from '@/components/NBAUpcomingSection';
+import ShowInfoModal from '@/components/ShowInfoModal';
 
 type AvailableSpeechVoice = Awaited<ReturnType<typeof Speech.getAvailableVoicesAsync>>[number];
 
@@ -138,6 +139,7 @@ export default function ActivitiesScreen() {
 
   const [showWeatherModal, setShowWeatherModal] = useState<boolean>(false);
   const [showPeakScheduler, setShowPeakScheduler] = useState<boolean>(false);
+  const [showInfoModal, setShowInfoModal] = useState<{ visible: boolean; tmdbId: number | null; mediaType: 'movie' | 'tv'; title: string; platform: string }>({ visible: false, tmdbId: null, mediaType: 'tv', title: '', platform: '' });
   const [sportsSelectedLeagues, setSportsSelectedLeagues] = useState<number[]>([]);
 
   interface TrackedShowEpisode {
@@ -1085,11 +1087,15 @@ export default function ActivitiesScreen() {
     });
   };
 
-  const handleContinueWatching = async (_showId: string) => {
+  const handleContinueWatching = async (show: Show & { posterUrl?: string | null }) => {
     if (Platform.OS !== 'web') {
       await Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
     }
-    router.push('/shows' as any);
+    if (show.tmdbId && show.mediaType) {
+      setShowInfoModal({ visible: true, tmdbId: show.tmdbId, mediaType: show.mediaType, title: show.title, platform: show.platform });
+    } else {
+      router.push('/shows' as any);
+    }
   };
   
   const getPlatformColor = (platform: string) => {
@@ -2205,7 +2211,13 @@ export default function ActivitiesScreen() {
                           styles.newEpisodeCard,
                           index === (newEpisodesForMyShows.data?.slice(0, 5).length ?? 0) - 1 && { borderBottomWidth: 0 },
                         ]}
-                        onPress={() => router.push('/shows' as any)}
+                        onPress={() => {
+                          if (item.tmdbId) {
+                            setShowInfoModal({ visible: true, tmdbId: item.tmdbId, mediaType: 'tv', title: item.showTitle, platform: item.platform });
+                          } else {
+                            router.push('/shows' as any);
+                          }
+                        }}
                         activeOpacity={0.7}
                       >
                         <View style={styles.newEpisodePosterWrap}>
@@ -2279,7 +2291,7 @@ export default function ActivitiesScreen() {
                       <TouchableOpacity 
                         key={show.id}
                         style={[styles.cwCard, index === 0 && { marginLeft: 0 }]}
-                        onPress={() => handleContinueWatching(show.id)}
+                        onPress={() => handleContinueWatching(show)}
                         activeOpacity={0.85}
                       >
                         <View style={styles.cwPosterWrap}>
@@ -2377,7 +2389,13 @@ export default function ActivitiesScreen() {
                     <TouchableOpacity 
                       key={show.id} 
                       style={[styles.upNextCard, index === planToWatchWithThumbnails.slice(0, 4).length - 1 && { borderBottomWidth: 0 }]}
-                      onPress={() => handleStartWatching(show)}
+                      onPress={() => {
+                        if (show.tmdbId && show.mediaType) {
+                          setShowInfoModal({ visible: true, tmdbId: show.tmdbId, mediaType: show.mediaType, title: show.title, platform: show.platform });
+                        } else {
+                          handleStartWatching(show);
+                        }
+                      }}
                       activeOpacity={0.7}
                     >
                       <View style={styles.upNextPosterWrap}>
@@ -2459,6 +2477,15 @@ export default function ActivitiesScreen() {
         onClose={() => setShowPeakScheduler(false)}
         peakStartHour={9}
         peakEndHour={11}
+      />
+
+      <ShowInfoModal
+        visible={showInfoModal.visible}
+        onClose={() => setShowInfoModal({ visible: false, tmdbId: null, mediaType: 'tv', title: '', platform: '' })}
+        tmdbId={showInfoModal.tmdbId}
+        mediaType={showInfoModal.mediaType}
+        showTitle={showInfoModal.title}
+        platform={showInfoModal.platform}
       />
 
       {liveMatches.length > 0 && liveMatches[0] && (
