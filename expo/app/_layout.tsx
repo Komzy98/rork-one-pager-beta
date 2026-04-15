@@ -10,6 +10,7 @@ import { UserProfileProvider } from "@/hooks/useUserProfile";
 import { TasksProvider } from "@/hooks/useTasksStore";
 import { trpc, trpcReactClient } from "@/lib/trpc";
 import { YounifyProvider } from "@/hooks/useYounify";
+import { WalkthroughProvider } from "@/hooks/useWalkthrough";
 
 SplashScreen.preventAutoHideAsync();
 
@@ -45,7 +46,9 @@ export default function RootLayout() {
                 <AppProvider>
                   <TasksProvider>
                     <YounifyProvider>
-                      <RootLayoutNav />
+                      <WalkthroughProvider>
+                        <RootLayoutNav />
+                      </WalkthroughProvider>
                     </YounifyProvider>
                   </TasksProvider>
                 </AppProvider>
