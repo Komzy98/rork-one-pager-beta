@@ -279,47 +279,51 @@ export const [UserProfileProvider, useUserProfile] = createContextHook(() => {
       
       teamIds.forEach(id => logoFetchedRef.current.add(id));
       
+      const logos = new Map<number, string>();
+
       try {
         const result = await trpcClient.football.getTeamLogos.query({ teamIds });
-        const logos = new Map<number, string>();
         Object.entries(result.logos).forEach(([id, logo]) => {
           logos.set(Number(id), logo as string);
         });
-        
-        if (logos.size > 0) {
-          setTeamLogos(prev => {
-            const newLogos = new Map(prev);
-            logos.forEach((logo, id) => newLogos.set(id, logo));
-            return newLogos;
-          });
-          
-          const updatedTeams = profile.favoriteTeams.map(team => {
-            if (team.apiId && logos.has(team.apiId)) {
-              return { ...team, logo: logos.get(team.apiId) };
-            }
-            return team;
-          });
-          
-          const hasUpdates = updatedTeams.some((team, idx) => 
-            team.logo !== profile.favoriteTeams[idx].logo
-          );
-          
-          if (hasUpdates && user) {
-            const updatedProfile = { ...profile, favoriteTeams: updatedTeams };
-            const storageKey = `@user_profile_${user.id}`;
-            
-            unifiedStorage.setItem(storageKey, JSON.stringify(updatedProfile))
-              .then(() => {
-                setProfile(updatedProfile);
-                console.log('✅ Team logos saved to profile');
-              })
-              .catch((error) => {
-                console.error('Error saving team logos:', error);
-              });
-          }
-        }
       } catch (error) {
-        console.error('Error fetching team logos:', error);
+        console.log('⚠️ tRPC logo fetch failed, using CDN fallback:', error);
+        teamIds.forEach(id => {
+          logos.set(id, `https://media.api-sports.io/football/teams/${id}.png`);
+        });
+      }
+
+      if (logos.size > 0) {
+        setTeamLogos(prev => {
+          const newLogos = new Map(prev);
+          logos.forEach((logo, id) => newLogos.set(id, logo));
+          return newLogos;
+        });
+
+        const updatedTeams = profile.favoriteTeams.map(team => {
+          if (team.apiId && logos.has(team.apiId)) {
+            return { ...team, logo: logos.get(team.apiId) };
+          }
+          return team;
+        });
+
+        const hasUpdates = updatedTeams.some((team, idx) => 
+          team.logo !== profile.favoriteTeams[idx].logo
+        );
+
+        if (hasUpdates && user) {
+          const updatedProfile = { ...profile, favoriteTeams: updatedTeams };
+          const storageKey = `@user_profile_${user.id}`;
+
+          unifiedStorage.setItem(storageKey, JSON.stringify(updatedProfile))
+            .then(() => {
+              setProfile(updatedProfile);
+              console.log('✅ Team logos saved to profile');
+            })
+            .catch((saveError) => {
+              console.error('Error saving team logos:', saveError);
+            });
+        }
       }
     };
     
