@@ -808,7 +808,6 @@ function ModernSportsSectionComponent({
           <View style={styles.teamCardContent}>
             <View style={styles.teamCardTop}>
               <View style={styles.teamInfo}>
-                <View style={styles.teamBadge}>
                   {teamLogo ? (
                     <Image source={{ uri: teamLogo }} style={styles.teamBadgeLogo} />
                   ) : stats.leagueLogo ? (
@@ -816,7 +815,6 @@ function ModernSportsSectionComponent({
                   ) : (
                     <Shield size={18} color="#fff" />
                   )}
-                </View>
                 <View style={styles.teamTextInfo}>
                   <Text style={styles.teamName} numberOfLines={1}>{team.name}</Text>
                   <Text style={styles.teamLeague} numberOfLines={1}>{stats.liveMatch?.league || stats.nextMatch?.league || team.league}</Text>
@@ -1667,12 +1665,6 @@ const styles = StyleSheet.create({
     alignItems: 'flex-start',
     gap: 10,
     flex: 1,
-  },
-  teamBadge: {
-    width: 44,
-    height: 44,
-    justifyContent: 'center',
-    alignItems: 'center',
   },
   teamBadgeLogo: {
     width: 42,

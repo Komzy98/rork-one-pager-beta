@@ -114,9 +114,7 @@ export default function NBAUpcomingSection({ favoriteNBATeams }: NBAUpcomingSect
 
           <View style={styles.matchupRow}>
             <View style={styles.teamColumn}>
-              <View style={[styles.teamLogoCircle, team1Fav && { borderColor: team1Color, borderWidth: 2 }]}>
                 <Image source={{ uri: getTeamLogo(game.team1.abbreviation) }} style={styles.teamLogoImg} resizeMode="contain" />
-              </View>
               <Text style={[styles.teamAbbr, team1Fav && { color: '#fff', fontWeight: '800' as const }]}>{game.team1.abbreviation}</Text>
               {game.team1.record && <Text style={styles.teamRecord}>{game.team1.record}</Text>}
             </View>
@@ -128,9 +126,7 @@ export default function NBAUpcomingSection({ favoriteNBATeams }: NBAUpcomingSect
             </View>
 
             <View style={styles.teamColumn}>
-              <View style={[styles.teamLogoCircle, team2Fav && { borderColor: team2Color, borderWidth: 2 }]}>
                 <Image source={{ uri: getTeamLogo(game.team2.abbreviation) }} style={styles.teamLogoImg} resizeMode="contain" />
-              </View>
               <Text style={[styles.teamAbbr, team2Fav && { color: '#fff', fontWeight: '800' as const }]}>{game.team2.abbreviation}</Text>
               {game.team2.record && <Text style={styles.teamRecord}>{game.team2.record}</Text>}
             </View>
@@ -392,18 +388,10 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     flex: 1,
   },
-  teamLogoCircle: {
-    width: 58,
-    height: 58,
-    borderRadius: 29,
-    backgroundColor: 'rgba(255,255,255,0.08)',
-    justifyContent: 'center',
-    alignItems: 'center',
-    marginBottom: 8,
-  },
   teamLogoImg: {
-    width: 40,
-    height: 40,
+    width: 52,
+    height: 52,
+    marginBottom: 8,
   },
   teamAbbr: {
     fontSize: 16,

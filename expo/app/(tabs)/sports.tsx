@@ -463,13 +463,11 @@ const PremiumMatchCard = React.memo(({
 
           <View style={styles.matchBody}>
             <View style={styles.teamRowLeft}>
-              <View style={[styles.teamLogoBox, { backgroundColor: isDark ? '#1A1A32' : '#F5F5FA' }]}>
                 {match.homeTeamLogo ? (
                   <Image source={{ uri: match.homeTeamLogo }} style={styles.teamLogo} />
                 ) : (
                   <Shield size={22} color={isDark ? '#5A5A7A' : '#C7C7CC'} />
                 )}
-              </View>
               <Text style={[
                 styles.teamNameHorizontal,
                 { color: isDark ? '#E4E4ED' : '#1C1C1E' },
@@ -522,13 +520,11 @@ const PremiumMatchCard = React.memo(({
               ]} numberOfLines={2}>
                 {match.awayTeam}
               </Text>
-              <View style={[styles.teamLogoBox, { backgroundColor: isDark ? '#1A1A32' : '#F5F5FA' }]}>
                 {match.awayTeamLogo ? (
                   <Image source={{ uri: match.awayTeamLogo }} style={styles.teamLogo} />
                 ) : (
                   <Shield size={22} color={isDark ? '#5A5A7A' : '#C7C7CC'} />
                 )}
-              </View>
             </View>
           </View>
 
@@ -2842,16 +2838,9 @@ const styles = StyleSheet.create({
     gap: 10,
     minWidth: 0,
   },
-  teamLogoBox: {
-    width: 48,
-    height: 48,
-    borderRadius: 14,
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
   teamLogo: {
-    width: 32,
-    height: 32,
+    width: 42,
+    height: 42,
     resizeMode: 'contain',
   },
   teamNameHorizontal: {

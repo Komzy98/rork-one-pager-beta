@@ -129,13 +129,11 @@ const HeroGameCard = React.memo(({ game, isDark }: { game: NBAGame; isDark: bool
         <View style={s.heroTeams}>
           <View style={s.heroTeamSide}>
             <View style={s.heroAvatarWrap}>
-              <View style={[s.heroAvatar, { backgroundColor: team1Color + '25', borderColor: team1Color + '40' }]}>
                 <Image
                   source={{ uri: getTeamLogo(game.team1.abbreviation) }}
                   style={s.teamLogoImg}
                   resizeMode="contain"
                 />
-              </View>
             </View>
             <Text style={s.heroTeamName} numberOfLines={2}>{game.team1.name}</Text>
             {game.team1.record && (
@@ -154,13 +152,11 @@ const HeroGameCard = React.memo(({ game, isDark }: { game: NBAGame; isDark: bool
 
           <View style={s.heroTeamSide}>
             <View style={s.heroAvatarWrap}>
-              <View style={[s.heroAvatar, { backgroundColor: team2Color + '25', borderColor: team2Color + '40' }]}>
                 <Image
                   source={{ uri: getTeamLogo(game.team2.abbreviation) }}
                   style={s.teamLogoImg}
                   resizeMode="contain"
                 />
-              </View>
             </View>
             <Text style={s.heroTeamName} numberOfLines={2}>{game.team2.name}</Text>
             {game.team2.record && (
@@ -395,18 +391,13 @@ const GameCard = React.memo(({ game, isDark, onPress }: { game: NBAGame; isDark:
         <View style={s.teamsRow}>
           <View style={s.teamSide}>
             <View style={[
-              s.teamAvatarOuter,
-              isCompleted && game.team1.winner && { borderColor: '#10B981', borderWidth: 2 },
               isCompleted && !game.team1.winner && game.team2.winner && { opacity: 0.5 },
-              isLive && { borderColor: '#EF4444', borderWidth: 1.5 },
             ]}>
-              <View style={[s.teamAvatar, { backgroundColor: team1Color + '15' }]}>
                 <Image
                   source={{ uri: getTeamLogo(game.team1.abbreviation) }}
                   style={s.teamLogoSmall}
                   resizeMode="contain"
                 />
-              </View>
             </View>
             <Text style={[
               s.teamName,
@@ -458,18 +449,13 @@ const GameCard = React.memo(({ game, isDark, onPress }: { game: NBAGame; isDark:
 
           <View style={s.teamSide}>
             <View style={[
-              s.teamAvatarOuter,
-              isCompleted && game.team2.winner && { borderColor: '#10B981', borderWidth: 2 },
               isCompleted && !game.team2.winner && game.team1.winner && { opacity: 0.5 },
-              isLive && { borderColor: '#EF4444', borderWidth: 1.5 },
             ]}>
-              <View style={[s.teamAvatar, { backgroundColor: team2Color + '15' }]}>
                 <Image
                   source={{ uri: getTeamLogo(game.team2.abbreviation) }}
                   style={s.teamLogoSmall}
                   resizeMode="contain"
                 />
-              </View>
             </View>
             <Text style={[
               s.teamName,
@@ -1071,18 +1057,9 @@ const s = StyleSheet.create({
   heroAvatarWrap: {
     marginBottom: 4,
   },
-  heroAvatar: {
-    width: 60,
-    height: 60,
-    borderRadius: 16,
-    justifyContent: 'center',
-    alignItems: 'center',
-    borderWidth: 2,
-    borderColor: 'rgba(255,255,255,0.1)',
-  },
   teamLogoImg: {
-    width: 42,
-    height: 42,
+    width: 56,
+    height: 56,
   },
   heroTeamName: {
     fontSize: 13,
@@ -1261,22 +1238,9 @@ const s = StyleSheet.create({
     alignItems: 'center' as const,
     gap: 4,
   },
-  teamAvatarOuter: {
-    borderRadius: 14,
-    borderWidth: 2,
-    borderColor: 'transparent',
-    padding: 2,
-  },
-  teamAvatar: {
-    width: 52,
-    height: 52,
-    borderRadius: 12,
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
   teamLogoSmall: {
-    width: 36,
-    height: 36,
+    width: 48,
+    height: 48,
   },
   teamName: {
     fontSize: 12,

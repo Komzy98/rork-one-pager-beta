@@ -187,13 +187,11 @@ export default function NBATeamsScreen() {
                       end={{ x: 1, y: 0 }}
                     />
                   )}
-                  <View style={styles.teamLogoWrap}>
                     <Image
                       source={{ uri: team.logo }}
                       style={styles.teamLogo}
                       resizeMode="contain"
                     />
-                  </View>
                   <View style={styles.teamInfo}>
                     <Text style={[styles.teamName, isSelected && styles.teamNameSelected]}>
                       {team.name}
@@ -383,19 +381,10 @@ const styles = StyleSheet.create({
   teamCardSelected: {
     borderColor: 'rgba(242, 101, 34, 0.3)',
   },
-  teamLogoWrap: {
-    width: 44,
-    height: 44,
-    borderRadius: 12,
-    backgroundColor: 'rgba(255,255,255,0.06)',
-    justifyContent: 'center',
-    alignItems: 'center',
-    marginRight: 12,
-    overflow: 'hidden',
-  },
   teamLogo: {
-    width: 32,
-    height: 32,
+    width: 40,
+    height: 40,
+    marginRight: 12,
   },
   teamInfo: {
     flex: 1,

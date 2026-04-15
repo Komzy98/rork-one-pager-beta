@@ -219,9 +219,7 @@ export default function LeagueStandingsModal({
                         {team.team.logo ? (
                           <Image source={{ uri: team.team.logo }} style={styles.teamLogo} />
                         ) : (
-                          <View style={styles.teamLogoPlaceholder}>
                             <Shield size={16} color={colors.textSecondary} />
-                          </View>
                         )}
                         <Text style={[styles.teamName, { color: colors.text }]} numberOfLines={1}>
                           {team.team.name}
@@ -436,14 +434,7 @@ const styles = StyleSheet.create({
     height: 28,
     resizeMode: 'contain',
   },
-  teamLogoPlaceholder: {
-    width: 28,
-    height: 28,
-    borderRadius: 6,
-    backgroundColor: 'rgba(0,0,0,0.1)',
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
+
   teamName: {
     fontSize: 14,
     fontWeight: '600',
