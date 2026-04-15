@@ -1,5 +1,5 @@
 import { initializeApp } from 'firebase/app';
-import { initializeFirestore, getFirestore, persistentLocalCache, persistentMultipleTabManager, Firestore } from 'firebase/firestore';
+import { initializeFirestore, getFirestore, persistentLocalCache, persistentMultipleTabManager, Firestore, disableNetwork, enableNetwork } from 'firebase/firestore';
 import { getAuth } from 'firebase/auth';
 import { Platform } from 'react-native';
 
@@ -48,16 +48,34 @@ export let firebaseAvailable = true;
 
 export const setFirebaseAvailable = (available: boolean) => {
   firebaseAvailable = available;
+  if (!available) {
+    disableNetwork(db).catch(() => {});
+    console.log('Firestore network disabled — operating in offline/local mode');
+  }
 };
 
-export const testFirebaseConnection = async () => {
+export const testFirebaseConnection = async (): Promise<boolean> => {
   try {
-    console.log('Auth current user:', auth.currentUser?.uid || 'No user');
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), 5000);
+    const response = await fetch(
+      `https://firestore.googleapis.com/v1/projects/${firebaseConfig.projectId}/databases/(default)/documents:runQuery`,
+      { method: 'OPTIONS', signal: controller.signal }
+    ).catch(() => null);
+    clearTimeout(timeout);
+    if (!response) {
+      console.log('Firebase connectivity check failed — going offline');
+      setFirebaseAvailable(false);
+      return false;
+    }
     return true;
-  } catch (error) {
-    console.error('Firebase connection test failed:', error);
+  } catch {
+    console.log('Firebase connectivity check failed — going offline');
+    setFirebaseAvailable(false);
     return false;
   }
 };
+
+testFirebaseConnection();
 
 export default app;
