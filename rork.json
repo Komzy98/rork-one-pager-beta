@@ -1,11 +1,5 @@
 {
-  "$schema": "https://rork.com/schema/rork.json",
   "apps": [
-    {
-      "name": "One Pager",
-      "path": "expo",
-      "framework": "react-native"
-    },
     {
       "name": "One Pager",
       "path": "expo",

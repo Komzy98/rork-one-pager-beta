@@ -479,50 +479,26 @@ export const useNotificationsSafe = () => {
 };
 
 export const useActivityIntelligence = () => {
-  try {
-    const ctx = useBackgroundServices();
-    return {
-      unifiedActivities: ctx.unifiedActivities,
-      insights: ctx.insights,
-      recommendations: ctx.recommendations,
-      timeline: ctx.timeline,
-      crossInsights: ctx.crossInsights,
-      todayActivities: ctx.todayActivities,
-      upcomingActivities: ctx.upcomingActivities,
-      highPriorityActivities: ctx.highPriorityActivities,
-      overdueActivities: ctx.overdueActivities,
-      todayTimeline: ctx.todayTimeline,
-      actionableInsights: ctx.actionableInsights,
-      topRecommendations: ctx.topRecommendations,
-      stats: ctx.stats,
-      isGenerating: ctx.isGenerating,
-      lastUpdated: ctx.lastUpdated,
-      generateIntelligence: ctx.generateIntelligence,
-      getActivitiesByCategory: ctx.getActivitiesByCategory,
-      getActivitiesByType: ctx.getActivitiesByType,
-      isLoading: ctx.isLoading,
-    };
-  } catch {
-    return {
-      unifiedActivities: [] as UnifiedActivity[],
-      insights: [] as ActivityInsight[],
-      recommendations: [] as SmartRecommendation[],
-      timeline: [] as UnifiedTimeline[],
-      crossInsights: [] as CrossActivityInsight[],
-      todayActivities: [] as UnifiedActivity[],
-      upcomingActivities: [] as UnifiedActivity[],
-      highPriorityActivities: [] as UnifiedActivity[],
-      overdueActivities: [] as UnifiedActivity[],
-      todayTimeline: [] as UnifiedTimeline[],
-      actionableInsights: [] as ActivityInsight[],
-      topRecommendations: [] as SmartRecommendation[],
-      stats: { total: 0, completed: 0, active: 0, completionRate: 0 },
-      isGenerating: false,
-      lastUpdated: null as Date | null,
-      generateIntelligence: async () => {},
-      getActivitiesByCategory: (() => []) as (category: string) => UnifiedActivity[],
-      getActivitiesByType: (() => []) as (type: string) => UnifiedActivity[],
-      isLoading: false,
-    };
-  }
+  const ctx = useBackgroundServices();
+  return {
+    unifiedActivities: ctx.unifiedActivities,
+    insights: ctx.insights,
+    recommendations: ctx.recommendations,
+    timeline: ctx.timeline,
+    crossInsights: ctx.crossInsights,
+    todayActivities: ctx.todayActivities,
+    upcomingActivities: ctx.upcomingActivities,
+    highPriorityActivities: ctx.highPriorityActivities,
+    overdueActivities: ctx.overdueActivities,
+    todayTimeline: ctx.todayTimeline,
+    actionableInsights: ctx.actionableInsights,
+    topRecommendations: ctx.topRecommendations,
+    stats: ctx.stats,
+    isGenerating: ctx.isGenerating,
+    lastUpdated: ctx.lastUpdated,
+    generateIntelligence: ctx.generateIntelligence,
+    getActivitiesByCategory: ctx.getActivitiesByCategory,
+    getActivitiesByType: ctx.getActivitiesByType,
+    isLoading: ctx.isLoading,
+  };
 };
