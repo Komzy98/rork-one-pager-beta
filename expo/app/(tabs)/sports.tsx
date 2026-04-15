@@ -587,6 +587,130 @@ const PremiumMatchCard = React.memo(({
   );
 });
 
+const SPORT_CONFIG: Record<SportMode, { label: string; icon: any; color: string; accent: string }> = {
+  football: { label: 'Football', icon: Trophy, color: '#2ECC71', accent: '#1B6B34' },
+  ufc: { label: 'UFC', icon: Swords, color: '#D4AF37', accent: '#8B6914' },
+  f1: { label: 'F1', icon: Flag, color: '#E10600', accent: '#8B0400' },
+  nba: { label: 'NBA', icon: Crosshair, color: '#F26522', accent: '#1D428A' },
+};
+
+const SportModeSelector = React.memo(({ 
+  enabledSports,
+  sportMode,
+  onSportModeChange,
+  isDark,
+}: {
+  enabledSports: SportMode[];
+  sportMode: SportMode;
+  onSportModeChange: (mode: SportMode) => void;
+  isDark: boolean;
+}) => {
+  const indicatorAnim = useRef(new Animated.Value(0)).current;
+  const [containerWidth, setContainerWidth] = useState<number>(SCREEN_WIDTH - 40);
+  const activeIndex = enabledSports.indexOf(sportMode);
+  const tabWidth = (containerWidth - 6) / enabledSports.length;
+
+  useEffect(() => {
+    Animated.spring(indicatorAnim, {
+      toValue: activeIndex * tabWidth + 3,
+      tension: 100,
+      friction: 15,
+      useNativeDriver: true,
+    }).start();
+  }, [activeIndex, indicatorAnim, tabWidth]);
+
+  const handlePress = useCallback(async (mode: SportMode) => {
+    if (Platform.OS !== 'web') {
+      await Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+    }
+    onSportModeChange(mode);
+  }, [onSportModeChange]);
+
+  const activeConfig = SPORT_CONFIG[sportMode];
+
+  return (
+    <View
+      onLayout={(e) => setContainerWidth(e.nativeEvent.layout.width)}
+      style={[
+        sportSelectorStyles.container,
+        {
+          backgroundColor: isDark ? 'rgba(255,255,255,0.03)' : 'rgba(0,0,0,0.04)',
+          borderColor: isDark ? 'rgba(255,255,255,0.04)' : 'rgba(0,0,0,0.03)',
+        },
+      ]}
+    >
+      <Animated.View
+        style={[
+          sportSelectorStyles.indicator,
+          {
+            width: tabWidth - 6,
+            transform: [{ translateX: indicatorAnim }],
+          },
+        ]}
+      >
+        <LinearGradient
+          colors={isDark
+            ? [activeConfig.color + '20', activeConfig.color + '08']
+            : ['#FFFFFF', '#FAFAFA']
+          }
+          start={{ x: 0, y: 0 }}
+          end={{ x: 0, y: 1 }}
+          style={[
+            sportSelectorStyles.indicatorInner,
+            {
+              borderColor: isDark ? activeConfig.color + '30' : 'rgba(0,0,0,0.06)',
+              shadowColor: isDark ? activeConfig.color : '#000',
+              shadowOpacity: isDark ? 0.25 : 0.08,
+              shadowRadius: 12,
+              shadowOffset: { width: 0, height: 4 },
+              elevation: 4,
+            },
+          ]}
+        />
+      </Animated.View>
+
+      {enabledSports.map((mode) => {
+        const config = SPORT_CONFIG[mode];
+        const Icon = config.icon;
+        const isActive = sportMode === mode;
+
+        return (
+          <TouchableOpacity
+            key={mode}
+            style={sportSelectorStyles.tab}
+            onPress={() => handlePress(mode)}
+            activeOpacity={0.6}
+          >
+            <View style={[
+              sportSelectorStyles.iconWrap,
+              isActive && { backgroundColor: config.color + '18' },
+            ]}>
+              <Icon
+                size={14}
+                color={isActive ? config.color : (isDark ? '#4A4A68' : '#AEAEB2')}
+                strokeWidth={isActive ? 2.8 : 2}
+              />
+            </View>
+            <Text
+              style={[
+                sportSelectorStyles.label,
+                { color: isActive ? (isDark ? '#F0F0FA' : '#1A1A24') : (isDark ? '#4A4A68' : '#AEAEB2') },
+                isActive && { fontWeight: '700' as const },
+              ]}
+              numberOfLines={1}
+            >
+              {config.label}
+            </Text>
+            {isActive && (
+              <View style={[sportSelectorStyles.activeDot, { backgroundColor: config.color }]} />
+            )}
+          </TouchableOpacity>
+        );
+      })}
+    </View>
+  );
+});
+
 const TabPill = React.memo(({ 
   tabs, 
   activeTab, 
@@ -1833,125 +1957,12 @@ export default function SportsScreen() {
           </View>
 
           {enabledSports.length > 1 && (
-          <View style={sportToggleStyles.container}>
-            <View style={[
-              sportToggleStyles.track,
-              { backgroundColor: isDark ? 'rgba(255,255,255,0.04)' : 'rgba(0,0,0,0.04)' },
-            ]}>
-              {enabledSports.includes('football') && (
-              <TouchableOpacity
-                style={[
-                  sportToggleStyles.option,
-                  sportMode === 'football' && sportToggleStyles.optionActive,
-                  sportMode === 'football' && {
-                    backgroundColor: isDark ? 'rgba(46, 204, 113, 0.12)' : '#FFFFFF',
-                    shadowColor: isDark ? '#2ECC71' : '#000',
-                    shadowOpacity: isDark ? 0.2 : 0.06,
-                    shadowRadius: 8,
-                    shadowOffset: { width: 0, height: 2 },
-                    elevation: 3,
-                  },
-                ]}
-                onPress={() => handleSportModeChange('football')}
-                activeOpacity={0.7}
-              >
-                <Trophy size={15} color={sportMode === 'football' ? (isDark ? '#2ECC71' : '#1B6B34') : (isDark ? '#555570' : '#AEAEB2')} />
-                <Text style={[
-                  sportToggleStyles.optionLabel,
-                  { color: sportMode === 'football'
-                    ? (isDark ? '#2ECC71' : '#1B6B34')
-                    : (isDark ? '#555570' : '#AEAEB2')
-                  },
-                  sportMode === 'football' && { fontWeight: '700' as const },
-                ]}>Football</Text>
-              </TouchableOpacity>
-              )}
-              {enabledSports.includes('ufc') && (
-              <TouchableOpacity
-                style={[
-                  sportToggleStyles.option,
-                  sportMode === 'ufc' && sportToggleStyles.optionActive,
-                  sportMode === 'ufc' && {
-                    backgroundColor: isDark ? 'rgba(212, 175, 55, 0.12)' : '#FFFFFF',
-                    shadowColor: isDark ? '#D4AF37' : '#000',
-                    shadowOpacity: isDark ? 0.2 : 0.06,
-                    shadowRadius: 8,
-                    shadowOffset: { width: 0, height: 2 },
-                    elevation: 3,
-                  },
-                ]}
-                onPress={() => handleSportModeChange('ufc')}
-                activeOpacity={0.7}
-              >
-                <Swords size={15} color={sportMode === 'ufc' ? (isDark ? '#D4AF37' : '#8B0000') : (isDark ? '#555570' : '#AEAEB2')} />
-                <Text style={[
-                  sportToggleStyles.optionLabel,
-                  { color: sportMode === 'ufc'
-                    ? (isDark ? '#D4AF37' : '#8B0000')
-                    : (isDark ? '#555570' : '#AEAEB2')
-                  },
-                  sportMode === 'ufc' && { fontWeight: '700' as const },
-                ]}>UFC</Text>
-              </TouchableOpacity>
-              )}
-              {enabledSports.includes('f1') && (
-              <TouchableOpacity
-                style={[
-                  sportToggleStyles.option,
-                  sportMode === 'f1' && sportToggleStyles.optionActive,
-                  sportMode === 'f1' && {
-                    backgroundColor: isDark ? 'rgba(225, 6, 0, 0.12)' : '#FFFFFF',
-                    shadowColor: isDark ? '#E10600' : '#000',
-                    shadowOpacity: isDark ? 0.2 : 0.06,
-                    shadowRadius: 8,
-                    shadowOffset: { width: 0, height: 2 },
-                    elevation: 3,
-                  },
-                ]}
-                onPress={() => handleSportModeChange('f1')}
-                activeOpacity={0.7}
-              >
-                <Flag size={15} color={sportMode === 'f1' ? (isDark ? '#E10600' : '#B80000') : (isDark ? '#555570' : '#AEAEB2')} />
-                <Text style={[
-                  sportToggleStyles.optionLabel,
-                  { color: sportMode === 'f1'
-                    ? (isDark ? '#E10600' : '#B80000')
-                    : (isDark ? '#555570' : '#AEAEB2')
-                  },
-                  sportMode === 'f1' && { fontWeight: '700' as const },
-                ]}>F1</Text>
-              </TouchableOpacity>
-              )}
-              {enabledSports.includes('nba') && (
-              <TouchableOpacity
-                style={[
-                  sportToggleStyles.option,
-                  sportMode === 'nba' && sportToggleStyles.optionActive,
-                  sportMode === 'nba' && {
-                    backgroundColor: isDark ? 'rgba(29, 66, 138, 0.12)' : '#FFFFFF',
-                    shadowColor: isDark ? '#1D428A' : '#000',
-                    shadowOpacity: isDark ? 0.2 : 0.06,
-                    shadowRadius: 8,
-                    shadowOffset: { width: 0, height: 2 },
-                    elevation: 3,
-                  },
-                ]}
-                onPress={() => handleSportModeChange('nba')}
-                activeOpacity={0.7}
-              >
-                <Trophy size={15} color={sportMode === 'nba' ? (isDark ? '#F26522' : '#1D428A') : (isDark ? '#555570' : '#AEAEB2')} />
-                <Text style={[
-                  sportToggleStyles.optionLabel,
-                  { color: sportMode === 'nba'
-                    ? (isDark ? '#F26522' : '#1D428A')
-                    : (isDark ? '#555570' : '#AEAEB2')
-                  },
-                  sportMode === 'nba' && { fontWeight: '700' as const },
-                ]}>NBA</Text>
-              </TouchableOpacity>
-              )}
-            </View>
-          </View>
+            <SportModeSelector
+              enabledSports={enabledSports}
+              sportMode={sportMode}
+              onSportModeChange={handleSportModeChange}
+              isDark={isDark}
+            />
           )}
 
         </LinearGradient>
@@ -3160,35 +3171,54 @@ const styles = StyleSheet.create({
   },
 });
 
-const sportToggleStyles = StyleSheet.create({
+const sportSelectorStyles = StyleSheet.create({
   container: {
-    marginTop: 0,
-  },
-  track: {
     flexDirection: 'row',
-    borderRadius: 14,
+    borderRadius: 16,
     padding: 3,
-    gap: 3,
+    position: 'relative' as const,
+    borderWidth: 1,
   },
-  option: {
+  indicator: {
+    position: 'absolute' as const,
+    top: 3,
+    bottom: 3,
+    borderRadius: 13,
+    overflow: 'hidden' as const,
+  },
+  indicatorInner: {
+    flex: 1,
+    borderRadius: 13,
+    borderWidth: 1,
+  },
+  tab: {
     flex: 1,
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
-    gap: 6,
-    paddingVertical: 10,
-    borderRadius: 11,
+    paddingVertical: 11,
+    gap: 5,
+    zIndex: 1,
   },
-  optionActive: {
-    borderWidth: 0,
+  iconWrap: {
+    width: 22,
+    height: 22,
+    borderRadius: 7,
+    justifyContent: 'center' as const,
+    alignItems: 'center' as const,
+    flexShrink: 0,
   },
-  optionEmoji: {
-    fontSize: 15,
-  },
-  optionLabel: {
-    fontSize: 14,
+  label: {
+    fontSize: 13,
     fontWeight: '600' as const,
     letterSpacing: -0.2,
+    flexShrink: 1,
+  },
+  activeDot: {
+    width: 4,
+    height: 4,
+    borderRadius: 2,
+    marginLeft: 1,
   },
 });
 
