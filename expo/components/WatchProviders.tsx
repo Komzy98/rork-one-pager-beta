@@ -236,7 +236,7 @@ export function QuickWatchButton({
 
 const styles = StyleSheet.create({
   container: {
-    backgroundColor: COLORS.card,
+    backgroundColor: 'rgba(255,255,255,0.06)',
     borderRadius: 16,
     padding: 16,
     marginVertical: 8,
@@ -254,7 +254,7 @@ const styles = StyleSheet.create({
   title: {
     fontSize: 17,
     fontWeight: '700' as const,
-    color: COLORS.text,
+    color: '#F5F5F7',
   },
   justWatchButton: {
     flexDirection: 'row',
@@ -282,7 +282,7 @@ const styles = StyleSheet.create({
   sectionTitle: {
     fontSize: 14,
     fontWeight: '600' as const,
-    color: COLORS.textSecondary,
+    color: '#CBD5E1',
   },
   providersList: {
     flexDirection: 'row',
@@ -292,7 +292,7 @@ const styles = StyleSheet.create({
   providerButton: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: COLORS.surfaceSecondary,
+    backgroundColor: 'rgba(255,255,255,0.08)',
     borderRadius: 12,
     padding: 10,
     borderWidth: 1,
@@ -310,7 +310,7 @@ const styles = StyleSheet.create({
   providerName: {
     fontSize: 13,
     fontWeight: '600' as const,
-    color: COLORS.text,
+    color: '#E2E8F0',
     marginBottom: 2,
   },
   watchBadge: {
@@ -347,7 +347,7 @@ const styles = StyleSheet.create({
     width: 36,
     height: 36,
     borderRadius: 8,
-    backgroundColor: COLORS.surfaceSecondary,
+    backgroundColor: 'rgba(255,255,255,0.08)',
     justifyContent: 'center',
     alignItems: 'center',
   },
@@ -363,12 +363,12 @@ const styles = StyleSheet.create({
   },
   noProvidersText: {
     fontSize: 14,
-    color: COLORS.textMuted,
+    color: '#94A3B8',
     textAlign: 'center',
   },
   attributionText: {
     fontSize: 10,
-    color: COLORS.textMuted,
+    color: '#64748B',
     textAlign: 'center',
     fontStyle: 'italic',
     marginTop: 12,
@@ -390,7 +390,7 @@ const styles = StyleSheet.create({
   whereToWatchLink: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: COLORS.surfaceSecondary,
+    backgroundColor: 'rgba(99, 102, 241, 0.12)',
     paddingHorizontal: 10,
     paddingVertical: 6,
     borderRadius: 8,
@@ -398,7 +398,7 @@ const styles = StyleSheet.create({
   },
   whereToWatchLinkText: {
     fontSize: 12,
-    color: COLORS.primary,
+    color: '#A5B4FC',
     fontWeight: '600' as const,
   },
 });
