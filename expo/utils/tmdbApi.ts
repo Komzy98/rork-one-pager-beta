@@ -353,5 +353,5 @@ export function formatReleaseDate(dateString: string): string {
 }
 
 export function formatRating(rating: number): string {
-  return (rating / 2).toFixed(1); // Convert from 10-point to 5-point scale
+  return rating.toFixed(1);
 }
