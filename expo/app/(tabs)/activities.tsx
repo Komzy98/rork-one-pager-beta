@@ -399,13 +399,6 @@ export default function ActivitiesScreen() {
     }
   }, [liveQuery.isLoading]);
 
-  useEffect(() => {
-    if (upcomingEnabled && !upcomingQuery.isLoading) {
-      const timer = setTimeout(() => setResultsEnabled(true), 1500);
-      return () => clearTimeout(timer);
-    }
-  }, [upcomingEnabled, upcomingQuery.isLoading]);
-
   const upcomingQuery = trpc.football.getMatches.useQuery(
     { type: 'upcoming', days: 14, teamIds: favoriteTeamIds.length > 0 ? favoriteTeamIds : undefined, leagueIds: queryLeagueIds, nationalTeamIds: nationalTeamIds.length > 0 ? nationalTeamIds : undefined, includeAfcon },
     { 
@@ -420,6 +413,13 @@ export default function ActivitiesScreen() {
       enabled: upcomingEnabled,
     }
   );
+
+  useEffect(() => {
+    if (upcomingEnabled && !upcomingQuery.isLoading) {
+      const timer = setTimeout(() => setResultsEnabled(true), 1500);
+      return () => clearTimeout(timer);
+    }
+  }, [upcomingEnabled, upcomingQuery.isLoading]);
 
   const resultsQuery = trpc.football.getMatches.useQuery(
     { type: 'results', teamIds: favoriteTeamIds.length > 0 ? favoriteTeamIds : undefined, leagueIds: queryLeagueIds, nationalTeamIds: nationalTeamIds.length > 0 ? nationalTeamIds : undefined, includeAfcon },
