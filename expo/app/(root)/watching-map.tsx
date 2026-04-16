@@ -305,6 +305,31 @@ export default function WatchingMapScreen() {
     }, 500);
   }, [showCard]);
 
+  const animateToCoords = useCallback((latitude: number, longitude: number) => {
+    const region = {
+      latitude,
+      longitude,
+      latitudeDelta: 0.05,
+      longitudeDelta: 0.05,
+    };
+    console.log('📍 Centering map on:', latitude, longitude);
+    try {
+      mapRef.current?.animateToRegion(region, 800);
+    } catch (e) {
+      console.log('📍 animateToRegion failed, trying fitToCoordinates:', e);
+    }
+    setTimeout(() => {
+      try {
+        (mapRef.current as unknown as { animateCamera?: (c: { center: { latitude: number; longitude: number }; zoom?: number }, o?: { duration: number }) => void })?.animateCamera?.(
+          { center: { latitude, longitude }, zoom: 13 },
+          { duration: 600 }
+        );
+      } catch (e) {
+        console.log('📍 animateCamera fallback failed:', e);
+      }
+    }, 50);
+  }, []);
+
   const goToCurrentLocation = useCallback(() => {
     void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
     Animated.sequence([
@@ -313,38 +338,44 @@ export default function WatchingMapScreen() {
     ]).start();
 
     if (Platform.OS === 'web') {
-      if (navigator.geolocation) {
+      if (typeof navigator !== 'undefined' && navigator.geolocation) {
         navigator.geolocation.getCurrentPosition(
           (position) => {
             const { latitude, longitude } = position.coords;
-            mapRef.current?.animateToRegion({
-              latitude,
-              longitude,
-              latitudeDelta: 0.05,
-              longitudeDelta: 0.05,
-            }, 800);
+            animateToCoords(latitude, longitude);
           },
-          (err) => console.log('Geolocation error:', err.message)
+          (err) => {
+            console.log('📍 Web geolocation error:', err.code, err.message);
+            if (typeof window !== 'undefined') {
+              window.alert('Unable to access your location. Please enable location permissions in your browser settings.');
+            }
+          },
+          { enableHighAccuracy: false, timeout: 10000, maximumAge: 60000 }
         );
+      } else {
+        console.log('📍 Geolocation API not available');
       }
     } else {
       void import('expo-location').then(async (Location) => {
         try {
           const { status } = await Location.requestForegroundPermissionsAsync();
-          if (status !== 'granted') return;
+          if (status !== 'granted') {
+            console.log('📍 Location permission denied');
+            const { Alert } = await import('react-native');
+            Alert.alert(
+              'Location Permission',
+              'Please enable location access in your device settings to center the map on your location.'
+            );
+            return;
+          }
           const loc = await Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.Balanced });
-          mapRef.current?.animateToRegion({
-            latitude: loc.coords.latitude,
-            longitude: loc.coords.longitude,
-            latitudeDelta: 0.05,
-            longitudeDelta: 0.05,
-          }, 800);
+          animateToCoords(loc.coords.latitude, loc.coords.longitude);
         } catch (e) {
-          console.log('Location error:', e);
+          console.log('📍 Location error:', e);
         }
       });
     }
-  }, [locationBtnAnim]);
+  }, [locationBtnAnim, animateToCoords]);
 
   const dismissCard = useCallback(() => {
     hideCard();
