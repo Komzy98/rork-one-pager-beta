@@ -2839,8 +2839,8 @@ const styles = StyleSheet.create({
     minWidth: 0,
   },
   teamLogo: {
-    width: 42,
-    height: 42,
+    width: 32,
+    height: 32,
     resizeMode: 'contain',
   },
   teamNameHorizontal: {
