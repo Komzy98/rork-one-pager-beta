@@ -24,7 +24,7 @@ import {
   Flame,
   Radio,
   BarChart3,
-  Map,
+  Map as MapIcon,
   Navigation,
   Search,
   X,
@@ -1183,7 +1183,7 @@ export default function WatchingMapScreen() {
         <View style={styles.modeToggle}>
           <View style={[styles.modeIndicator, { left: modeIndicatorLeft }]} />
           {([
-            { mode: 'map' as ViewMode, icon: Map, label: 'Map' },
+            { mode: 'map' as ViewMode, icon: MapIcon, label: 'Map' },
             { mode: 'trending' as ViewMode, icon: TrendingUp, label: 'Trending' },
             { mode: 'activity' as ViewMode, icon: Zap, label: 'Activity' },
           ]).map(({ mode, icon: Icon, label }) => (
