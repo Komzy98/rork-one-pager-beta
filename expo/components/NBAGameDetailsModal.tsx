@@ -335,16 +335,8 @@ export default function NBAGameDetailsModal({ visible, onClose, game }: NBAGameD
     setActiveTab(tab);
   }, []);
 
-  if (!game) return null;
-
-  const isCompleted = game.status === 'completed';
-  const isLive = game.status === 'live';
-  const team1Logo = game.team1.logo || getTeamLogo(game.team1.abbreviation);
-  const team2Logo = game.team2.logo || getTeamLogo(game.team2.abbreviation);
-  const team1Color = getTeamColor(game.team1.abbreviation);
-  const team2Color = getTeamColor(game.team2.abbreviation);
-
   const teamStats = useMemo(() => {
+    if (!game) return null;
     if (!summary?.boxscore?.teams) return null;
     const home = summary.boxscore.teams.find(t => t.team.abbreviation === game.team1.abbreviation) || summary.boxscore.teams[0];
     const away = summary.boxscore.teams.find(t => t.team.abbreviation === game.team2.abbreviation) || summary.boxscore.teams[1];
@@ -363,6 +355,7 @@ export default function NBAGameDetailsModal({ visible, onClose, game }: NBAGameD
   }, [summary, game]);
 
   const leaders = useMemo(() => {
+    if (!game) return null;
     if (!summary?.leaders) return null;
     const homeLeaders = summary.leaders.find(l => l.team.abbreviation === game.team1.abbreviation) || summary.leaders[0];
     const awayLeaders = summary.leaders.find(l => l.team.abbreviation === game.team2.abbreviation) || summary.leaders[1];
@@ -376,6 +369,15 @@ export default function NBAGameDetailsModal({ visible, onClose, game }: NBAGameD
       .slice(-20)
       .reverse();
   }, [summary]);
+
+  if (!game) return null;
+
+  const isCompleted = game.status === 'completed';
+  const isLive = game.status === 'live';
+  const team1Logo = game.team1.logo || getTeamLogo(game.team1.abbreviation);
+  const team2Logo = game.team2.logo || getTeamLogo(game.team2.abbreviation);
+  const team1Color = getTeamColor(game.team1.abbreviation);
+  const team2Color = getTeamColor(game.team2.abbreviation);
 
   const tabs: { id: NBATabType; label: string; icon: React.ReactNode }[] = [
     { id: 'summary', label: 'Summary', icon: <Activity size={14} color={activeTab === 'summary' ? ACCENT : TEXT_MUTED} /> },
