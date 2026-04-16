@@ -223,6 +223,40 @@ export default function WatchingMapScreen() {
     [filteredWatchers]
   );
 
+  const showClusters = useMemo(() => {
+    const GRID_SIZE = 0.015;
+    const buckets = new Map<string, NearbyWatcher[]>();
+    filteredWatchers.forEach((w) => {
+      const gx = Math.round(w.latitude / GRID_SIZE);
+      const gy = Math.round(w.longitude / GRID_SIZE);
+      const key = `${gx}:${gy}`;
+      const arr = buckets.get(key);
+      if (arr) arr.push(w);
+      else buckets.set(key, [w]);
+    });
+    return Array.from(buckets.entries()).map(([key, members]) => {
+      const avgLat = members.reduce((s, m) => s + m.latitude, 0) / members.length;
+      const avgLng = members.reduce((s, m) => s + m.longitude, 0) / members.length;
+      const showCounts = new Map<string, { count: number; poster: string; platformColor: string; title: string }>();
+      members.forEach((m) => {
+        const prev = showCounts.get(m.showTitle);
+        if (prev) prev.count += 1;
+        else showCounts.set(m.showTitle, { count: 1, poster: m.showPoster, platformColor: m.platformColor, title: m.showTitle });
+      });
+      const topShows = Array.from(showCounts.values()).sort((a, b) => b.count - a.count).slice(0, 3);
+      const liveCount = members.filter(m => m.watchingNow).length;
+      return {
+        key,
+        latitude: avgLat,
+        longitude: avgLng,
+        members,
+        topShows,
+        liveCount,
+        total: members.length,
+      };
+    });
+  }, [filteredWatchers]);
+
   const totalActiveWatchers = useMemo(
     () => MOCK_NEARBY_WATCHERS.filter(w => w.watchingNow).length,
     []
@@ -733,42 +767,70 @@ export default function WatchingMapScreen() {
           if (selectedWatcher || selectedArea) dismissCard();
         }}
       >
-        {filteredWatchers.map((watcher) => (
-          <Marker
-            key={watcher.id}
-            coordinate={{ latitude: watcher.latitude, longitude: watcher.longitude }}
-            onPress={() => handleWatcherPress(watcher)}
-          >
-            <View style={styles.markerContainer}>
-              {watcher.watchingNow && (
-                <Animated.View style={[
-                  styles.markerPulse,
-                  {
-                    backgroundColor: watcher.platformColor,
-                    transform: [{ scale: pulseAnim }],
-                    opacity: pulseAnim.interpolate({
-                      inputRange: [1, 1.5],
-                      outputRange: [0.3, 0],
-                    }),
-                  },
-                ]} />
-              )}
-              <View style={[
-                styles.markerOuter,
-                { borderColor: watcher.watchingNow ? watcher.platformColor : 'rgba(255,255,255,0.15)' },
-              ]}>
-                <Image source={{ uri: watcher.avatar }} style={styles.markerAvatar} />
-              </View>
-              {watcher.watchingNow && (
-                <View style={[styles.markerShowTag, { backgroundColor: watcher.platformColor }]}>
-                  <Text style={styles.markerShowTagText} numberOfLines={1}>
-                    {watcher.showTitle.length > 8 ? watcher.showTitle.slice(0, 8) + '…' : watcher.showTitle}
-                  </Text>
+        {showClusters.map((cluster) => {
+          const primary = cluster.topShows[0];
+          if (!primary) return null;
+          return (
+            <Marker
+              key={cluster.key}
+              coordinate={{ latitude: cluster.latitude, longitude: cluster.longitude }}
+              onPress={() => {
+                const rep = cluster.members.find(m => m.showTitle === primary.title) ?? cluster.members[0];
+                handleWatcherPress(rep);
+              }}
+              anchor={{ x: 0.5, y: 0.5 }}
+            >
+              <View style={styles.clusterContainer}>
+                {cluster.liveCount > 0 && (
+                  <Animated.View style={[
+                    styles.clusterPulse,
+                    {
+                      backgroundColor: primary.platformColor,
+                      transform: [{ scale: pulseAnim }],
+                      opacity: pulseAnim.interpolate({
+                        inputRange: [1, 1.5],
+                        outputRange: [0.25, 0],
+                      }),
+                    },
+                  ]} />
+                )}
+                <View style={styles.clusterPosterStack}>
+                  {cluster.topShows.slice(0, 3).reverse().map((s, idx) => {
+                    const reversedIdx = cluster.topShows.slice(0, 3).length - 1 - idx;
+                    return (
+                      <View
+                        key={s.title}
+                        style={[
+                          styles.clusterPoster,
+                          {
+                            borderColor: s.platformColor,
+                            transform: [
+                              { translateX: reversedIdx * 10 - 10 },
+                              { translateY: reversedIdx * 4 - 4 },
+                              { rotate: `${(reversedIdx - 1) * 6}deg` },
+                            ],
+                            zIndex: 10 - reversedIdx,
+                          },
+                        ]}
+                      >
+                        <Image source={{ uri: s.poster }} style={styles.clusterPosterImg} />
+                      </View>
+                    );
+                  })}
                 </View>
-              )}
-            </View>
-          </Marker>
-        ))}
+                <View style={[styles.clusterBadge, { backgroundColor: primary.platformColor }]}>
+                  <Text style={styles.clusterBadgeCount}>{cluster.total}</Text>
+                </View>
+                {cluster.liveCount > 0 && (
+                  <View style={styles.clusterLiveChip}>
+                    <Animated.View style={[styles.clusterLiveDot, { opacity: liveDotAnim }]} />
+                    <Text style={styles.clusterLiveText}>{cluster.liveCount} live</Text>
+                  </View>
+                )}
+              </View>
+            </Marker>
+          );
+        })}
 
         {MOCK_TRENDING_AREAS.map((area) => (
           <Marker
@@ -1412,6 +1474,93 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     width: 64,
     height: 64,
+  },
+  clusterContainer: {
+    alignItems: 'center',
+    justifyContent: 'center',
+    width: 96,
+    height: 96,
+  },
+  clusterPulse: {
+    position: 'absolute',
+    width: 70,
+    height: 70,
+    borderRadius: 35,
+    top: 10,
+  },
+  clusterPosterStack: {
+    width: 58,
+    height: 58,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  clusterPoster: {
+    position: 'absolute',
+    width: 44,
+    height: 62,
+    borderRadius: 8,
+    overflow: 'hidden',
+    borderWidth: 2,
+    backgroundColor: SURFACE,
+    ...Platform.select({
+      ios: {
+        shadowColor: '#000',
+        shadowOffset: { width: 0, height: 4 },
+        shadowOpacity: 0.55,
+        shadowRadius: 6,
+      },
+      android: { elevation: 8 },
+      default: {},
+    }),
+  },
+  clusterPosterImg: {
+    width: '100%',
+    height: '100%',
+  },
+  clusterBadge: {
+    position: 'absolute',
+    top: -2,
+    right: 4,
+    minWidth: 22,
+    height: 22,
+    borderRadius: 11,
+    paddingHorizontal: 6,
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderWidth: 2,
+    borderColor: BG,
+    zIndex: 20,
+  },
+  clusterBadgeCount: {
+    color: '#FFF',
+    fontSize: 11,
+    fontWeight: '800' as const,
+  },
+  clusterLiveChip: {
+    position: 'absolute',
+    bottom: -4,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    paddingHorizontal: 7,
+    paddingVertical: 3,
+    borderRadius: 10,
+    backgroundColor: 'rgba(0,0,0,0.85)',
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.12)',
+    zIndex: 20,
+  },
+  clusterLiveDot: {
+    width: 5,
+    height: 5,
+    borderRadius: 2.5,
+    backgroundColor: GREEN,
+  },
+  clusterLiveText: {
+    color: '#FFF',
+    fontSize: 9,
+    fontWeight: '700' as const,
+    letterSpacing: 0.2,
   },
   markerPulse: {
     position: 'absolute',
