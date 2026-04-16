@@ -428,11 +428,6 @@ const PremiumMatchCard = React.memo(({
               <Text style={[styles.leagueName, { color: isDark ? '#6B6B85' : '#8E8E93' }]} numberOfLines={1}>
                 {match.league}
               </Text>
-              {match.leagueCountry ? (
-                <Text style={[styles.leagueCountry, { color: isDark ? '#44445E' : '#BEBEC4' }]} numberOfLines={1}>
-                  · {match.leagueCountry}
-                </Text>
-              ) : null}
               {(homeIsFavorite || awayIsFavorite) && (
                 <View style={[styles.favStarHeader, { backgroundColor: isDark ? '#3D2F0A' : '#FEF3C7' }]}>
                   <Star size={9} color="#F59E0B" fill="#F59E0B" />
