@@ -329,7 +329,7 @@ const LiveTickerCard = React.memo(({
           
           <View style={styles.tickerLeague}>
             {match.leagueLogo ? (
-              <Image source={{ uri: match.leagueLogo }} style={styles.tickerLeagueLogo} />
+              <Image source={{ uri: match.leagueLogo }} style={styles.tickerLeagueLogo} resizeMode="contain" />
             ) : null}
             <Text style={styles.tickerLeagueName} numberOfLines={1}>{match.league}</Text>
           </View>
@@ -419,7 +419,7 @@ const PremiumMatchCard = React.memo(({
           <View style={styles.matchHeader}>
             <View style={styles.leagueInfo}>
               {match.leagueLogo ? (
-                <Image source={{ uri: match.leagueLogo }} style={styles.leagueLogo} />
+                <Image source={{ uri: match.leagueLogo }} style={styles.leagueLogo} resizeMode="contain" />
               ) : (
                 <View style={[styles.leagueIconFallback, { backgroundColor: isDark ? '#1E1E38' : '#F0F0F5' }]}>
                   <Trophy size={11} color={isDark ? '#8B8BA7' : '#6B7A99'} />
@@ -2379,7 +2379,7 @@ export default function SportsScreen() {
                   activeOpacity={0.7}
                 >
                   {league.logo ? (
-                    <Image source={{ uri: league.logo }} style={styles.pickerLogo} />
+                    <Image source={{ uri: league.logo }} style={styles.pickerLogo} resizeMode="contain" />
                   ) : (
                     <View style={[styles.pickerLogoFallback, { backgroundColor: isDark ? '#252540' : '#F5F5F7' }]}>
                       <Trophy size={16} color={isDark ? '#6B6B85' : '#AEAEB2'} />
@@ -2599,7 +2599,6 @@ const styles = StyleSheet.create({
   tickerLeagueLogo: {
     width: 14,
     height: 14,
-    borderRadius: 3,
   },
   tickerLeagueName: {
     fontSize: 10,
@@ -2761,9 +2760,6 @@ const styles = StyleSheet.create({
   leagueLogo: {
     width: 20,
     height: 20,
-    borderRadius: 10,
-    backgroundColor: '#FFFFFF',
-    padding: 2,
   },
   leagueIconFallback: {
     width: 20,
@@ -3097,7 +3093,6 @@ const styles = StyleSheet.create({
   pickerLogo: {
     width: 36,
     height: 36,
-    borderRadius: 8,
   },
   pickerLogoFallback: {
     width: 36,

@@ -225,7 +225,7 @@ const WidgetMatchCard = React.memo(({
         <View style={widgetStyles.fullHeader}>
           <View style={widgetStyles.fullLeagueRow}>
             {match.leagueLogo ? (
-              <Image source={{ uri: match.leagueLogo }} style={widgetStyles.fullLeagueLogo} />
+              <Image source={{ uri: match.leagueLogo }} style={widgetStyles.fullLeagueLogo} resizeMode="contain" />
             ) : null}
             <Text style={[widgetStyles.fullLeagueName, { color: isDark ? '#7A7A95' : '#8E8E93' }]} numberOfLines={1}>
               {match.league}
@@ -478,7 +478,6 @@ const widgetStyles = StyleSheet.create({
   fullLeagueLogo: {
     width: 18,
     height: 18,
-    borderRadius: 4,
   },
   fullLeagueName: {
     fontSize: 13,

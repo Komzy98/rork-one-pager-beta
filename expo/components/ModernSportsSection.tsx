@@ -1263,7 +1263,7 @@ const styles = StyleSheet.create({
   premiumLeagueLogo: {
     width: 16,
     height: 16,
-    borderRadius: 4,
+    resizeMode: 'contain' as const,
   },
   premiumLeagueName: {
     fontSize: 11,
@@ -1384,7 +1384,7 @@ const styles = StyleSheet.create({
   upcomingLeagueLogo: {
     width: 16,
     height: 16,
-    borderRadius: 4,
+    resizeMode: 'contain' as const,
   },
   upcomingLeagueName: {
     fontSize: 12,
@@ -1517,7 +1517,7 @@ const styles = StyleSheet.create({
   resultLeagueLogo: {
     width: 16,
     height: 16,
-    borderRadius: 4,
+    resizeMode: 'contain' as const,
   },
   resultLeagueName: {
     fontSize: 12,
