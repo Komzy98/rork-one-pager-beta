@@ -872,7 +872,7 @@ export default function WatchingMapScreen() {
 
       <Animated.View style={[
         styles.currentLocationBtn,
-        { bottom: selectedWatcher || selectedArea ? 280 : 130 },
+        { bottom: selectedWatcher || selectedArea ? 420 : 210 },
         { transform: [{ scale: locationBtnAnim }] },
       ]}>
         {renderGlassContainer(
@@ -1699,7 +1699,12 @@ const styles = StyleSheet.create({
   currentLocationBtn: {
     position: 'absolute',
     right: 16,
-    zIndex: 15,
+    zIndex: 50,
+    elevation: 12,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.35,
+    shadowRadius: 10,
   },
   currentLocationBtnInner: {
     width: 46,
