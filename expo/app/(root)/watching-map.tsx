@@ -1109,7 +1109,7 @@ export default function WatchingMapScreen() {
   const modeIndicatorLeft = useMemo(() => {
     const modes: ViewMode[] = ['map', 'trending', 'activity'];
     const idx = modes.indexOf(viewMode);
-    return `${(idx / 3) * 100}%` as const;
+    return `${(idx / 3) * 100}%`;
   }, [viewMode]);
 
   return (
