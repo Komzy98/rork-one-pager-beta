@@ -299,7 +299,7 @@ export async function fetchNBAStandings(): Promise<{
   western: NBATeamStanding[];
 }> {
   try {
-    const url = `${ESPN_BASE}/standings`;
+    const url = `https://site.web.api.espn.com/apis/v2/sports/basketball/nba/standings?level=3`;
     console.log('[NBA API] Fetching standings:', url);
     const response = await fetch(url);
     if (!response.ok) {
@@ -308,45 +308,50 @@ export async function fetchNBAStandings(): Promise<{
     }
 
     const data = await response.json();
-    const children: ESPNStandingsGroup[] = data.children || [];
+    const conferences: any[] = data.children || [];
 
     const eastern: NBATeamStanding[] = [];
     const western: NBATeamStanding[] = [];
 
-    for (const group of children) {
-      const isEastern = group.name?.toLowerCase().includes('east');
-      const entries = group.standings?.entries || [];
-
+    const collectEntries = (node: any, bucket: NBATeamStanding[], conference: 'Eastern' | 'Western') => {
+      const entries = node?.standings?.entries || [];
       for (const entry of entries) {
-        const getStat = (name: string) => {
-          const stat = entry.stats?.find((s: any) => s.name === name);
-          return stat ? stat : null;
-        };
+        const getStat = (name: string) => entry.stats?.find((s: any) => s.name === name || s.type === name) || null;
 
-        const wins = getStat('wins')?.value || 0;
-        const losses = getStat('losses')?.value || 0;
-        const pct = getStat('winPercent')?.displayValue || (wins / Math.max(wins + losses, 1)).toFixed(3);
+        const wins = getStat('wins')?.value ?? 0;
+        const losses = getStat('losses')?.value ?? 0;
+        const pctRaw = getStat('winPercent')?.displayValue ?? (wins / Math.max(wins + losses, 1)).toFixed(3);
+        const pctStr = String(pctRaw);
+        const pct = pctStr.startsWith('0.') ? '.' + pctStr.slice(2) : pctStr.startsWith('.') ? pctStr : '.' + pctStr;
         const streak = getStat('streak')?.displayValue || '-';
-        const last10 = getStat('record')?.displayValue || '';
+        const last10 = getStat('lasttengames')?.displayValue || getStat('Last Ten Games')?.displayValue || '';
 
         const standing: NBATeamStanding = {
           id: entry.team.id,
           name: entry.team.displayName,
           abbreviation: entry.team.abbreviation,
-          conference: isEastern ? 'Eastern' : 'Western',
+          conference,
           wins,
           losses,
-          pct: typeof pct === 'number' ? `.${String(pct).replace('0.', '')}` : `.${pct.replace('0.', '')}`,
+          pct,
           streak,
           last10,
         };
 
-        if (isEastern) {
-          eastern.push(standing);
-        } else {
-          western.push(standing);
+        if (!bucket.find(t => t.id === standing.id)) {
+          bucket.push(standing);
         }
       }
+      const kids: any[] = node?.children || [];
+      for (const kid of kids) {
+        collectEntries(kid, bucket, conference);
+      }
+    };
+
+    for (const conf of conferences) {
+      const name = (conf.name || conf.abbreviation || '').toLowerCase();
+      const isEastern = name.includes('east');
+      collectEntries(conf, isEastern ? eastern : western, isEastern ? 'Eastern' : 'Western');
     }
 
     eastern.sort((a, b) => b.wins - a.wins || a.losses - b.losses);
