@@ -104,7 +104,7 @@ export default function NBAUpcomingSection({ favoriteNBATeams }: NBAUpcomingSect
               <Calendar size={10} color="#F26522" />
               <Text style={styles.dateText}>{formatGameDate(game.date)}</Text>
             </View>
-            {game.broadcast && (
+            {!!game.broadcast && (
               <View style={styles.broadcastBadge}>
                 <Tv size={9} color="#94A3B8" />
                 <Text style={styles.broadcastText}>{game.broadcast}</Text>
@@ -116,23 +116,23 @@ export default function NBAUpcomingSection({ favoriteNBATeams }: NBAUpcomingSect
             <View style={styles.teamColumn}>
                 <Image source={{ uri: getTeamLogo(game.team1.abbreviation) }} style={styles.teamLogoImg} resizeMode="contain" />
               <Text style={[styles.teamAbbr, team1Fav && { color: '#fff', fontWeight: '800' as const }]}>{game.team1.abbreviation}</Text>
-              {game.team1.record && <Text style={styles.teamRecord}>{game.team1.record}</Text>}
+              {!!game.team1.record && <Text style={styles.teamRecord}>{game.team1.record}</Text>}
             </View>
 
             <View style={styles.vsColumn}>
               <Text style={styles.timeText}>{formatGameTime(game.date)}</Text>
               <Text style={styles.vsText}>VS</Text>
-              {game.series && <Text style={styles.seriesText}>{game.series}</Text>}
+              {!!game.series && <Text style={styles.seriesText}>{game.series}</Text>}
             </View>
 
             <View style={styles.teamColumn}>
                 <Image source={{ uri: getTeamLogo(game.team2.abbreviation) }} style={styles.teamLogoImg} resizeMode="contain" />
               <Text style={[styles.teamAbbr, team2Fav && { color: '#fff', fontWeight: '800' as const }]}>{game.team2.abbreviation}</Text>
-              {game.team2.record && <Text style={styles.teamRecord}>{game.team2.record}</Text>}
+              {!!game.team2.record && <Text style={styles.teamRecord}>{game.team2.record}</Text>}
             </View>
           </View>
 
-          {game.arena && (
+          {!!game.arena && (
             <View style={styles.venueRow}>
               <MapPin size={10} color="#64748B" />
               <Text style={styles.venueText}>{game.arena}, {game.city}</Text>
@@ -164,7 +164,7 @@ export default function NBAUpcomingSection({ favoriteNBATeams }: NBAUpcomingSect
           </View>
           <Text style={[styles.resultScore, team2Won && styles.resultScoreWinner]}>{game.team2.score}</Text>
         </View>
-        {game.highlights && (
+        {!!game.highlights && (
           <View style={styles.highlightRow}>
             <Text style={styles.highlightText} numberOfLines={1}>{game.highlights}</Text>
           </View>

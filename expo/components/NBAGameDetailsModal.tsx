@@ -423,7 +423,7 @@ export default function NBAGameDetailsModal({ visible, onClose, game }: NBAGameD
   const renderSummaryTab = () => {
     return (
       <View style={styles.tabContent}>
-        {game.series && (
+        {!!game.series && (
           <View style={styles.seriesCard}>
             <LinearGradient colors={[ACCENT_BLUE + '20', ACCENT_BLUE + '08']} style={styles.seriesGradient}>
               <Trophy size={16} color={ACCENT} />
@@ -435,7 +435,7 @@ export default function NBAGameDetailsModal({ visible, onClose, game }: NBAGameD
           </View>
         )}
 
-        {game.broadcast && (
+        {!!game.broadcast && (
           <View style={styles.broadcastCard}>
             <View style={styles.broadcastHeader}>
               <View style={styles.broadcastIconBg}>
@@ -657,7 +657,7 @@ export default function NBAGameDetailsModal({ visible, onClose, game }: NBAGameD
                 <Image source={{ uri: team1Logo }} style={styles.headerTeamLogo} resizeMode="contain" />
               </View>
               <Text style={styles.headerTeamName} numberOfLines={2}>{game.team1.name}</Text>
-              {game.team1.record && <Text style={styles.headerTeamRecord}>{game.team1.record}</Text>}
+              {!!game.team1.record && <Text style={styles.headerTeamRecord}>{game.team1.record}</Text>}
             </View>
 
             <View style={styles.headerCenter}>
@@ -682,7 +682,7 @@ export default function NBAGameDetailsModal({ visible, onClose, game }: NBAGameD
                 </View>
               )}
               {isCompleted && <Text style={styles.headerFinalLabel}>FINAL</Text>}
-              {statusDetail && !isLive && !isCompleted && (
+              {!!statusDetail && !isLive && !isCompleted && (
                 <Text style={styles.headerStatusDetail}>{statusDetail}</Text>
               )}
             </View>
@@ -692,7 +692,7 @@ export default function NBAGameDetailsModal({ visible, onClose, game }: NBAGameD
                 <Image source={{ uri: team2Logo }} style={styles.headerTeamLogo} resizeMode="contain" />
               </View>
               <Text style={styles.headerTeamName} numberOfLines={2}>{game.team2.name}</Text>
-              {game.team2.record && <Text style={styles.headerTeamRecord}>{game.team2.record}</Text>}
+              {!!game.team2.record && <Text style={styles.headerTeamRecord}>{game.team2.record}</Text>}
             </View>
           </View>
 

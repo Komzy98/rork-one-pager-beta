@@ -991,7 +991,7 @@ export default function MatchDetailsModal({
             />
             <View style={styles.venueImageInfo}>
               <Text style={styles.venueImageName}>{venueInfo.name || 'Stadium'}</Text>
-              {venueInfo.city && (
+              {!!venueInfo.city && (
                 <View style={styles.venueLocationRow}>
                   <MapPin size={12} color={ACCENT} />
                   <Text style={styles.venueImageCity}>{venueInfo.city}</Text>
@@ -1003,7 +1003,7 @@ export default function MatchDetailsModal({
           <View style={styles.venueNoImage}>
             <Building2 size={36} color={TEXT_MUTED} />
             <Text style={styles.venueNoImageName}>{venueInfo.name || 'Stadium TBA'}</Text>
-            {venueInfo.city && (
+            {!!venueInfo.city && (
               <View style={styles.venueLocationRow}>
                 <MapPin size={12} color={TEXT_SECONDARY} />
                 <Text style={styles.venueNoImageCity}>{venueInfo.city}</Text>
@@ -1049,11 +1049,11 @@ export default function MatchDetailsModal({
               </View>
             ))}
           </View>
-          {broadcastData.note && <Text style={styles.broadcastNote}>{broadcastData.note}</Text>}
+          {!!broadcastData.note && <Text style={styles.broadcastNote}>{broadcastData.note}</Text>}
           <Text style={styles.broadcastNote}>Availability may vary by region and subscription</Text>
         </View>
 
-        {venueInfo.city && (
+        {!!venueInfo.city && (
           <View style={styles.weatherCard}>
             <View style={styles.weatherCardHeader}>
               <Cloud size={16} color="#60A5FA" />

@@ -117,7 +117,7 @@ const HeroGameCard = React.memo(({ game, isDark }: { game: NBAGame; isDark: bool
             <Flame size={10} color={NBA_ORANGE} />
             <Text style={[s.heroLabel, { color: NBA_ORANGE }]}>NEXT GAME</Text>
           </View>
-          {game.series && (
+          {!!game.series && (
             <View style={s.heroSeriesBadge}>
               <Text style={s.heroSeriesText}>{game.series}</Text>
             </View>
@@ -136,7 +136,7 @@ const HeroGameCard = React.memo(({ game, isDark }: { game: NBAGame; isDark: bool
                 />
             </View>
             <Text style={s.heroTeamName} numberOfLines={2}>{game.team1.name}</Text>
-            {game.team1.record && (
+            {!!game.team1.record && (
               <Text style={s.heroTeamRecord}>{game.team1.record}</Text>
             )}
           </View>
@@ -159,7 +159,7 @@ const HeroGameCard = React.memo(({ game, isDark }: { game: NBAGame; isDark: bool
                 />
             </View>
             <Text style={s.heroTeamName} numberOfLines={2}>{game.team2.name}</Text>
-            {game.team2.record && (
+            {!!game.team2.record && (
               <Text style={s.heroTeamRecord}>{game.team2.record}</Text>
             )}
           </View>
@@ -180,7 +180,7 @@ const HeroGameCard = React.memo(({ game, isDark }: { game: NBAGame; isDark: bool
             <MapPin size={11} color="#6B6B85" />
             <Text style={s.heroInfoText}>{game.arena}, {game.city}</Text>
           </View>
-          {game.broadcast && (
+          {!!game.broadcast && (
             <View style={s.heroInfoItem}>
               <Tv size={11} color="#6B6B85" />
               <Text style={s.heroInfoText}>{game.broadcast}</Text>
@@ -354,12 +354,12 @@ const GameCard = React.memo(({ game, isDark, onPress }: { game: NBAGame; isDark:
 
         <View style={s.gameHeader}>
           <View style={s.gameHeaderLeft}>
-            {game.series && (
+            {!!game.series && (
               <View style={[s.seriesBadge, { backgroundColor: isDark ? NBA_BLUE_LIGHT : 'rgba(29,66,138,0.06)' }]}>
                 <Text style={[s.seriesBadgeText, { color: isDark ? '#5B8DEF' : NBA_BLUE }]}>{game.series}</Text>
               </View>
             )}
-            {game.broadcast && (
+            {!!game.broadcast && (
               <View style={[s.broadcastBadge, { backgroundColor: isDark ? 'rgba(242,101,34,0.08)' : 'rgba(242,101,34,0.06)' }]}>
                 <Tv size={9} color={NBA_ORANGE} />
                 <Text style={[s.broadcastText, { color: NBA_ORANGE }]}>{game.broadcast}</Text>
@@ -404,7 +404,7 @@ const GameCard = React.memo(({ game, isDark, onPress }: { game: NBAGame; isDark:
               { color: isDark ? '#F0F0FA' : '#1C1C1E' },
               isCompleted && game.team1.winner && { color: '#10B981' },
             ]} numberOfLines={2}>{game.team1.name}</Text>
-            {game.team1.record && (
+            {!!game.team1.record && (
               <Text style={[s.teamRecord, { color: isDark ? '#5A5A7A' : '#AEAEB2' }]}>{game.team1.record}</Text>
             )}
             {isCompleted && game.team1.winner && (
@@ -462,7 +462,7 @@ const GameCard = React.memo(({ game, isDark, onPress }: { game: NBAGame; isDark:
               { color: isDark ? '#F0F0FA' : '#1C1C1E' },
               isCompleted && game.team2.winner && { color: '#10B981' },
             ]} numberOfLines={2}>{game.team2.name}</Text>
-            {game.team2.record && (
+            {!!game.team2.record && (
               <Text style={[s.teamRecord, { color: isDark ? '#5A5A7A' : '#AEAEB2' }]}>{game.team2.record}</Text>
             )}
             {isCompleted && game.team2.winner && (
@@ -473,7 +473,7 @@ const GameCard = React.memo(({ game, isDark, onPress }: { game: NBAGame; isDark:
           </View>
         </View>
 
-        {isCompleted && game.highlights && (
+        {isCompleted && !!game.highlights && (
           <View style={[s.highlightsRow, { borderTopColor: isDark ? '#1A1A32' : '#F0F0F5' }]}>
             {game.highlightPlayer?.image ? (
               <View style={s.playerImageWrap}>
