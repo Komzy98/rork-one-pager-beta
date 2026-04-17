@@ -37,6 +37,7 @@ import {
   Check,
   Minus,
   Plus,
+  Scale,
 } from 'lucide-react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
