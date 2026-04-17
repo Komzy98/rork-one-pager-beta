@@ -919,9 +919,10 @@ function ModernSportsSectionComponent({
                     const opponentScore = isHome ? (match.awayScore ?? 0) : (match.homeScore ?? 0);
                     const result = teamScore > opponentScore ? 'W' : teamScore < opponentScore ? 'L' : 'D';
                     const color = result === 'W' ? '#10B981' : result === 'L' ? '#EF4444' : '#9CA3AF';
+                    const isLatest = i === 0;
                     return (
-                      <View key={match.id || i} style={[styles.formDot, { backgroundColor: color }]}>
-                        <Text style={styles.formDotText}>{result}</Text>
+                      <View key={match.id || i} style={[styles.formDot, { backgroundColor: color }, isLatest && styles.formDotLatest, isLatest && { borderColor: color, shadowColor: color }]}>
+                        <Text style={[styles.formDotText, isLatest && styles.formDotTextLatest]}>{result}</Text>
                       </View>
                     );
                   })}
@@ -1907,10 +1908,26 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     alignItems: 'center',
   },
+  formDotLatest: {
+    width: 28,
+    height: 28,
+    borderRadius: 8,
+    borderWidth: 2,
+    borderColor: '#fff',
+    shadowOffset: { width: 0, height: 0 },
+    shadowOpacity: 0.6,
+    shadowRadius: 6,
+    elevation: 4,
+    transform: [{ scale: 1 }],
+  },
   formDotText: {
     fontSize: 10,
     fontWeight: '700' as const,
     color: '#fff',
+  },
+  formDotTextLatest: {
+    fontSize: 12,
+    fontWeight: '800' as const,
   },
   formStats: {
     fontSize: 11,
