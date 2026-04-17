@@ -166,8 +166,17 @@ const MOCK_RECIPES: Recipe[] = [
     image: 'https://images.unsplash.com/photo-1467003909585-2f8a72700288?w=600',
     rating: 4.9,
     isFavourite: true,
-    ingredients: ['Salmon fillet', 'Lemon', 'Fresh dill', 'Garlic', 'Olive oil', 'Asparagus'],
-    steps: ['Preheat oven to 200\u00B0C', 'Season salmon', 'Place on baking tray', 'Bake 12-15 min', 'Serve with asparagus'],
+    ingredients: [
+      { name: 'Salmon fillet', amount: 2, unit: 'fillets' },
+      { name: 'Lemon', amount: 1, unit: 'whole' },
+      { name: 'Fresh dill', amount: 2, unit: 'tbsp' },
+      { name: 'Garlic cloves', amount: 2, unit: 'cloves' },
+      { name: 'Olive oil', amount: 2, unit: 'tbsp' },
+      { name: 'Asparagus', amount: 250, unit: 'g' },
+      { name: 'Sea salt', amount: 0.5, unit: 'tsp' },
+      { name: 'Black pepper', amount: 0.25, unit: 'tsp' },
+    ],
+    steps: ['Preheat oven to 200\u00B0C / 400\u00B0F', 'Season salmon with salt, pepper, minced garlic & dill', 'Place on lined tray with asparagus, drizzle olive oil', 'Top with lemon slices, bake 12-15 min', 'Squeeze fresh lemon juice before serving'],
   },
   {
     id: '6',
@@ -235,6 +244,37 @@ const QUICK_STATS: { label: string; value: string; icon: React.ComponentType<any
   { label: 'Streak', value: '12 days', icon: Trophy, iconColor: '#FFD700' },
 ];
 
+const IMPERIAL_CONVERSIONS: Record<string, { unit: string; factor: number; round?: number }> = {
+  g: { unit: 'oz', factor: 0.03527396, round: 0.1 },
+  ml: { unit: 'fl oz', factor: 0.033814, round: 0.1 },
+  tbsp: { unit: 'tbsp', factor: 1 },
+  tsp: { unit: 'tsp', factor: 1 },
+};
+
+const formatAmount = (num: number): string => {
+  if (num === 0.25) return '¼';
+  if (num === 0.5) return '½';
+  if (num === 0.75) return '¾';
+  if (num === 0.33 || Math.abs(num - 1 / 3) < 0.01) return '⅓';
+  if (num === 0.67 || Math.abs(num - 2 / 3) < 0.01) return '⅔';
+  if (Number.isInteger(num)) return num.toString();
+  const rounded = Math.round(num * 10) / 10;
+  if (Number.isInteger(rounded)) return rounded.toString();
+  return rounded.toFixed(1);
+};
+
+const formatIngredient = (ing: Ingredient, multiplier: number, system: 'metric' | 'imperial'): string => {
+  const scaledAmount = ing.amount * multiplier;
+  const conv = IMPERIAL_CONVERSIONS[ing.unit];
+  if (system === 'imperial' && conv && conv.factor !== 1) {
+    const converted = scaledAmount * conv.factor;
+    return `${formatAmount(converted)} ${conv.unit}`;
+  }
+  const unitLabel = ing.unit === 'whole' ? '' : ing.unit;
+  const amount = formatAmount(scaledAmount);
+  return unitLabel ? `${amount} ${unitLabel}` : amount;
+};
+
 const getDifficultyColor = (difficulty: string): string => {
   switch (difficulty) {
     case 'Easy': return '#34C759';
@@ -254,6 +294,8 @@ export default function CookingScreen() {
   const [recipes, setRecipes] = useState<Recipe[]>(MOCK_RECIPES);
   const [mealPlan, setMealPlan] = useState<MealPlanItem[]>(TODAYS_MEAL_PLAN);
   const [expandedRecipe, setExpandedRecipe] = useState<string | null>(null);
+  const [servingOverrides, setServingOverrides] = useState<Record<string, number>>({});
+  const [unitSystem, setUnitSystem] = useState<'metric' | 'imperial'>('metric');
 
   const scrollY = useRef(new Animated.Value(0)).current;
   const headerScale = useRef(new Animated.Value(0)).current;
@@ -277,7 +319,7 @@ export default function CookingScreen() {
       filtered = filtered.filter(r =>
         r.title.toLowerCase().includes(q) ||
         r.tags.some(t => t.includes(q)) ||
-        r.ingredients.some(i => i.toLowerCase().includes(q))
+        r.ingredients.some(i => i.name.toLowerCase().includes(q))
       );
     }
     return filtered;
@@ -295,6 +337,15 @@ export default function CookingScreen() {
     setRecipes(prev => prev.map(r =>
       r.id === recipeId ? { ...r, isFavourite: !r.isFavourite } : r
     ));
+  }, []);
+
+  const adjustServings = useCallback((recipeId: string, baseServings: number, delta: number) => {
+    void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+    setServingOverrides(prev => {
+      const current = prev[recipeId] ?? baseServings;
+      const next = Math.max(1, Math.min(20, current + delta));
+      return { ...prev, [recipeId]: next };
+    });
   }, []);
 
   const toggleMealComplete = useCallback((mealId: string) => {
@@ -573,14 +624,58 @@ export default function CookingScreen() {
                     </View>
                   </View>
 
-                  {isExpanded && (
+                  {isExpanded && (() => {
+                    const currentServings = servingOverrides[recipe.id] ?? recipe.servings;
+                    const multiplier = currentServings / recipe.servings;
+                    return (
                     <View style={[styles.expandedContent, { borderTopColor: cardBorder }]}>
+                      <View style={[styles.servingsPanel, { backgroundColor: secondaryBg, borderColor: cardBorder }]}>
+                        <View style={styles.servingsLeft}>
+                          <Users size={16} color={accentColor} />
+                          <View>
+                            <Text style={[styles.servingsLabel, { color: subtleText }]}>Servings</Text>
+                            <Text style={[styles.servingsValue, { color: mainText }]}>{currentServings}</Text>
+                          </View>
+                        </View>
+                        <View style={styles.servingsControls}>
+                          <TouchableOpacity
+                            style={[styles.servingBtn, { backgroundColor: cardBg, borderColor: cardBorder }]}
+                            onPress={(e) => { e.stopPropagation(); adjustServings(recipe.id, recipe.servings, -1); }}
+                            hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+                          >
+                            <Minus size={16} color={mainText} />
+                          </TouchableOpacity>
+                          <TouchableOpacity
+                            style={[styles.servingBtn, { backgroundColor: cardBg, borderColor: cardBorder }]}
+                            onPress={(e) => { e.stopPropagation(); adjustServings(recipe.id, recipe.servings, 1); }}
+                            hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+                          >
+                            <Plus size={16} color={mainText} />
+                          </TouchableOpacity>
+                          <TouchableOpacity
+                            style={[styles.unitToggle, { backgroundColor: cardBg, borderColor: cardBorder }]}
+                            onPress={(e) => {
+                              e.stopPropagation();
+                              void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+                              setUnitSystem(s => s === 'metric' ? 'imperial' : 'metric');
+                            }}
+                          >
+                            <Scale size={13} color={accentColor} />
+                            <Text style={[styles.unitToggleText, { color: accentColor }]}>{unitSystem === 'metric' ? 'Metric' : 'Imperial'}</Text>
+                          </TouchableOpacity>
+                        </View>
+                      </View>
+
                       <View style={styles.expandedSection}>
                         <Text style={[styles.expandedLabel, { color: accentColor }]}>Ingredients</Text>
-                        <View style={styles.ingredientsList}>
+                        <View style={styles.ingredientsColumn}>
                           {recipe.ingredients.map((ing, i) => (
-                            <View key={i} style={[styles.ingredientChip, { backgroundColor: secondaryBg }]}>
-                              <Text style={[styles.ingredientText, { color: mainText }]}>{ing}</Text>
+                            <View key={i} style={[styles.ingredientRow, { borderBottomColor: cardBorder }]}>
+                              <View style={[styles.ingredientBullet, { backgroundColor: accentColor }]} />
+                              <Text style={[styles.ingredientName, { color: mainText }]}>{ing.name}</Text>
+                              <View style={[styles.amountBadge, { backgroundColor: accentLight }]}>
+                                <Text style={[styles.amountBadgeText, { color: accentColor }]}>{formatIngredient(ing, multiplier, unitSystem)}</Text>
+                              </View>
                             </View>
                           ))}
                         </View>
@@ -598,12 +693,12 @@ export default function CookingScreen() {
                       </View>
                       <View style={styles.recipeDetailsRow}>
                         <View style={[styles.detailChip, { backgroundColor: secondaryBg }]}>
-                          <Users size={14} color={subtleText} />
-                          <Text style={[styles.detailText, { color: mainText }]}>{recipe.servings} servings</Text>
-                        </View>
-                        <View style={[styles.detailChip, { backgroundColor: secondaryBg }]}>
                           <Timer size={14} color={subtleText} />
                           <Text style={[styles.detailText, { color: mainText }]}>Prep: {recipe.prepTime}</Text>
+                        </View>
+                        <View style={[styles.detailChip, { backgroundColor: secondaryBg }]}>
+                          <Clock size={14} color={subtleText} />
+                          <Text style={[styles.detailText, { color: mainText }]}>Cook: {recipe.cookTime}</Text>
                         </View>
                         <View style={[styles.detailChip, { backgroundColor: secondaryBg }]}>
                           <Star size={14} color="#FFD700" />
@@ -611,7 +706,8 @@ export default function CookingScreen() {
                         </View>
                       </View>
                     </View>
-                  )}
+                    );
+                  })()}
                 </TouchableOpacity>
               );
             })
@@ -982,6 +1078,86 @@ const styles = StyleSheet.create({
   ingredientText: {
     fontSize: 12,
     fontWeight: '500' as const,
+  },
+  servingsPanel: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    padding: 12,
+    borderRadius: 14,
+    borderWidth: 1,
+    marginBottom: 14,
+  },
+  servingsLeft: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+  },
+  servingsLabel: {
+    fontSize: 10,
+    fontWeight: '600' as const,
+    textTransform: 'uppercase' as const,
+    letterSpacing: 0.5,
+  },
+  servingsValue: {
+    fontSize: 16,
+    fontWeight: '700' as const,
+  },
+  servingsControls: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+  },
+  servingBtn: {
+    width: 30,
+    height: 30,
+    borderRadius: 15,
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderWidth: 1,
+  },
+  unitToggle: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    paddingHorizontal: 10,
+    height: 30,
+    borderRadius: 15,
+    borderWidth: 1,
+    marginLeft: 4,
+  },
+  unitToggleText: {
+    fontSize: 11,
+    fontWeight: '700' as const,
+  },
+  ingredientsColumn: {
+    gap: 0,
+  },
+  ingredientRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+    paddingVertical: 10,
+    borderBottomWidth: StyleSheet.hairlineWidth,
+  },
+  ingredientBullet: {
+    width: 6,
+    height: 6,
+    borderRadius: 3,
+  },
+  ingredientName: {
+    flex: 1,
+    fontSize: 13,
+    fontWeight: '500' as const,
+  },
+  amountBadge: {
+    paddingHorizontal: 10,
+    paddingVertical: 4,
+    borderRadius: 8,
+  },
+  amountBadgeText: {
+    fontSize: 12,
+    fontWeight: '700' as const,
   },
   stepRow: {
     flexDirection: 'row',
