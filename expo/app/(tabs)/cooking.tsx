@@ -47,6 +47,12 @@ import { Stack } from 'expo-router';
 
 
 
+interface Ingredient {
+  name: string;
+  amount?: number;
+  unit?: string;
+}
+
 interface Recipe {
   id: string;
   title: string;
@@ -61,7 +67,7 @@ interface Recipe {
   image: string;
   rating: number;
   isFavourite: boolean;
-  ingredients: string[];
+  ingredients: Ingredient[];
   steps: string[];
 }
 
@@ -101,7 +107,16 @@ const MOCK_RECIPES: Recipe[] = [
     image: 'https://images.unsplash.com/photo-1604908176997-125f25cc6f3d?w=600',
     rating: 4.8,
     isFavourite: true,
-    ingredients: ['Chicken breast', 'Sun-dried tomatoes', 'Spinach', 'Garlic', 'Heavy cream', 'Parmesan'],
+    ingredients: [
+      { name: 'Chicken breast', amount: 4, unit: 'fillets' },
+      { name: 'Sun-dried tomatoes', amount: 100, unit: 'g' },
+      { name: 'Spinach', amount: 150, unit: 'g' },
+      { name: 'Garlic cloves', amount: 3, unit: 'cloves' },
+      { name: 'Heavy cream', amount: 250, unit: 'ml' },
+      { name: 'Parmesan', amount: 50, unit: 'g' },
+      { name: 'Olive oil', amount: 2, unit: 'tbsp' },
+      { name: 'Italian seasoning', amount: 1, unit: 'tsp' },
+    ],
     steps: ['Season chicken', 'Sear in pan', 'Add garlic & tomatoes', 'Pour cream & simmer', 'Add spinach & parmesan'],
   },
   {
@@ -118,7 +133,14 @@ const MOCK_RECIPES: Recipe[] = [
     image: 'https://images.unsplash.com/photo-1541519227354-08fa5d50c44d?w=600',
     rating: 4.5,
     isFavourite: false,
-    ingredients: ['Sourdough bread', 'Avocado', 'Cherry tomatoes', 'Feta cheese', 'Chilli flakes', 'Lemon'],
+    ingredients: [
+      { name: 'Sourdough bread', amount: 2, unit: 'slices' },
+      { name: 'Avocado', amount: 1, unit: 'whole' },
+      { name: 'Cherry tomatoes', amount: 100, unit: 'g' },
+      { name: 'Feta cheese', amount: 40, unit: 'g' },
+      { name: 'Chilli flakes', amount: 0.5, unit: 'tsp' },
+      { name: 'Lemon', amount: 0.5, unit: 'whole' },
+    ],
     steps: ['Toast bread', 'Mash avocado with lemon', 'Spread on toast', 'Top with tomatoes & feta', 'Sprinkle chilli flakes'],
   },
   {
@@ -135,7 +157,15 @@ const MOCK_RECIPES: Recipe[] = [
     image: 'https://images.unsplash.com/photo-1455619452474-d2be8b1e70cd?w=600',
     rating: 4.7,
     isFavourite: true,
-    ingredients: ['Green curry paste', 'Coconut milk', 'Chicken thigh', 'Thai basil', 'Bamboo shoots', 'Fish sauce'],
+    ingredients: [
+      { name: 'Green curry paste', amount: 3, unit: 'tbsp' },
+      { name: 'Coconut milk', amount: 400, unit: 'ml' },
+      { name: 'Chicken thigh', amount: 500, unit: 'g' },
+      { name: 'Thai basil', amount: 1, unit: 'handful' },
+      { name: 'Bamboo shoots', amount: 150, unit: 'g' },
+      { name: 'Fish sauce', amount: 2, unit: 'tbsp' },
+      { name: 'Jasmine rice', amount: 300, unit: 'g' },
+    ],
     steps: ['Fry curry paste', 'Add coconut milk', 'Add chicken', 'Simmer 20 min', 'Add basil & serve'],
   },
   {
@@ -152,7 +182,14 @@ const MOCK_RECIPES: Recipe[] = [
     image: 'https://images.unsplash.com/photo-1590301157890-4810ed352733?w=600',
     rating: 4.6,
     isFavourite: false,
-    ingredients: ['Mixed berries', 'Banana', 'Greek yoghurt', 'Granola', 'Chia seeds', 'Honey'],
+    ingredients: [
+      { name: 'Mixed berries', amount: 150, unit: 'g' },
+      { name: 'Banana', amount: 1, unit: 'whole' },
+      { name: 'Greek yoghurt', amount: 150, unit: 'g' },
+      { name: 'Granola', amount: 30, unit: 'g' },
+      { name: 'Chia seeds', amount: 1, unit: 'tbsp' },
+      { name: 'Honey', amount: 1, unit: 'tsp' },
+    ],
     steps: ['Blend berries & banana', 'Pour into bowl', 'Top with granola', 'Add chia seeds & honey'],
   },
   {
@@ -178,7 +215,7 @@ const MOCK_RECIPES: Recipe[] = [
       { name: 'Asparagus', amount: 250, unit: 'g' },
       { name: 'Sea salt', amount: 0.5, unit: 'tsp' },
       { name: 'Black pepper', amount: 0.25, unit: 'tsp' },
-    ],
+    ] as Ingredient[],
     steps: ['Preheat oven to 200\u00B0C / 400\u00B0F', 'Season salmon with salt, pepper, minced garlic & dill', 'Place on lined tray with asparagus, drizzle olive oil', 'Top with lemon slices, bake 12-15 min', 'Squeeze fresh lemon juice before serving'],
   },
   {
@@ -195,7 +232,14 @@ const MOCK_RECIPES: Recipe[] = [
     image: 'https://images.unsplash.com/photo-1624353365286-3f8d62daad51?w=600',
     rating: 4.9,
     isFavourite: false,
-    ingredients: ['Dark chocolate', 'Butter', 'Eggs', 'Sugar', 'Flour', 'Vanilla extract'],
+    ingredients: [
+      { name: 'Dark chocolate', amount: 100, unit: 'g' },
+      { name: 'Butter', amount: 80, unit: 'g' },
+      { name: 'Eggs', amount: 2, unit: 'whole' },
+      { name: 'Sugar', amount: 60, unit: 'g' },
+      { name: 'Flour', amount: 30, unit: 'g' },
+      { name: 'Vanilla extract', amount: 1, unit: 'tsp' },
+    ],
     steps: ['Melt chocolate & butter', 'Whisk eggs & sugar', 'Fold together', 'Pour into ramekins', 'Bake 12 min'],
   },
   {
@@ -212,7 +256,15 @@ const MOCK_RECIPES: Recipe[] = [
     image: 'https://images.unsplash.com/photo-1512621776951-a57141f2eefd?w=600',
     rating: 4.5,
     isFavourite: false,
-    ingredients: ['Quinoa', 'Cucumber', 'Cherry tomatoes', 'Kalamata olives', 'Feta', 'Hummus'],
+    ingredients: [
+      { name: 'Quinoa', amount: 150, unit: 'g' },
+      { name: 'Cucumber', amount: 1, unit: 'whole' },
+      { name: 'Cherry tomatoes', amount: 150, unit: 'g' },
+      { name: 'Kalamata olives', amount: 50, unit: 'g' },
+      { name: 'Feta', amount: 80, unit: 'g' },
+      { name: 'Hummus', amount: 4, unit: 'tbsp' },
+      { name: 'Olive oil', amount: 2, unit: 'tbsp' },
+    ],
     steps: ['Cook quinoa', 'Chop vegetables', 'Assemble bowl', 'Add hummus & feta', 'Drizzle olive oil'],
   },
   {
@@ -229,7 +281,15 @@ const MOCK_RECIPES: Recipe[] = [
     image: 'https://images.unsplash.com/photo-1565299585323-38d6b0865b47?w=600',
     rating: 4.7,
     isFavourite: false,
-    ingredients: ['King prawns', 'Corn tortillas', 'Lime', 'Coriander', 'Jalape\u00F1o', 'Red cabbage'],
+    ingredients: [
+      { name: 'King prawns', amount: 400, unit: 'g' },
+      { name: 'Corn tortillas', amount: 6, unit: 'whole' },
+      { name: 'Lime', amount: 2, unit: 'whole' },
+      { name: 'Coriander', amount: 1, unit: 'handful' },
+      { name: 'Jalape\u00F1o', amount: 1, unit: 'whole' },
+      { name: 'Red cabbage', amount: 150, unit: 'g' },
+      { name: 'Chilli powder', amount: 1, unit: 'tsp' },
+    ],
     steps: ['Season & cook prawns', 'Make mango salsa', 'Warm tortillas', 'Assemble tacos', 'Squeeze lime & serve'],
   },
 ];
@@ -267,13 +327,17 @@ const formatAmount = (num: number): string => {
 };
 
 const formatIngredient = (ing: Ingredient, multiplier: number, system: 'metric' | 'imperial'): string => {
+  if (ing.amount === undefined || ing.amount === null) {
+    return 'to taste';
+  }
   const scaledAmount = ing.amount * multiplier;
-  const conv = IMPERIAL_CONVERSIONS[ing.unit];
+  const unit = ing.unit ?? '';
+  const conv = IMPERIAL_CONVERSIONS[unit];
   if (system === 'imperial' && conv && conv.factor !== 1) {
     const converted = scaledAmount * conv.factor;
     return `${formatAmount(converted)} ${conv.unit}`;
   }
-  const unitLabel = ing.unit === 'whole' ? '' : ing.unit;
+  const unitLabel = unit === 'whole' || !unit ? '' : unit;
   const amount = formatAmount(scaledAmount);
   return unitLabel ? `${amount} ${unitLabel}` : amount;
 };
@@ -322,7 +386,7 @@ export default function CookingScreen() {
       filtered = filtered.filter(r =>
         r.title.toLowerCase().includes(q) ||
         r.tags.some(t => t.includes(q)) ||
-        r.ingredients.some(i => i.name.toLowerCase().includes(q))
+        r.ingredients.some((i: Ingredient) => i.name.toLowerCase().includes(q))
       );
     }
     return filtered;
