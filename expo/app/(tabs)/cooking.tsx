@@ -887,13 +887,13 @@ export default function CookingScreen() {
                       </View>
                       <View style={styles.macroRow}>
                         <View style={[styles.macroPill, { backgroundColor: '#FF634715' }]}>
-                          <Text style={[styles.macroText, { color: '#FF6347' }]}>P {recipe.protein}g</Text>
+                          <Text style={[styles.macroText, { color: '#FF6347' }]}>Protein {recipe.protein}g</Text>
                         </View>
                         <View style={[styles.macroPill, { backgroundColor: '#F59E0B15' }]}>
-                          <Text style={[styles.macroText, { color: '#F59E0B' }]}>C {recipe.carbs}g</Text>
+                          <Text style={[styles.macroText, { color: '#F59E0B' }]}>Carbs {recipe.carbs}g</Text>
                         </View>
                         <View style={[styles.macroPill, { backgroundColor: '#34C75915' }]}>
-                          <Text style={[styles.macroText, { color: '#34C759' }]}>F {recipe.fat}g</Text>
+                          <Text style={[styles.macroText, { color: '#34C759' }]}>Fat {recipe.fat}g</Text>
                         </View>
                       </View>
                     </View>
