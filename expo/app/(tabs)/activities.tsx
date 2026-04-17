@@ -739,7 +739,11 @@ export default function ActivitiesScreen() {
             });
           }
         } catch (error) {
-          console.error('❌ [Activities] Failed to check episodes for', show.title, error);
+          if (error instanceof TypeError) {
+            console.warn('⚠️ [Activities] Network unavailable for', show.title);
+          } else {
+            console.error('❌ [Activities] Failed to check episodes for', show.title, error);
+          }
         }
       });
 

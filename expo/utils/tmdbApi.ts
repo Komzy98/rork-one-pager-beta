@@ -104,19 +104,42 @@ export interface TMDBVideosResponse {
 }
 
 class TMDBApi {
-  private async makeRequest<T>(endpoint: string): Promise<T> {
+  private async makeRequest<T>(endpoint: string, retries: number = 2): Promise<T> {
     const url = `${TMDB_BASE_URL}${endpoint}${endpoint.includes('?') ? '&' : '?'}api_key=${TMDB_API_KEY}`;
-    
-    try {
-      const response = await fetch(url);
-      if (!response.ok) {
-        throw new Error(`TMDB API error: ${response.status}`);
+
+    let lastError: unknown = null;
+    for (let attempt = 0; attempt <= retries; attempt++) {
+      try {
+        const controller = new AbortController();
+        const timeoutId = setTimeout(() => controller.abort(), 15000);
+        const response = await fetch(url, { signal: controller.signal });
+        clearTimeout(timeoutId);
+        if (!response.ok) {
+          if (response.status >= 500 && attempt < retries) {
+            await new Promise((resolve) => setTimeout(resolve, 500 * (attempt + 1)));
+            continue;
+          }
+          throw new Error(`TMDB API error: ${response.status}`);
+        }
+        return (await response.json()) as T;
+      } catch (error) {
+        lastError = error;
+        const isNetworkError =
+          error instanceof TypeError ||
+          (error instanceof Error && error.name === 'AbortError');
+        if (isNetworkError && attempt < retries) {
+          await new Promise((resolve) => setTimeout(resolve, 500 * (attempt + 1)));
+          continue;
+        }
+        break;
       }
-      return await response.json();
-    } catch (error) {
-      console.error('TMDB API request failed:', error);
-      throw error;
     }
+    if (lastError instanceof TypeError) {
+      console.warn('TMDB API network unavailable:', (lastError as Error).message);
+    } else {
+      console.error('TMDB API request failed:', lastError);
+    }
+    throw lastError instanceof Error ? lastError : new Error('TMDB API request failed');
   }
 
   async searchMovies(query: string, page: number = 1): Promise<TMDBSearchResponse<TMDBMovie>> {
