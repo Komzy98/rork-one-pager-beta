@@ -9,6 +9,7 @@ import {
   Animated,
   RefreshControl,
   Image,
+  Share,
 } from 'react-native';
 import {
   Search,
@@ -38,7 +39,16 @@ import {
   Minus,
   Plus,
   Scale,
+  ShoppingBasket,
+  ChevronLeft,
+  ChevronRight,
+  Play,
+  Pause,
+  RotateCcw,
+  Trash2,
+  Share2,
 } from 'lucide-react-native';
+import { Modal, Platform } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useTheme } from '@/hooks/useTheme';
@@ -62,6 +72,9 @@ interface Recipe {
   servings: number;
   difficulty: 'Easy' | 'Medium' | 'Hard';
   calories: number;
+  protein: number;
+  carbs: number;
+  fat: number;
   category: string;
   tags: string[];
   image: string;
@@ -69,6 +82,7 @@ interface Recipe {
   isFavourite: boolean;
   ingredients: Ingredient[];
   steps: string[];
+  stepTimers?: (number | null)[];
 }
 
 interface MealPlanItem {
@@ -217,6 +231,7 @@ const MOCK_RECIPES: Recipe[] = [
       { name: 'Black pepper', amount: 0.25, unit: 'tsp' },
     ] as Ingredient[],
     steps: ['Preheat oven to 200\u00B0C / 400\u00B0F', 'Season salmon with salt, pepper, minced garlic & dill', 'Place on lined tray with asparagus, drizzle olive oil', 'Top with lemon slices, bake 12-15 min', 'Squeeze fresh lemon juice before serving'],
+    stepTimers: [null, null, null, 780, null],
   },
   {
     id: '6',
@@ -240,7 +255,8 @@ const MOCK_RECIPES: Recipe[] = [
       { name: 'Flour', amount: 30, unit: 'g' },
       { name: 'Vanilla extract', amount: 1, unit: 'tsp' },
     ],
-    steps: ['Melt chocolate & butter', 'Whisk eggs & sugar', 'Fold together', 'Pour into ramekins', 'Bake 12 min'],
+    steps: ['Preheat oven to 220\u00B0C / 425\u00B0F, butter ramekins', 'Melt chocolate & butter together, stir smooth', 'Whisk eggs, sugar & vanilla until pale', 'Fold chocolate mix into eggs, add flour', 'Pour into ramekins, bake 10-12 min until edges set'],
+    stepTimers: [null, 120, 120, null, 660],
   },
   {
     id: '7',
@@ -265,7 +281,8 @@ const MOCK_RECIPES: Recipe[] = [
       { name: 'Hummus', amount: 4, unit: 'tbsp' },
       { name: 'Olive oil', amount: 2, unit: 'tbsp' },
     ],
-    steps: ['Cook quinoa', 'Chop vegetables', 'Assemble bowl', 'Add hummus & feta', 'Drizzle olive oil'],
+    steps: ['Rinse quinoa, cook in salted water 12-15 min', 'Chop cucumber, halve tomatoes, slice olives', 'Divide quinoa between bowls', 'Top with veg, hummus, olives & crumbled feta', 'Drizzle with olive oil, season to taste'],
+    stepTimers: [900, null, null, null, null],
   },
   {
     id: '8',
@@ -290,7 +307,8 @@ const MOCK_RECIPES: Recipe[] = [
       { name: 'Red cabbage', amount: 150, unit: 'g' },
       { name: 'Chilli powder', amount: 1, unit: 'tsp' },
     ],
-    steps: ['Season & cook prawns', 'Make mango salsa', 'Warm tortillas', 'Assemble tacos', 'Squeeze lime & serve'],
+    steps: ['Toss prawns with chilli powder, salt & lime juice', 'Shred cabbage, slice jalape\u00F1o, chop coriander', 'Heat pan, cook prawns 2-3 min each side', 'Warm tortillas in a dry pan 30 sec per side', 'Build tacos with prawns, cabbage, jalape\u00F1o & lime'],
+    stepTimers: [null, null, 300, 60, null],
   },
 ];
 
@@ -363,6 +381,104 @@ export default function CookingScreen() {
   const [expandedRecipe, setExpandedRecipe] = useState<string | null>(null);
   const [servingOverrides, setServingOverrides] = useState<Record<string, number>>({});
   const [unitSystem, setUnitSystem] = useState<'metric' | 'imperial'>('metric');
+
+  const [cookingRecipeId, setCookingRecipeId] = useState<string | null>(null);
+  const [cookStep, setCookStep] = useState<number>(0);
+  const [checkedIngredients, setCheckedIngredients] = useState<Record<string, boolean>>({});
+  const [timerSeconds, setTimerSeconds] = useState<number>(0);
+  const [timerRunning, setTimerRunning] = useState<boolean>(false);
+  const [shoppingOpen, setShoppingOpen] = useState<boolean>(false);
+  const [shoppingList, setShoppingList] = useState<{ id: string; recipeId: string; name: string; amount: string; checked: boolean }[]>([]);
+
+  const cookingRecipe = useMemo(() => recipes.find(r => r.id === cookingRecipeId) ?? null, [recipes, cookingRecipeId]);
+
+  useEffect(() => {
+    if (!timerRunning) return;
+    const interval = setInterval(() => {
+      setTimerSeconds(s => {
+        if (s <= 1) {
+          setTimerRunning(false);
+          if (Platform.OS !== 'web') {
+            void Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+          }
+          return 0;
+        }
+        return s - 1;
+      });
+    }, 1000);
+    return () => clearInterval(interval);
+  }, [timerRunning]);
+
+  const startCooking = useCallback((recipe: Recipe) => {
+    void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+    setCookingRecipeId(recipe.id);
+    setCookStep(0);
+    setCheckedIngredients({});
+    const initial = recipe.stepTimers?.[0];
+    setTimerSeconds(initial ?? 0);
+    setTimerRunning(false);
+  }, []);
+
+  const closeCooking = useCallback(() => {
+    setCookingRecipeId(null);
+    setTimerRunning(false);
+    setTimerSeconds(0);
+  }, []);
+
+  const goToStep = useCallback((recipe: Recipe, step: number) => {
+    void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+    const clamped = Math.max(0, Math.min(recipe.steps.length - 1, step));
+    setCookStep(clamped);
+    const t = recipe.stepTimers?.[clamped];
+    setTimerSeconds(t ?? 0);
+    setTimerRunning(false);
+  }, []);
+
+  const toggleIngredientChecked = useCallback((key: string) => {
+    void Haptics.selectionAsync();
+    setCheckedIngredients(prev => ({ ...prev, [key]: !prev[key] }));
+  }, []);
+
+  const addToShoppingList = useCallback((recipe: Recipe, multiplier: number) => {
+    void Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+    setShoppingList(prev => {
+      const existing = new Set(prev.filter(i => i.recipeId === recipe.id).map(i => i.name));
+      const newItems = recipe.ingredients
+        .filter(i => !existing.has(i.name))
+        .map(i => ({
+          id: `${recipe.id}-${i.name}-${Date.now()}-${Math.random()}`,
+          recipeId: recipe.id,
+          name: i.name,
+          amount: formatIngredient(i, multiplier, unitSystem),
+          checked: false,
+        }));
+      return [...prev, ...newItems];
+    });
+  }, [unitSystem]);
+
+  const toggleShoppingItem = useCallback((id: string) => {
+    void Haptics.selectionAsync();
+    setShoppingList(prev => prev.map(i => i.id === id ? { ...i, checked: !i.checked } : i));
+  }, []);
+
+  const removeShoppingItem = useCallback((id: string) => {
+    void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+    setShoppingList(prev => prev.filter(i => i.id !== id));
+  }, []);
+
+  const clearCheckedShopping = useCallback(() => {
+    void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+    setShoppingList(prev => prev.filter(i => !i.checked));
+  }, []);
+
+  const shareRecipe = useCallback(async (recipe: Recipe) => {
+    try {
+      const text = `${recipe.title}\n\n${recipe.subtitle}\n\nIngredients:\n${recipe.ingredients.map(i => `• ${formatIngredient(i, 1, unitSystem)} ${i.name}`).join('\n')}\n\nSteps:\n${recipe.steps.map((s, i) => `${i + 1}. ${s}`).join('\n')}`;
+      await Share.share({ message: text, title: recipe.title });
+    } catch (e) {
+      console.log('[Cooking] share failed', e);
+    }
+  }, [unitSystem]);
 
   const scrollY = useRef(new Animated.Value(0)).current;
   const headerScale = useRef(new Animated.Value(0)).current;
@@ -452,9 +568,18 @@ export default function CookingScreen() {
           </View>
           <TouchableOpacity
             style={[styles.headerAction, { backgroundColor: isDark ? '#2A2220' : accentLight }]}
-            onPress={() => void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light)}
+            onPress={() => {
+              void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+              setShoppingOpen(true);
+            }}
+            testID="open-shopping-list"
           >
-            <BookOpen size={20} color={accentColor} />
+            <ShoppingBasket size={20} color={accentColor} />
+            {shoppingList.filter(i => !i.checked).length > 0 && (
+              <View style={[styles.badge, { backgroundColor: accentColor }]}>
+                <Text style={styles.badgeText}>{shoppingList.filter(i => !i.checked).length}</Text>
+              </View>
+            )}
           </TouchableOpacity>
         </Animated.View>
 
@@ -688,6 +813,17 @@ export default function CookingScreen() {
                           <Text style={[styles.recipeMetaText, { color: subtleText }]}>{recipe.calories} kcal</Text>
                         </View>
                       </View>
+                      <View style={styles.macroRow}>
+                        <View style={[styles.macroPill, { backgroundColor: '#FF634715' }]}>
+                          <Text style={[styles.macroText, { color: '#FF6347' }]}>P {recipe.protein}g</Text>
+                        </View>
+                        <View style={[styles.macroPill, { backgroundColor: '#F59E0B15' }]}>
+                          <Text style={[styles.macroText, { color: '#F59E0B' }]}>C {recipe.carbs}g</Text>
+                        </View>
+                        <View style={[styles.macroPill, { backgroundColor: '#34C75915' }]}>
+                          <Text style={[styles.macroText, { color: '#34C759' }]}>F {recipe.fat}g</Text>
+                        </View>
+                      </View>
                     </View>
                   </View>
 
@@ -772,6 +908,31 @@ export default function CookingScreen() {
                           <Text style={[styles.detailText, { color: mainText }]}>{recipe.rating}</Text>
                         </View>
                       </View>
+
+                      <View style={styles.actionRow}>
+                        <TouchableOpacity
+                          style={[styles.primaryAction, { backgroundColor: accentColor }]}
+                          onPress={(e) => { e.stopPropagation(); startCooking(recipe); }}
+                          testID={`start-cooking-${recipe.id}`}
+                        >
+                          <ChefHat size={16} color="#FFFFFF" />
+                          <Text style={styles.primaryActionText}>Start Cooking</Text>
+                        </TouchableOpacity>
+                        <TouchableOpacity
+                          style={[styles.secondaryAction, { backgroundColor: secondaryBg, borderColor: cardBorder }]}
+                          onPress={(e) => { e.stopPropagation(); addToShoppingList(recipe, multiplier); }}
+                          testID={`add-shopping-${recipe.id}`}
+                        >
+                          <ShoppingBasket size={16} color={accentColor} />
+                        </TouchableOpacity>
+                        <TouchableOpacity
+                          style={[styles.secondaryAction, { backgroundColor: secondaryBg, borderColor: cardBorder }]}
+                          onPress={(e) => { e.stopPropagation(); void shareRecipe(recipe); }}
+                          testID={`share-${recipe.id}`}
+                        >
+                          <Share2 size={16} color={accentColor} />
+                        </TouchableOpacity>
+                      </View>
                     </View>
                     );
                   })()}
@@ -795,6 +956,228 @@ export default function CookingScreen() {
           </View>
         </View>
       </ScrollView>
+
+      <Modal
+        visible={cookingRecipe !== null}
+        animationType="slide"
+        presentationStyle="pageSheet"
+        onRequestClose={closeCooking}
+      >
+        {cookingRecipe && (() => {
+          const r = cookingRecipe;
+          const currentServings = servingOverrides[r.id] ?? r.servings;
+          const multiplier = currentServings / r.servings;
+          const totalSteps = r.steps.length;
+          const progress = (cookStep + 1) / totalSteps;
+          const stepTimer = r.stepTimers?.[cookStep];
+          const mins = Math.floor(timerSeconds / 60);
+          const secs = timerSeconds % 60;
+          return (
+            <View style={[styles.cookContainer, { backgroundColor: warmBg }]}>
+              <View style={[styles.cookHeader, { paddingTop: insets.top + 8, borderBottomColor: cardBorder }]}>
+                <TouchableOpacity
+                  style={[styles.cookClose, { backgroundColor: secondaryBg }]}
+                  onPress={closeCooking}
+                  testID="close-cooking"
+                >
+                  <X size={20} color={mainText} />
+                </TouchableOpacity>
+                <View style={styles.cookHeaderCenter}>
+                  <Text style={[styles.cookHeaderTitle, { color: mainText }]} numberOfLines={1}>{r.title}</Text>
+                  <Text style={[styles.cookHeaderSub, { color: subtleText }]}>Step {cookStep + 1} of {totalSteps}</Text>
+                </View>
+                <View style={{ width: 40 }} />
+              </View>
+
+              <View style={[styles.cookProgressBg, { backgroundColor: cardBorder }]}>
+                <View style={[styles.cookProgressFill, { backgroundColor: accentColor, width: `${progress * 100}%` as any }]} />
+              </View>
+
+              <ScrollView contentContainerStyle={styles.cookScroll} showsVerticalScrollIndicator={false}>
+                <View style={[styles.cookStepCard, { backgroundColor: cardBg, borderColor: cardBorder }]}>
+                  <View style={[styles.cookStepBadge, { backgroundColor: accentColor }]}>
+                    <Text style={styles.cookStepBadgeText}>{cookStep + 1}</Text>
+                  </View>
+                  <Text style={[styles.cookStepText, { color: mainText }]}>{r.steps[cookStep]}</Text>
+                </View>
+
+                {stepTimer != null && stepTimer > 0 && (
+                  <View style={[styles.cookTimerCard, { backgroundColor: cardBg, borderColor: cardBorder }]}>
+                    <View style={styles.cookTimerHeader}>
+                      <Timer size={16} color={accentColor} />
+                      <Text style={[styles.cookTimerLabel, { color: subtleText }]}>Suggested timer</Text>
+                    </View>
+                    <Text style={[styles.cookTimerValue, { color: timerSeconds === 0 && timerRunning === false ? '#34C759' : mainText }]}>
+                      {String(mins).padStart(2, '0')}:{String(secs).padStart(2, '0')}
+                    </Text>
+                    <View style={styles.cookTimerControls}>
+                      <TouchableOpacity
+                        style={[styles.cookTimerBtn, { backgroundColor: accentColor }]}
+                        onPress={() => {
+                          void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+                          if (timerSeconds === 0) {
+                            setTimerSeconds(stepTimer);
+                          }
+                          setTimerRunning(x => !x);
+                        }}
+                        testID="timer-toggle"
+                      >
+                        {timerRunning ? <Pause size={18} color="#FFFFFF" /> : <Play size={18} color="#FFFFFF" />}
+                        <Text style={styles.cookTimerBtnText}>{timerRunning ? 'Pause' : (timerSeconds === 0 ? 'Start' : 'Resume')}</Text>
+                      </TouchableOpacity>
+                      <TouchableOpacity
+                        style={[styles.cookTimerReset, { backgroundColor: secondaryBg, borderColor: cardBorder }]}
+                        onPress={() => {
+                          void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+                          setTimerRunning(false);
+                          setTimerSeconds(stepTimer);
+                        }}
+                      >
+                        <RotateCcw size={16} color={mainText} />
+                      </TouchableOpacity>
+                    </View>
+                  </View>
+                )}
+
+                <View style={styles.cookSectionHeader}>
+                  <ClipboardList size={16} color={accentColor} />
+                  <Text style={[styles.cookSectionTitle, { color: mainText }]}>Ingredients</Text>
+                  <Text style={[styles.cookSectionHint, { color: subtleText }]}>Tap to check off</Text>
+                </View>
+                {r.ingredients.map((ing, i) => {
+                  const key = `${r.id}-${i}`;
+                  const checked = !!checkedIngredients[key];
+                  return (
+                    <TouchableOpacity
+                      key={key}
+                      style={[styles.cookIngRow, { backgroundColor: cardBg, borderColor: cardBorder }]}
+                      onPress={() => toggleIngredientChecked(key)}
+                      activeOpacity={0.7}
+                    >
+                      <View style={[styles.cookCheck, { backgroundColor: checked ? '#34C759' : 'transparent', borderColor: checked ? '#34C759' : cardBorder }]}>
+                        {checked && <Check size={12} color="#FFFFFF" />}
+                      </View>
+                      <Text style={[styles.cookIngName, { color: mainText, opacity: checked ? 0.45 : 1, textDecorationLine: checked ? 'line-through' : 'none' }]}>{ing.name}</Text>
+                      <View style={[styles.amountBadge, { backgroundColor: accentLight }]}>
+                        <Text style={[styles.amountBadgeText, { color: accentColor }]}>{formatIngredient(ing, multiplier, unitSystem)}</Text>
+                      </View>
+                    </TouchableOpacity>
+                  );
+                })}
+              </ScrollView>
+
+              <View style={[styles.cookNav, { paddingBottom: insets.bottom + 12, backgroundColor: cardBg, borderTopColor: cardBorder }]}>
+                <TouchableOpacity
+                  style={[styles.cookNavBtn, { backgroundColor: secondaryBg, borderColor: cardBorder, opacity: cookStep === 0 ? 0.4 : 1 }]}
+                  disabled={cookStep === 0}
+                  onPress={() => goToStep(r, cookStep - 1)}
+                  testID="prev-step"
+                >
+                  <ChevronLeft size={18} color={mainText} />
+                  <Text style={[styles.cookNavBtnText, { color: mainText }]}>Back</Text>
+                </TouchableOpacity>
+                {cookStep < totalSteps - 1 ? (
+                  <TouchableOpacity
+                    style={[styles.cookNavPrimary, { backgroundColor: accentColor }]}
+                    onPress={() => goToStep(r, cookStep + 1)}
+                    testID="next-step"
+                  >
+                    <Text style={styles.cookNavPrimaryText}>Next Step</Text>
+                    <ChevronRight size={18} color="#FFFFFF" />
+                  </TouchableOpacity>
+                ) : (
+                  <TouchableOpacity
+                    style={[styles.cookNavPrimary, { backgroundColor: '#34C759' }]}
+                    onPress={() => {
+                      void Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+                      closeCooking();
+                    }}
+                    testID="finish-cooking"
+                  >
+                    <Check size={18} color="#FFFFFF" />
+                    <Text style={styles.cookNavPrimaryText}>Done!</Text>
+                  </TouchableOpacity>
+                )}
+              </View>
+            </View>
+          );
+        })()}
+      </Modal>
+
+      <Modal
+        visible={shoppingOpen}
+        animationType="slide"
+        presentationStyle="pageSheet"
+        onRequestClose={() => setShoppingOpen(false)}
+      >
+        <View style={[styles.cookContainer, { backgroundColor: warmBg }]}>
+          <View style={[styles.cookHeader, { paddingTop: insets.top + 8, borderBottomColor: cardBorder }]}>
+            <TouchableOpacity
+              style={[styles.cookClose, { backgroundColor: secondaryBg }]}
+              onPress={() => setShoppingOpen(false)}
+              testID="close-shopping"
+            >
+              <X size={20} color={mainText} />
+            </TouchableOpacity>
+            <View style={styles.cookHeaderCenter}>
+              <Text style={[styles.cookHeaderTitle, { color: mainText }]}>Shopping List</Text>
+              <Text style={[styles.cookHeaderSub, { color: subtleText }]}>
+                {shoppingList.filter(i => !i.checked).length} to buy · {shoppingList.filter(i => i.checked).length} done
+              </Text>
+            </View>
+            {shoppingList.some(i => i.checked) ? (
+              <TouchableOpacity
+                style={[styles.cookClose, { backgroundColor: secondaryBg }]}
+                onPress={clearCheckedShopping}
+              >
+                <Trash2 size={18} color={mainText} />
+              </TouchableOpacity>
+            ) : <View style={{ width: 40 }} />}
+          </View>
+
+          <ScrollView contentContainerStyle={styles.cookScroll} showsVerticalScrollIndicator={false}>
+            {shoppingList.length === 0 ? (
+              <View style={[styles.emptyState, { backgroundColor: cardBg, borderColor: cardBorder, marginHorizontal: 0 }]}>
+                <ShoppingBasket size={32} color={subtleText} />
+                <Text style={[styles.emptyTitle, { color: mainText }]}>Your list is empty</Text>
+                <Text style={[styles.emptyText, { color: subtleText }]}>Open a recipe and tap the basket icon to add ingredients</Text>
+              </View>
+            ) : (
+              Object.entries(
+                shoppingList.reduce<Record<string, typeof shoppingList>>((acc, item) => {
+                  const r = recipes.find(x => x.id === item.recipeId);
+                  const name = r?.title ?? 'Other';
+                  if (!acc[name]) acc[name] = [];
+                  acc[name].push(item);
+                  return acc;
+                }, {})
+              ).map(([recipeName, items]) => (
+                <View key={recipeName} style={{ marginBottom: 20 }}>
+                  <Text style={[styles.shopGroupTitle, { color: subtleText }]}>{recipeName}</Text>
+                  {items.map(item => (
+                    <View key={item.id} style={[styles.shopRow, { backgroundColor: cardBg, borderColor: cardBorder }]}>
+                      <TouchableOpacity
+                        style={styles.shopRowMain}
+                        onPress={() => toggleShoppingItem(item.id)}
+                        activeOpacity={0.7}
+                      >
+                        <View style={[styles.cookCheck, { backgroundColor: item.checked ? '#34C759' : 'transparent', borderColor: item.checked ? '#34C759' : cardBorder }]}>
+                          {item.checked && <Check size={12} color="#FFFFFF" />}
+                        </View>
+                        <Text style={[styles.cookIngName, { color: mainText, opacity: item.checked ? 0.45 : 1, textDecorationLine: item.checked ? 'line-through' : 'none' }]}>{item.name}</Text>
+                        <Text style={[styles.shopAmount, { color: subtleText }]}>{item.amount}</Text>
+                      </TouchableOpacity>
+                      <TouchableOpacity onPress={() => removeShoppingItem(item.id)} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
+                        <X size={16} color={subtleText} />
+                      </TouchableOpacity>
+                    </View>
+                  ))}
+                </View>
+              ))
+            )}
+          </ScrollView>
+        </View>
+      </Modal>
     </View>
   );
 }
@@ -802,6 +1185,278 @@ export default function CookingScreen() {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
+  },
+  badge: {
+    position: 'absolute',
+    top: -4,
+    right: -4,
+    minWidth: 18,
+    height: 18,
+    borderRadius: 9,
+    paddingHorizontal: 4,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  badgeText: {
+    color: '#FFFFFF',
+    fontSize: 10,
+    fontWeight: '700' as const,
+  },
+  macroRow: {
+    flexDirection: 'row',
+    gap: 6,
+    marginTop: 6,
+  },
+  macroPill: {
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+    borderRadius: 6,
+  },
+  macroText: {
+    fontSize: 10,
+    fontWeight: '700' as const,
+  },
+  actionRow: {
+    flexDirection: 'row',
+    gap: 8,
+    marginTop: 14,
+  },
+  primaryAction: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 8,
+    height: 44,
+    borderRadius: 14,
+  },
+  primaryActionText: {
+    color: '#FFFFFF',
+    fontSize: 14,
+    fontWeight: '700' as const,
+  },
+  secondaryAction: {
+    width: 44,
+    height: 44,
+    borderRadius: 14,
+    borderWidth: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  cookContainer: {
+    flex: 1,
+  },
+  cookHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 16,
+    paddingBottom: 12,
+    gap: 12,
+    borderBottomWidth: StyleSheet.hairlineWidth,
+  },
+  cookClose: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  cookHeaderCenter: {
+    flex: 1,
+    alignItems: 'center',
+  },
+  cookHeaderTitle: {
+    fontSize: 16,
+    fontWeight: '700' as const,
+  },
+  cookHeaderSub: {
+    fontSize: 12,
+    marginTop: 2,
+  },
+  cookProgressBg: {
+    height: 3,
+    width: '100%',
+  },
+  cookProgressFill: {
+    height: '100%',
+  },
+  cookScroll: {
+    padding: 20,
+    paddingBottom: 40,
+  },
+  cookStepCard: {
+    padding: 20,
+    borderRadius: 20,
+    borderWidth: 1,
+    marginBottom: 16,
+  },
+  cookStepBadge: {
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginBottom: 12,
+  },
+  cookStepBadgeText: {
+    color: '#FFFFFF',
+    fontSize: 16,
+    fontWeight: '700' as const,
+  },
+  cookStepText: {
+    fontSize: 18,
+    lineHeight: 26,
+    fontWeight: '500' as const,
+  },
+  cookTimerCard: {
+    padding: 20,
+    borderRadius: 20,
+    borderWidth: 1,
+    alignItems: 'center',
+    marginBottom: 20,
+  },
+  cookTimerHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    marginBottom: 8,
+  },
+  cookTimerLabel: {
+    fontSize: 12,
+    fontWeight: '600' as const,
+    textTransform: 'uppercase' as const,
+    letterSpacing: 0.5,
+  },
+  cookTimerValue: {
+    fontSize: 44,
+    fontWeight: '700' as const,
+    letterSpacing: -1,
+    fontVariant: ['tabular-nums'],
+    marginBottom: 14,
+  },
+  cookTimerControls: {
+    flexDirection: 'row',
+    gap: 8,
+  },
+  cookTimerBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    paddingHorizontal: 20,
+    height: 44,
+    borderRadius: 22,
+  },
+  cookTimerBtnText: {
+    color: '#FFFFFF',
+    fontSize: 14,
+    fontWeight: '700' as const,
+  },
+  cookTimerReset: {
+    width: 44,
+    height: 44,
+    borderRadius: 22,
+    borderWidth: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  cookSectionHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    marginBottom: 10,
+    marginTop: 4,
+  },
+  cookSectionTitle: {
+    fontSize: 15,
+    fontWeight: '700' as const,
+    flex: 1,
+  },
+  cookSectionHint: {
+    fontSize: 11,
+  },
+  cookIngRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+    padding: 12,
+    borderRadius: 12,
+    borderWidth: 1,
+    marginBottom: 6,
+  },
+  cookCheck: {
+    width: 22,
+    height: 22,
+    borderRadius: 11,
+    borderWidth: 2,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  cookIngName: {
+    flex: 1,
+    fontSize: 14,
+    fontWeight: '500' as const,
+  },
+  cookNav: {
+    flexDirection: 'row',
+    gap: 10,
+    paddingHorizontal: 16,
+    paddingTop: 12,
+    borderTopWidth: StyleSheet.hairlineWidth,
+  },
+  cookNavBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 4,
+    paddingHorizontal: 16,
+    height: 48,
+    borderRadius: 14,
+    borderWidth: 1,
+  },
+  cookNavBtnText: {
+    fontSize: 14,
+    fontWeight: '600' as const,
+  },
+  cookNavPrimary: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 6,
+    height: 48,
+    borderRadius: 14,
+  },
+  cookNavPrimaryText: {
+    color: '#FFFFFF',
+    fontSize: 15,
+    fontWeight: '700' as const,
+  },
+  shopGroupTitle: {
+    fontSize: 11,
+    fontWeight: '700' as const,
+    textTransform: 'uppercase' as const,
+    letterSpacing: 0.5,
+    marginBottom: 8,
+    paddingHorizontal: 4,
+  },
+  shopRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    padding: 12,
+    borderRadius: 12,
+    borderWidth: 1,
+    marginBottom: 6,
+    gap: 8,
+  },
+  shopRowMain: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+  },
+  shopAmount: {
+    fontSize: 12,
+    fontWeight: '600' as const,
   },
   header: {
     paddingHorizontal: 20,
