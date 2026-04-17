@@ -132,7 +132,7 @@ const MOCK_RECIPES: Recipe[] = [
     fat: 24,
     category: 'dinner',
     tags: ['one-pan', 'high-protein', 'italian', 'low-carb'],
-    image: 'https://images.unsplash.com/photo-1604908176997-125f25cc6f3d?w=600',
+    image: 'https://images.unsplash.com/photo-1518492104633-130d0cc84637?w=600&q=80',
     rating: 4.8,
     isFavourite: true,
     ingredients: [
@@ -161,7 +161,7 @@ const MOCK_RECIPES: Recipe[] = [
     fat: 16,
     category: 'breakfast',
     tags: ['quick', 'healthy', 'vegetarian', 'mediterranean', 'whole-foods'],
-    image: 'https://images.unsplash.com/photo-1541519227354-08fa5d50c44d?w=600',
+    image: 'https://images.unsplash.com/photo-1588137378633-dea1336ce1e2?w=600&q=80',
     rating: 4.5,
     isFavourite: false,
     ingredients: [
@@ -188,7 +188,7 @@ const MOCK_RECIPES: Recipe[] = [
     fat: 14,
     category: 'dinner',
     tags: ['spicy', 'thai', 'curry', 'high-protein'],
-    image: 'https://images.unsplash.com/photo-1455619452474-d2be8b1e70cd?w=600',
+    image: 'https://images.unsplash.com/photo-1455619452474-d2be8b1e70cd?w=600&q=80',
     rating: 4.7,
     isFavourite: true,
     ingredients: [
@@ -216,7 +216,7 @@ const MOCK_RECIPES: Recipe[] = [
     fat: 6,
     category: 'breakfast',
     tags: ['healthy', 'quick', 'vegetarian', 'plant-based', 'whole-foods'],
-    image: 'https://images.unsplash.com/photo-1590301157890-4810ed352733?w=600',
+    image: 'https://images.unsplash.com/photo-1590301157890-4810ed352733?w=600&q=80',
     rating: 4.6,
     isFavourite: false,
     ingredients: [
@@ -243,7 +243,7 @@ const MOCK_RECIPES: Recipe[] = [
     fat: 20,
     category: 'healthy',
     tags: ['fish', 'healthy', 'high-protein', 'mediterranean', 'low-carb', 'whole-foods'],
-    image: 'https://images.unsplash.com/photo-1467003909585-2f8a72700288?w=600',
+    image: 'https://images.unsplash.com/photo-1467003909585-2f8a72700288?w=600&q=80',
     rating: 4.9,
     isFavourite: true,
     ingredients: [
@@ -273,7 +273,7 @@ const MOCK_RECIPES: Recipe[] = [
     fat: 32,
     category: 'dessert',
     tags: ['chocolate', 'dessert', 'indulgent'],
-    image: 'https://images.unsplash.com/photo-1624353365286-3f8d62daad51?w=600',
+    image: 'https://images.unsplash.com/photo-1606313564200-e75d5e30476c?w=600&q=80',
     rating: 4.9,
     isFavourite: false,
     ingredients: [
@@ -301,7 +301,7 @@ const MOCK_RECIPES: Recipe[] = [
     fat: 14,
     category: 'lunch',
     tags: ['healthy', 'vegetarian', 'meal-prep', 'mediterranean', 'plant-based', 'whole-foods'],
-    image: 'https://images.unsplash.com/photo-1512621776951-a57141f2eefd?w=600',
+    image: 'https://images.unsplash.com/photo-1512621776951-a57141f2eefd?w=600&q=80',
     rating: 4.5,
     isFavourite: false,
     ingredients: [
@@ -330,7 +330,7 @@ const MOCK_RECIPES: Recipe[] = [
     fat: 10,
     category: 'dinner',
     tags: ['mexican', 'seafood', 'quick', 'high-protein'],
-    image: 'https://images.unsplash.com/photo-1565299585323-38d6b0865b47?w=600',
+    image: 'https://images.unsplash.com/photo-1565299585323-38d6b0865b47?w=600&q=80',
     rating: 4.7,
     isFavourite: false,
     ingredients: [
@@ -359,7 +359,7 @@ const MOCK_RECIPES: Recipe[] = [
     fat: 26,
     category: 'dinner',
     tags: ['caribbean', 'jamaican', 'spicy', 'high-protein', 'grill'],
-    image: 'https://images.unsplash.com/photo-1532636721-78a4cd5e1eb8?w=600',
+    image: 'https://images.unsplash.com/photo-1562967914-608f82629710?w=600&q=80',
     rating: 4.9,
     isFavourite: false,
     ingredients: [
@@ -391,7 +391,7 @@ const MOCK_RECIPES: Recipe[] = [
     fat: 10,
     category: 'dinner',
     tags: ['caribbean', 'jamaican', 'vegetarian', 'plant-based', 'side'],
-    image: 'https://images.unsplash.com/photo-1596797038530-2c107229654b?w=600',
+    image: 'https://images.unsplash.com/photo-1516684732162-798a0062be99?w=600&q=80',
     rating: 4.7,
     isFavourite: false,
     ingredients: [
@@ -421,7 +421,7 @@ const MOCK_RECIPES: Recipe[] = [
     fat: 14,
     category: 'lunch',
     tags: ['caribbean', 'trinidadian', 'vegetarian', 'street-food'],
-    image: 'https://images.unsplash.com/photo-1626776877737-c0c2b9c5b6c8?w=600',
+    image: 'https://images.unsplash.com/photo-1631292784640-2b24be784d5d?w=600&q=80',
     rating: 4.8,
     isFavourite: false,
     ingredients: [
@@ -452,7 +452,7 @@ const MOCK_RECIPES: Recipe[] = [
     fat: 12,
     category: 'dinner',
     tags: ['african', 'nigerian', 'west-african', 'one-pot', 'spicy'],
-    image: 'https://images.unsplash.com/photo-1604329760661-e71dc83f8f26?w=600',
+    image: 'https://images.unsplash.com/photo-1596797038530-2c107229654b?w=600&q=80',
     rating: 4.9,
     isFavourite: true,
     ingredients: [
@@ -484,7 +484,7 @@ const MOCK_RECIPES: Recipe[] = [
     fat: 32,
     category: 'dinner',
     tags: ['african', 'ethiopian', 'spicy', 'stew', 'high-protein'],
-    image: 'https://images.unsplash.com/photo-1568901346375-23c9450c58cd?w=600',
+    image: 'https://images.unsplash.com/photo-1574484284002-952d92456975?w=600&q=80',
     rating: 4.8,
     isFavourite: false,
     ingredients: [
@@ -515,7 +515,7 @@ const MOCK_RECIPES: Recipe[] = [
     fat: 20,
     category: 'dinner',
     tags: ['african', 'moroccan', 'north-african', 'mediterranean', 'high-protein'],
-    image: 'https://images.unsplash.com/photo-1547928576-b822bc410bdf?w=600',
+    image: 'https://images.unsplash.com/photo-1541518763669-27fef04b14ea?w=600&q=80',
     rating: 4.8,
     isFavourite: false,
     ingredients: [
@@ -547,7 +547,7 @@ const MOCK_RECIPES: Recipe[] = [
     fat: 22,
     category: 'dinner',
     tags: ['african', 'west-african', 'vegetarian', 'plant-based', 'stew'],
-    image: 'https://images.unsplash.com/photo-1543339308-43e59d6b73a6?w=600',
+    image: 'https://images.unsplash.com/photo-1547592180-85f173990554?w=600&q=80',
     rating: 4.7,
     isFavourite: false,
     ingredients: [
@@ -578,7 +578,7 @@ const MOCK_RECIPES: Recipe[] = [
     fat: 28,
     category: 'dinner',
     tags: ['african', 'south-african', 'comfort', 'high-protein'],
-    image: 'https://images.unsplash.com/photo-1565958011703-44f9829ba187?w=600',
+    image: 'https://images.unsplash.com/photo-1598511757337-fe2cafc31ba0?w=600&q=80',
     rating: 4.6,
     isFavourite: false,
     ingredients: [
@@ -610,7 +610,7 @@ const MOCK_RECIPES: Recipe[] = [
     fat: 34,
     category: 'dinner',
     tags: ['caribbean', 'trinidadian', 'curry', 'high-protein', 'spicy'],
-    image: 'https://images.unsplash.com/photo-1604908554049-2f0a6e7b5d62?w=600',
+    image: 'https://images.unsplash.com/photo-1585032226651-759b368d7246?w=600&q=80',
     rating: 4.8,
     isFavourite: false,
     ingredients: [
@@ -641,7 +641,7 @@ const MOCK_RECIPES: Recipe[] = [
     fat: 11,
     category: 'lunch',
     tags: ['caribbean', 'african', 'vegetarian', 'plant-based', 'quick', 'whole-foods'],
-    image: 'https://images.unsplash.com/photo-1607330289024-1535c6b4e1c1?w=600',
+    image: 'https://images.unsplash.com/photo-1504674900247-0877df9cc836?w=600&q=80',
     rating: 4.6,
     isFavourite: false,
     ingredients: [
