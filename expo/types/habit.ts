@@ -628,6 +628,10 @@ export interface CommunityHabit {
   // Exercise demonstration GIFs
   exerciseGifs?: Record<string, string>; // Maps exercise name to GIF URL for form demonstrations
   exerciseFormGuides?: Record<string, ExerciseFormGuide>; // Maps exercise name to detailed form guide
+
+  // Diet integration - links to cooking tab
+  dietTags?: string[]; // e.g. ['mediterranean', 'healthy'] - used to filter recipes in cooking tab
+  dietLabel?: string; // Pretty label for the diet, e.g. 'Mediterranean Diet'
 }
 
 // Saved community habit - tracks which community habits user has added

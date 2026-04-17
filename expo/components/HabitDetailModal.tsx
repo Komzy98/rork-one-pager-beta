@@ -27,10 +27,14 @@ import {
   TrendingUp,
   ChevronDown,
   ChevronUp,
+  ChefHat,
+  UtensilsCrossed,
 } from 'lucide-react-native';
 import { COLORS } from '@/constants/colors';
 import { CommunityHabit, ExerciseFormGuide } from '@/types/habit';
 import * as Haptics from 'expo-haptics';
+import { useRouter } from 'expo-router';
+import { LinearGradient } from 'expo-linear-gradient';
 
 
 
@@ -136,6 +140,7 @@ export default function HabitDetailModal({
   const [showAllWeeks, setShowAllWeeks] = useState(false);
   const [expandedFormGuide, setExpandedFormGuide] = useState<string | null>(null);
   const [formGuideTab, setFormGuideTab] = useState<'gif' | 'guide'>('gif');
+  const router = useRouter();
 
   if (!habit) return null;
 
@@ -201,6 +206,49 @@ export default function HabitDetailModal({
                 <Text style={styles.categoryText}>{habit.category}</Text>
               </View>
             </View>
+
+            {habit?.dietTags && habit.dietTags.length > 0 && (
+              <TouchableOpacity
+                style={styles.dietCTA}
+                activeOpacity={0.85}
+                onPress={() => {
+                  void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+                  const primaryDiet = habit.dietTags![0];
+                  console.log('[HabitDetail] Browsing recipes for diet:', primaryDiet);
+                  onClose();
+                  setTimeout(() => {
+                    router.push({
+                      pathname: '/(tabs)/cooking' as any,
+                      params: {
+                        diet: primaryDiet,
+                        dietLabel: habit.dietLabel ?? '',
+                        habitName: habit.name,
+                      },
+                    });
+                  }, 250);
+                }}
+                testID="browse-recipes-cta"
+              >
+                <LinearGradient
+                  colors={[(habit.color || '#E8603C'), (habit.color || '#E8603C') + 'CC']}
+                  start={{ x: 0, y: 0 }}
+                  end={{ x: 1, y: 1 }}
+                  style={styles.dietCTAGradient}
+                >
+                  <View style={styles.dietCTAIcon}>
+                    <ChefHat size={22} color="#FFFFFF" />
+                  </View>
+                  <View style={styles.dietCTAContent}>
+                    <Text style={styles.dietCTALabel}>PAIRED WITH COOKING</Text>
+                    <Text style={styles.dietCTATitle}>Browse {habit.dietLabel ?? 'matching'} recipes</Text>
+                    <Text style={styles.dietCTASub}>See meal ideas curated for this habit</Text>
+                  </View>
+                  <View style={styles.dietCTAArrow}>
+                    <ChevronRight size={18} color="#FFFFFF" />
+                  </View>
+                </LinearGradient>
+              </TouchableOpacity>
+            )}
 
             {habit.mainGoal && (
               <View style={styles.outcomeSection}>
@@ -1278,6 +1326,58 @@ const styles = StyleSheet.create({
     fontSize: 13,
     color: COLORS.textSecondary,
     lineHeight: 18,
+  },
+  dietCTA: {
+    borderRadius: 18,
+    overflow: 'hidden',
+    marginBottom: 20,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.12,
+    shadowRadius: 10,
+    elevation: 4,
+  },
+  dietCTAGradient: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    padding: 14,
+    gap: 12,
+  },
+  dietCTAIcon: {
+    width: 44,
+    height: 44,
+    borderRadius: 14,
+    backgroundColor: 'rgba(255,255,255,0.22)',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  dietCTAContent: {
+    flex: 1,
+  },
+  dietCTALabel: {
+    color: 'rgba(255,255,255,0.85)',
+    fontSize: 10,
+    fontWeight: '700' as const,
+    letterSpacing: 0.8,
+  },
+  dietCTATitle: {
+    color: '#FFFFFF',
+    fontSize: 16,
+    fontWeight: '700' as const,
+    marginTop: 2,
+  },
+  dietCTASub: {
+    color: 'rgba(255,255,255,0.85)',
+    fontSize: 12,
+    marginTop: 2,
+  },
+  dietCTAArrow: {
+    width: 28,
+    height: 28,
+    borderRadius: 14,
+    backgroundColor: 'rgba(255,255,255,0.2)',
+    alignItems: 'center',
+    justifyContent: 'center',
   },
   formButton: {
     paddingHorizontal: 10,

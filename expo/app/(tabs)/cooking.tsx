@@ -53,7 +53,18 @@ import { LinearGradient } from 'expo-linear-gradient';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useTheme } from '@/hooks/useTheme';
 import * as Haptics from 'expo-haptics';
-import { Stack } from 'expo-router';
+import { Stack, useLocalSearchParams, useRouter } from 'expo-router';
+
+const DIET_LABELS: Record<string, { label: string; emoji: string; tagline: string }> = {
+  mediterranean: { label: 'Mediterranean', emoji: '\uD83C\uDF45', tagline: 'Olive oil, fish, veg & whole grains' },
+  'high-protein': { label: 'High-Protein', emoji: '\uD83E\uDD5A', tagline: 'Fuel muscle & recovery' },
+  'plant-based': { label: 'Plant-Based', emoji: '\uD83C\uDF31', tagline: 'Powered by plants' },
+  vegetarian: { label: 'Vegetarian', emoji: '\uD83E\uDD57', tagline: 'Meat-free meals' },
+  'low-carb': { label: 'Low-Carb', emoji: '\uD83E\uDD51', tagline: 'Less sugar, more energy' },
+  keto: { label: 'Keto', emoji: '\uD83E\uDD51', tagline: 'High fat, very low carb' },
+  'whole-foods': { label: 'Whole Foods', emoji: '\uD83C\uDF3F', tagline: 'Nothing processed' },
+  healthy: { label: 'Healthy', emoji: '\uD83C\uDF4F', tagline: 'Light & nourishing' },
+};
 
 
 
@@ -117,7 +128,7 @@ const MOCK_RECIPES: Recipe[] = [
     difficulty: 'Easy',
     calories: 420,
     category: 'dinner',
-    tags: ['one-pan', 'protein', 'italian'],
+    tags: ['one-pan', 'high-protein', 'italian', 'low-carb'],
     image: 'https://images.unsplash.com/photo-1604908176997-125f25cc6f3d?w=600',
     rating: 4.8,
     isFavourite: true,
@@ -143,7 +154,7 @@ const MOCK_RECIPES: Recipe[] = [
     difficulty: 'Easy',
     calories: 310,
     category: 'breakfast',
-    tags: ['quick', 'healthy', 'vegetarian'],
+    tags: ['quick', 'healthy', 'vegetarian', 'mediterranean', 'whole-foods'],
     image: 'https://images.unsplash.com/photo-1541519227354-08fa5d50c44d?w=600',
     rating: 4.5,
     isFavourite: false,
@@ -167,7 +178,7 @@ const MOCK_RECIPES: Recipe[] = [
     difficulty: 'Medium',
     calories: 380,
     category: 'dinner',
-    tags: ['spicy', 'thai', 'curry'],
+    tags: ['spicy', 'thai', 'curry', 'high-protein'],
     image: 'https://images.unsplash.com/photo-1455619452474-d2be8b1e70cd?w=600',
     rating: 4.7,
     isFavourite: true,
@@ -192,7 +203,7 @@ const MOCK_RECIPES: Recipe[] = [
     difficulty: 'Easy',
     calories: 280,
     category: 'breakfast',
-    tags: ['healthy', 'quick', 'vegetarian'],
+    tags: ['healthy', 'quick', 'vegetarian', 'plant-based', 'whole-foods'],
     image: 'https://images.unsplash.com/photo-1590301157890-4810ed352733?w=600',
     rating: 4.6,
     isFavourite: false,
@@ -216,7 +227,7 @@ const MOCK_RECIPES: Recipe[] = [
     difficulty: 'Easy',
     calories: 350,
     category: 'healthy',
-    tags: ['fish', 'healthy', 'protein'],
+    tags: ['fish', 'healthy', 'high-protein', 'mediterranean', 'low-carb', 'whole-foods'],
     image: 'https://images.unsplash.com/photo-1467003909585-2f8a72700288?w=600',
     rating: 4.9,
     isFavourite: true,
@@ -268,7 +279,7 @@ const MOCK_RECIPES: Recipe[] = [
     difficulty: 'Easy',
     calories: 340,
     category: 'lunch',
-    tags: ['healthy', 'vegetarian', 'meal-prep'],
+    tags: ['healthy', 'vegetarian', 'meal-prep', 'mediterranean', 'plant-based', 'whole-foods'],
     image: 'https://images.unsplash.com/photo-1512621776951-a57141f2eefd?w=600',
     rating: 4.5,
     isFavourite: false,
@@ -294,7 +305,7 @@ const MOCK_RECIPES: Recipe[] = [
     difficulty: 'Easy',
     calories: 360,
     category: 'dinner',
-    tags: ['mexican', 'seafood', 'quick'],
+    tags: ['mexican', 'seafood', 'quick', 'high-protein'],
     image: 'https://images.unsplash.com/photo-1565299585323-38d6b0865b47?w=600',
     rating: 4.7,
     isFavourite: false,
@@ -372,8 +383,25 @@ const getDifficultyColor = (difficulty: string): string => {
 export default function CookingScreen() {
   const { isDark } = useTheme();
   const insets = useSafeAreaInsets();
+  const router = useRouter();
+  const params = useLocalSearchParams<{ diet?: string; dietLabel?: string; habitName?: string }>();
   const [selectedCategory, setSelectedCategory] = useState<string>('all');
   const [searchQuery, setSearchQuery] = useState<string>('');
+  const [activeDiet, setActiveDiet] = useState<string | null>(null);
+  const [activeDietLabel, setActiveDietLabel] = useState<string | null>(null);
+  const [fromHabitName, setFromHabitName] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (params.diet && typeof params.diet === 'string') {
+      const diet = params.diet.toLowerCase();
+      console.log('[Cooking] Diet filter applied from discover:', diet);
+      setActiveDiet(diet);
+      setActiveDietLabel(typeof params.dietLabel === 'string' ? params.dietLabel : (DIET_LABELS[diet]?.label ?? diet));
+      setFromHabitName(typeof params.habitName === 'string' ? params.habitName : null);
+      setSelectedCategory('all');
+      setSearchQuery('');
+    }
+  }, [params.diet, params.dietLabel, params.habitName]);
 
   const [refreshing, setRefreshing] = useState<boolean>(false);
   const [recipes, setRecipes] = useState<Recipe[]>(MOCK_RECIPES);
@@ -494,6 +522,9 @@ export default function CookingScreen() {
 
   const filteredRecipes = useMemo(() => {
     let filtered = recipes;
+    if (activeDiet) {
+      filtered = filtered.filter(r => r.tags.includes(activeDiet));
+    }
     if (selectedCategory !== 'all') {
       filtered = filtered.filter(r => r.category === selectedCategory || r.tags.includes(selectedCategory));
     }
@@ -506,7 +537,15 @@ export default function CookingScreen() {
       );
     }
     return filtered;
-  }, [recipes, selectedCategory, searchQuery]);
+  }, [recipes, selectedCategory, searchQuery, activeDiet]);
+
+  const clearDiet = useCallback(() => {
+    void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+    setActiveDiet(null);
+    setActiveDietLabel(null);
+    setFromHabitName(null);
+    router.setParams({ diet: '', dietLabel: '', habitName: '' });
+  }, [router]);
 
   const favouriteRecipes = useMemo(() => recipes.filter(r => r.isFavourite), [recipes]);
 
@@ -582,6 +621,39 @@ export default function CookingScreen() {
             )}
           </TouchableOpacity>
         </Animated.View>
+
+        {activeDiet && (
+          <View style={[styles.dietBanner, { borderColor: accentColor + '40' }]} testID="diet-banner">
+            <LinearGradient
+              colors={[accentColor + '20', accentColor + '08']}
+              start={{ x: 0, y: 0 }}
+              end={{ x: 1, y: 0 }}
+              style={StyleSheet.absoluteFillObject}
+            />
+            <View style={[styles.dietBannerEmoji, { backgroundColor: accentColor + '25' }]}>
+              <Text style={styles.dietBannerEmojiText}>{DIET_LABELS[activeDiet]?.emoji ?? '\uD83C\uDF7D\uFE0F'}</Text>
+            </View>
+            <View style={styles.dietBannerContent}>
+              <Text style={[styles.dietBannerLabel, { color: subtleText }]}>
+                {fromHabitName ? `From “${fromHabitName}”` : 'Diet'}
+              </Text>
+              <Text style={[styles.dietBannerTitle, { color: mainText }]} numberOfLines={1}>
+                {activeDietLabel ?? DIET_LABELS[activeDiet]?.label ?? activeDiet}
+              </Text>
+              <Text style={[styles.dietBannerTagline, { color: subtleText }]} numberOfLines={1}>
+                {DIET_LABELS[activeDiet]?.tagline ?? 'Curated recipes for your habit'}
+              </Text>
+            </View>
+            <TouchableOpacity
+              style={[styles.dietBannerClose, { backgroundColor: cardBg, borderColor: cardBorder }]}
+              onPress={clearDiet}
+              testID="clear-diet"
+              hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+            >
+              <X size={14} color={mainText} />
+            </TouchableOpacity>
+          </View>
+        )}
 
         <View style={[styles.searchBar, { backgroundColor: cardBg, borderColor: cardBorder }]}>
           <Search size={18} color={subtleText} />
@@ -1964,5 +2036,51 @@ const styles = StyleSheet.create({
   tipText: {
     fontSize: 13,
     lineHeight: 19,
+  },
+  dietBanner: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    padding: 12,
+    borderRadius: 16,
+    borderWidth: 1,
+    marginBottom: 12,
+    overflow: 'hidden',
+    gap: 12,
+  },
+  dietBannerEmoji: {
+    width: 44,
+    height: 44,
+    borderRadius: 14,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  dietBannerEmojiText: {
+    fontSize: 22,
+  },
+  dietBannerContent: {
+    flex: 1,
+  },
+  dietBannerLabel: {
+    fontSize: 10,
+    fontWeight: '700' as const,
+    textTransform: 'uppercase' as const,
+    letterSpacing: 0.5,
+  },
+  dietBannerTitle: {
+    fontSize: 16,
+    fontWeight: '700' as const,
+    marginTop: 2,
+  },
+  dietBannerTagline: {
+    fontSize: 12,
+    marginTop: 1,
+  },
+  dietBannerClose: {
+    width: 30,
+    height: 30,
+    borderRadius: 15,
+    borderWidth: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
   },
 });
