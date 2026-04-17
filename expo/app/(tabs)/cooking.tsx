@@ -35,6 +35,7 @@ import {
   Bookmark,
   Trophy,
   Check,
+  Minus,
 } from 'lucide-react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
