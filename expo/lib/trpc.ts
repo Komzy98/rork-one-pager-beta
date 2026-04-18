@@ -108,7 +108,7 @@ export const trpcReactClient = trpc.createClient({
         for (let attempt = 0; attempt < maxRetries; attempt++) {
           try {
             const controller = new AbortController();
-            const timeoutId = setTimeout(() => controller.abort(), 15000);
+            const timeoutId = setTimeout(() => controller.abort(), 45000);
             
             const response = await fetch(trpcUrl, {
               ...options,
