@@ -281,42 +281,45 @@ export const getMatchesRoute = publicProcedure
     };
 
     const fetchTeamMatches = async (teamId: number): Promise<any[]> => {
-      let url = '';
       if (type === 'today') {
-        url = `${BASE_URL}/fixtures?date=${today}&team=${teamId}`;
-      } else if (type === 'results') {
-        url = `${BASE_URL}/fixtures?team=${teamId}&last=20`;
-      } else {
-        url = `${BASE_URL}/fixtures?team=${teamId}&from=${fromDate}&to=${toDate}`;
+        const url = `${BASE_URL}/fixtures?date=${today}&team=${teamId}`;
+        const ck = `team:${teamId}:today:${today}`;
+        const data = await cachedFetch(url, headers, ck, topLevelTtl);
+        const matches = data.response || [];
+        console.log(`⚽ Team ${teamId} today: ${matches.length} matches`);
+        return matches;
       }
-      const ck = `team:${teamId}:${type}:${fromDate}:${toDate}`;
+      if (type === 'results') {
+        const url = `${BASE_URL}/fixtures?team=${teamId}&last=20`;
+        const ck = `team:${teamId}:results:last20`;
+        const data = await cachedFetch(url, headers, ck, topLevelTtl);
+        const matches = data.response || [];
+        console.log(`⚽ Team ${teamId} results: ${matches.length} matches`);
+        return matches;
+      }
+      // upcoming: API-Football requires `season` when using from/to with team.
+      // Use `next=N` directly which doesn't require season and avoids wasted calls.
+      const url = `${BASE_URL}/fixtures?team=${teamId}&next=15`;
+      const ck = `team:${teamId}:upcoming:next15`;
       const data = await cachedFetch(url, headers, ck, topLevelTtl);
       const matches = data.response || [];
-      console.log(`⚽ Team ${teamId} ${type}: ${matches.length} matches (url: ${url.replace(apiKey!, 'HIDDEN')})`);
-
-      if (matches.length === 0 && type === 'upcoming') {
-        console.log(`⚠️ Team ${teamId}: No upcoming matches with from/to, trying next=10 fallback`);
-        const fallbackUrl = `${BASE_URL}/fixtures?team=${teamId}&next=10`;
-        const fallbackCk = `team:${teamId}:upcoming:next10`;
-        const fallbackData = await cachedFetch(fallbackUrl, headers, fallbackCk, topLevelTtl);
-        const fallbackMatches = fallbackData.response || [];
-        console.log(`⚽ Team ${teamId} fallback: ${fallbackMatches.length} matches`);
-        return fallbackMatches;
-      }
-
+      console.log(`⚽ Team ${teamId} upcoming: ${matches.length} matches`);
       return matches;
     };
 
     const fetchNationalTeamMatches = async (teamId: number): Promise<any[]> => {
       let url = '';
+      let ck = '';
       if (type === 'today') {
         url = `${BASE_URL}/fixtures?date=${today}&team=${teamId}`;
+        ck = `national:${teamId}:today:${today}`;
       } else if (type === 'results') {
         url = `${BASE_URL}/fixtures?team=${teamId}&last=15`;
+        ck = `national:${teamId}:results:last15`;
       } else {
         url = `${BASE_URL}/fixtures?team=${teamId}&next=10`;
+        ck = `national:${teamId}:upcoming:next10`;
       }
-      const ck = `national:${teamId}:${type}:${today}`;
       const data = await cachedFetch(url, headers, ck, topLevelTtl);
       return data.response || [];
     };
