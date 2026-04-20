@@ -25,6 +25,8 @@ import { HabitsEnhancementProvider } from "@/hooks/useHabitsEnhancement";
 import { BusyModeProvider } from "@/hooks/useBusyMode";
 import { BackgroundServicesProvider } from "@/hooks/useBackgroundServices";
 import { WalkthroughProvider } from "@/hooks/useWalkthrough";
+import { EventKitProvider } from "@/hooks/useEventKit";
+import { CalendarProvider } from "@/hooks/useCalendar";
 
 import { trpc, trpcReactClient } from "@/lib/trpc";
 
@@ -199,8 +201,12 @@ export default function RootLayout() {
                               <SafeProvider provider={BusyModeProvider}>
                                 <SafeProvider provider={BackgroundServicesProvider}>
                                   <SafeProvider provider={WalkthroughProvider}>
-                                      <StatusBarManager />
-                                      <RootLayoutNav />
+                                    <SafeProvider provider={EventKitProvider}>
+                                      <SafeProvider provider={CalendarProvider}>
+                                        <StatusBarManager />
+                                        <RootLayoutNav />
+                                      </SafeProvider>
+                                    </SafeProvider>
                                   </SafeProvider>
                                 </SafeProvider>
                               </SafeProvider>

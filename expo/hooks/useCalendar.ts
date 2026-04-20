@@ -1,5 +1,6 @@
 import { useState, useEffect, useCallback } from 'react';
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import createContextHook from '@nkzw/create-context-hook';
 import { CalendarEvent, ImportedCalendar } from '@/types/habit';
 import { parseICSFile, getUpcomingEvents, getTodayEvents } from '@/utils/calendarUtils';
 import { Platform } from 'react-native';
@@ -18,7 +19,7 @@ if (Platform.OS !== 'web') {
 
 const CALENDARS_STORAGE_KEY = 'imported_calendars';
 
-export const useCalendar = () => {
+export const [CalendarProvider, useCalendar] = createContextHook(() => {
   const [calendars, setCalendars] = useState<ImportedCalendar[]>([]);
   const [isLoading, setIsLoading] = useState<boolean>(true);
   const [error, setError] = useState<string | null>(null);
@@ -533,4 +534,4 @@ export const useCalendar = () => {
     // EventKit integration
     eventKit,
   };
-};
+});

@@ -1,6 +1,7 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { Platform } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import createContextHook from '@nkzw/create-context-hook';
 
 let Calendar: typeof import('expo-calendar') | null = null;
 if (Platform.OS !== 'web') {
@@ -40,7 +41,7 @@ interface EventKitCalendar {
 const EVENTKIT_PERMISSIONS_KEY = 'eventkit_permissions_granted';
 const SELECTED_CALENDARS_KEY = 'selected_eventkit_calendars';
 
-export const useEventKit = () => {
+export const [EventKitProvider, useEventKit] = createContextHook(() => {
   const [hasPermission, setHasPermission] = useState<boolean>(false);
   const [calendars, setCalendars] = useState<EventKitCalendar[]>([]);
   const [selectedCalendarIds, setSelectedCalendarIds] = useState<string[]>([]);
@@ -472,4 +473,4 @@ export const useEventKit = () => {
     // Utils
     clearError: () => setError(null),
   };
-};
+});
