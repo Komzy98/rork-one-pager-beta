@@ -27,6 +27,7 @@ import { BackgroundServicesProvider } from "@/hooks/useBackgroundServices";
 import { WalkthroughProvider } from "@/hooks/useWalkthrough";
 import { EventKitProvider } from "@/hooks/useEventKit";
 import { CalendarProvider } from "@/hooks/useCalendar";
+import { AIBrainProvider } from "@/hooks/useAIBrain";
 
 import { trpc, trpcReactClient } from "@/lib/trpc";
 
@@ -203,8 +204,10 @@ export default function RootLayout() {
                                   <SafeProvider provider={WalkthroughProvider}>
                                     <SafeProvider provider={EventKitProvider}>
                                       <SafeProvider provider={CalendarProvider}>
+                                      <SafeProvider provider={AIBrainProvider}>
                                         <StatusBarManager />
                                         <RootLayoutNav />
+                                      </SafeProvider>
                                       </SafeProvider>
                                     </SafeProvider>
                                   </SafeProvider>

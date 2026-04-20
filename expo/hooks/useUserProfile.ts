@@ -557,16 +557,16 @@ export const [UserProfileProvider, useUserProfile] = createContextHook(() => {
   }, [profile?.chronotype]);
 
   const getPersonalizedTabs = (): string[] => {
-    const canonicalOrder = ['activities', 'shows', 'sports', 'cooking', 'learning', 'events', 'tasks', 'discover', 'profile'];
+    const canonicalOrder = ['brain', 'activities', 'shows', 'sports', 'cooking', 'learning', 'events', 'tasks', 'discover', 'profile'];
 
     const sortTabs = (tabs: string[]): string[] => {
-      const filtered = tabs.filter(t => t !== 'activities' && t !== 'profile');
+      const filtered = tabs.filter(t => t !== 'brain' && t !== 'activities' && t !== 'profile');
       filtered.sort((a, b) => canonicalOrder.indexOf(a) - canonicalOrder.indexOf(b));
-      return ['activities', ...filtered, 'profile'];
+      return ['brain', 'activities', ...filtered, 'profile'];
     };
 
     if (!profile || !profile.interests.length) {
-      const defaultTabs = ['activities', 'tasks', 'discover', 'profile'];
+      const defaultTabs = ['brain', 'activities', 'tasks', 'discover', 'profile'];
       if (profile?.tabOrder && profile.tabOrder.length > 0) {
         return profile.tabOrder.filter(tab => defaultTabs.includes(tab));
       }
@@ -592,6 +592,7 @@ export const [UserProfileProvider, useUserProfile] = createContextHook(() => {
 
     const enabledTabs = new Set<string>();
     
+    enabledTabs.add('brain');
     enabledTabs.add('activities');
     enabledTabs.add('profile');
     enabledTabs.add('discover');
