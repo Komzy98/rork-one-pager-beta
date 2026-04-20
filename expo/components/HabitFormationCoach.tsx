@@ -11,14 +11,11 @@ import {
 import {
   Brain,
   Zap,
-  ChevronRight,
   ChevronDown,
   CheckCircle2,
   Flame,
-  Target,
   TrendingUp,
   AlertTriangle,
-  Sparkles,
   MessageCircle,
   RefreshCw,
   Clock,
@@ -35,8 +32,6 @@ import { Task } from '@/types/task';
 import {
   generateMinimalHabits,
   generateHabitInsights,
-  MinimalHabit,
-  HabitInsight,
 } from '@/utils/habitFormationAnalysis';
 import { generateText } from '@rork-ai/toolkit-sdk';
 
@@ -122,10 +117,10 @@ const QuickWinItem = memo(function QuickWinItem({ item, onComplete }: QuickWinIt
   );
 });
 
-export default function HabitFormationCoach({ onComplete, maxItems = 3 }: HabitFormationCoachProps) {
+export default function HabitFormationCoach({ onComplete }: HabitFormationCoachProps) {
   const tasksContext = useTasks();
   useApp();
-  const busyMode = useBusyModeSafe();
+  useBusyModeSafe();
   const [coachMessage, setCoachMessage] = useState<string | null>(null);
   const [isLoadingCoach, setIsLoadingCoach] = useState(false);
   const [hasLoadedOnce, setHasLoadedOnce] = useState(false);

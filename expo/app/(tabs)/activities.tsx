@@ -18,7 +18,6 @@ import CalendarImporter from '@/components/CalendarImporter';
 import EventKitManager from '@/components/EventKitManager';
 import ModernSportsSection from '@/components/ModernSportsSection';
 import MatchDetailsModal from '@/components/MatchDetailsModal';
-import MatchScoreWidget from '@/components/MatchScoreWidget';
 
 
 import EnhancedLoadingState from '@/components/EnhancedLoadingState';
@@ -423,7 +422,6 @@ export default function ActivitiesScreen() {
   // tRPC queries for sports data - ALWAYS enabled for robustness
   // Even without favorites, we fetch popular league data so sports section never fails
   const hasTeamsOrNations = favoriteTeamIds.length > 0 || nationalTeamIds.length > 0;
-  const _hasFavoriteTeamNames = (profile?.favoriteTeams?.length ?? 0) > 0 || (profile?.nationalities?.length ?? 0) > 0;
 
   const [upcomingEnabled, setUpcomingEnabled] = useState<boolean>(false);
   const [resultsEnabled, setResultsEnabled] = useState<boolean>(false);
@@ -1160,18 +1158,6 @@ export default function ActivitiesScreen() {
       case 'Hulu': return '#1CE783';
       case 'YouTube': return '#FF0000';
       default: return COLORS.primary;
-    }
-  };
-  
-  const _getPlatformIcon = (platform: string) => {
-    switch (platform) {
-      case 'Netflix': return 'N';
-      case 'Disney+': return 'D+';
-      case 'Prime': return 'P';
-      case 'HBO': return 'H';
-      case 'Hulu': return 'H';
-      case 'YouTube': return 'YT';
-      default: return platform.charAt(0);
     }
   };
 

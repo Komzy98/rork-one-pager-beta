@@ -13,16 +13,13 @@ import {
   ActivitySession,
   Show, 
   NewShowFormData, 
-  SportTeam, 
   SportMatch,
   DashboardSummary,
-  DailyTask,
   Milestone
 } from '@/types/habit';
 import { calculateStreak, getTodayFormatted, shouldDoHabitToday, formatDate, calculatePartialCredit, detectComebackOpportunity, getComebackBonusXP } from '@/utils/dateUtils';
 import { StreakFreeze } from '@/types/habit';
 import { generateDailyTasks, generateMilestones, shouldLevelUp } from '@/utils/goalBreakdown';
-import { HABIT_COLORS } from '@/constants/colors';
 import { useAuth } from '@/hooks/useAuth';
 import { useFirebaseSync } from '@/utils/firebaseUserSync';
 

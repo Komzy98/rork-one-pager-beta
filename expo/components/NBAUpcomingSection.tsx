@@ -20,7 +20,6 @@ import {
   getUpcomingGames,
   getCompletedGames,
   getTeamLogo,
-  getTeamColor,
 } from '@/constants/nbaData';
 import { NBAFavoriteTeam } from '@/types/habit';
 import NBAGameDetailsModal from './NBAGameDetailsModal';
@@ -81,8 +80,6 @@ export default function NBAUpcomingSection({ favoriteNBATeams }: NBAUpcomingSect
   const isFavorite = (abbr: string): boolean => favoriteAbbreviations.has(abbr);
 
   const renderUpcomingGame = (game: NBAGame, index: number) => {
-    const team1Color = getTeamColor(game.team1.abbreviation);
-    const team2Color = getTeamColor(game.team2.abbreviation);
     const team1Fav = isFavorite(game.team1.abbreviation);
     const team2Fav = isFavorite(game.team2.abbreviation);
 

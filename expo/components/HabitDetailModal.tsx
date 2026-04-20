@@ -28,7 +28,6 @@ import {
   ChevronDown,
   ChevronUp,
   ChefHat,
-  UtensilsCrossed,
 } from 'lucide-react-native';
 import { COLORS } from '@/constants/colors';
 import { CommunityHabit, ExerciseFormGuide } from '@/types/habit';

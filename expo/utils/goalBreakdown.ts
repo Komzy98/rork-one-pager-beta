@@ -247,7 +247,7 @@ export function getMotivationalMessage(habit: Habit): string {
 }
 
 export function suggestTaskAdjustments(
-  habit: Habit,
+  _habit: Habit,
   recentCompletions: { date: string; tasksCompleted: number; totalTasks: number }[]
 ): { suggestion: string; adjustment: 'increase' | 'decrease' | 'maintain' } {
   if (recentCompletions.length < 3) {

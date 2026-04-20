@@ -156,7 +156,6 @@ export function getWeeklyAggregation(dailyData: DayData[]): WeekData[] {
       const completions = currentWeek.reduce((s, d) => s + d.completions, 0);
       const total = currentWeek.reduce((s, d) => s + d.total, 0);
       const startD = new Date(currentWeek[0].date + 'T12:00:00');
-      const endD = new Date(currentWeek[currentWeek.length - 1].date + 'T12:00:00');
 
       weeks.push({
         weekLabel: `${startD.toLocaleDateString('en-GB', { month: 'short', day: 'numeric' })}`,

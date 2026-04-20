@@ -61,7 +61,7 @@ export default function LeagueStandingsModal({
     }
   };
 
-  const getQualificationColor = (rank: number, description?: string) => {
+  const getQualificationColor = (_rank: number, description?: string) => {
     if (!description) return 'transparent';
     
     const lowerDesc = description.toLowerCase();
@@ -135,7 +135,7 @@ export default function LeagueStandingsModal({
                   All Groups
                 </Text>
               </TouchableOpacity>
-              {standings?.map((group: any, index: number) => (
+              {standings?.map((_group: any, index: number) => (
                 <TouchableOpacity
                   key={index}
                   style={[
@@ -193,7 +193,7 @@ export default function LeagueStandingsModal({
 
               {(selectedGroup === 'all' ? standings : [standings[parseInt(selectedGroup.split('-')[1])]]).map(
                 (group: any) =>
-                  group.map((team: any, index: number) => (
+                  group.map((team: any) => (
                     <View
                       key={team.team.id}
                       style={[

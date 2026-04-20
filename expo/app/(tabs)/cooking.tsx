@@ -16,7 +16,6 @@ import {
   Clock,
   Flame,
   Heart,
-  BookOpen,
   Star,
   Users,
   Timer,

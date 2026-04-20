@@ -307,7 +307,7 @@ const LeaderboardSection: React.FC<{
       {entries.length === 0 ? (
         <Text style={styles.emptyText}>No entries yet</Text>
       ) : (
-        entries.map((entry, index) => (
+        entries.map((entry) => (
           <View
             key={entry.userId}
             style={[

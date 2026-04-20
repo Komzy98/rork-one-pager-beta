@@ -15,7 +15,6 @@ import {
 import {
   Calendar,
   Trophy,
-  ChevronRight,
   MapPin,
   Clock,
   CheckCircle2,
@@ -25,10 +24,8 @@ import {
   Zap,
   Radio,
   AlertCircle,
-  RefreshCw,
   Users,
   ChevronDown,
-  ChevronUp,
 } from 'lucide-react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import * as Haptics from 'expo-haptics';
@@ -54,7 +51,6 @@ interface NBASectionProps {
 
 const NBA_ORANGE = '#F26522';
 const NBA_BLUE = '#1D428A';
-const NBA_RED = '#C9082A';
 const NBA_ORANGE_LIGHT = 'rgba(242, 101, 34, 0.12)';
 const NBA_BLUE_LIGHT = 'rgba(29, 66, 138, 0.12)';
 
@@ -98,9 +94,6 @@ const HeroGameCard = React.memo(({ game, isDark }: { game: NBAGame; isDark: bool
     pulse.start();
     return () => pulse.stop();
   }, [pulseAnim]);
-
-  const team1Color = getTeamColor(game.team1.abbreviation);
-  const team2Color = getTeamColor(game.team2.abbreviation);
 
   return (
     <Animated.View style={[s.heroCard, { transform: [{ scale: pulseAnim }] }]}>
@@ -272,7 +265,7 @@ const LineupsSection = React.memo(({ game, isDark }: { game: NBAGame; isDark: bo
   );
 });
 
-const LiveGameBadge = React.memo(({ quarter, timeRemaining, isDark }: { quarter?: number; timeRemaining?: string; isDark: boolean }) => {
+const LiveGameBadge = React.memo(({ quarter, timeRemaining, isDark: _isDark }: { quarter?: number; timeRemaining?: string; isDark: boolean }) => {
   const pulseAnim = useRef(new Animated.Value(1)).current;
 
   useEffect(() => {
@@ -310,9 +303,6 @@ const GameCard = React.memo(({ game, isDark, onPress }: { game: NBAGame; isDark:
       Animated.timing(opacityAnim, { toValue: 1, duration: 400, useNativeDriver: true }),
     ]).start();
   }, [scaleAnim, opacityAnim]);
-
-  const team1Color = getTeamColor(game.team1.abbreviation);
-  const team2Color = getTeamColor(game.team2.abbreviation);
 
   const getGameTime = () => {
     const d = new Date(game.date);
@@ -653,31 +643,6 @@ const TabPill = React.memo(({ activeTab, onTabChange, isDark, counts }: {
           </TouchableOpacity>
         );
       })}
-    </View>
-  );
-});
-
-const LiveBadge = React.memo(({ quarter, timeRemaining, isDark }: { quarter?: number; timeRemaining?: string; isDark: boolean }) => {
-  const pulseAnim = useRef(new Animated.Value(1)).current;
-
-  useEffect(() => {
-    const pulse = Animated.loop(
-      Animated.sequence([
-        Animated.timing(pulseAnim, { toValue: 0.4, duration: 800, useNativeDriver: true }),
-        Animated.timing(pulseAnim, { toValue: 1, duration: 800, useNativeDriver: true }),
-      ])
-    );
-    pulse.start();
-    return () => pulse.stop();
-  }, [pulseAnim]);
-
-  return (
-    <View style={[s.liveBadge, { backgroundColor: isDark ? 'rgba(239,68,68,0.15)' : 'rgba(239,68,68,0.1)' }]}>
-      <Animated.View style={[s.liveDot, { opacity: pulseAnim }]} />
-      <Text style={s.liveText}>LIVE</Text>
-      {quarter != null && (
-        <Text style={s.liveDetail}>Q{quarter} {timeRemaining || ''}</Text>
-      )}
     </View>
   );
 });

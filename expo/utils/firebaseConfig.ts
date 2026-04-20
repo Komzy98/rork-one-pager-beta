@@ -1,5 +1,5 @@
 import { initializeApp } from 'firebase/app';
-import { initializeFirestore, getFirestore, persistentLocalCache, persistentMultipleTabManager, Firestore, disableNetwork, enableNetwork } from 'firebase/firestore';
+import { initializeFirestore, getFirestore, persistentLocalCache, persistentMultipleTabManager, Firestore, disableNetwork } from 'firebase/firestore';
 import { getAuth } from 'firebase/auth';
 import { Platform } from 'react-native';
 

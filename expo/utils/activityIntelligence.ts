@@ -200,7 +200,7 @@ class ActivityIntelligenceService {
 
   async generateSmartRecommendations(
     activities: UnifiedActivity[],
-    patterns: ActivityPattern[]
+    _patterns: ActivityPattern[]
   ): Promise<SmartRecommendation[]> {
     const recommendations: SmartRecommendation[] = [];
     const now = new Date().toISOString();

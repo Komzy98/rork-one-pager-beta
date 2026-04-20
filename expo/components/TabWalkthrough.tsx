@@ -31,9 +31,9 @@ import {
   X,
 } from 'lucide-react-native';
 import * as Haptics from 'expo-haptics';
-import { useWalkthrough, TabWalkthroughData, WalkthroughStep } from '@/hooks/useWalkthrough';
+import { useWalkthrough, WalkthroughStep } from '@/hooks/useWalkthrough';
 
-const { width: SCREEN_WIDTH, height: SCREEN_HEIGHT } = Dimensions.get('window');
+const { height: SCREEN_HEIGHT } = Dimensions.get('window');
 
 const STEP_ICONS: Record<string, React.ComponentType<{ color: string; size: number }>> = {
   timeline: Clock,

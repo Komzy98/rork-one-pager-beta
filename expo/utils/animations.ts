@@ -1,4 +1,4 @@
-import { Animated, Easing, Platform } from 'react-native';
+import { Animated, Easing } from 'react-native';
 
 // Animation timing presets
 export const TIMING = {
@@ -109,7 +109,6 @@ export const slideInFromRight = (
 // Scale up animation
 export const scaleUp = (
   scale: Animated.Value,
-  duration: number = TIMING.normal
 ) => {
   scale.setValue(0.8);
   return Animated.spring(scale, {
@@ -237,7 +236,6 @@ export const shakeAnimation = (translateX: Animated.Value) => {
 export const slideIndicator = (
   translateX: Animated.Value,
   toValue: number,
-  duration: number = TIMING.normal
 ) => {
   return Animated.spring(translateX, {
     toValue,

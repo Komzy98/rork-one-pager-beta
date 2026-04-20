@@ -16,7 +16,6 @@ import { LiveFootballMatch } from '@/types/habit';
 import { useTheme } from '@/hooks/useTheme';
 
 const { width: SCREEN_WIDTH } = Dimensions.get('window');
-const WIDGET_WIDTH = SCREEN_WIDTH - 32;
 const COMPACT_WIDGET_WIDTH = (SCREEN_WIDTH - 44) / 2;
 
 interface MatchScoreWidgetProps {

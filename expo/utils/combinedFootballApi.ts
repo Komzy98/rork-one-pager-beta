@@ -4,11 +4,11 @@ import { getLocalDateStr } from '@/utils/dateUtils';
 
 // Football API service using API-Football (api-football.com)
 export const combinedFootballApi = {
-  async getLiveMatches(teamIds?: number[], forceRefresh: boolean = false): Promise<LiveFootballMatch[]> {
+  async getLiveMatches(teamIds?: number[], _forceRefresh: boolean = false): Promise<LiveFootballMatch[]> {
     console.log('🔄 Football API: Getting live matches...');
     
     try {
-      const matches = await footballApi.getLiveMatches(teamIds, forceRefresh);
+      const matches = await footballApi.getLiveMatches(teamIds);
       console.log(`✅ Live matches: ${matches.length}`);
       return matches;
     } catch (error) {
@@ -17,11 +17,11 @@ export const combinedFootballApi = {
     }
   },
 
-  async getTodayMatches(teamIds?: number[], leagueIds?: number[], forceRefresh: boolean = false): Promise<LiveFootballMatch[]> {
+  async getTodayMatches(teamIds?: number[], leagueIds?: number[], _forceRefresh: boolean = false): Promise<LiveFootballMatch[]> {
     console.log('🔄 Football API: Getting today matches...');
     
     try {
-      const matches = await footballApi.getTodayMatches(teamIds, leagueIds, forceRefresh);
+      const matches = await footballApi.getTodayMatches(teamIds, leagueIds);
       const sortedMatches = sortMatchesByTime(matches);
       console.log(`✅ Today matches: ${sortedMatches.length}`);
       return sortedMatches;
@@ -50,11 +50,11 @@ export const combinedFootballApi = {
     }
   },
 
-  async getCompletedTodayMatches(teamIds?: number[], leagueIds?: number[], forceRefresh: boolean = false): Promise<LiveFootballMatch[]> {
+  async getCompletedTodayMatches(teamIds?: number[], leagueIds?: number[], _forceRefresh: boolean = false): Promise<LiveFootballMatch[]> {
     console.log('🔄 Football API: Getting completed today matches...');
     
     try {
-      const matches = await footballApi.getCompletedTodayMatches(teamIds, leagueIds, forceRefresh);
+      const matches = await footballApi.getCompletedTodayMatches(teamIds, leagueIds);
       const sortedMatches = sortMatchesByTime(matches);
       console.log(`✅ Completed today matches: ${sortedMatches.length}`);
       return sortedMatches;

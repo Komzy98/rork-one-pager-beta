@@ -1,4 +1,4 @@
-import { NBAGame, NBATeamStanding, NBAPlayer, NBALineups, getTeamLogo, getTeamColor } from '@/constants/nbaData';
+import { NBAGame, NBATeamStanding, NBAPlayer, NBALineups, getTeamLogo } from '@/constants/nbaData';
 
 const ESPN_BASE = 'https://site.api.espn.com/apis/site/v2/sports/basketball/nba';
 
@@ -62,23 +62,6 @@ interface ESPNEvent {
 
 interface ESPNScoreboardResponse {
   events: ESPNEvent[];
-}
-
-interface ESPNStandingsEntry {
-  team: {
-    id: string;
-    abbreviation: string;
-    displayName: string;
-    logo: string;
-  };
-  stats: { name: string; value: number; displayValue: string }[];
-}
-
-interface ESPNStandingsGroup {
-  name: string;
-  standings: {
-    entries: ESPNStandingsEntry[];
-  };
 }
 
 async function fetchGameLineups(eventId: string): Promise<NBALineups | undefined> {

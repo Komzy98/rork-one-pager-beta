@@ -44,7 +44,7 @@ async function canMakeApiCall(): Promise<boolean> {
 }
 
 export const footballApi = {
-  async getLiveMatches(teamIds?: number[], forceRefresh: boolean = false): Promise<LiveFootballMatch[]> {
+  async getLiveMatches(teamIds?: number[]): Promise<LiveFootballMatch[]> {
     console.log('🚀 getLiveMatches called');
     
     if (!isApiConfigured()) {
@@ -92,7 +92,7 @@ export const footballApi = {
     }
   },
 
-  async getTodayMatches(teamIds?: number[], leagueIds?: number[], forceRefresh: boolean = false): Promise<LiveFootballMatch[]> {
+  async getTodayMatches(_teamIds?: number[], leagueIds?: number[]): Promise<LiveFootballMatch[]> {
     console.log('🚀 getTodayMatches called');
     
     if (!isApiConfigured()) {
@@ -131,7 +131,7 @@ export const footballApi = {
     }
   },
 
-  async getCompletedTodayMatches(teamIds?: number[], leagueIds?: number[], forceRefresh: boolean = false): Promise<LiveFootballMatch[]> {
+  async getCompletedTodayMatches(_teamIds?: number[], leagueIds?: number[]): Promise<LiveFootballMatch[]> {
     console.log('🚀 getCompletedTodayMatches called');
     
     if (!isApiConfigured()) {

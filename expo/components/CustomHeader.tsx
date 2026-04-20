@@ -1,10 +1,9 @@
 import React, { useRef, useEffect } from 'react';
-import { View, Text, StyleSheet, TouchableOpacity, Platform, Animated } from 'react-native';
+import { View, Text, StyleSheet, TouchableOpacity, Animated } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Search, Menu, User } from 'lucide-react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import { COLORS } from '@/constants/colors';
-import { TYPOGRAPHY, SPACING, BORDER_RADIUS } from '@/constants/design';
 import { useTheme } from '@/hooks/useTheme';
 
 interface CustomHeaderProps {
@@ -15,7 +14,6 @@ interface CustomHeaderProps {
   onSearchPress?: () => void;
   onMenuPress?: () => void;
   rightComponent?: React.ReactNode;
-  leftComponent?: React.ReactNode;
   showBorder?: boolean;
   icon?: React.ReactNode;
   iconGradientColors?: [string, string];
@@ -29,7 +27,6 @@ export default function CustomHeader({
   onSearchPress,
   onMenuPress,
   rightComponent,
-  leftComponent,
   showBorder = false,
   icon,
   iconGradientColors = ['#3B82F6', '#8B5CF6'],

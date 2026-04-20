@@ -112,7 +112,6 @@ function CompletionChart({
 
   if (chartMode === 'weekly') {
     const weeklyData = getWeeklyAggregation(data);
-    const maxRate = Math.max(...weeklyData.map(w => w.rate), 1);
     const barWidth = Math.min(28, (SCREEN_WIDTH - 80) / weeklyData.length - 8);
 
     return (
@@ -212,7 +211,7 @@ function HeatmapRow({
       <View style={heatmapStyles.grid}>
         {weeks.map((week, wi) => (
           <View key={`week-${wi}`} style={heatmapStyles.weekCol}>
-            {week.map((day, di) => (
+            {week.map((day) => (
               <View
                 key={day.date}
                 style={[
@@ -310,7 +309,7 @@ function CategoryChart({
 
   return (
     <View style={catStyles.container}>
-      {categories.map((cat, i) => (
+      {categories.map((cat) => (
         <View key={cat.category} style={catStyles.row}>
           <View style={catStyles.labelRow}>
             <View style={[catStyles.dot, { backgroundColor: cat.color }]} />

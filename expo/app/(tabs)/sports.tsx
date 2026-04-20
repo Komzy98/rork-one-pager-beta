@@ -36,7 +36,6 @@ import {
   Pin,
   Swords,
   Flag,
-  Crosshair,
 } from 'lucide-react-native';
 import { router } from 'expo-router';
 import * as Haptics from 'expo-haptics';
@@ -244,25 +243,6 @@ const LivePulse = ({ color = '#FF3B30', size = 8 }: { color?: string; size?: num
       />
       <View style={[styles.livePulseDot, { backgroundColor: color, width: size * 0.75, height: size * 0.75, borderRadius: size * 0.375 }]} />
     </View>
-  );
-};
-
-const _AnimatedCounter = ({ value, color }: { value: number; color: string }) => {
-  const scaleAnim = useRef(new Animated.Value(0)).current;
-  
-  useEffect(() => {
-    Animated.spring(scaleAnim, {
-      toValue: 1,
-      tension: 100,
-      friction: 8,
-      useNativeDriver: true,
-    }).start();
-  }, [scaleAnim, value]);
-  
-  return (
-    <Animated.Text style={[styles.statNumber, { color, transform: [{ scale: scaleAnim }] }]}>
-      {value}
-    </Animated.Text>
   );
 };
 
@@ -1256,7 +1236,6 @@ export default function SportsScreen() {
   const [showFightModal, setShowFightModal] = useState(false);
   
   const headerAnim = useRef(new Animated.Value(0)).current;
-  const _scrollY = useRef(new Animated.Value(0)).current;
   
   useEffect(() => {
     Animated.timing(headerAnim, {

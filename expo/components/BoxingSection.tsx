@@ -4,7 +4,6 @@ import {
   View,
   Text,
   TouchableOpacity,
-  ScrollView,
   Animated,
   Dimensions,
   Platform,
@@ -14,7 +13,6 @@ import {
 import {
   Calendar,
   Trophy,
-  ChevronRight,
   MapPin,
   Clock,
   CheckCircle2,
@@ -46,7 +44,6 @@ interface BoxingSectionProps {
 const BOXING_RED = '#C41E3A';
 const BOXING_RED_LIGHT = 'rgba(196, 30, 58, 0.12)';
 const BOXING_GOLD = '#C5A028';
-const BOXING_GOLD_LIGHT = 'rgba(197, 160, 40, 0.12)';
 
 type BoxingTab = 'upcoming' | 'results' | 'divisions';
 

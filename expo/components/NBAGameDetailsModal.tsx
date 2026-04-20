@@ -10,7 +10,6 @@ import {
   Image,
   Animated,
   Platform,
-  Dimensions,
   Linking,
 } from 'react-native';
 import {
@@ -22,18 +21,13 @@ import {
   Activity,
   Tv,
   Play,
-  Clock,
-  Zap,
   TrendingUp,
-  ChevronDown,
-  Radio,
 } from 'lucide-react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import * as Haptics from 'expo-haptics';
 import { useQuery } from '@tanstack/react-query';
-import { NBAGame, NBAPlayer, getTeamLogo, getTeamColor } from '@/constants/nbaData';
+import { NBAGame, getTeamLogo, getTeamColor } from '@/constants/nbaData';
 
-const { width: SCREEN_WIDTH } = Dimensions.get('window');
 
 const ACCENT = '#F26522';
 const ACCENT_BLUE = '#1D428A';
@@ -205,10 +199,7 @@ const LineupsView = ({ summary, game }: { summary: ESPNGameSummary; game: NBAGam
   }, [summary]);
 
   const currentPlayers = activeTab === 'home' ? players.home : players.away;
-  const currentTeam = activeTab === 'home' ? game.team1 : game.team2;
   const accentColor = activeTab === 'home' ? HOME_COLOR : AWAY_COLOR;
-  const team1Color = getTeamColor(game.team1.abbreviation);
-  const team2Color = getTeamColor(game.team2.abbreviation);
 
   const starters = currentPlayers.filter((p: any) => p.starter);
   const bench = currentPlayers.filter((p: any) => !p.starter);

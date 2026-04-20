@@ -13,7 +13,6 @@ import {
   TaskCompletion,
   TaskCompletionFormData
 } from '@/types/task';
-import { HABIT_COLORS } from '@/constants/colors';
 import { useAuth } from '@/hooks/useAuth';
 import { useFirebaseSync } from '@/utils/firebaseUserSync';
 

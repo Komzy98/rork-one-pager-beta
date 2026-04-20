@@ -13,21 +13,18 @@ import {
 } from 'react-native';
 import {
   Flag,
-  Clock,
   Trophy,
   ChevronRight,
   MapPin,
   Calendar,
   X,
   CheckCircle2,
-  Award,
   Gauge,
   CircleDot,
   Timer,
   TrendingUp,
   BarChart3,
   Crown,
-  Zap,
 } from 'lucide-react-native';
 import { Image } from 'expo-image';
 import { LinearGradient } from 'expo-linear-gradient';
@@ -36,13 +33,11 @@ import {
   F1Race,
   F1Driver,
   F1_CALENDAR_2026,
-  F1_TEAMS_2026,
   getNextRace,
   getCompletedRaces,
   getUpcomingRaces,
   getDriverStandings,
   getConstructorStandings,
-  getDriverPhoto,
 } from '@/constants/f1Data';
 
 const { width: SCREEN_WIDTH } = Dimensions.get('window');
@@ -58,7 +53,6 @@ const CARD_BORDER = '#E8EAF0';
 const DIVIDER = '#ECEDF2';
 const F1_RED = '#E10600';
 const F1_RED_BG = '#FEF2F2';
-const F1_RED_LIGHT = 'rgba(225,6,0,0.08)';
 const GOLD = '#D4A017';
 const GOLD_BG = '#FFFBEB';
 const SILVER = '#6B7280';
@@ -485,7 +479,7 @@ const ConstructorRow = React.memo(({ team, pos, maxPts }: {
   );
 });
 
-export default function F1Section({ isDark, insets }: F1SectionProps) {
+export default function F1Section({ insets }: F1SectionProps) {
   const [activeTab, setActiveTab] = useState<F1Tab>('schedule');
   const [scheduleFilter, setScheduleFilter] = useState<'upcoming' | 'results'>('upcoming');
   const [selectedRace, setSelectedRace] = useState<F1Race | null>(null);

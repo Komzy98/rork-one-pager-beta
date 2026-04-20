@@ -297,7 +297,7 @@ class TMDBApi {
     return `https://image.tmdb.org/t/p/w92${logoPath}`;
   }
 
-  formatWatchProviders(providers: CountryWatchProviders, country: string = 'US'): {
+  formatWatchProviders(providers: CountryWatchProviders): {
     streaming: WatchProvider[];
     rent: WatchProvider[];
     buy: WatchProvider[];

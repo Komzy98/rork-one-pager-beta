@@ -10,16 +10,13 @@ import {
   Platform,
   Alert,
   Animated,
-  Dimensions,
 } from 'react-native';
-import { X, Calendar, Trash2, Clock, ChevronDown, Repeat, Tag, Flag, Layers, Palette } from 'lucide-react-native';
+import { X, Calendar, Trash2, Clock, ChevronDown, Repeat, Tag, Flag, Palette } from 'lucide-react-native';
 import DateTimePicker from '@react-native-community/datetimepicker';
 import * as Haptics from 'expo-haptics';
 import { Task, TaskPriority, TaskCategory, TASK_PRIORITIES, TASK_CATEGORIES } from '@/types/task';
 import { COLORS, HABIT_COLORS } from '@/constants/colors';
 import { soundManager } from '@/utils/soundManager';
-
-const { width: SCREEN_WIDTH } = Dimensions.get('window');
 
 interface TaskEditModalProps {
   visible: boolean;

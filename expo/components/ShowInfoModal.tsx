@@ -62,7 +62,6 @@ export default function ShowInfoModal({
   tmdbId,
   mediaType,
   showTitle,
-  platform,
 }: ShowInfoModalProps) {
   const insets = useSafeAreaInsets();
   const [details, setDetails] = useState<ShowDetails | null>(null);

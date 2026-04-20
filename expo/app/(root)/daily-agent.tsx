@@ -274,7 +274,7 @@ export default function DailyAgentScreen() {
     const tasks = (allTasks || []).map(t => {
       const due = t.dueDate ? new Date(t.dueDate) : null;
       const todayDate = new Date();
-      const completedToday = t.status === 'completed' && t.completedAt?.startsWith(today);
+      const completedToday = t.status === 'completed' && !!t.completedAt?.startsWith(today);
       const dueToday = !!due && due.toDateString() === todayDate.toDateString();
       const overdue = !!due && due < todayDate && t.status !== 'completed' && t.status !== 'cancelled';
       return {

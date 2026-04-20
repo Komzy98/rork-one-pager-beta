@@ -8,7 +8,6 @@ import {
   ScrollView,
   TextInput,
   Animated,
-  Dimensions,
   FlatList,
   Platform,
 } from 'react-native';
@@ -32,12 +31,10 @@ import { useTheme } from '@/hooks/useTheme';
 import {
   COMPETITIONS_DATA,
   INTERNATIONAL_COMPETITIONS,
-  Competition,
   Country,
   Continent,
 } from '@/constants/competitions';
 
-const { width: SCREEN_WIDTH } = Dimensions.get('window');
 
 interface CompetitionFilterProps {
   selectedLeagues: number[];
@@ -98,7 +95,7 @@ export default function CompetitionFilter({
   isDark,
 }: CompetitionFilterProps) {
   const insets = useSafeAreaInsets();
-  const { colors } = useTheme();
+  useTheme();
   const [isModalVisible, setIsModalVisible] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
   const [expandedContinent, setExpandedContinent] = useState<string | null>(null);
