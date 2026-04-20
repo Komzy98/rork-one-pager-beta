@@ -1,5 +1,5 @@
 import React, { useMemo, useState, useEffect, useCallback, useRef } from 'react';
-import { StyleSheet, View, Text, ScrollView, TouchableOpacity, Image, Platform, RefreshControl, Animated } from 'react-native';
+import { StyleSheet, View, Text, ScrollView, TouchableOpacity, Image, Platform, RefreshControl, Animated, Alert } from 'react-native';
 import { Play, ChevronRight, Sparkles, Calendar, CheckCircle2, Target, Flame, Tv, Trophy, Radio, X, Clock, BarChart3, Volume2, VolumeX, BellRing } from 'lucide-react-native';
 import * as Speech from 'expo-speech';
 import * as Haptics from 'expo-haptics';
@@ -323,6 +323,29 @@ export default function ActivitiesScreen() {
 
   const activities = useMemo(() => appContext?.activities || [], [appContext?.activities]);
   const shows = useMemo(() => appContext?.shows || [], [appContext?.shows]);
+  const deleteShow = appContext?.deleteShow;
+
+  const handleRemoveShow = useCallback((showId: string, title: string) => {
+    if (!deleteShow) return;
+    if (Platform.OS !== 'web') {
+      void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+    }
+    Alert.alert(
+      'Remove from Overview',
+      `Remove "${title}" from your list?`,
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Remove',
+          style: 'destructive',
+          onPress: () => {
+            deleteShow(showId);
+            setShowsWithThumbnails(prev => prev.filter(s => s.id !== showId));
+          },
+        },
+      ],
+    );
+  }, [deleteShow]);
   
   // Get team IDs from user profile for targeted API queries
   const favoriteTeamIds = useMemo(() => {
@@ -2296,8 +2319,19 @@ export default function ActivitiesScreen() {
                         key={show.id}
                         style={[styles.cwCard, index === 0 && { marginLeft: 0 }]}
                         onPress={() => handleContinueWatching(show)}
+                        onLongPress={() => handleRemoveShow(show.id, show.title)}
+                        delayLongPress={350}
                         activeOpacity={0.85}
+                        testID={`cw-card-${show.id}`}
                       >
+                        <TouchableOpacity
+                          style={styles.cwRemoveBtn}
+                          onPress={() => handleRemoveShow(show.id, show.title)}
+                          hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+                          testID={`cw-remove-${show.id}`}
+                        >
+                          <X size={12} color="#fff" />
+                        </TouchableOpacity>
                         <View style={styles.cwPosterWrap}>
                           {show.posterUrl ? (
                             <Image 
@@ -2400,7 +2434,10 @@ export default function ActivitiesScreen() {
                           handleStartWatching(show);
                         }
                       }}
+                      onLongPress={() => handleRemoveShow(show.id, show.title)}
+                      delayLongPress={350}
                       activeOpacity={0.7}
+                      testID={`upnext-card-${show.id}`}
                     >
                       <View style={styles.upNextPosterWrap}>
                         {show.posterUrl ? (
@@ -2424,6 +2461,14 @@ export default function ActivitiesScreen() {
                       <View style={styles.upNextAction}>
                         <Play size={14} color="#F59E0B" fill="#F59E0B" />
                       </View>
+                      <TouchableOpacity
+                        style={styles.upNextRemoveBtn}
+                        onPress={() => handleRemoveShow(show.id, show.title)}
+                        hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+                        testID={`upnext-remove-${show.id}`}
+                      >
+                        <X size={14} color="#94A3B8" />
+                      </TouchableOpacity>
                     </TouchableOpacity>
                   ))}
                 </View>
@@ -3182,6 +3227,20 @@ const styles = StyleSheet.create({
     height: 250,
     backgroundColor: '#1E293B',
   },
+  cwRemoveBtn: {
+    position: 'absolute',
+    top: 8,
+    right: 8,
+    zIndex: 10,
+    width: 24,
+    height: 24,
+    borderRadius: 12,
+    backgroundColor: 'rgba(0,0,0,0.6)',
+    justifyContent: 'center',
+    alignItems: 'center',
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.25)',
+  },
   cwPoster: {
     width: '100%',
     height: '100%',
@@ -3404,6 +3463,15 @@ const styles = StyleSheet.create({
     backgroundColor: '#FEF3C7',
     justifyContent: 'center',
     alignItems: 'center',
+  },
+  upNextRemoveBtn: {
+    width: 28,
+    height: 28,
+    borderRadius: 14,
+    backgroundColor: '#F1F5F9',
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginLeft: 6,
   },
   
   // AI View / Unified Section
