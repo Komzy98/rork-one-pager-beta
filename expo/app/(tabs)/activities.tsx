@@ -1,6 +1,6 @@
 import React, { useMemo, useState, useEffect, useCallback, useRef } from 'react';
 import { StyleSheet, View, Text, ScrollView, TouchableOpacity, Image, Platform, RefreshControl, Animated, Alert } from 'react-native';
-import { Play, ChevronRight, Sparkles, Calendar, CheckCircle2, Target, Flame, Tv, Trophy, Radio, X, Clock, BarChart3, Volume2, VolumeX, BellRing } from 'lucide-react-native';
+import { Play, ChevronRight, Sparkles, Calendar, CheckCircle2, Target, Flame, Tv, Trophy, Radio, X, Clock, BarChart3, Volume2, VolumeX, BellRing, Brain } from 'lucide-react-native';
 import * as Speech from 'expo-speech';
 import * as Haptics from 'expo-haptics';
 import { setAudioModeAsync, useAudioPlayer, useAudioPlayerStatus } from 'expo-audio';
@@ -1549,6 +1549,16 @@ export default function ActivitiesScreen() {
                 <Sparkles size={14} color={showUnifiedView ? getHeroTextColor() : getHeroSecondaryTextColor()} />
                 <Text style={[styles.viewToggleText, { color: showUnifiedView ? getHeroTextColor() : getHeroSecondaryTextColor() }]}>
                   AI View
+                </Text>
+              </TouchableOpacity>
+              <TouchableOpacity 
+                style={[styles.viewToggleBtn]}
+                onPress={() => router.push('/(root)/daily-agent' as any)}
+                testID="daily-agent-btn"
+              >
+                <Brain size={14} color={getHeroSecondaryTextColor()} />
+                <Text style={[styles.viewToggleText, { color: getHeroSecondaryTextColor() }]}>
+                  Pulse
                 </Text>
               </TouchableOpacity>
               <TouchableOpacity 

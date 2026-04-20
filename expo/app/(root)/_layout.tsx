@@ -34,6 +34,14 @@ export default function RootLayout() {
         }} 
       />
       <Stack.Screen 
+        name="daily-agent" 
+        options={{ 
+          headerShown: false,
+          title: "Daily Agent",
+          presentation: "card",
+        }} 
+      />
+      <Stack.Screen 
         name="watching-map" 
         options={{ 
           headerShown: false,
