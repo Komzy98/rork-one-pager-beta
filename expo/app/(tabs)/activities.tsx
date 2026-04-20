@@ -141,6 +141,32 @@ export default function ActivitiesScreen() {
   const [showPeakScheduler, setShowPeakScheduler] = useState<boolean>(false);
   const [showInfoModal, setShowInfoModal] = useState<{ visible: boolean; tmdbId: number | null; mediaType: 'movie' | 'tv'; title: string; platform: string }>({ visible: false, tmdbId: null, mediaType: 'tv', title: '', platform: '' });
   const [sportsSelectedLeagues, setSportsSelectedLeagues] = useState<number[]>([]);
+  const [dismissedEpisodes, setDismissedEpisodes] = useState<string[]>([]);
+
+  useEffect(() => {
+    AsyncStorage.getItem('dismissed_new_episodes').then((raw) => {
+      if (raw) {
+        try {
+          const parsed = JSON.parse(raw) as string[];
+          if (Array.isArray(parsed)) setDismissedEpisodes(parsed);
+        } catch (e) {
+          console.log('Failed to parse dismissed episodes', e);
+        }
+      }
+    });
+  }, []);
+
+  const dismissEpisode = useCallback((key: string) => {
+    console.log('🗑️ [Activities] Dismissing episode', key);
+    setDismissedEpisodes((prev) => {
+      const next = prev.includes(key) ? prev : [...prev, key];
+      AsyncStorage.setItem('dismissed_new_episodes', JSON.stringify(next)).catch((e) => console.log('Failed to save dismissed', e));
+      return next;
+    });
+    if (Platform.OS !== 'web') {
+      Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light).catch(() => {});
+    }
+  }, []);
 
   interface TrackedShowEpisode {
     showId: string;
@@ -2187,7 +2213,16 @@ export default function ActivitiesScreen() {
             </View>
 
             {/* New Episode Releases for Tracked Shows */}
-            {hasShowsInterest && (newEpisodesForMyShows.data?.length ?? 0) > 0 && (
+            {hasShowsInterest && (() => {
+              const visibleEpisodes = (newEpisodesForMyShows.data ?? []).filter((item) => {
+                const isRecentRelease = item.latestEpisode?.airDate && new Date(item.latestEpisode.airDate) >= new Date(Date.now() - 7 * 24 * 60 * 60 * 1000);
+                const ep = isRecentRelease ? item.latestEpisode : item.nextEpisode;
+                if (!ep) return false;
+                const key = `${item.tmdbId}-s${ep.seasonNumber}e${ep.episodeNumber}`;
+                return !dismissedEpisodes.includes(key);
+              });
+              if (visibleEpisodes.length === 0) return null;
+              return (
               <View style={styles.newEpisodesSection}>
                 <View style={styles.newEpisodesHeader}>
                   <View style={styles.newEpisodesHeaderLeft}>
@@ -2196,7 +2231,7 @@ export default function ActivitiesScreen() {
                     </View>
                     <Text style={styles.newEpisodesTitle}>New Episodes</Text>
                     <View style={styles.newEpisodesCountPill}>
-                      <Text style={styles.newEpisodesCountText}>{newEpisodesForMyShows.data?.length ?? 0}</Text>
+                      <Text style={styles.newEpisodesCountText}>{visibleEpisodes.length}</Text>
                     </View>
                   </View>
                   <TouchableOpacity onPress={() => router.push('/shows' as any)} hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}>
@@ -2205,7 +2240,7 @@ export default function ActivitiesScreen() {
                 </View>
 
                 <View style={styles.newEpisodesList}>
-                  {newEpisodesForMyShows.data?.slice(0, 5).map((item, index) => {
+                  {visibleEpisodes.slice(0, 5).map((item, index) => {
                     const isRecentRelease = item.latestEpisode?.airDate && new Date(item.latestEpisode.airDate) >= new Date(Date.now() - 7 * 24 * 60 * 60 * 1000);
                     const episode = isRecentRelease ? item.latestEpisode : item.nextEpisode;
                     if (!episode) return null;
@@ -2231,12 +2266,13 @@ export default function ActivitiesScreen() {
                       statusColor = '#6366F1';
                     }
 
+                    const dismissKey = `${item.tmdbId}-s${episode.seasonNumber}e${episode.episodeNumber}`;
                     return (
                       <TouchableOpacity
                         key={`${item.showId}-${index}`}
                         style={[
                           styles.newEpisodeCard,
-                          index === (newEpisodesForMyShows.data?.slice(0, 5).length ?? 0) - 1 && { borderBottomWidth: 0 },
+                          index === (visibleEpisodes.slice(0, 5).length ?? 0) - 1 && { borderBottomWidth: 0 },
                         ]}
                         onPress={() => {
                           if (item.tmdbId) {
@@ -2246,6 +2282,7 @@ export default function ActivitiesScreen() {
                           }
                         }}
                         activeOpacity={0.7}
+                        testID={`new-episode-card-${item.tmdbId}`}
                       >
                         <View style={styles.newEpisodePosterWrap}>
                           {item.posterUrl ? (
@@ -2279,13 +2316,24 @@ export default function ActivitiesScreen() {
                             )}
                           </View>
                         </View>
-                        <ChevronRight size={16} color="#CBD5E1" />
+                        <TouchableOpacity
+                          onPress={(e) => {
+                            e.stopPropagation();
+                            dismissEpisode(dismissKey);
+                          }}
+                          hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}
+                          style={styles.newEpisodeDismissBtn}
+                          testID={`dismiss-episode-${item.tmdbId}`}
+                        >
+                          <X size={16} color="#94A3B8" />
+                        </TouchableOpacity>
                       </TouchableOpacity>
                     );
                   })}
                 </View>
               </View>
-            )}
+              );
+            })()}
 
             {/* My Shows - Premium Continue Watching */}
             {hasShowsInterest && (
@@ -4269,5 +4317,14 @@ const styles = StyleSheet.create({
     fontSize: 11,
     color: '#94A3B8',
     fontWeight: '500' as const,
+  },
+  newEpisodeDismissBtn: {
+    width: 28,
+    height: 28,
+    borderRadius: 14,
+    backgroundColor: '#F1F5F9',
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginLeft: 4,
   },
 });
