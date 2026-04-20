@@ -1,5 +1,5 @@
 import { Tabs } from "expo-router";
-import { LayoutDashboard, Clapperboard, Medal, ListChecks, Search, CircleUser, CookingPot, CalendarDays, GraduationCap, Brain } from "lucide-react-native";
+import { LayoutDashboard, Clapperboard, Medal, ListChecks, Search, CircleUser, CookingPot, CalendarDays, GraduationCap } from "lucide-react-native";
 import React, { useRef, useEffect, useCallback } from "react";
 import { View, StyleSheet, Platform, TouchableOpacity, Text, Animated, Image } from "react-native";
 import { useAuth } from "@/hooks/useAuth";
@@ -15,7 +15,6 @@ import type { ThemeColors } from "@/types/theme";
 
 const getTabIcon = (tabName: string) => {
   const iconMap: Record<string, React.ComponentType<{ color: string; size?: number }>> = {
-    brain: Brain,
     activities: LayoutDashboard,
     shows: Clapperboard,
     sports: Medal,
@@ -31,7 +30,6 @@ const getTabIcon = (tabName: string) => {
 
 const getTabTitle = (tabName: string) => {
   const titleMap: Record<string, string> = {
-    brain: "Brain",
     activities: "Overview",
     shows: "Shows",
     sports: "Sports",
@@ -274,7 +272,7 @@ export default function TabLayout() {
   }
 
   const personalizedTabs = getPersonalizedTabs();
-  const allTabs = ['brain', 'activities', 'tasks', 'shows', 'sports', 'cooking', 'learning', 'events', 'discover', 'profile'];
+  const allTabs = ['activities', 'tasks', 'shows', 'sports', 'cooking', 'learning', 'events', 'discover', 'profile'];
 
   return (
     <Tabs 
