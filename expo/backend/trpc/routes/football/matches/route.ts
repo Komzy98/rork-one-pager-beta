@@ -33,17 +33,17 @@ const MAX_CACHE_SIZE = 500;
 const CACHE_EVICT_COUNT = 50;
 
 const CACHE_TTL: Record<string, number> = {
-  live: 90 * 1000,
-  upcoming: 60 * 60 * 1000,
-  today: 15 * 60 * 1000,
-  results: 4 * 60 * 60 * 1000,
+  live: 20 * 1000,
+  upcoming: 30 * 60 * 1000,
+  today: 5 * 60 * 1000,
+  results: 2 * 60 * 60 * 1000,
   standings: 60 * 60 * 1000,
-  matchDetails: 5 * 60 * 1000,
+  matchDetails: 60 * 1000,
 };
 
 let apiCallCount = 0;
 let apiCallWindowStart = Date.now();
-const API_CALL_BUDGET_PER_MINUTE = 45;
+const API_CALL_BUDGET_PER_MINUTE = 80;
 
 function canMakeApiCall(): boolean {
   const now = Date.now();
@@ -109,14 +109,14 @@ async function cachedFetch(url: string, headers: Record<string, string>, cacheKe
     }
   }
 
-  const maxRetries = 2;
+  const maxRetries = 1;
   let lastError: Error | null = null;
 
   for (let attempt = 0; attempt < maxRetries; attempt++) {
     try {
       trackApiCall();
       const controller = new AbortController();
-      const timeoutId = setTimeout(() => controller.abort(), 12000);
+      const timeoutId = setTimeout(() => controller.abort(), 7000);
       const response = await fetch(url, { method: 'GET', headers, signal: controller.signal });
       clearTimeout(timeoutId);
 
@@ -269,15 +269,7 @@ export const getMatchesRoute = publicProcedure
     };
 
     const fetchLeagueMatches = async (leagueId: number): Promise<any[]> => {
-      const primaryMatches = await fetchLeagueMatchesForSeason(leagueId, season);
-      if (DOMESTIC_CUP_LEAGUES.includes(leagueId)) {
-        const altSeason = getAlternateSeason();
-        if (altSeason !== season) {
-          const altMatches = await fetchLeagueMatchesForSeason(leagueId, altSeason);
-          if (altMatches.length > 0) return [...primaryMatches, ...altMatches];
-        }
-      }
-      return primaryMatches;
+      return fetchLeagueMatchesForSeason(leagueId, season);
     };
 
     const fetchTeamMatches = async (teamId: number): Promise<any[]> => {
@@ -341,25 +333,20 @@ export const getMatchesRoute = publicProcedure
     try {
       const allPromises: Promise<any[]>[] = [];
 
-      if (hasTeams && hasUserSelectedLeagues) {
-        const limitedTeams = targetTeams.slice(0, 5);
-        console.log(`⚽ Fetching ${limitedTeams.length} team-specific queries + ${leagueIds!.length} user-selected leagues`);
+      if (hasTeams) {
+        const limitedTeams = targetTeams.slice(0, 8);
+        console.log(`⚽ Fetching ${limitedTeams.length} team-specific queries (fast path)`);
         limitedTeams.forEach(id => allPromises.push(fetchTeamMatches(id)));
-        const limitedLeagues = leagueIds!.slice(0, 15);
-        limitedLeagues.forEach(id => allPromises.push(fetchLeagueMatches(id)));
-      } else if (hasTeams) {
-        const limitedTeams = targetTeams.slice(0, 5);
-        console.log(`⚽ Fetching ${limitedTeams.length} team-specific queries (prioritized)`);
-        limitedTeams.forEach(id => allPromises.push(fetchTeamMatches(id)));
+        if (hasUserSelectedLeagues) {
+          const limitedLeagues = leagueIds!.slice(0, 6);
+          limitedLeagues.forEach(id => allPromises.push(fetchLeagueMatches(id)));
+        }
       } else if (hasUserSelectedLeagues) {
-        const limitedLeagues = leagueIds!.slice(0, 15);
+        const limitedLeagues = leagueIds!.slice(0, 10);
         console.log(`⚽ Fetching ${limitedLeagues.length} user-selected leagues`);
         limitedLeagues.forEach(id => allPromises.push(fetchLeagueMatches(id)));
       } else {
         CORE_LEAGUES.forEach(id => allPromises.push(fetchLeagueMatches(id)));
-        if (canMakeApiCall()) {
-          SECONDARY_LEAGUES.slice(0, 3).forEach(id => allPromises.push(fetchLeagueMatches(id)));
-        }
       }
 
       if (nationalTeamIds && nationalTeamIds.length > 0) {
