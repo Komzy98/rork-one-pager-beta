@@ -462,6 +462,68 @@ export const [AuthProvider, useAuth] = createContextHook(() => {
     }
   }, []);
 
+  const loginWithApple = useCallback(async (appleUser: { id: string; email?: string | null; fullName?: { givenName?: string | null; familyName?: string | null } | null }): Promise<{ success: boolean; error?: string }> => {
+    try {
+      console.log('🍎 Apple login attempt for:', appleUser.id);
+      setIsLoading(true);
+
+      const users = await getUsersDb();
+      const pseudoEmail = appleUser.email?.toLowerCase() || `apple_${appleUser.id}@privaterelay.appleid.com`;
+      let foundUser = users.find(u => u.id === `apple_${appleUser.id}` || u.email.toLowerCase() === pseudoEmail);
+
+      if (!foundUser) {
+        const firstName = appleUser.fullName?.givenName || 'Apple';
+        const lastName = appleUser.fullName?.familyName || 'User';
+        const fullName = `${firstName} ${lastName}`.trim();
+
+        const newUser: StoredUser = {
+          id: `apple_${appleUser.id}`,
+          email: pseudoEmail,
+          password: `__apple_oauth_${appleUser.id}`,
+          firstName,
+          lastName,
+          name: fullName,
+          createdAt: new Date().toISOString(),
+          lastLoginAt: new Date().toISOString(),
+        };
+        await saveUsersDb([...users, newUser]);
+        foundUser = newUser;
+        console.log('✅ New Apple user created:', pseudoEmail);
+      } else {
+        foundUser.lastLoginAt = new Date().toISOString();
+        await saveUsersDb(users.map(u => u.id === foundUser!.id ? foundUser! : u));
+      }
+
+      const authUser: AuthUser = {
+        id: foundUser.id,
+        email: foundUser.email,
+        name: foundUser.name,
+        avatar: foundUser.avatar,
+        isAuthenticated: true,
+      };
+
+      setIsGuest(false);
+      setUser(authUser);
+      await AsyncStorage.setItem(AUTH_STORAGE_KEY, JSON.stringify(authUser));
+
+      try {
+        const newSync = new FirebaseUserSync(foundUser.id);
+        setFirebaseSync(newSync);
+        setAutoSyncEnabled(true);
+      } catch (syncError) {
+        console.log('Firebase sync setup skipped:', syncError);
+      }
+
+      console.log('Apple login successful');
+      return { success: true };
+    } catch (error) {
+      console.error('💥 Apple login error:', error);
+      return { success: false, error: 'Apple sign-in failed. Please try again.' };
+    } finally {
+      setIsLoading(false);
+    }
+  }, []);
+
   const loginWithGoogle = useCallback(async (googleUser: { id: string; email: string; name: string; picture?: string }): Promise<{ success: boolean; error?: string }> => {
     try {
       console.log('🔐 Google login attempt for:', googleUser.email);
@@ -553,6 +615,7 @@ export const [AuthProvider, useAuth] = createContextHook(() => {
     signup,
     logout,
     loginWithGoogle,
+    loginWithApple,
     continueAsGuest,
     convertGuestToUser,
     updateUser,
@@ -564,5 +627,5 @@ export const [AuthProvider, useAuth] = createContextHook(() => {
     firebaseUser,
     biometricAuth,
     googleAuthConfig,
-  }), [user, isLoading, isInitialized, isGuest, login, signup, logout, loginWithGoogle, continueAsGuest, convertGuestToUser, updateUser, deleteAccount, createDemoUser, clearAllData, getFirebaseSync, isAutoSyncEnabled, firebaseUser, biometricAuth, googleAuthConfig]);
+  }), [user, isLoading, isInitialized, isGuest, login, signup, logout, loginWithGoogle, loginWithApple, continueAsGuest, convertGuestToUser, updateUser, deleteAccount, createDemoUser, clearAllData, getFirebaseSync, isAutoSyncEnabled, firebaseUser, biometricAuth, googleAuthConfig]);
 });
