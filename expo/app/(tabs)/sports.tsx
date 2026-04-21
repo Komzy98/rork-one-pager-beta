@@ -261,21 +261,35 @@ const LiveTickerCard = React.memo(({
     onPress();
   }, [onPress]);
 
+  const homeWinning = (match.homeScore ?? 0) > (match.awayScore ?? 0);
+  const awayWinning = (match.awayScore ?? 0) > (match.homeScore ?? 0);
+
   return (
     <View style={styles.tickerCardWrapper}>
-      <TouchableOpacity onPress={handlePress} activeOpacity={0.95}>
+      <TouchableOpacity onPress={handlePress} activeOpacity={0.92}>
         <LinearGradient
-          colors={['#1A1A2E', '#16213E']}
+          colors={['#0E1220', '#141A2E', '#0B1A14']}
           start={{ x: 0, y: 0 }}
           end={{ x: 1, y: 1 }}
           style={styles.tickerCard}
         >
-          <View style={styles.tickerLiveBadge}>
-            <LivePulse color="#FF4757" size={6} />
-            <Text style={styles.tickerLiveText}>LIVE</Text>
-            {match.elapsed && (
-              <Text style={styles.tickerElapsed}>{match.elapsed}&apos;</Text>
-            )}
+          <LinearGradient
+            colors={['rgba(46,204,113,0.22)', 'transparent']}
+            start={{ x: 0, y: 0 }}
+            end={{ x: 1, y: 1 }}
+            style={styles.tickerSheen}
+            pointerEvents="none"
+          />
+          <View style={styles.tickerTopRow}>
+            <View style={styles.tickerLiveBadge}>
+              <LivePulse color="#FF4757" size={6} />
+              <Text style={styles.tickerLiveText}>LIVE</Text>
+            </View>
+            {match.elapsed ? (
+              <View style={styles.tickerElapsedPill}>
+                <Text style={styles.tickerElapsed}>{match.elapsed}&apos;</Text>
+              </View>
+            ) : null}
           </View>
           
           <View style={styles.tickerTeams}>
@@ -284,11 +298,11 @@ const LiveTickerCard = React.memo(({
                 {match.homeTeamLogo ? (
                   <Image source={{ uri: match.homeTeamLogo }} style={styles.tickerLogo} />
                 ) : (
-                  <Shield size={16} color="#6B7280" />
+                  <Shield size={14} color="#6B7280" />
                 )}
               </View>
-              <Text style={styles.tickerTeamName} numberOfLines={1}>{match.homeTeam}</Text>
-              <Text style={[styles.tickerScore, (match.homeScore ?? 0) > (match.awayScore ?? 0) && styles.tickerScoreWinning]}>
+              <Text style={[styles.tickerTeamName, homeWinning && styles.tickerTeamNameWinning]} numberOfLines={1}>{match.homeTeam}</Text>
+              <Text style={[styles.tickerScore, homeWinning && styles.tickerScoreWinning]}>
                 {match.homeScore ?? 0}
               </Text>
             </View>
@@ -297,11 +311,11 @@ const LiveTickerCard = React.memo(({
                 {match.awayTeamLogo ? (
                   <Image source={{ uri: match.awayTeamLogo }} style={styles.tickerLogo} />
                 ) : (
-                  <Shield size={16} color="#6B7280" />
+                  <Shield size={14} color="#6B7280" />
                 )}
               </View>
-              <Text style={styles.tickerTeamName} numberOfLines={1}>{match.awayTeam}</Text>
-              <Text style={[styles.tickerScore, (match.awayScore ?? 0) > (match.homeScore ?? 0) && styles.tickerScoreWinning]}>
+              <Text style={[styles.tickerTeamName, awayWinning && styles.tickerTeamNameWinning]} numberOfLines={1}>{match.awayTeam}</Text>
+              <Text style={[styles.tickerScore, awayWinning && styles.tickerScoreWinning]}>
                 {match.awayScore ?? 0}
               </Text>
             </View>
@@ -310,7 +324,9 @@ const LiveTickerCard = React.memo(({
           <View style={styles.tickerLeague}>
             {match.leagueLogo ? (
               <Image source={{ uri: match.leagueLogo }} style={styles.tickerLeagueLogo} resizeMode="contain" />
-            ) : null}
+            ) : (
+              <Trophy size={10} color="#6B6B85" />
+            )}
             <Text style={styles.tickerLeagueName} numberOfLines={1}>{match.league}</Text>
           </View>
         </LinearGradient>
@@ -395,7 +411,26 @@ const PremiumMatchCard = React.memo(({
           { backgroundColor: isDark ? '#151528' : '#FFFFFF' },
           isDark && styles.cardInnerDark,
           isLive && styles.liveCardBorder,
+          isPinned && !isLive && { borderColor: isDark ? 'rgba(245,158,11,0.22)' : 'rgba(245,158,11,0.28)' },
         ]}>
+          {isLive ? (
+            <LinearGradient
+              colors={['rgba(255,59,48,0.08)', 'transparent']}
+              start={{ x: 0, y: 0 }}
+              end={{ x: 0, y: 1 }}
+              style={styles.cardGlow}
+              pointerEvents="none"
+            />
+          ) : isPinned ? (
+            <LinearGradient
+              colors={['rgba(245,158,11,0.06)', 'transparent']}
+              start={{ x: 0, y: 0 }}
+              end={{ x: 0, y: 1 }}
+              style={styles.cardGlow}
+              pointerEvents="none"
+            />
+          ) : null}
+          {isLive ? <View style={styles.liveAccentBar} /> : null}
           <View style={styles.matchHeader}>
             <View style={styles.leagueInfo}>
               {match.leagueLogo ? (
@@ -1770,11 +1805,16 @@ export default function SportsScreen() {
         <View style={styles.tickerSection}>
           <View style={styles.tickerHeader}>
             <View style={styles.tickerHeaderLeft}>
-              <View style={styles.tickerLiveDot}>
-                <LivePulse color="#FF3B30" size={8} />
-              </View>
+              <LinearGradient
+                colors={['#FF3B30', '#FF6B6B']}
+                start={{ x: 0, y: 0 }}
+                end={{ x: 1, y: 1 }}
+                style={styles.tickerLiveDot}
+              >
+                <LivePulse color="#FFFFFF" size={7} />
+              </LinearGradient>
               <Text style={[styles.tickerTitle, { color: isDark ? '#FFFFFF' : '#1C1C1E' }]}>Live Now</Text>
-              <View style={[styles.tickerCountBadge, { backgroundColor: isDark ? 'rgba(255,59,48,0.12)' : 'rgba(255,59,48,0.08)' }]}>
+              <View style={[styles.tickerCountBadge, { backgroundColor: isDark ? 'rgba(255,59,48,0.14)' : 'rgba(255,59,48,0.08)' }]}>
                 <Text style={styles.tickerCountText}>{filteredLiveMatches.length}</Text>
               </View>
             </View>
@@ -2491,12 +2531,16 @@ const styles = StyleSheet.create({
     gap: 8,
   },
   tickerLiveDot: {
-    width: 24,
-    height: 24,
-    borderRadius: 12,
-    backgroundColor: 'rgba(255,59,48,0.08)',
+    width: 26,
+    height: 26,
+    borderRadius: 13,
     justifyContent: 'center',
     alignItems: 'center',
+    shadowColor: '#FF3B30',
+    shadowOpacity: 0.4,
+    shadowRadius: 10,
+    shadowOffset: { width: 0, height: 4 },
+    elevation: 4,
   },
   tickerTitle: {
     fontSize: 16,
@@ -2533,21 +2577,46 @@ const styles = StyleSheet.create({
     width: SCREEN_WIDTH * 0.58,
   },
   tickerCard: {
-    borderRadius: 20,
-    padding: 14,
+    borderRadius: 22,
+    padding: 16,
     borderWidth: 1,
-    borderColor: 'rgba(255, 59, 48, 0.15)',
-    shadowColor: '#FF3B30',
-    shadowOpacity: 0.1,
-    shadowRadius: 16,
-    shadowOffset: { width: 0, height: 6 },
-    elevation: 5,
+    borderColor: 'rgba(46, 204, 113, 0.25)',
+    shadowColor: '#2ECC71',
+    shadowOpacity: 0.18,
+    shadowRadius: 20,
+    shadowOffset: { width: 0, height: 8 },
+    elevation: 6,
+    overflow: 'hidden' as const,
+  },
+  tickerSheen: {
+    position: 'absolute' as const,
+    top: 0,
+    left: 0,
+    right: 0,
+    height: 80,
+  },
+  tickerTopRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    marginBottom: 12,
   },
   tickerLiveBadge: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: 5,
-    marginBottom: 10,
+    backgroundColor: 'rgba(255, 71, 87, 0.12)',
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: 'rgba(255, 71, 87, 0.25)',
+  },
+  tickerElapsedPill: {
+    backgroundColor: 'rgba(255,255,255,0.08)',
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+    borderRadius: 8,
   },
   tickerLiveText: {
     fontSize: 10,
@@ -2557,8 +2626,9 @@ const styles = StyleSheet.create({
   },
   tickerElapsed: {
     fontSize: 10,
-    fontWeight: '700' as const,
-    color: 'rgba(255, 71, 87, 0.7)',
+    fontWeight: '800' as const,
+    color: '#F5F5FA',
+    letterSpacing: 0.3,
   },
   tickerTeams: {
     gap: 6,
@@ -2570,12 +2640,14 @@ const styles = StyleSheet.create({
     gap: 8,
   },
   tickerLogoWrap: {
-    width: 24,
-    height: 24,
-    borderRadius: 6,
+    width: 26,
+    height: 26,
+    borderRadius: 13,
     backgroundColor: 'rgba(255,255,255,0.08)',
     justifyContent: 'center',
     alignItems: 'center',
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.08)',
   },
   tickerLogo: {
     width: 18,
@@ -2586,14 +2658,20 @@ const styles = StyleSheet.create({
     flex: 1,
     fontSize: 13,
     fontWeight: '600' as const,
-    color: '#E4E4ED',
+    color: '#C8C8D8',
+    letterSpacing: -0.1,
+  },
+  tickerTeamNameWinning: {
+    color: '#FFFFFF',
+    fontWeight: '700' as const,
   },
   tickerScore: {
-    fontSize: 16,
+    fontSize: 18,
     fontWeight: '800' as const,
     color: '#E4E4ED',
-    minWidth: 20,
+    minWidth: 22,
     textAlign: 'right' as const,
+    letterSpacing: -0.5,
   },
   tickerScoreWinning: {
     color: '#2ECC71',
@@ -2747,6 +2825,23 @@ const styles = StyleSheet.create({
     padding: 20,
     borderWidth: 1,
     borderColor: 'rgba(0, 0, 0, 0.04)',
+    overflow: 'hidden' as const,
+    position: 'relative' as const,
+  },
+  cardGlow: {
+    position: 'absolute' as const,
+    top: 0,
+    left: 0,
+    right: 0,
+    height: 100,
+  },
+  liveAccentBar: {
+    position: 'absolute' as const,
+    left: 0,
+    top: 0,
+    bottom: 0,
+    width: 3,
+    backgroundColor: '#FF3B30',
   },
   cardInnerDark: {
     borderColor: 'rgba(255, 255, 255, 0.06)',
@@ -2879,19 +2974,26 @@ const styles = StyleSheet.create({
   scoreBlock: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 4,
-    paddingHorizontal: 12,
-    paddingVertical: 8,
-    borderRadius: 12,
+    gap: 6,
+    paddingHorizontal: 14,
+    paddingVertical: 10,
+    borderRadius: 14,
+    borderWidth: 1,
+    borderColor: 'rgba(0,0,0,0.03)',
   },
   scoreBlockLive: {
     borderWidth: 1,
-    borderColor: 'rgba(255, 59, 48, 0.15)',
+    borderColor: 'rgba(255, 59, 48, 0.22)',
+    shadowColor: '#FF3B30',
+    shadowOpacity: 0.15,
+    shadowRadius: 12,
+    shadowOffset: { width: 0, height: 2 },
+    elevation: 3,
   },
   scoreNum: {
-    fontSize: 26,
-    fontWeight: '800' as const,
-    letterSpacing: -1,
+    fontSize: 28,
+    fontWeight: '900' as const,
+    letterSpacing: -1.2,
   },
   scoreDash: {
     fontSize: 18,
