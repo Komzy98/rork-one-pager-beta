@@ -205,7 +205,7 @@ const ExerciseList = ({ activities, habitColor, exerciseGifs, exerciseFormGuides
                       <Text style={[styles.formGuideSectionTitle, { color: '#DC2626' }]}>Common Mistakes</Text>
                       {formGuide.guide.commonMistakes.map((mistake, i) => (
                         <View key={i} style={styles.formGuideMistake}>
-                          <Text style={styles.formGuideMistakeIcon}>\u26A0\uFE0F</Text>
+                          <Text style={styles.formGuideMistakeIcon}>{"\u26A0\uFE0F"}</Text>
                           <Text style={styles.formGuideMistakeText}>{mistake}</Text>
                         </View>
                       ))}
@@ -215,7 +215,7 @@ const ExerciseList = ({ activities, habitColor, exerciseGifs, exerciseFormGuides
                       <Text style={[styles.formGuideSectionTitle, { color: '#059669' }]}>Pro Tips</Text>
                       {formGuide.guide.tips.map((tip, i) => (
                         <View key={i} style={styles.formGuideTip}>
-                          <Text style={styles.formGuideTipIcon}>\u2705</Text>
+                          <Text style={styles.formGuideTipIcon}>{"\u2705"}</Text>
                           <Text style={styles.formGuideTipText}>{tip}</Text>
                         </View>
                       ))}
