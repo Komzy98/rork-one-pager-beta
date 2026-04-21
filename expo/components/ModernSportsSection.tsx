@@ -981,7 +981,7 @@ function ModernSportsSectionComponent({
                 color={isActive ? (tab.isLive ? '#FF3B30' : '#007AFF') : '#8E8E93'}
                 strokeWidth={isActive ? 2.5 : 2}
               />
-              <Text style={[
+              <Text numberOfLines={1} style={[
                 styles.tabLabel,
                 isActive && styles.tabLabelActive,
                 isActive && tab.isLive && { color: '#FF3B30' },
@@ -1163,17 +1163,17 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
     paddingVertical: 10,
-    paddingHorizontal: 4,
+    paddingHorizontal: 2,
     borderRadius: 11,
     gap: 3,
     zIndex: 1,
-    overflow: 'hidden' as const,
+    minWidth: 0,
   },
   tabLabel: {
     fontSize: 11,
     fontWeight: '600' as const,
     color: '#8E8E93',
-    flexShrink: 0,
+    flexShrink: 1,
   },
   tabLabelActive: {
     color: '#007AFF',
@@ -1181,11 +1181,12 @@ const styles = StyleSheet.create({
   },
   tabBadge: {
     backgroundColor: '#E5E5EA',
-    paddingHorizontal: 4,
+    paddingHorizontal: 5,
     paddingVertical: 1,
     borderRadius: 7,
-    minWidth: 16,
+    minWidth: 18,
     alignItems: 'center' as const,
+    justifyContent: 'center' as const,
     flexShrink: 0,
   },
   tabBadgeActive: {
