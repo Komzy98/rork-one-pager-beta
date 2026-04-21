@@ -148,7 +148,8 @@ export const [CloudSyncProvider, useCloudSync] = createContextHook(() => {
       };
 
       if (useSupabase) {
-        await syncAllDataToCloud(dataToSync);
+        const ok = await syncAllDataToCloud(dataToSync);
+        if (!ok) throw new Error('Supabase returned no confirmation');
       } else {
         const storageToUse = storage || cloudStorage;
         if (!storageToUse) {
@@ -267,16 +268,20 @@ export const [CloudSyncProvider, useCloudSync] = createContextHook(() => {
         console.log('Checking cloud sync availability for authenticated user');
         try {
           const initialized = await initializeSync(true);
-          if (!initialized) {
+          if (initialized) {
+            console.log('[useCloudSync] Initial push to Supabase after sign-in');
+            await syncToCloud();
+          } else {
             console.log('Cloud sync not available, using local storage');
           }
-        } catch {
+        } catch (e) {
+          console.warn('[useCloudSync] Auto-init error:', e);
         }
       }
     };
     
     void autoInitializeSupabaseSync();
-  }, [isAuthenticated, user, isCloudEnabled, contextsReady, supabaseInitAttempted, initializeSync]);
+  }, [isAuthenticated, user, isCloudEnabled, contextsReady, supabaseInitAttempted, initializeSync, syncToCloud]);
 
   // Load sync status from storage
   useEffect(() => {

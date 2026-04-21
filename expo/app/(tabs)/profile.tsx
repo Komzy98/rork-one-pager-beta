@@ -173,6 +173,7 @@ export default function ProfileScreen() {
     lastSyncTime,
     isCloudEnabled,
     syncToCloud,
+    enableCloudSync,
     error: syncError,
   } = useCloudSync();
 
@@ -1032,13 +1033,25 @@ export default function ProfileScreen() {
                 style={[
                   styles.syncBackupBtn,
                   { backgroundColor: colors.primary },
-                  (syncStatus === 'syncing' || !isCloudEnabled) && { opacity: 0.5 },
+                  (syncStatus === 'syncing') && { opacity: 0.5 },
                 ]}
-                onPress={() => {
+                onPress={async () => {
                   void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-                  void syncToCloud();
+                  if (!isCloudEnabled) {
+                    const ok = await enableCloudSync(true);
+                    if (!ok) {
+                      Alert.alert('Backup unavailable', syncError || 'Could not enable cloud sync. Check your internet connection and sign-in status.');
+                      return;
+                    }
+                  }
+                  const result = await syncToCloud();
+                  if (!result) {
+                    Alert.alert('Backup failed', syncError || 'Unable to back up to Supabase. Check console logs for details.');
+                  } else {
+                    void Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+                  }
                 }}
-                disabled={syncStatus === 'syncing' || !isCloudEnabled}
+                disabled={syncStatus === 'syncing'}
                 activeOpacity={0.8}
               >
                 <RefreshCw size={16} color={colors.textInverse} />

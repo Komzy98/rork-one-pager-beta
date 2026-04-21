@@ -47,9 +47,21 @@ export const initializeCloudSync = async (): Promise<boolean> => {
 };
 
 export const syncAllDataToCloud = async (data: Partial<SyncableData>): Promise<boolean> => {
-  if (!supabaseConfigured || !currentUserId) return false;
+  if (!supabaseConfigured) {
+    console.warn('[supabaseSync] Not configured - missing SUPABASE_URL/ANON_KEY');
+    throw new Error('Supabase not configured');
+  }
+  if (!currentUserId) {
+    const stored = await AsyncStorage.getItem(USER_ID_KEY);
+    if (stored) currentUserId = stored;
+  }
+  if (!currentUserId) {
+    console.warn('[supabaseSync] No user id set for sync');
+    throw new Error('No user id - please sign in');
+  }
   try {
-    const { error } = await supabase
+    console.log('[supabaseSync] Upserting user_data for user:', currentUserId);
+    const { error, status } = await supabase
       .from(TABLE)
       .upsert(
         {
@@ -59,12 +71,21 @@ export const syncAllDataToCloud = async (data: Partial<SyncableData>): Promise<b
         },
         { onConflict: 'user_id' }
       );
-    if (error) throw error;
-    console.log('Data synced to Supabase');
+    if (error) {
+      console.warn('[supabaseSync] Upsert error:', {
+        message: error.message,
+        code: (error as any).code,
+        details: (error as any).details,
+        hint: (error as any).hint,
+        status,
+      });
+      throw error;
+    }
+    console.log('[supabaseSync] Data synced to Supabase user_data (status', status, ')');
     return true;
-  } catch (error) {
-    console.warn('Supabase sync to cloud failed:', error);
-    return false;
+  } catch (error: any) {
+    console.warn('[supabaseSync] Sync to cloud failed:', error?.message || error);
+    throw error;
   }
 };
 
