@@ -1698,14 +1698,18 @@ export default function SportsScreen() {
   }, [liveQuery, upcomingQuery, resultsQuery, ufcUpcomingQuery, ufcResultsQuery, sportMode]);
 
   const isLoading = sportMode === 'football'
-    ? (liveQuery.isLoading || upcomingQuery.isLoading || resultsQuery.isLoading)
+    ? (liveQuery.isLoading && upcomingQuery.isLoading && resultsQuery.isLoading)
     : sportMode === 'ufc'
-      ? (ufcUpcomingQuery.isLoading || ufcResultsQuery.isLoading)
+      ? (ufcUpcomingQuery.isLoading && ufcResultsQuery.isLoading)
       : false;
+  const hasAnyFootballData = (liveQuery.data?.response?.length ?? 0) > 0
+    || (upcomingQuery.data?.response?.length ?? 0) > 0
+    || (resultsQuery.data?.response?.length ?? 0) > 0;
+  const allFootballErrored = liveQuery.isError && upcomingQuery.isError && resultsQuery.isError;
   const hasError = sportMode === 'football'
-    ? ((liveQuery.isError || upcomingQuery.isError || resultsQuery.isError) && !isLoading)
+    ? (allFootballErrored && !isLoading && !hasAnyFootballData)
     : sportMode === 'ufc'
-      ? ((ufcUpcomingQuery.isError || ufcResultsQuery.isError) && !isLoading)
+      ? ((ufcUpcomingQuery.isError && ufcResultsQuery.isError) && !isLoading)
       : false;
   const hasConfigError = sportMode === 'football'
     ? (liveQuery.data?.errors?.config || upcomingQuery.data?.errors?.config || resultsQuery.data?.errors?.config)
