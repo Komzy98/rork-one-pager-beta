@@ -167,6 +167,20 @@ export default function ActivitiesScreen() {
     }
   }, []);
 
+  const confirmDismissEpisode = useCallback((key: string, title: string) => {
+    if (Platform.OS !== 'web') {
+      void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+    }
+    Alert.alert(
+      'Dismiss Episode',
+      `Remove "${title}" from New Episodes?`,
+      [
+        { text: 'Cancel', style: 'cancel' },
+        { text: 'Dismiss', style: 'destructive', onPress: () => dismissEpisode(key) },
+      ],
+    );
+  }, [dismissEpisode]);
+
   interface TrackedShowEpisode {
     showId: string;
     showTitle: string;
@@ -2277,6 +2291,8 @@ export default function ActivitiesScreen() {
                             router.push('/shows' as any);
                           }
                         }}
+                        onLongPress={() => confirmDismissEpisode(dismissKey, item.showTitle)}
+                        delayLongPress={350}
                         activeOpacity={0.7}
                         testID={`new-episode-card-${item.tmdbId}`}
                       >
@@ -2312,17 +2328,6 @@ export default function ActivitiesScreen() {
                             )}
                           </View>
                         </View>
-                        <TouchableOpacity
-                          onPress={(e) => {
-                            e.stopPropagation();
-                            dismissEpisode(dismissKey);
-                          }}
-                          hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}
-                          style={styles.newEpisodeDismissBtn}
-                          testID={`dismiss-episode-${item.tmdbId}`}
-                        >
-                          <X size={16} color="#94A3B8" />
-                        </TouchableOpacity>
                       </TouchableOpacity>
                     );
                   })}
@@ -2368,14 +2373,6 @@ export default function ActivitiesScreen() {
                         activeOpacity={0.85}
                         testID={`cw-card-${show.id}`}
                       >
-                        <TouchableOpacity
-                          style={styles.cwRemoveBtn}
-                          onPress={() => handleRemoveShow(show.id, show.title)}
-                          hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
-                          testID={`cw-remove-${show.id}`}
-                        >
-                          <X size={12} color="#fff" />
-                        </TouchableOpacity>
                         <View style={styles.cwPosterWrap}>
                           {show.posterUrl ? (
                             <Image 
@@ -2505,14 +2502,6 @@ export default function ActivitiesScreen() {
                       <View style={styles.upNextAction}>
                         <Play size={14} color="#F59E0B" fill="#F59E0B" />
                       </View>
-                      <TouchableOpacity
-                        style={styles.upNextRemoveBtn}
-                        onPress={() => handleRemoveShow(show.id, show.title)}
-                        hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
-                        testID={`upnext-remove-${show.id}`}
-                      >
-                        <X size={14} color="#94A3B8" />
-                      </TouchableOpacity>
                     </TouchableOpacity>
                   ))}
                 </View>
