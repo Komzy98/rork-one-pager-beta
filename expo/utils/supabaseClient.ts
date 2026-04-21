@@ -15,8 +15,8 @@ function isValidSupabaseUrl(u: string): boolean {
   }
 }
 
-const supabaseUrl = isValidSupabaseUrl(rawUrl) ? rawUrl : '';
-const supabaseAnonKey = rawKey;
+export const supabaseUrl = isValidSupabaseUrl(rawUrl) ? rawUrl : '';
+export const supabaseAnonKey = rawKey;
 
 export const supabaseConfigured = !!supabaseUrl && !!supabaseAnonKey;
 

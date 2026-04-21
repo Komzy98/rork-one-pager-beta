@@ -1,5 +1,26 @@
-import { supabase, supabaseConfigured } from './supabaseClient';
+import { supabase, supabaseConfigured, supabaseUrl } from './supabaseClient';
 import AsyncStorage from '@react-native-async-storage/async-storage';
+
+async function executeWithRetry<T>(fn: () => Promise<T>, retries = 2, delayMs = 800): Promise<T> {
+  let lastErr: any;
+  for (let attempt = 0; attempt <= retries; attempt++) {
+    try {
+      return await fn();
+    } catch (err: any) {
+      lastErr = err;
+      const msg = err?.message || String(err);
+      const isNetwork =
+        msg.includes('Failed to fetch') ||
+        msg.includes('NetworkError') ||
+        msg.includes('Network request failed') ||
+        err?.name === 'TypeError';
+      console.warn(`[supabaseSync] attempt ${attempt + 1} failed:`, msg, 'retryable:', isNetwork);
+      if (!isNetwork || attempt === retries) break;
+      await new Promise((r) => setTimeout(r, delayMs * (attempt + 1)));
+    }
+  }
+  throw lastErr;
+}
 
 export type SyncableData = {
   habits: any[];
@@ -60,17 +81,19 @@ export const syncAllDataToCloud = async (data: Partial<SyncableData>): Promise<b
     throw new Error('No user id - please sign in');
   }
   try {
-    console.log('[supabaseSync] Upserting user_data for user:', currentUserId);
-    const { error, status } = await supabase
-      .from(TABLE)
-      .upsert(
-        {
-          user_id: currentUserId,
-          data: { ...data, lastSynced: new Date().toISOString() },
-          updated_at: new Date().toISOString(),
-        },
-        { onConflict: 'user_id' }
-      );
+    console.log('[supabaseSync] Upserting user_data for user:', currentUserId, 'at', supabaseUrl);
+    const { error, status } = await executeWithRetry(() =>
+      supabase
+        .from(TABLE)
+        .upsert(
+          {
+            user_id: currentUserId,
+            data: { ...data, lastSynced: new Date().toISOString() },
+            updated_at: new Date().toISOString(),
+          },
+          { onConflict: 'user_id' }
+        )
+    );
     if (error) {
       const details = {
         message: error.message,
@@ -94,9 +117,15 @@ export const syncAllDataToCloud = async (data: Partial<SyncableData>): Promise<b
     console.log('[supabaseSync] Data synced to Supabase user_data (status', status, ')');
     return true;
   } catch (error: any) {
-    const msg = error?.message || (typeof error === 'string' ? error : JSON.stringify(error));
-    console.warn('[supabaseSync] Sync to cloud failed:', msg);
-    if (error instanceof Error) throw error;
+    const raw = error?.message || (typeof error === 'string' ? error : JSON.stringify(error));
+    const isNetwork =
+      raw.includes('Failed to fetch') ||
+      raw.includes('NetworkError') ||
+      raw.includes('Network request failed');
+    const msg = isNetwork
+      ? `Network error reaching Supabase (${supabaseUrl || 'no url set'}). Check your internet connection and that EXPO_PUBLIC_SUPABASE_URL is correct.`
+      : raw;
+    console.warn('[supabaseSync] Sync to cloud failed:', msg, error);
     throw new Error(msg);
   }
 };
