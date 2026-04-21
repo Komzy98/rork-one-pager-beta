@@ -139,9 +139,28 @@ export default function HabitDetailModal({
   const [showAllWeeks, setShowAllWeeks] = useState(false);
   const [expandedFormGuide, setExpandedFormGuide] = useState<string | null>(null);
   const [formGuideTab, setFormGuideTab] = useState<'gif' | 'guide'>('gif');
+  const [selectedDays, setSelectedDays] = useState<number[]>([]);
   const router = useRouter();
 
+  React.useEffect(() => {
+    if (habit) {
+      setSelectedDays([...habit.frequency.days].sort((a, b) => a - b));
+    }
+  }, [habit?.id]);
+
   if (!habit) return null;
+
+  const toggleDay = (dayIndex: number) => {
+    void Haptics.selectionAsync();
+    setSelectedDays(prev => {
+      const isActive = prev.includes(dayIndex);
+      if (isActive) {
+        if (prev.length <= 1) return prev;
+        return prev.filter(d => d !== dayIndex).sort((a, b) => a - b);
+      }
+      return [...prev, dayIndex].sort((a, b) => a - b);
+    });
+  };
 
   const toggleWeek = (weekNumber: number) => {
     setExpandedWeeks(prev => ({ ...prev, [weekNumber]: !prev[weekNumber] }));
@@ -157,7 +176,15 @@ export default function HabitDetailModal({
       Animated.timing(scaleValue, { toValue: 1, duration: 100, useNativeDriver: true }),
     ]).start();
     
-    onAdd(habit);
+    const customizedHabit: CommunityHabit = {
+      ...habit,
+      frequency: {
+        ...habit.frequency,
+        days: selectedDays,
+        timesPerWeek: selectedDays.length,
+      },
+    };
+    onAdd(customizedHabit);
     setTimeout(onClose, 300);
   };
 
@@ -291,7 +318,7 @@ export default function HabitDetailModal({
                 <Calendar size={16} color={COLORS.textSecondary} />
                 <Text style={styles.statLabel}>Frequency</Text>
                 <Text style={styles.statValue}>
-                  {habit.frequency.days.length === 7 ? 'Daily' : `${habit.frequency.days.length}x/wk`}
+                  {selectedDays.length === 7 ? 'Daily' : `${selectedDays.length}x/wk`}
                 </Text>
               </View>
             </View>
@@ -335,14 +362,22 @@ export default function HabitDetailModal({
               </View>
               
               <Text style={styles.frequencyDescription}>
-                {getFrequencyDescription(habit.frequency.days)}
+                {getFrequencyDescription(selectedDays)}
               </Text>
+
+              <Text style={styles.scheduleHint}>Tap a day to customize your schedule</Text>
               
               <View style={styles.weekCalendar}>
                 {DAY_NAMES.map((day, index) => {
-                  const isActive = habit.frequency.days.includes(index);
+                  const isActive = selectedDays.includes(index);
                   return (
-                    <View key={day} style={styles.dayColumn}>
+                    <TouchableOpacity
+                      key={day}
+                      style={styles.dayColumn}
+                      onPress={() => toggleDay(index)}
+                      activeOpacity={0.7}
+                      testID={`schedule-day-${index}`}
+                    >
                       <Text style={[styles.dayName, isActive && styles.dayNameActive]}>
                         {day}
                       </Text>
@@ -353,9 +388,40 @@ export default function HabitDetailModal({
                       ]}>
                         {isActive && <Check size={14} color="#fff" />}
                       </View>
-                    </View>
+                    </TouchableOpacity>
                   );
                 })}
+              </View>
+
+              <View style={styles.schedulePresetsRow}>
+                <TouchableOpacity
+                  style={styles.schedulePresetBtn}
+                  onPress={() => { void Haptics.selectionAsync(); setSelectedDays([0,1,2,3,4,5,6]); }}
+                  activeOpacity={0.7}
+                >
+                  <Text style={styles.schedulePresetText}>Every day</Text>
+                </TouchableOpacity>
+                <TouchableOpacity
+                  style={styles.schedulePresetBtn}
+                  onPress={() => { void Haptics.selectionAsync(); setSelectedDays([1,2,3,4,5]); }}
+                  activeOpacity={0.7}
+                >
+                  <Text style={styles.schedulePresetText}>Weekdays</Text>
+                </TouchableOpacity>
+                <TouchableOpacity
+                  style={styles.schedulePresetBtn}
+                  onPress={() => { void Haptics.selectionAsync(); setSelectedDays([0,6]); }}
+                  activeOpacity={0.7}
+                >
+                  <Text style={styles.schedulePresetText}>Weekends</Text>
+                </TouchableOpacity>
+                <TouchableOpacity
+                  style={styles.schedulePresetBtn}
+                  onPress={() => { void Haptics.selectionAsync(); setSelectedDays([...habit.frequency.days].sort((a, b) => a - b)); }}
+                  activeOpacity={0.7}
+                >
+                  <Text style={styles.schedulePresetText}>Reset</Text>
+                </TouchableOpacity>
               </View>
             </View>
 
@@ -911,6 +977,31 @@ const styles = StyleSheet.create({
   },
   dayIndicatorActive: {
     backgroundColor: COLORS.primary,
+  },
+  scheduleHint: {
+    fontSize: 12,
+    color: COLORS.textLight,
+    marginBottom: 10,
+    fontStyle: 'italic' as const,
+  },
+  schedulePresetsRow: {
+    flexDirection: 'row',
+    flexWrap: 'wrap' as const,
+    gap: 8,
+    marginTop: 12,
+  },
+  schedulePresetBtn: {
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    borderRadius: 10,
+    backgroundColor: '#F1F3F5',
+    borderWidth: 1,
+    borderColor: '#E5E5E8',
+  },
+  schedulePresetText: {
+    fontSize: 12,
+    fontWeight: '600' as const,
+    color: COLORS.textSecondary,
   },
   creatorCard: {
     flexDirection: 'row',
