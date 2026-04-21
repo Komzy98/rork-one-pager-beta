@@ -149,6 +149,15 @@ export const [AuthProvider, useAuth] = createContextHook(() => {
           console.log('📱 Found cached user:', parsedUser.email);
           setUser(parsedUser);
           setIsGuest(false);
+          try {
+            const newSync = new SupabaseUserSync(parsedUser.id);
+            setFirebaseSync(newSync);
+            setAutoSyncEnabled(true);
+            void setSyncUserId(parsedUser.id);
+            console.log('☁️ Supabase sync initialized for cached user:', parsedUser.id);
+          } catch (syncError) {
+            console.log('Supabase sync setup skipped on restore:', syncError);
+          }
         }
         await createDemoUserIfNeeded();
       } catch (error) {
@@ -237,6 +246,14 @@ export const [AuthProvider, useAuth] = createContextHook(() => {
       setIsGuest(false);
       setUser(authUser);
       await AsyncStorage.setItem(AUTH_STORAGE_KEY, JSON.stringify(authUser));
+      try {
+        const newSync = new SupabaseUserSync(newUser.id);
+        setFirebaseSync(newSync);
+        setAutoSyncEnabled(true);
+        void setSyncUserId(newUser.id);
+      } catch (syncError) {
+        console.log('Supabase sync setup skipped on signup:', syncError);
+      }
       console.log('✅ Signup successful:', authUser.email);
       return { success: true };
     } catch (error: any) {
