@@ -21,7 +21,7 @@ import { calculateStreak, getTodayFormatted, shouldDoHabitToday, formatDate, cal
 import { StreakFreeze } from '@/types/habit';
 import { generateDailyTasks, generateMilestones, shouldLevelUp } from '@/utils/goalBreakdown';
 import { useAuth } from '@/hooks/useAuth';
-import { useFirebaseSync } from '@/utils/firebaseUserSync';
+import { useSupabaseSync } from '@/utils/supabaseUserSync';
 
 // Helper function to get user-specific storage keys
 const getUserStorageKey = (baseKey: string, userId?: string) => {
@@ -152,7 +152,7 @@ export const [AppProvider, useApp] = createContextHook(() => {
   const queryClient = useQueryClient();
   const { user } = useAuth();
   const userId = user?.id;
-  const firebaseSync = useFirebaseSync(userId);
+  const firebaseSync = useSupabaseSync(userId);
   
   // Get user-specific storage keys - use stable values
   const HABITS_STORAGE_KEY = React.useMemo(() => getUserStorageKey('habits', userId), [userId]);
@@ -285,13 +285,12 @@ export const [AppProvider, useApp] = createContextHook(() => {
       try {
         await unifiedStorage.setItem(HABITS_STORAGE_KEY, JSON.stringify(habits));
         
-        // Always sync to Firebase if user is logged in
-        if (userId && firebaseSync.saveToFirebase) {
+        if (userId && firebaseSync.saveToCloud) {
           try {
-            await firebaseSync.saveToFirebase({ habits });
-            console.log('✅ Habits synced to Firebase');
+            await firebaseSync.saveToCloud({ habits });
+            console.log('✅ Habits synced to Supabase');
           } catch (syncError) {
-            console.warn('⚠️ Firebase sync failed for habits, data saved locally:', syncError);
+            console.warn('⚠️ Supabase sync failed for habits, data saved locally:', syncError);
           }
         }
         
@@ -311,13 +310,12 @@ export const [AppProvider, useApp] = createContextHook(() => {
       try {
         await unifiedStorage.setItem(ACTIVITIES_STORAGE_KEY, JSON.stringify(activities));
         
-        // Always sync to Firebase if user is logged in
-        if (userId && firebaseSync.saveToFirebase) {
+        if (userId && firebaseSync.saveToCloud) {
           try {
-            await firebaseSync.saveToFirebase({ activities });
-            console.log('✅ Activities synced to Firebase');
+            await firebaseSync.saveToCloud({ activities });
+            console.log('✅ Activities synced to Supabase');
           } catch (syncError) {
-            console.warn('⚠️ Firebase sync failed for activities, data saved locally:', syncError);
+            console.warn('⚠️ Supabase sync failed for activities, data saved locally:', syncError);
           }
         }
         
@@ -337,13 +335,12 @@ export const [AppProvider, useApp] = createContextHook(() => {
       try {
         await unifiedStorage.setItem(SHOWS_STORAGE_KEY, JSON.stringify(shows));
         
-        // Always sync to Firebase if user is logged in
-        if (userId && firebaseSync.saveToFirebase) {
+        if (userId && firebaseSync.saveToCloud) {
           try {
-            await firebaseSync.saveToFirebase({ shows });
-            console.log('✅ Shows synced to Firebase');
+            await firebaseSync.saveToCloud({ shows });
+            console.log('✅ Shows synced to Supabase');
           } catch (syncError) {
-            console.warn('⚠️ Firebase sync failed for shows, data saved locally:', syncError);
+            console.warn('⚠️ Supabase sync failed for shows, data saved locally:', syncError);
           }
         }
         

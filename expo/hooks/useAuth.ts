@@ -4,7 +4,8 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import createContextHook from '@nkzw/create-context-hook';
 import * as WebBrowser from 'expo-web-browser';
 import { AuthUser, LoginCredentials, SignupCredentials } from '@/types/habit';
-import { FirebaseUserSync } from '@/utils/firebaseUserSync';
+import { SupabaseUserSync } from '@/utils/supabaseUserSync';
+import { setSyncUserId } from '@/utils/supabaseSync';
 
 if (Platform.OS !== 'web') {
   WebBrowser.maybeCompleteAuthSession();
@@ -99,7 +100,7 @@ export const [AuthProvider, useAuth] = createContextHook(() => {
   const [isInitialized, setIsInitialized] = useState<boolean>(false);
   const [isGuest, setIsGuest] = useState<boolean>(false);
   const [firebaseUser, setFirebaseUser] = useState<any>(null);
-  const [firebaseSync, setFirebaseSync] = useState<FirebaseUserSync | null>(null);
+  const [firebaseSync, setFirebaseSync] = useState<SupabaseUserSync | null>(null);
   const [autoSyncEnabled, setAutoSyncEnabled] = useState<boolean>(false);
 
   const [biometricAvailable, setBiometricAvailable] = useState<boolean>(false);
@@ -187,11 +188,12 @@ export const [AuthProvider, useAuth] = createContextHook(() => {
       setUser(authUser);
       await AsyncStorage.setItem(AUTH_STORAGE_KEY, JSON.stringify(authUser));
       try {
-        const newSync = new FirebaseUserSync(foundUser.id);
+        const newSync = new SupabaseUserSync(foundUser.id);
         setFirebaseSync(newSync);
         setAutoSyncEnabled(true);
+        void setSyncUserId(foundUser.id);
       } catch (syncError) {
-        console.log('Firebase sync setup skipped:', syncError);
+        console.log('Supabase sync setup skipped:', syncError);
       }
       console.log('Login successful');
       return { success: true };
@@ -510,11 +512,12 @@ export const [AuthProvider, useAuth] = createContextHook(() => {
       await AsyncStorage.setItem(AUTH_STORAGE_KEY, JSON.stringify(authUser));
 
       try {
-        const newSync = new FirebaseUserSync(foundUser.id);
+        const newSync = new SupabaseUserSync(foundUser.id);
         setFirebaseSync(newSync);
         setAutoSyncEnabled(true);
+        void setSyncUserId(foundUser.id);
       } catch (syncError) {
-        console.log('Firebase sync setup skipped:', syncError);
+        console.log('Supabase sync setup skipped:', syncError);
       }
 
       console.log('Google login successful');

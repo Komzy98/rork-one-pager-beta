@@ -6,7 +6,7 @@ import { useTasksSafe } from '@/hooks/useTasksStore';
 import { useUserProfile } from '@/hooks/useUserProfile';
 import { useAuth } from '@/hooks/useAuth';
 
-import { initializeCloudSync, syncAllDataToCloud, syncAllDataFromCloud } from '@/utils/firebaseSync';
+import { initializeCloudSync, syncAllDataToCloud, syncAllDataFromCloud } from '@/utils/supabaseSync';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 
 type SyncStatus = 'idle' | 'syncing' | 'success' | 'error';

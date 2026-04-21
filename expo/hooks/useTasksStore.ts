@@ -14,7 +14,7 @@ import {
   TaskCompletionFormData
 } from '@/types/task';
 import { useAuth } from '@/hooks/useAuth';
-import { useFirebaseSync } from '@/utils/firebaseUserSync';
+import { useSupabaseSync } from '@/utils/supabaseUserSync';
 
 const formatDateStr = (date: Date): string => {
   const year = date.getFullYear();
@@ -269,7 +269,7 @@ export const [TaskProvider, useTasks] = createContextHook(() => {
   const queryClient = useQueryClient();
   const { user } = useAuth();
   const userId = user?.id;
-  const firebaseSync = useFirebaseSync(userId);
+  const firebaseSync = useSupabaseSync(userId);
   const [filter, setFilter] = useState<TaskFilter>({});
   const [activeTimer, setActiveTimer] = useState<{ taskId: string; startTime: string } | null>(null);
   
@@ -353,13 +353,12 @@ export const [TaskProvider, useTasks] = createContextHook(() => {
       try {
         await unifiedStorage.setItem(TASKS_STORAGE_KEY, JSON.stringify(tasks));
         
-        // Always sync to Firebase if user is logged in
-        if (userId && firebaseSync.saveToFirebase) {
+        if (userId && firebaseSync.saveToCloud) {
           try {
-            await firebaseSync.saveToFirebase({ tasks });
-            console.log('✅ Tasks synced to Firebase');
+            await firebaseSync.saveToCloud({ tasks });
+            console.log('✅ Tasks synced to Supabase');
           } catch (syncError) {
-            console.warn('⚠️ Firebase sync failed for tasks, data saved locally:', syncError);
+            console.warn('⚠️ Supabase sync failed for tasks, data saved locally:', syncError);
           }
         }
         
@@ -380,13 +379,12 @@ export const [TaskProvider, useTasks] = createContextHook(() => {
       try {
         await unifiedStorage.setItem(PROJECTS_STORAGE_KEY, JSON.stringify(projects));
         
-        // Always sync to Firebase if user is logged in
-        if (userId && firebaseSync.saveToFirebase) {
+        if (userId && firebaseSync.saveToCloud) {
           try {
-            await firebaseSync.saveToFirebase({ taskProjects: projects });
-            console.log('✅ Task projects synced to Firebase');
+            await firebaseSync.saveToCloud({ taskProjects: projects });
+            console.log('✅ Task projects synced to Supabase');
           } catch (syncError) {
-            console.warn('⚠️ Firebase sync failed for task projects, data saved locally:', syncError);
+            console.warn('⚠️ Supabase sync failed for task projects, data saved locally:', syncError);
           }
         }
         
@@ -407,13 +405,12 @@ export const [TaskProvider, useTasks] = createContextHook(() => {
       try {
         await unifiedStorage.setItem(TIME_ENTRIES_STORAGE_KEY, JSON.stringify(entries));
         
-        // Always sync to Firebase if user is logged in
-        if (userId && firebaseSync.saveToFirebase) {
+        if (userId && firebaseSync.saveToCloud) {
           try {
-            await firebaseSync.saveToFirebase({ taskTimeEntries: entries });
-            console.log('✅ Task time entries synced to Firebase');
+            await firebaseSync.saveToCloud({ taskTimeEntries: entries });
+            console.log('✅ Task time entries synced to Supabase');
           } catch (syncError) {
-            console.warn('⚠️ Firebase sync failed for task time entries, data saved locally:', syncError);
+            console.warn('⚠️ Supabase sync failed for task time entries, data saved locally:', syncError);
           }
         }
         
