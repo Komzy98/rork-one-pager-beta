@@ -24,6 +24,7 @@ import {
   Award,
   Package,
   AlertCircle,
+  AlertTriangle,
   BookOpen,
   TrendingUp,
   ChevronDown,
@@ -722,7 +723,7 @@ export default function HabitDetailModal({
                                                 <Text style={[styles.guideSectionTitle, { color: '#DC2626' }]}>Common Mistakes</Text>
                                                 {formGuide.guide.commonMistakes.map((mistake, i) => (
                                                   <View key={i} style={styles.guideMistakeRow}>
-                                                    <Text style={styles.guideMistakeIcon}>{"\u26A0\uFE0F"}</Text>
+                                                    <AlertTriangle size={16} color="#DC2626" style={styles.guideMistakeIcon} />
                                                     <Text style={styles.guideMistakeText}>{mistake}</Text>
                                                   </View>
                                                 ))}
@@ -732,7 +733,7 @@ export default function HabitDetailModal({
                                                 <Text style={[styles.guideSectionTitle, { color: '#059669' }]}>Pro Tips</Text>
                                                 {formGuide.guide.tips.map((tip, i) => (
                                                   <View key={i} style={styles.guideTipRow}>
-                                                    <Text style={styles.guideTipIcon}>{"\u2705"}</Text>
+                                                    <Check size={16} color="#059669" style={styles.guideTipIcon} />
                                                     <Text style={styles.guideTipText}>{tip}</Text>
                                                   </View>
                                                 ))}
@@ -1673,7 +1674,6 @@ const styles = StyleSheet.create({
     gap: 8,
   },
   guideMistakeIcon: {
-    fontSize: 13,
     marginTop: 1,
   },
   guideMistakeText: {
@@ -1688,7 +1688,6 @@ const styles = StyleSheet.create({
     gap: 8,
   },
   guideTipIcon: {
-    fontSize: 13,
     marginTop: 1,
   },
   guideTipText: {

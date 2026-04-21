@@ -26,6 +26,8 @@ import {
   Play,
   X,
   BookOpen,
+  AlertTriangle,
+  Check,
 } from 'lucide-react-native';
 import { COLORS, HABIT_COLORS } from '@/constants/colors';
 import { useSavedHabits } from '@/hooks/useHabitsEnhancement';
@@ -205,7 +207,7 @@ const ExerciseList = ({ activities, habitColor, exerciseGifs, exerciseFormGuides
                       <Text style={[styles.formGuideSectionTitle, { color: '#DC2626' }]}>Common Mistakes</Text>
                       {formGuide.guide.commonMistakes.map((mistake, i) => (
                         <View key={i} style={styles.formGuideMistake}>
-                          <Text style={styles.formGuideMistakeIcon}>{"\u26A0\uFE0F"}</Text>
+                          <AlertTriangle size={16} color="#DC2626" style={styles.formGuideMistakeIcon} />
                           <Text style={styles.formGuideMistakeText}>{mistake}</Text>
                         </View>
                       ))}
@@ -215,7 +217,7 @@ const ExerciseList = ({ activities, habitColor, exerciseGifs, exerciseFormGuides
                       <Text style={[styles.formGuideSectionTitle, { color: '#059669' }]}>Pro Tips</Text>
                       {formGuide.guide.tips.map((tip, i) => (
                         <View key={i} style={styles.formGuideTip}>
-                          <Text style={styles.formGuideTipIcon}>{"\u2705"}</Text>
+                          <Check size={16} color="#059669" style={styles.formGuideTipIcon} />
                           <Text style={styles.formGuideTipText}>{tip}</Text>
                         </View>
                       ))}
@@ -2013,7 +2015,6 @@ const styles = StyleSheet.create({
     gap: 8,
   },
   formGuideMistakeIcon: {
-    fontSize: 13,
     marginTop: 1,
   },
   formGuideMistakeText: {
@@ -2028,7 +2029,6 @@ const styles = StyleSheet.create({
     gap: 8,
   },
   formGuideTipIcon: {
-    fontSize: 13,
     marginTop: 1,
   },
   formGuideTipText: {
