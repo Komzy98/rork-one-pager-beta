@@ -69,7 +69,8 @@ import { useTheme } from '@/hooks/useTheme';
 import SwipeableTabContainer from '@/components/SwipeableTabContainer';
 import CustomHeader from '@/components/CustomHeader';
 
-import FirebaseSyncStatus from '@/components/FirebaseSyncStatus';
+import { useCloudSync } from '@/hooks/useCloudSync';
+import { CheckCircle2, AlertCircle, RefreshCw } from 'lucide-react-native';
 import { AchievementsBadges } from '@/components/AchievementsBadges';
 import { ChallengeLeaderboard } from '@/components/ChallengeLeaderboard';
 import { MOCK_CHALLENGES } from '@/mocks/socialData';
@@ -86,6 +87,20 @@ type Nationality = Nation;
 
 if (Platform.OS === 'android' && UIManager.setLayoutAnimationEnabledExperimental) {
   UIManager.setLayoutAnimationEnabledExperimental(true);
+}
+
+function formatRelativeTime(iso: string): string {
+  const then = new Date(iso).getTime();
+  if (Number.isNaN(then)) return 'recently';
+  const diffSec = Math.max(0, Math.floor((Date.now() - then) / 1000));
+  if (diffSec < 60) return 'just now';
+  const diffMin = Math.floor(diffSec / 60);
+  if (diffMin < 60) return `${diffMin}m ago`;
+  const diffHr = Math.floor(diffMin / 60);
+  if (diffHr < 24) return `${diffHr}h ago`;
+  const diffDay = Math.floor(diffHr / 24);
+  if (diffDay < 7) return `${diffDay}d ago`;
+  return new Date(iso).toLocaleDateString();
 }
 
 const INTEREST_ICONS: Record<string, React.ComponentType<any>> = {
@@ -152,6 +167,14 @@ export default function ProfileScreen() {
     sendTestNotification,
     requestPermissions,
   } = useNotificationsSafe();
+
+  const {
+    syncStatus,
+    lastSyncTime,
+    isCloudEnabled,
+    syncToCloud,
+    error: syncError,
+  } = useCloudSync();
 
   const [showTeamModal, setShowTeamModal] = useState<boolean>(false);
   const [showNBATeamModal, setShowNBATeamModal] = useState<boolean>(false);
@@ -956,19 +979,74 @@ export default function ProfileScreen() {
               <ChevronRight size={20} color={colors.textTertiary} />
             </TouchableOpacity>
 
-            {/* Cloud Sync */}
-            <TouchableOpacity 
-              style={[styles.settingsItem, { backgroundColor: colors.card, borderColor: colors.border }]}
-              activeOpacity={0.7}
-            >
-              <View style={[styles.settingsIconBg, { backgroundColor: '#00C7BE' + '15' }]}>
-                <Cloud size={18} color="#00C7BE" />
+          </View>
+
+          {/* Syncing Section */}
+          <View style={styles.sectionWrapper}>
+            <Text style={[styles.sectionTitle, { color: colors.text }]}>Syncing</Text>
+            <View style={[styles.syncCard, { backgroundColor: colors.card, borderColor: colors.border }]}>
+              <View style={styles.syncCardHeader}>
+                <View style={[styles.syncIconBg, { backgroundColor: (syncStatus === 'error' ? '#FF3B30' : syncStatus === 'syncing' ? '#007AFF' : '#00C7BE') + '15' }]}>
+                  {syncStatus === 'syncing' ? (
+                    <ActivityIndicator size="small" color="#007AFF" />
+                  ) : syncStatus === 'error' ? (
+                    <AlertCircle size={20} color="#FF3B30" />
+                  ) : isCloudEnabled && lastSyncTime ? (
+                    <CheckCircle2 size={20} color="#00C7BE" />
+                  ) : (
+                    <Cloud size={20} color="#00C7BE" />
+                  )}
+                </View>
+                <View style={styles.syncCardInfo}>
+                  <Text style={[styles.syncCardTitle, { color: colors.text }]}>
+                    {syncStatus === 'syncing'
+                      ? 'Backing up...'
+                      : syncStatus === 'error'
+                      ? 'Backup failed'
+                      : isCloudEnabled
+                      ? 'Cloud Backup Active'
+                      : 'Cloud Backup'}
+                  </Text>
+                  <Text style={[styles.syncCardSubtitle, { color: colors.textTertiary }]}>
+                    {syncStatus === 'error' && syncError
+                      ? syncError
+                      : lastSyncTime
+                      ? `Last backup ${formatRelativeTime(lastSyncTime)}`
+                      : isCloudEnabled
+                      ? 'Waiting for first backup...'
+                      : 'Sign in to enable auto-backup'}
+                  </Text>
+                </View>
               </View>
-              <View style={styles.settingsItemContent}>
-                <FirebaseSyncStatus />
-              </View>
-              <ChevronRight size={20} color={colors.textTertiary} />
-            </TouchableOpacity>
+
+              {lastSyncTime && (
+                <View style={[styles.syncDetailRow, { borderTopColor: colors.border }]}>
+                  <Text style={[styles.syncDetailLabel, { color: colors.textTertiary }]}>Last backup</Text>
+                  <Text style={[styles.syncDetailValue, { color: colors.text }]}>
+                    {new Date(lastSyncTime).toLocaleString([], { dateStyle: 'medium', timeStyle: 'short' })}
+                  </Text>
+                </View>
+              )}
+
+              <TouchableOpacity
+                style={[
+                  styles.syncBackupBtn,
+                  { backgroundColor: colors.primary },
+                  (syncStatus === 'syncing' || !isCloudEnabled) && { opacity: 0.5 },
+                ]}
+                onPress={() => {
+                  void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+                  void syncToCloud();
+                }}
+                disabled={syncStatus === 'syncing' || !isCloudEnabled}
+                activeOpacity={0.8}
+              >
+                <RefreshCw size={16} color={colors.textInverse} />
+                <Text style={[styles.syncBackupBtnText, { color: colors.textInverse }]}>
+                  {syncStatus === 'syncing' ? 'Backing up...' : 'Back Up Now'}
+                </Text>
+              </TouchableOpacity>
+            </View>
           </View>
 
           {/* Achievements Section */}
@@ -1577,6 +1655,62 @@ const styles = StyleSheet.create({
     width: 1,
     height: 48,
     alignSelf: 'center',
+  },
+  syncCard: {
+    borderRadius: 16,
+    borderWidth: 1,
+    padding: 16,
+  },
+  syncCardHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  syncIconBg: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginRight: 12,
+  },
+  syncCardInfo: {
+    flex: 1,
+  },
+  syncCardTitle: {
+    fontSize: 15,
+    fontWeight: '600',
+    marginBottom: 2,
+  },
+  syncCardSubtitle: {
+    fontSize: 13,
+  },
+  syncDetailRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    borderTopWidth: 1,
+    marginTop: 14,
+    paddingTop: 12,
+  },
+  syncDetailLabel: {
+    fontSize: 13,
+  },
+  syncDetailValue: {
+    fontSize: 13,
+    fontWeight: '600',
+  },
+  syncBackupBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 8,
+    marginTop: 14,
+    paddingVertical: 12,
+    borderRadius: 12,
+  },
+  syncBackupBtnText: {
+    fontSize: 14,
+    fontWeight: '600',
   },
   sectionWrapper: {
     marginBottom: 20,
