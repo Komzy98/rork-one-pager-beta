@@ -443,21 +443,22 @@ export default function ActivitiesScreen() {
   const liveQuery = trpc.football.getMatches.useQuery(
     { type: 'live', teamIds: favoriteTeamIds.length > 0 ? favoriteTeamIds : undefined, leagueIds: queryLeagueIds, nationalTeamIds: nationalTeamIds.length > 0 ? nationalTeamIds : undefined, includeAfcon },
     { 
-      refetchInterval: 30 * 1000,
-      staleTime: 20 * 1000,
+      refetchInterval: 90 * 1000,
+      staleTime: 60 * 1000,
       gcTime: 5 * 60 * 1000,
-      refetchOnMount: true,
+      refetchOnMount: false,
       refetchOnWindowFocus: false,
       refetchOnReconnect: true,
       retry: 1,
-      retryDelay: 1500,
+      retryDelay: 2000,
       enabled: true,
     }
   );
 
   useEffect(() => {
-    setUpcomingEnabled(true);
-    setResultsEnabled(true);
+    const t1 = setTimeout(() => setUpcomingEnabled(true), 400);
+    const t2 = setTimeout(() => setResultsEnabled(true), 1200);
+    return () => { clearTimeout(t1); clearTimeout(t2); };
   }, []);
 
   const upcomingQuery = trpc.football.getMatches.useQuery(

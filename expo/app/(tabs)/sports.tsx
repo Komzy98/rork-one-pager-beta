@@ -1322,8 +1322,8 @@ export default function SportsScreen() {
     },
     { 
       enabled: sportMode === 'football',
-      refetchInterval: activeTab === 'live' ? 30 * 1000 : false,
-      staleTime: 20 * 1000,
+      refetchInterval: activeTab === 'live' ? 60 * 1000 : false,
+      staleTime: 45 * 1000,
       gcTime: 5 * 60 * 1000,
       retry: 1,
       retryDelay: 1500,
@@ -1442,9 +1442,31 @@ export default function SportsScreen() {
     setShowStandingsModal(true);
   }, []);
 
+  const availableLeagueIds = useMemo(() => {
+    const ids = new Set<number>();
+    [...liveMatches, ...upcomingMatches, ...completedMatches].forEach(m => {
+      if (m.leagueId) ids.add(m.leagueId);
+    });
+    return ids;
+  }, [liveMatches, upcomingMatches, completedMatches]);
+
+  useEffect(() => {
+    if (!preferencesLoaded) return;
+    if (selectedLeagues.length === 0) return;
+    if (availableLeagueIds.size === 0) return;
+    const pruned = selectedLeagues.filter(id => availableLeagueIds.has(id));
+    if (pruned.length !== selectedLeagues.length) {
+      console.log('🧹 Pruning stale league filter:', selectedLeagues, '->', pruned);
+      setSelectedLeagues(pruned);
+      AsyncStorage.setItem('sports_selected_leagues', JSON.stringify(pruned)).catch(() => {});
+    }
+  }, [availableLeagueIds, selectedLeagues, preferencesLoaded]);
+
   const filterMatchesByLeague = useCallback((matches: Match[]) => {
     if (selectedLeagues.length === 0) return matches;
-    return matches.filter(match => selectedLeagues.includes(match.leagueId));
+    const filtered = matches.filter(match => selectedLeagues.includes(match.leagueId));
+    if (filtered.length === 0 && matches.length > 0) return matches;
+    return filtered;
   }, [selectedLeagues]);
 
   const filteredLiveMatches = useMemo(() => filterMatchesByLeague(liveMatches), [liveMatches, filterMatchesByLeague]);
