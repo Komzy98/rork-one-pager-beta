@@ -466,59 +466,87 @@ const BundleCard = ({
 }) => {
   const scaleAnim = useRef(new Animated.Value(1)).current;
 
+  const accent = bundle.gradient[0];
+  const accent2 = bundle.gradient[1] ?? accent;
+
   return (
     <TouchableOpacity 
       activeOpacity={1}
-      onPressIn={() => Animated.spring(scaleAnim, { toValue: 0.96, useNativeDriver: true }).start()}
+      onPressIn={() => Animated.spring(scaleAnim, { toValue: 0.97, useNativeDriver: true }).start()}
       onPressOut={() => Animated.spring(scaleAnim, { toValue: 1, friction: 4, useNativeDriver: true }).start()}
       onPress={onPress}
+      testID={`bundle-card-${bundle.id}`}
     >
       <Animated.View style={[
         styles.bundleCard, 
         { 
-          backgroundColor: isDark ? '#161628' : '#fff',
+          backgroundColor: isDark ? '#0F0F1E' : '#fff',
+          borderColor: isDark ? '#1F1F34' : '#EFEFF4',
+          shadowColor: accent,
+          shadowOpacity: isDark ? 0.28 : 0.14,
           transform: [{ scale: scaleAnim }],
         }
       ]}>
         <LinearGradient
-          colors={bundle.gradient}
+          colors={isDark
+            ? [accent + '22', accent2 + '10', 'transparent']
+            : [accent + '14', accent2 + '08', 'transparent']}
           start={{ x: 0, y: 0 }}
-          end={{ x: 1, y: 0 }}
-          style={styles.bundleGradientStrip}
+          end={{ x: 1, y: 1 }}
+          style={StyleSheet.absoluteFillObject}
         />
+        <View style={[styles.bundleGlow, { backgroundColor: accent }]} />
+        <View style={[styles.bundleGlow2, { backgroundColor: accent2 }]} />
+
         <View style={styles.bundleBody}>
           <View style={styles.bundleHeader}>
-            <View style={[styles.bundleIconWrap, { backgroundColor: bundle.gradient[0] + '15' }]}>
-              {getHabitIcon(bundle.emoji || 'sparkles', 20, bundle.gradient[0])}
-            </View>
+            <LinearGradient
+              colors={[accent, accent2]}
+              start={{ x: 0, y: 0 }}
+              end={{ x: 1, y: 1 }}
+              style={styles.bundleIconWrap}
+            >
+              <View style={styles.bundleIconInner}>
+                {getHabitIcon(bundle.emoji || 'sparkles', 18, accent)}
+              </View>
+            </LinearGradient>
             <View style={styles.bundleHeaderRight}>
               {isAnyAdded && (
                 <View style={[styles.bundleAddedBadge, { backgroundColor: isDark ? '#0D3320' : '#D1FAE5' }]}>
                   <CheckCircle size={10} color="#34C759" />
                 </View>
               )}
-              <View style={[styles.bundleHabitCountBadge, { backgroundColor: isDark ? '#1F1F34' : '#F5F5F7' }]}>
-                <Package size={9} color={bundle.color} />
-                <Text style={[styles.bundleHabitCountText, { color: bundle.color }]}>{bundle.habitIds.length}</Text>
+              <View style={[styles.bundleHabitCountBadge, {
+                backgroundColor: isDark ? 'rgba(255,255,255,0.06)' : 'rgba(0,0,0,0.04)',
+                borderColor: isDark ? 'rgba(255,255,255,0.08)' : 'rgba(0,0,0,0.05)',
+              }]}>
+                <Package size={9} color={accent} />
+                <Text style={[styles.bundleHabitCountText, { color: accent }]}>{bundle.habitIds.length}</Text>
               </View>
             </View>
           </View>
-          <Text style={[styles.bundleName, { color: isDark ? '#E8E8F0' : '#1A1A2E' }]}>{bundle.name}</Text>
-          <Text style={[styles.bundleDesc, { color: isDark ? '#6B6B80' : '#8E8E93' }]} numberOfLines={2}>{bundle.description}</Text>
+
+          <Text style={[styles.bundleName, { color: isDark ? '#F5F5FA' : '#0A0A1A' }]} numberOfLines={1}>{bundle.name}</Text>
+          <Text style={[styles.bundleDesc, { color: isDark ? '#8A8AA0' : '#6E6E7A' }]} numberOfLines={2}>{bundle.description}</Text>
+
           <View style={styles.bundleBenefitsRow}>
             {bundle.benefits.slice(0, 2).map((benefit, i) => (
-              <View key={i} style={[styles.benefitChip, { backgroundColor: bundle.gradient[0] + '10' }]}>
-                <Star size={8} color={bundle.gradient[0]} />
-                <Text style={[styles.benefitText, { color: bundle.gradient[0] }]} numberOfLines={1}>{benefit}</Text>
+              <View key={i} style={[styles.benefitChip, {
+                backgroundColor: isDark ? accent + '1F' : accent + '12',
+                borderColor: isDark ? accent + '30' : accent + '20',
+              }]}>
+                <Star size={8} color={accent} fill={accent} />
+                <Text style={[styles.benefitText, { color: isDark ? accent : accent }]} numberOfLines={1}>{benefit}</Text>
               </View>
             ))}
           </View>
-          <View style={[styles.bundleFooter, { borderTopColor: isDark ? '#1F1F34' : '#F0F0F3' }]}>
+
+          <View style={[styles.bundleFooter, { borderTopColor: isDark ? 'rgba(255,255,255,0.06)' : 'rgba(0,0,0,0.05)' }]}>
             <View style={styles.bundleMetaItem}>
-              <Clock size={10} color={isDark ? '#5A5A6E' : '#8E8E93'} />
-              <Text style={[styles.bundleMetaText, { color: isDark ? '#5A5A6E' : '#8E8E93' }]}>{bundle.estimatedTime}</Text>
+              <Clock size={10} color={isDark ? '#7A7A90' : '#8E8E93'} />
+              <Text style={[styles.bundleMetaText, { color: isDark ? '#7A7A90' : '#6E6E7A' }]}>{bundle.estimatedTime}</Text>
             </View>
-            <View style={[styles.bundleDifficulty, { backgroundColor: getDifficultyColor(bundle.difficulty) + '12' }]}>
+            <View style={[styles.bundleDifficulty, { backgroundColor: getDifficultyColor(bundle.difficulty) + '18' }]}>
               <View style={[styles.difficultyDot, { backgroundColor: getDifficultyColor(bundle.difficulty) }]} />
               <Text style={[styles.bundleDifficultyText, { color: getDifficultyColor(bundle.difficulty) }]}>
                 {bundle.difficulty}
@@ -1914,32 +1942,58 @@ const styles = StyleSheet.create({
     gap: 12,
   },
   bundleCard: {
-    width: 210,
-    borderRadius: 18,
+    width: 230,
+    borderRadius: 22,
     overflow: 'hidden',
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.08,
-    shadowRadius: 12,
-    elevation: 4,
+    borderWidth: 1,
+    shadowOffset: { width: 0, height: 10 },
+    shadowRadius: 24,
+    elevation: 6,
+  },
+  bundleGlow: {
+    position: 'absolute',
+    width: 160,
+    height: 160,
+    borderRadius: 80,
+    top: -70,
+    right: -60,
+    opacity: 0.18,
+  },
+  bundleGlow2: {
+    position: 'absolute',
+    width: 140,
+    height: 140,
+    borderRadius: 70,
+    bottom: -70,
+    left: -40,
+    opacity: 0.1,
   },
   bundleGradientStrip: {
     height: 4,
     width: '100%',
   },
   bundleBody: {
-    padding: 14,
+    padding: 16,
   },
   bundleHeader: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'flex-start',
-    marginBottom: 10,
+    marginBottom: 12,
   },
   bundleIconWrap: {
     width: 44,
     height: 44,
     borderRadius: 14,
+    justifyContent: 'center',
+    alignItems: 'center',
+    padding: 2,
+  },
+  bundleIconInner: {
+    flex: 1,
+    alignSelf: 'stretch',
+    borderRadius: 12,
+    backgroundColor: 'rgba(255,255,255,0.92)',
     justifyContent: 'center',
     alignItems: 'center',
   },
@@ -1962,15 +2016,16 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     gap: 3,
-    paddingHorizontal: 7,
-    paddingVertical: 3,
-    borderRadius: 8,
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderRadius: 9,
+    borderWidth: 1,
   },
   bundleName: {
-    fontSize: 16,
+    fontSize: 17,
     fontWeight: '700' as const,
-    marginBottom: 4,
-    letterSpacing: -0.2,
+    marginBottom: 5,
+    letterSpacing: -0.4,
   },
   bundleDesc: {
     fontSize: 12,
@@ -1988,8 +2043,9 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     gap: 4,
     paddingHorizontal: 8,
-    paddingVertical: 3,
-    borderRadius: 8,
+    paddingVertical: 4,
+    borderRadius: 9,
+    borderWidth: 1,
   },
   benefitText: {
     fontSize: 10,
