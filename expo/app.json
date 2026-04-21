@@ -17,7 +17,6 @@
       "supportsTablet": true,
       "bundleIdentifier": "app.rork.OPbeta",
       "usesIcloudStorage": true,
-      "usesAppleSignIn": true,
       "infoPlist": {
         "UIBackgroundModes": [
           "audio",
