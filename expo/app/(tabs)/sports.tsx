@@ -402,47 +402,41 @@ const PremiumMatchCard = React.memo(({
   const homeWinning = hasScore && (match.homeScore ?? 0) > (match.awayScore ?? 0);
   const awayWinning = hasScore && (match.awayScore ?? 0) > (match.homeScore ?? 0);
 
-  const gradientColors: [string, string, string] = isLive
-    ? ['#0E1220', '#141A2E', '#0B1A14']
+  const gradientColors: [string, string] = isLive
+    ? ['#14172B', '#1A1D32']
     : isCompleted
-      ? ['#0E1220', '#141A2E', '#1E0F26']
-      : ['#0E1220', '#141A2E', '#0F1E2E'];
+      ? ['#141529', '#1B1B30']
+      : ['#13162A', '#191C30'];
 
-  const sheenColor = isLive
-    ? 'rgba(46,204,113,0.22)'
+  const accentColor = isLive ? '#FF4757' : isCompleted ? '#A78BFA' : '#60A5FA';
+  const glowColor = isLive
+    ? 'rgba(255,71,87,0.16)'
     : isCompleted
-      ? 'rgba(167,139,250,0.18)'
-      : 'rgba(0,122,255,0.18)';
-
-  const accentColor = isLive ? '#FF4757' : isCompleted ? '#A78BFA' : '#3B82F6';
+      ? 'rgba(167,139,250,0.12)'
+      : 'rgba(96,165,250,0.12)';
 
   return (
     <View style={styles.premiumListCardWrapper}>
-      <TouchableOpacity onPress={handlePress} activeOpacity={0.92}>
+      <TouchableOpacity onPress={handlePress} activeOpacity={0.9}>
         <LinearGradient
           colors={gradientColors}
           start={{ x: 0, y: 0 }}
-          end={{ x: 1, y: 1 }}
+          end={{ x: 0, y: 1 }}
           style={[
             styles.premiumListCard,
             {
               borderColor: isLive
-                ? 'rgba(255, 71, 87, 0.28)'
+                ? 'rgba(255, 71, 87, 0.32)'
                 : isPinned
                   ? 'rgba(245, 158, 11, 0.3)'
-                  : 'rgba(255, 255, 255, 0.06)',
+                  : 'rgba(255, 255, 255, 0.05)',
               shadowColor: isLive ? '#FF4757' : '#000',
-              shadowOpacity: isLive ? 0.2 : 0.15,
+              shadowOpacity: isLive ? 0.25 : 0.18,
             },
           ]}
         >
-          <LinearGradient
-            colors={[sheenColor, 'transparent']}
-            start={{ x: 0, y: 0 }}
-            end={{ x: 1, y: 1 }}
-            style={styles.premiumListSheen}
-            pointerEvents="none"
-          />
+          <View style={[styles.premiumListGlowLeft, { backgroundColor: glowColor }]} pointerEvents="none" />
+          <View style={[styles.premiumListGlowRight, { backgroundColor: glowColor }]} pointerEvents="none" />
 
           <View style={styles.premiumListTopRow}>
             <View style={styles.premiumListLeagueRow}>
@@ -457,140 +451,142 @@ const PremiumMatchCard = React.memo(({
                 {match.league}
               </Text>
               {(homeIsFavorite || awayIsFavorite) && (
-                <View style={styles.premiumListFavStar}>
-                  <Star size={9} color="#F59E0B" fill="#F59E0B" />
-                </View>
+                <Star size={10} color="#F59E0B" fill="#F59E0B" />
               )}
             </View>
 
             {isLive ? (
               <View style={styles.premiumListLiveBadge}>
                 <LivePulse color="#FF4757" size={6} />
-                <Text style={styles.premiumListLiveText}>LIVE</Text>
-                {match.elapsed ? (
-                  <View style={styles.premiumListElapsedPill}>
-                    <Text style={styles.premiumListElapsedText}>{match.elapsed}&apos;</Text>
-                  </View>
-                ) : null}
+                <Text style={styles.premiumListLiveText}>LIVE{match.elapsed ? ` · ${match.elapsed}'` : ''}</Text>
               </View>
-            ) : isCompleted ? (
-              <View style={styles.premiumListStatusPill}>
-                <CheckCircle2 size={10} color="#A78BFA" />
-                <Text style={[styles.premiumListStatusText, { color: '#A78BFA' }]}>FT</Text>
+            ) : isPinned ? (
+              <View style={styles.premiumListPinnedPill}>
+                <Pin size={9} color="#F59E0B" />
+                <Text style={styles.premiumListPinnedText}>Pinned</Text>
               </View>
-            ) : (
-              <View style={styles.premiumListStatusPill}>
-                <Clock size={10} color="#60A5FA" />
-                <Text style={[styles.premiumListStatusText, { color: '#60A5FA' }]}>{getMatchTime()}</Text>
-              </View>
-            )}
+            ) : null}
           </View>
 
-          <View style={styles.premiumListTeams}>
-            <View style={styles.premiumListTeamRow}>
-              <View style={styles.premiumListLogoWrap}>
+          <View style={styles.premiumListMatchup}>
+            <View style={styles.premiumListTeamBlock}>
+              <View style={styles.premiumListTeamCrest}>
                 {match.homeTeamLogo ? (
-                  <Image source={{ uri: match.homeTeamLogo }} style={styles.premiumListTeamLogo} />
+                  <Image source={{ uri: match.homeTeamLogo }} style={styles.premiumListCrestImg} />
                 ) : (
-                  <Shield size={14} color="#6B7280" />
+                  <Shield size={22} color="#6B7280" />
                 )}
               </View>
               <Text
                 style={[
-                  styles.premiumListTeamName,
-                  homeWinning && styles.premiumListTeamNameWinning,
+                  styles.premiumListTeamLabel,
+                  homeWinning && styles.premiumListTeamLabelWinning,
                   resultStyle?.home === 'loser' && { opacity: 0.5 },
                 ]}
-                numberOfLines={1}
+                numberOfLines={2}
               >
                 {match.homeTeam}
               </Text>
-              {hasScore ? (
-                <Text
-                  style={[
-                    styles.premiumListScore,
-                    homeWinning && styles.premiumListScoreWinning,
-                    isLive && { color: homeWinning ? '#FF4757' : '#E4E4ED' },
-                  ]}
-                >
-                  {match.homeScore}
-                </Text>
-              ) : null}
+              {homeIsFavorite && <View style={[styles.premiumListTeamDot, { backgroundColor: '#F59E0B' }]} />}
             </View>
-            <View style={styles.premiumListTeamRow}>
-              <View style={styles.premiumListLogoWrap}>
+
+            <View style={styles.premiumListCenter}>
+              {hasScore ? (
+                <View style={styles.premiumListScoreBox}>
+                  <Text
+                    style={[
+                      styles.premiumListScoreBig,
+                      homeWinning && { color: isLive ? '#FF4757' : '#2ECC71' },
+                    ]}
+                  >
+                    {match.homeScore}
+                  </Text>
+                  <Text style={styles.premiumListScoreDash}>–</Text>
+                  <Text
+                    style={[
+                      styles.premiumListScoreBig,
+                      awayWinning && { color: isLive ? '#FF4757' : '#2ECC71' },
+                    ]}
+                  >
+                    {match.awayScore}
+                  </Text>
+                </View>
+              ) : (
+                <View style={styles.premiumListTimeBox}>
+                  <Text style={styles.premiumListTimeLabel}>{getMatchTime()}</Text>
+                  {match.time && getMatchTime() !== match.time ? (
+                    <Text style={styles.premiumListTimeSub}>{match.time}</Text>
+                  ) : (
+                    <Text style={styles.premiumListTimeSub}>VS</Text>
+                  )}
+                </View>
+              )}
+              {isCompleted && (
+                <View style={styles.premiumListFtChip}>
+                  <CheckCircle2 size={9} color="#A78BFA" />
+                  <Text style={styles.premiumListFtChipText}>FT</Text>
+                </View>
+              )}
+            </View>
+
+            <View style={styles.premiumListTeamBlock}>
+              <View style={styles.premiumListTeamCrest}>
                 {match.awayTeamLogo ? (
-                  <Image source={{ uri: match.awayTeamLogo }} style={styles.premiumListTeamLogo} />
+                  <Image source={{ uri: match.awayTeamLogo }} style={styles.premiumListCrestImg} />
                 ) : (
-                  <Shield size={14} color="#6B7280" />
+                  <Shield size={22} color="#6B7280" />
                 )}
               </View>
               <Text
                 style={[
-                  styles.premiumListTeamName,
-                  awayWinning && styles.premiumListTeamNameWinning,
+                  styles.premiumListTeamLabel,
+                  awayWinning && styles.premiumListTeamLabelWinning,
                   resultStyle?.away === 'loser' && { opacity: 0.5 },
                 ]}
-                numberOfLines={1}
+                numberOfLines={2}
               >
                 {match.awayTeam}
               </Text>
-              {hasScore ? (
-                <Text
+              {awayIsFavorite && <View style={[styles.premiumListTeamDot, { backgroundColor: '#F59E0B' }]} />}
+            </View>
+          </View>
+
+          {(match.venue || (match.status !== 'Completed' && onToggleNotification)) && (
+            <View style={styles.premiumListFooter}>
+              <View style={styles.premiumListFooterLeft}>
+                {match.venue ? (
+                  <>
+                    <MapPin size={10} color="#6B6B85" />
+                    <Text style={styles.premiumListVenueText} numberOfLines={1}>
+                      {match.venue}{match.venueCity ? `, ${match.venueCity}` : ''}
+                    </Text>
+                  </>
+                ) : <View />}
+              </View>
+              {match.status !== 'Completed' && onToggleNotification && (
+                <TouchableOpacity
                   style={[
-                    styles.premiumListScore,
-                    awayWinning && styles.premiumListScoreWinning,
-                    isLive && { color: awayWinning ? '#FF4757' : '#E4E4ED' },
+                    styles.premiumListBellBtn,
+                    isNotified && { backgroundColor: 'rgba(96, 165, 250, 0.18)', borderColor: 'rgba(96, 165, 250, 0.4)' },
                   ]}
+                  onPress={(e) => {
+                    e.stopPropagation?.();
+                    onToggleNotification(match.id);
+                  }}
+                  activeOpacity={0.7}
+                  hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
                 >
-                  {match.awayScore}
-                </Text>
-              ) : (
-                <Text style={styles.premiumListKickoff}>{match.time}</Text>
+                  {isNotified ? (
+                    <Bell size={12} color="#60A5FA" fill="#60A5FA" />
+                  ) : (
+                    <BellOff size={12} color="#6B6B85" />
+                  )}
+                </TouchableOpacity>
               )}
             </View>
-          </View>
+          )}
 
-          <View style={styles.premiumListFooter}>
-            <View style={styles.premiumListFooterLeft}>
-              {isPinned && (
-                <View style={styles.premiumListPinnedPill}>
-                  <Pin size={9} color="#F59E0B" />
-                  <Text style={styles.premiumListPinnedText}>Pinned</Text>
-                </View>
-              )}
-              {match.venue ? (
-                <View style={styles.premiumListVenueRow}>
-                  <MapPin size={9} color="#6B6B85" />
-                  <Text style={styles.premiumListVenueText} numberOfLines={1}>
-                    {match.venue}{match.venueCity ? `, ${match.venueCity}` : ''}
-                  </Text>
-                </View>
-              ) : null}
-            </View>
-            {match.status !== 'Completed' && onToggleNotification && (
-              <TouchableOpacity
-                style={[
-                  styles.premiumListBellBtn,
-                  isNotified && { backgroundColor: 'rgba(0, 122, 255, 0.18)', borderColor: 'rgba(0, 122, 255, 0.35)' },
-                ]}
-                onPress={(e) => {
-                  e.stopPropagation?.();
-                  onToggleNotification(match.id);
-                }}
-                activeOpacity={0.7}
-                hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
-              >
-                {isNotified ? (
-                  <Bell size={13} color="#60A5FA" fill="#60A5FA" />
-                ) : (
-                  <BellOff size={13} color="#6B6B85" />
-                )}
-              </TouchableOpacity>
-            )}
-          </View>
-
-          {isLive ? <View style={[styles.premiumListLiveAccent, { backgroundColor: accentColor }]} /> : null}
+          <View style={[styles.premiumListBottomAccent, { backgroundColor: accentColor, opacity: isLive ? 1 : 0.4 }]} />
         </LinearGradient>
       </TouchableOpacity>
     </View>
@@ -2834,28 +2830,149 @@ const styles = StyleSheet.create({
     paddingHorizontal: 12,
   },
   premiumListCard: {
-    borderRadius: 22,
-    padding: 16,
+    borderRadius: 24,
+    paddingHorizontal: 14,
+    paddingTop: 12,
+    paddingBottom: 10,
     borderWidth: 1,
-    shadowOffset: { width: 0, height: 8 },
-    shadowRadius: 20,
+    shadowOffset: { width: 0, height: 10 },
+    shadowRadius: 24,
     elevation: 6,
     overflow: 'hidden' as const,
     position: 'relative' as const,
   },
-  premiumListSheen: {
+  premiumListGlowLeft: {
     position: 'absolute' as const,
-    top: 0,
-    left: 0,
-    right: 0,
-    height: 80,
+    top: -40,
+    left: -40,
+    width: 140,
+    height: 140,
+    borderRadius: 70,
+    opacity: 0.9,
   },
-  premiumListLiveAccent: {
+  premiumListGlowRight: {
     position: 'absolute' as const,
-    left: 0,
-    top: 0,
+    bottom: -50,
+    right: -40,
+    width: 140,
+    height: 140,
+    borderRadius: 70,
+    opacity: 0.7,
+  },
+  premiumListBottomAccent: {
+    position: 'absolute' as const,
+    left: 24,
+    right: 24,
     bottom: 0,
-    width: 3,
+    height: 2,
+    borderRadius: 2,
+  },
+  premiumListMatchup: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingVertical: 8,
+    gap: 6,
+  },
+  premiumListTeamBlock: {
+    flex: 1,
+    alignItems: 'center' as const,
+    gap: 8,
+  },
+  premiumListTeamCrest: {
+    width: 52,
+    height: 52,
+    borderRadius: 26,
+    backgroundColor: 'rgba(255,255,255,0.06)',
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.08)',
+    justifyContent: 'center' as const,
+    alignItems: 'center' as const,
+  },
+  premiumListCrestImg: {
+    width: 36,
+    height: 36,
+    resizeMode: 'contain',
+  },
+  premiumListTeamLabel: {
+    fontSize: 12,
+    fontWeight: '600' as const,
+    color: '#C8C8D8',
+    textAlign: 'center' as const,
+    letterSpacing: -0.1,
+    minHeight: 30,
+  },
+  premiumListTeamLabelWinning: {
+    color: '#FFFFFF',
+    fontWeight: '800' as const,
+  },
+  premiumListTeamDot: {
+    width: 5,
+    height: 5,
+    borderRadius: 3,
+    marginTop: -4,
+  },
+  premiumListCenter: {
+    alignItems: 'center' as const,
+    justifyContent: 'center' as const,
+    paddingHorizontal: 6,
+    gap: 6,
+  },
+  premiumListScoreBox: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+  },
+  premiumListScoreBig: {
+    fontSize: 28,
+    fontWeight: '900' as const,
+    color: '#F5F5FA',
+    letterSpacing: -1,
+    minWidth: 24,
+    textAlign: 'center' as const,
+  },
+  premiumListScoreDash: {
+    fontSize: 20,
+    fontWeight: '700' as const,
+    color: '#4A4A60',
+  },
+  premiumListTimeBox: {
+    alignItems: 'center' as const,
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    borderRadius: 12,
+    backgroundColor: 'rgba(255,255,255,0.04)',
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.06)',
+    minWidth: 64,
+  },
+  premiumListTimeLabel: {
+    fontSize: 14,
+    fontWeight: '800' as const,
+    color: '#F5F5FA',
+    letterSpacing: -0.2,
+  },
+  premiumListTimeSub: {
+    fontSize: 9,
+    fontWeight: '700' as const,
+    color: '#6B6B85',
+    letterSpacing: 1,
+    marginTop: 1,
+  },
+  premiumListFtChip: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 3,
+    paddingHorizontal: 6,
+    paddingVertical: 2,
+    borderRadius: 6,
+    backgroundColor: 'rgba(167,139,250,0.14)',
+  },
+  premiumListFtChipText: {
+    fontSize: 9,
+    fontWeight: '800' as const,
+    color: '#A78BFA',
+    letterSpacing: 0.5,
   },
   premiumListTopRow: {
     flexDirection: 'row',
@@ -2903,16 +3020,16 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     gap: 6,
-    backgroundColor: 'rgba(255, 71, 87, 0.14)',
-    paddingHorizontal: 8,
-    paddingVertical: 4,
-    borderRadius: 8,
+    backgroundColor: 'rgba(255, 71, 87, 0.16)',
+    paddingHorizontal: 10,
+    paddingVertical: 5,
+    borderRadius: 10,
     borderWidth: 1,
-    borderColor: 'rgba(255, 71, 87, 0.3)',
+    borderColor: 'rgba(255, 71, 87, 0.35)',
   },
   premiumListLiveText: {
     fontSize: 10,
-    fontWeight: '800' as const,
+    fontWeight: '900' as const,
     color: '#FF4757',
     letterSpacing: 0.8,
   },
@@ -3001,15 +3118,16 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'space-between',
     borderTopWidth: 1,
-    borderTopColor: 'rgba(255,255,255,0.06)',
-    paddingTop: 10,
+    borderTopColor: 'rgba(255,255,255,0.05)',
+    paddingTop: 8,
+    marginTop: 4,
     gap: 8,
   },
   premiumListFooterLeft: {
     flex: 1,
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 8,
+    gap: 5,
     minWidth: 0,
   },
   premiumListPinnedPill: {
