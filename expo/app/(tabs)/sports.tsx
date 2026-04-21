@@ -399,157 +399,170 @@ const PremiumMatchCard = React.memo(({
 
   const resultStyle = getResultStyle();
 
+  const homeWinning = hasScore && (match.homeScore ?? 0) > (match.awayScore ?? 0);
+  const awayWinning = hasScore && (match.awayScore ?? 0) > (match.homeScore ?? 0);
+
+  const gradientColors: [string, string, string] = isLive
+    ? ['#0E1220', '#141A2E', '#0B1A14']
+    : isCompleted
+      ? ['#0E1220', '#141A2E', '#1E0F26']
+      : ['#0E1220', '#141A2E', '#0F1E2E'];
+
+  const sheenColor = isLive
+    ? 'rgba(46,204,113,0.22)'
+    : isCompleted
+      ? 'rgba(167,139,250,0.18)'
+      : 'rgba(0,122,255,0.18)';
+
+  const accentColor = isLive ? '#FF4757' : isCompleted ? '#A78BFA' : '#3B82F6';
+
   return (
-    <View style={styles.cardWrapper}>
-      <TouchableOpacity 
-        style={styles.matchCard}
-        onPress={handlePress}
-        activeOpacity={0.95}
-      >
-        <View style={[
-          styles.cardInner,
-          { backgroundColor: isDark ? '#151528' : '#FFFFFF' },
-          isDark && styles.cardInnerDark,
-          isLive && styles.liveCardBorder,
-          isPinned && !isLive && { borderColor: isDark ? 'rgba(245,158,11,0.22)' : 'rgba(245,158,11,0.28)' },
-        ]}>
-          {isLive ? (
-            <LinearGradient
-              colors={['rgba(255,59,48,0.08)', 'transparent']}
-              start={{ x: 0, y: 0 }}
-              end={{ x: 0, y: 1 }}
-              style={styles.cardGlow}
-              pointerEvents="none"
-            />
-          ) : isPinned ? (
-            <LinearGradient
-              colors={['rgba(245,158,11,0.06)', 'transparent']}
-              start={{ x: 0, y: 0 }}
-              end={{ x: 0, y: 1 }}
-              style={styles.cardGlow}
-              pointerEvents="none"
-            />
-          ) : null}
-          {isLive ? <View style={styles.liveAccentBar} /> : null}
-          <View style={styles.matchHeader}>
-            <View style={styles.leagueInfo}>
+    <View style={styles.premiumListCardWrapper}>
+      <TouchableOpacity onPress={handlePress} activeOpacity={0.92}>
+        <LinearGradient
+          colors={gradientColors}
+          start={{ x: 0, y: 0 }}
+          end={{ x: 1, y: 1 }}
+          style={[
+            styles.premiumListCard,
+            {
+              borderColor: isLive
+                ? 'rgba(255, 71, 87, 0.28)'
+                : isPinned
+                  ? 'rgba(245, 158, 11, 0.3)'
+                  : 'rgba(255, 255, 255, 0.06)',
+              shadowColor: isLive ? '#FF4757' : '#000',
+              shadowOpacity: isLive ? 0.2 : 0.15,
+            },
+          ]}
+        >
+          <LinearGradient
+            colors={[sheenColor, 'transparent']}
+            start={{ x: 0, y: 0 }}
+            end={{ x: 1, y: 1 }}
+            style={styles.premiumListSheen}
+            pointerEvents="none"
+          />
+
+          <View style={styles.premiumListTopRow}>
+            <View style={styles.premiumListLeagueRow}>
               {match.leagueLogo ? (
-                <Image source={{ uri: match.leagueLogo }} style={styles.leagueLogo} resizeMode="contain" />
+                <Image source={{ uri: match.leagueLogo }} style={styles.premiumListLeagueLogo} resizeMode="contain" />
               ) : (
-                <View style={[styles.leagueIconFallback, { backgroundColor: isDark ? '#1E1E38' : '#F0F0F5' }]}>
-                  <Trophy size={11} color={isDark ? '#8B8BA7' : '#6B7A99'} />
+                <View style={styles.premiumListLeagueFallback}>
+                  <Trophy size={10} color="#8B8BA7" />
                 </View>
               )}
-              <Text style={[styles.leagueName, { color: isDark ? '#6B6B85' : '#8E8E93' }]} numberOfLines={1}>
+              <Text style={styles.premiumListLeagueName} numberOfLines={1}>
                 {match.league}
               </Text>
               {(homeIsFavorite || awayIsFavorite) && (
-                <View style={[styles.favStarHeader, { backgroundColor: isDark ? '#3D2F0A' : '#FEF3C7' }]}>
+                <View style={styles.premiumListFavStar}>
                   <Star size={9} color="#F59E0B" fill="#F59E0B" />
                 </View>
               )}
             </View>
-            
+
             {isLive ? (
-              <View style={styles.liveIndicator}>
-                <LivePulse color="#FF3B30" size={6} />
-                <Text style={styles.liveText}>LIVE</Text>
+              <View style={styles.premiumListLiveBadge}>
+                <LivePulse color="#FF4757" size={6} />
+                <Text style={styles.premiumListLiveText}>LIVE</Text>
                 {match.elapsed ? (
-                  <Text style={styles.elapsedText}>{match.elapsed}&apos;</Text>
+                  <View style={styles.premiumListElapsedPill}>
+                    <Text style={styles.premiumListElapsedText}>{match.elapsed}&apos;</Text>
+                  </View>
                 ) : null}
               </View>
             ) : isCompleted ? (
-              <View style={[styles.statusBadge, { backgroundColor: isDark ? '#1A3D2E' : '#ECFDF5' }]}>
-                <CheckCircle2 size={11} color="#10B981" />
-                <Text style={styles.statusBadgeText}>FT</Text>
+              <View style={styles.premiumListStatusPill}>
+                <CheckCircle2 size={10} color="#A78BFA" />
+                <Text style={[styles.premiumListStatusText, { color: '#A78BFA' }]}>FT</Text>
               </View>
             ) : (
-              <View style={[styles.statusBadge, { backgroundColor: isDark ? '#1A2E4A' : '#EFF6FF' }]}>
-                <Clock size={11} color="#3B82F6" />
-                <Text style={[styles.statusBadgeText, { color: '#3B82F6' }]}>{getMatchTime()}</Text>
+              <View style={styles.premiumListStatusPill}>
+                <Clock size={10} color="#60A5FA" />
+                <Text style={[styles.premiumListStatusText, { color: '#60A5FA' }]}>{getMatchTime()}</Text>
               </View>
             )}
           </View>
 
-          <View style={styles.matchBody}>
-            <View style={styles.teamRowLeft}>
+          <View style={styles.premiumListTeams}>
+            <View style={styles.premiumListTeamRow}>
+              <View style={styles.premiumListLogoWrap}>
                 {match.homeTeamLogo ? (
-                  <Image source={{ uri: match.homeTeamLogo }} style={styles.teamLogo} />
+                  <Image source={{ uri: match.homeTeamLogo }} style={styles.premiumListTeamLogo} />
                 ) : (
-                  <Shield size={22} color={isDark ? '#5A5A7A' : '#C7C7CC'} />
+                  <Shield size={14} color="#6B7280" />
                 )}
-              <Text style={[
-                styles.teamNameHorizontal,
-                { color: isDark ? '#E4E4ED' : '#1C1C1E' },
-                resultStyle?.home === 'loser' && { opacity: 0.5 },
-              ]} numberOfLines={2}>
+              </View>
+              <Text
+                style={[
+                  styles.premiumListTeamName,
+                  homeWinning && styles.premiumListTeamNameWinning,
+                  resultStyle?.home === 'loser' && { opacity: 0.5 },
+                ]}
+                numberOfLines={1}
+              >
                 {match.homeTeam}
               </Text>
-            </View>
-            
-            <View style={styles.scoreCenter}>
               {hasScore ? (
-                <View style={[
-                  styles.scoreBlock,
-                  isLive && styles.scoreBlockLive,
-                  { backgroundColor: isDark ? '#1A1A32' : '#F8F8FC' },
-                ]}>
-                  <Text style={[
-                    styles.scoreNum,
-                    { color: isDark ? '#FAFAFA' : '#1C1C1E' },
-                    isLive && { color: '#FF3B30' },
-                    resultStyle?.home === 'winner' && { color: '#10B981' },
-                  ]}>
-                    {match.homeScore}
-                  </Text>
-                  <Text style={[
-                    styles.scoreDash,
-                    { color: isDark ? '#2E2E4E' : '#D4D4DA' },
-                  ]}>:</Text>
-                  <Text style={[
-                    styles.scoreNum,
-                    { color: isDark ? '#FAFAFA' : '#1C1C1E' },
-                    isLive && { color: '#FF3B30' },
-                    resultStyle?.away === 'winner' && { color: '#10B981' },
-                  ]}>
-                    {match.awayScore}
-                  </Text>
-                </View>
-              ) : (
-                <View style={[styles.vsBlock, { backgroundColor: isDark ? '#1A1A32' : '#F5F5FA' }]}>
-                  <Text style={[styles.vsLabel, { color: isDark ? '#444466' : '#BEBEC4' }]}>VS</Text>
-                </View>
-              )}
+                <Text
+                  style={[
+                    styles.premiumListScore,
+                    homeWinning && styles.premiumListScoreWinning,
+                    isLive && { color: homeWinning ? '#FF4757' : '#E4E4ED' },
+                  ]}
+                >
+                  {match.homeScore}
+                </Text>
+              ) : null}
             </View>
-            
-            <View style={styles.teamRowRight}>
-              <Text style={[
-                styles.teamNameHorizontal,
-                { color: isDark ? '#E4E4ED' : '#1C1C1E', textAlign: 'right' as const },
-                resultStyle?.away === 'loser' && { opacity: 0.5 },
-              ]} numberOfLines={2}>
+            <View style={styles.premiumListTeamRow}>
+              <View style={styles.premiumListLogoWrap}>
+                {match.awayTeamLogo ? (
+                  <Image source={{ uri: match.awayTeamLogo }} style={styles.premiumListTeamLogo} />
+                ) : (
+                  <Shield size={14} color="#6B7280" />
+                )}
+              </View>
+              <Text
+                style={[
+                  styles.premiumListTeamName,
+                  awayWinning && styles.premiumListTeamNameWinning,
+                  resultStyle?.away === 'loser' && { opacity: 0.5 },
+                ]}
+                numberOfLines={1}
+              >
                 {match.awayTeam}
               </Text>
-                {match.awayTeamLogo ? (
-                  <Image source={{ uri: match.awayTeamLogo }} style={styles.teamLogo} />
-                ) : (
-                  <Shield size={22} color={isDark ? '#5A5A7A' : '#C7C7CC'} />
-                )}
+              {hasScore ? (
+                <Text
+                  style={[
+                    styles.premiumListScore,
+                    awayWinning && styles.premiumListScoreWinning,
+                    isLive && { color: awayWinning ? '#FF4757' : '#E4E4ED' },
+                  ]}
+                >
+                  {match.awayScore}
+                </Text>
+              ) : (
+                <Text style={styles.premiumListKickoff}>{match.time}</Text>
+              )}
             </View>
           </View>
 
-          <View style={[styles.matchFooter, { borderTopColor: isDark ? '#1E1E38' : '#F0F0F5' }]}>
-            <View style={styles.footerLeft}>
+          <View style={styles.premiumListFooter}>
+            <View style={styles.premiumListFooterLeft}>
               {isPinned && (
-                <View style={styles.pinnedBadge}>
-                  <Pin size={10} color="#F59E0B" />
-                  <Text style={styles.pinnedText}>Pinned</Text>
+                <View style={styles.premiumListPinnedPill}>
+                  <Pin size={9} color="#F59E0B" />
+                  <Text style={styles.premiumListPinnedText}>Pinned</Text>
                 </View>
               )}
               {match.venue ? (
-                <View style={styles.venueRow}>
-                  <MapPin size={10} color={isDark ? '#52526E' : '#AEAEB2'} />
-                  <Text style={[styles.venueText, { color: isDark ? '#52526E' : '#AEAEB2' }]} numberOfLines={1}>
+                <View style={styles.premiumListVenueRow}>
+                  <MapPin size={9} color="#6B6B85" />
+                  <Text style={styles.premiumListVenueText} numberOfLines={1}>
                     {match.venue}{match.venueCity ? `, ${match.venueCity}` : ''}
                   </Text>
                 </View>
@@ -558,8 +571,8 @@ const PremiumMatchCard = React.memo(({
             {match.status !== 'Completed' && onToggleNotification && (
               <TouchableOpacity
                 style={[
-                  styles.bellBtn,
-                  { backgroundColor: isNotified ? (isDark ? '#1A2E4A' : '#EFF6FF') : (isDark ? '#1C1C2E' : '#F5F5F7') },
+                  styles.premiumListBellBtn,
+                  isNotified && { backgroundColor: 'rgba(0, 122, 255, 0.18)', borderColor: 'rgba(0, 122, 255, 0.35)' },
                 ]}
                 onPress={(e) => {
                   e.stopPropagation?.();
@@ -569,14 +582,16 @@ const PremiumMatchCard = React.memo(({
                 hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
               >
                 {isNotified ? (
-                  <Bell size={14} color="#007AFF" fill="#007AFF" />
+                  <Bell size={13} color="#60A5FA" fill="#60A5FA" />
                 ) : (
-                  <BellOff size={14} color={isDark ? '#52526E' : '#AEAEB2'} />
+                  <BellOff size={13} color="#6B6B85" />
                 )}
               </TouchableOpacity>
             )}
           </View>
-        </View>
+
+          {isLive ? <View style={[styles.premiumListLiveAccent, { backgroundColor: accentColor }]} /> : null}
+        </LinearGradient>
       </TouchableOpacity>
     </View>
   );
@@ -2812,6 +2827,229 @@ const styles = StyleSheet.create({
     width: '100%',
     marginBottom: 8,
     paddingHorizontal: 12,
+  },
+  premiumListCardWrapper: {
+    width: '100%',
+    marginBottom: 10,
+    paddingHorizontal: 12,
+  },
+  premiumListCard: {
+    borderRadius: 22,
+    padding: 16,
+    borderWidth: 1,
+    shadowOffset: { width: 0, height: 8 },
+    shadowRadius: 20,
+    elevation: 6,
+    overflow: 'hidden' as const,
+    position: 'relative' as const,
+  },
+  premiumListSheen: {
+    position: 'absolute' as const,
+    top: 0,
+    left: 0,
+    right: 0,
+    height: 80,
+  },
+  premiumListLiveAccent: {
+    position: 'absolute' as const,
+    left: 0,
+    top: 0,
+    bottom: 0,
+    width: 3,
+  },
+  premiumListTopRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    marginBottom: 12,
+    gap: 8,
+  },
+  premiumListLeagueRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    flex: 1,
+    minWidth: 0,
+  },
+  premiumListLeagueLogo: {
+    width: 18,
+    height: 18,
+  },
+  premiumListLeagueFallback: {
+    width: 18,
+    height: 18,
+    borderRadius: 5,
+    backgroundColor: 'rgba(255,255,255,0.06)',
+    justifyContent: 'center' as const,
+    alignItems: 'center' as const,
+  },
+  premiumListLeagueName: {
+    flex: 1,
+    fontSize: 11,
+    fontWeight: '700' as const,
+    color: '#8B8BA7',
+    textTransform: 'uppercase' as const,
+    letterSpacing: 0.4,
+  },
+  premiumListFavStar: {
+    width: 18,
+    height: 18,
+    borderRadius: 9,
+    backgroundColor: 'rgba(245, 158, 11, 0.18)',
+    justifyContent: 'center' as const,
+    alignItems: 'center' as const,
+  },
+  premiumListLiveBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    backgroundColor: 'rgba(255, 71, 87, 0.14)',
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: 'rgba(255, 71, 87, 0.3)',
+  },
+  premiumListLiveText: {
+    fontSize: 10,
+    fontWeight: '800' as const,
+    color: '#FF4757',
+    letterSpacing: 0.8,
+  },
+  premiumListElapsedPill: {
+    backgroundColor: 'rgba(255,255,255,0.08)',
+    paddingHorizontal: 6,
+    paddingVertical: 2,
+    borderRadius: 6,
+  },
+  premiumListElapsedText: {
+    fontSize: 10,
+    fontWeight: '800' as const,
+    color: '#F5F5FA',
+    letterSpacing: 0.3,
+  },
+  premiumListStatusPill: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    backgroundColor: 'rgba(255,255,255,0.06)',
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.08)',
+  },
+  premiumListStatusText: {
+    fontSize: 11,
+    fontWeight: '700' as const,
+    letterSpacing: 0.2,
+  },
+  premiumListTeams: {
+    gap: 8,
+    marginBottom: 12,
+  },
+  premiumListTeamRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+  },
+  premiumListLogoWrap: {
+    width: 28,
+    height: 28,
+    borderRadius: 14,
+    backgroundColor: 'rgba(255,255,255,0.08)',
+    justifyContent: 'center' as const,
+    alignItems: 'center' as const,
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.08)',
+  },
+  premiumListTeamLogo: {
+    width: 20,
+    height: 20,
+    resizeMode: 'contain',
+  },
+  premiumListTeamName: {
+    flex: 1,
+    fontSize: 14,
+    fontWeight: '600' as const,
+    color: '#C8C8D8',
+    letterSpacing: -0.1,
+  },
+  premiumListTeamNameWinning: {
+    color: '#FFFFFF',
+    fontWeight: '700' as const,
+  },
+  premiumListScore: {
+    fontSize: 20,
+    fontWeight: '800' as const,
+    color: '#E4E4ED',
+    minWidth: 24,
+    textAlign: 'right' as const,
+    letterSpacing: -0.5,
+  },
+  premiumListScoreWinning: {
+    color: '#2ECC71',
+  },
+  premiumListKickoff: {
+    fontSize: 13,
+    fontWeight: '700' as const,
+    color: '#8B8BA7',
+    letterSpacing: -0.2,
+  },
+  premiumListFooter: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    borderTopWidth: 1,
+    borderTopColor: 'rgba(255,255,255,0.06)',
+    paddingTop: 10,
+    gap: 8,
+  },
+  premiumListFooterLeft: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    minWidth: 0,
+  },
+  premiumListPinnedPill: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 3,
+    backgroundColor: 'rgba(245, 158, 11, 0.14)',
+    paddingHorizontal: 6,
+    paddingVertical: 2,
+    borderRadius: 6,
+  },
+  premiumListPinnedText: {
+    fontSize: 9,
+    fontWeight: '800' as const,
+    color: '#F59E0B',
+    letterSpacing: 0.3,
+    textTransform: 'uppercase' as const,
+  },
+  premiumListVenueRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    flex: 1,
+    minWidth: 0,
+  },
+  premiumListVenueText: {
+    fontSize: 10,
+    fontWeight: '500' as const,
+    color: '#6B6B85',
+    flex: 1,
+  },
+  premiumListBellBtn: {
+    width: 28,
+    height: 28,
+    borderRadius: 14,
+    backgroundColor: 'rgba(255,255,255,0.06)',
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.08)',
+    justifyContent: 'center' as const,
+    alignItems: 'center' as const,
   },
   matchCard: {
     borderRadius: 20,
