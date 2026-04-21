@@ -101,44 +101,57 @@ export const trpcReactClient = trpc.createClient({
       fetch: async (url, options) => {
         const trpcUrl = String(url);
         console.log('🚀 tRPC Request:', trpcUrl.substring(0, 150), options?.method || 'GET');
-        
-        const maxRetries = 2;
+
+        const maxRetries = 5;
         let lastError: Error | null = null;
-        
+
         for (let attempt = 0; attempt < maxRetries; attempt++) {
           try {
             const controller = new AbortController();
             const timeoutId = setTimeout(() => controller.abort(), 45000);
-            
+
             const response = await fetch(trpcUrl, {
               ...options,
               signal: controller.signal,
               mode: 'cors',
               credentials: 'omit',
             });
-            
+
             clearTimeout(timeoutId);
             console.log('✅ tRPC Response status:', response.status);
-            
+
+            // Retry on Rork dev-server cold-start / hibernation (429) or gateway errors (502/503/504).
+            // These commonly return HTML pages that tRPC cannot parse.
+            if ((response.status === 429 || response.status === 502 || response.status === 503 || response.status === 504) && attempt < maxRetries - 1) {
+              const contentType = response.headers.get('content-type') || '';
+              const looksLikeHtml = contentType.includes('text/html');
+              const delay = Math.min(1500 * Math.pow(2, attempt), 8000);
+              console.log(`⚠️ tRPC got ${response.status}${looksLikeHtml ? ' (HTML)' : ''}, retrying in ${delay}ms (attempt ${attempt + 1}/${maxRetries})`);
+              try { await response.text(); } catch {}
+              await new Promise(resolve => setTimeout(resolve, delay));
+              continue;
+            }
+
             return response;
           } catch (error: any) {
             lastError = error;
-            const isNetworkError = error.message === 'Load failed' || 
+            const isNetworkError = error.message === 'Load failed' ||
                                    error.message === 'Failed to fetch' ||
-                                   error.name === 'AbortError';
-            
+                                   error.name === 'AbortError' ||
+                                   error.name === 'TypeError';
+
             if (isNetworkError && attempt < maxRetries - 1) {
-              const delay = Math.min(1000 * Math.pow(2, attempt), 3000);
+              const delay = Math.min(1500 * Math.pow(2, attempt), 8000);
               console.log(`⚠️ tRPC network error, retrying in ${delay}ms (attempt ${attempt + 1}/${maxRetries})`);
               await new Promise(resolve => setTimeout(resolve, delay));
               continue;
             }
-            
+
             console.log(`⚠️ tRPC request failed (${attempt + 1}/${maxRetries}):`, error.message || error);
             throw error;
           }
         }
-        
+
         throw lastError || new Error('Failed after retries');
       },
     }),
@@ -153,6 +166,45 @@ export const trpcClient = createTRPCClient<AppRouter>({
         return {
           'Content-Type': 'application/json',
         };
+      },
+      fetch: async (url, options) => {
+        const trpcUrl = String(url);
+        const maxRetries = 5;
+        let lastError: Error | null = null;
+        for (let attempt = 0; attempt < maxRetries; attempt++) {
+          try {
+            const controller = new AbortController();
+            const timeoutId = setTimeout(() => controller.abort(), 45000);
+            const response = await fetch(trpcUrl, {
+              ...options,
+              signal: controller.signal,
+              mode: 'cors',
+              credentials: 'omit',
+            });
+            clearTimeout(timeoutId);
+            if ((response.status === 429 || response.status === 502 || response.status === 503 || response.status === 504) && attempt < maxRetries - 1) {
+              const delay = Math.min(1500 * Math.pow(2, attempt), 8000);
+              console.log(`⚠️ trpcClient got ${response.status}, retrying in ${delay}ms`);
+              try { await response.text(); } catch {}
+              await new Promise(resolve => setTimeout(resolve, delay));
+              continue;
+            }
+            return response;
+          } catch (error: any) {
+            lastError = error;
+            const isNetworkError = error.message === 'Load failed' ||
+                                   error.message === 'Failed to fetch' ||
+                                   error.name === 'AbortError' ||
+                                   error.name === 'TypeError';
+            if (isNetworkError && attempt < maxRetries - 1) {
+              const delay = Math.min(1500 * Math.pow(2, attempt), 8000);
+              await new Promise(resolve => setTimeout(resolve, delay));
+              continue;
+            }
+            throw error;
+          }
+        }
+        throw lastError || new Error('Failed after retries');
       },
     }),
   ],
