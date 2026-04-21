@@ -2786,7 +2786,7 @@ const styles = StyleSheet.create({
     flex: 1,
   },
   scrollContent: {
-    paddingHorizontal: 20,
+    paddingHorizontal: 0,
   },
   matchesList: {
     gap: 10,
@@ -2796,6 +2796,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     gap: 12,
     paddingVertical: 16,
+    paddingHorizontal: 20,
   },
   dateLine: {
     flex: 1,
@@ -2810,6 +2811,7 @@ const styles = StyleSheet.create({
   cardWrapper: {
     width: '100%',
     marginBottom: 8,
+    paddingHorizontal: 12,
   },
   matchCard: {
     borderRadius: 20,
@@ -3026,6 +3028,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     paddingVertical: 80,
     paddingHorizontal: 40,
+    width: '100%',
   },
   emptyIconCircle: {
     width: 80,
@@ -3054,6 +3057,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     paddingVertical: 80,
     paddingHorizontal: 32,
+    width: '100%',
   },
   setupIconCircle: {
     width: 80,
