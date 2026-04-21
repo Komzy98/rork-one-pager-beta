@@ -15,6 +15,7 @@ import {
   Flame,
   Target,
   Calendar,
+  Zap,
   Heart,
   Bookmark,
   Plus,
@@ -119,6 +120,30 @@ const findExerciseFormGuide = (activityText: string, formGuides?: Record<string,
   return null;
 };
 
+const parseProgramWeeks = (programLength?: string): number | null => {
+  if (!programLength) return null;
+  const weekMatch = programLength.match(/(\d+)\s*week/i);
+  if (weekMatch) return parseInt(weekMatch[1], 10);
+  const monthMatch = programLength.match(/(\d+)\s*month/i);
+  if (monthMatch) return parseInt(monthMatch[1], 10) * 4;
+  const dayMatch = programLength.match(/(\d+)\s*day/i);
+  if (dayMatch) {
+    const days = parseInt(dayMatch[1], 10);
+    return Math.max(1, Math.round(days / 7));
+  }
+  return null;
+};
+
+const computeAdaptiveWeeks = (
+  originalWeeks: number,
+  originalDaysPerWeek: number,
+  selectedDaysPerWeek: number,
+): number => {
+  if (selectedDaysPerWeek <= 0 || originalDaysPerWeek <= 0) return originalWeeks;
+  const totalSessions = originalWeeks * originalDaysPerWeek;
+  return Math.max(1, Math.ceil(totalSessions / selectedDaysPerWeek));
+};
+
 const getFrequencyDescription = (days: number[]) => {
   if (days.length === 7) return 'Every day';
   if (days.length === 5 && days.every(d => d >= 1 && d <= 5)) return 'Weekdays only';
@@ -147,6 +172,13 @@ export default function HabitDetailModal({
       setSelectedDays([...habit.frequency.days].sort((a, b) => a - b));
     }
   }, [habit?.id]);
+
+  const originalDaysPerWeek = habit?.frequency?.timesPerWeek ?? habit?.frequency?.days?.length ?? 0;
+  const originalWeeks = parseProgramWeeks(habit?.programLength);
+  const adaptiveWeeks = originalWeeks && originalDaysPerWeek > 0 && selectedDays.length > 0
+    ? computeAdaptiveWeeks(originalWeeks, originalDaysPerWeek, selectedDays.length)
+    : null;
+  const isFitnessProgram = !!(habit?.weeks && habit.weeks.length > 0 && originalWeeks);
 
   if (!habit) return null;
 
@@ -392,6 +424,25 @@ export default function HabitDetailModal({
                   );
                 })}
               </View>
+
+              {isFitnessProgram && adaptiveWeeks && (
+                <View style={[styles.adaptiveDurationCard, { borderColor: (habit.color || COLORS.primary) + '40', backgroundColor: (habit.color || COLORS.primary) + '0D' }]}>
+                  <View style={[styles.adaptiveIconBg, { backgroundColor: (habit.color || COLORS.primary) + '22' }]}>
+                    <Zap size={18} color={habit.color || COLORS.primary} />
+                  </View>
+                  <View style={styles.adaptiveContent}>
+                    <Text style={styles.adaptiveLabel}>ADAPTIVE PROGRAM DURATION</Text>
+                    <Text style={styles.adaptiveTitle}>
+                      {adaptiveWeeks} week{adaptiveWeeks === 1 ? '' : 's'} at {selectedDays.length}x/week
+                    </Text>
+                    <Text style={styles.adaptiveSub}>
+                      {selectedDays.length === originalDaysPerWeek
+                        ? `Original program: ${originalWeeks} weeks with ${originalDaysPerWeek} sessions/week`
+                        : `Scaled from ${originalWeeks} weeks • ${originalWeeks * originalDaysPerWeek} total sessions preserved`}
+                    </Text>
+                  </View>
+                </View>
+              )}
 
               <View style={styles.schedulePresetsRow}>
                 <TouchableOpacity
@@ -1002,6 +1053,43 @@ const styles = StyleSheet.create({
     fontSize: 12,
     fontWeight: '600' as const,
     color: COLORS.textSecondary,
+  },
+  adaptiveDurationCard: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+    padding: 14,
+    borderRadius: 14,
+    borderWidth: 1,
+    marginTop: 14,
+  },
+  adaptiveIconBg: {
+    width: 40,
+    height: 40,
+    borderRadius: 12,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  adaptiveContent: {
+    flex: 1,
+  },
+  adaptiveLabel: {
+    fontSize: 10,
+    fontWeight: '700' as const,
+    letterSpacing: 0.8,
+    color: COLORS.textLight,
+  },
+  adaptiveTitle: {
+    fontSize: 15,
+    fontWeight: '700' as const,
+    color: COLORS.text,
+    marginTop: 2,
+  },
+  adaptiveSub: {
+    fontSize: 12,
+    color: COLORS.textSecondary,
+    marginTop: 2,
+    lineHeight: 17,
   },
   creatorCard: {
     flexDirection: 'row',
