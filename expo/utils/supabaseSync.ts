@@ -72,20 +72,32 @@ export const syncAllDataToCloud = async (data: Partial<SyncableData>): Promise<b
         { onConflict: 'user_id' }
       );
     if (error) {
-      console.warn('[supabaseSync] Upsert error:', {
+      const details = {
         message: error.message,
         code: (error as any).code,
         details: (error as any).details,
         hint: (error as any).hint,
         status,
-      });
-      throw error;
+      };
+      console.warn('[supabaseSync] Upsert error:', details);
+      const parts = [
+        error.message,
+        (error as any).details,
+        (error as any).hint,
+        (error as any).code ? `code ${(error as any).code}` : undefined,
+      ].filter(Boolean);
+      const combined = parts.join(' — ') || 'Unknown Supabase error';
+      const wrapped = new Error(combined);
+      (wrapped as any).supabase = details;
+      throw wrapped;
     }
     console.log('[supabaseSync] Data synced to Supabase user_data (status', status, ')');
     return true;
   } catch (error: any) {
-    console.warn('[supabaseSync] Sync to cloud failed:', error?.message || error);
-    throw error;
+    const msg = error?.message || (typeof error === 'string' ? error : JSON.stringify(error));
+    console.warn('[supabaseSync] Sync to cloud failed:', msg);
+    if (error instanceof Error) throw error;
+    throw new Error(msg);
   }
 };
 

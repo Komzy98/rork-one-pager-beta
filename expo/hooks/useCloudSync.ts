@@ -165,10 +165,13 @@ export const [CloudSyncProvider, useCloudSync] = createContextHook(() => {
       
       console.log('Data synced to cloud successfully');
       return true;
-    } catch (err) {
+    } catch (err: any) {
       setSyncStatus('error');
-      setError(err instanceof Error ? err.message : 'Sync failed');
-      console.error('Sync to cloud failed:', err);
+      const msg = err instanceof Error
+        ? err.message
+        : (err?.message || (typeof err === 'string' ? err : JSON.stringify(err)) || 'Sync failed');
+      setError(msg);
+      console.error('Sync to cloud failed:', msg, err);
       return false;
     }
   }, [isAuthenticated, user, useSupabase, cloudStorage, isCloudEnabled, habits, activities, shows, sports, allTasks, projects, timeEntries, profile, contextsReady]);
@@ -223,10 +226,13 @@ export const [CloudSyncProvider, useCloudSync] = createContextHook(() => {
         console.log('No cloud data to sync');
         return true;
       }
-    } catch (err) {
+    } catch (err: any) {
       setSyncStatus('error');
-      setError(err instanceof Error ? err.message : 'Sync failed');
-      console.error('Sync from cloud failed:', err);
+      const msg = err instanceof Error
+        ? err.message
+        : (err?.message || (typeof err === 'string' ? err : JSON.stringify(err)) || 'Sync failed');
+      setError(msg);
+      console.error('Sync from cloud failed:', msg, err);
       return false;
     }
   }, [isAuthenticated, user, useSupabase, cloudStorage, isCloudEnabled, contextsReady]);
