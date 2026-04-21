@@ -1,4 +1,7 @@
-import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
+import { QueryClient } from "@tanstack/react-query";
+import { PersistQueryClientProvider } from "@tanstack/react-query-persist-client";
+import { createAsyncStoragePersister } from "@tanstack/query-async-storage-persister";
+import AsyncStorage from "@react-native-async-storage/async-storage";
 import { Stack, useRouter } from "expo-router";
 import * as SplashScreen from "expo-splash-screen";
 import * as Linking from "expo-linking";
@@ -46,7 +49,7 @@ const queryClient = new QueryClient({
   defaultOptions: {
     queries: {
       staleTime: 5 * 60 * 1000,
-      gcTime: 10 * 60 * 1000,
+      gcTime: 24 * 60 * 60 * 1000,
       retry: (failureCount, error) => {
         if (error && typeof error === 'object' && 'status' in error) {
           const status = error.status as number;
@@ -60,6 +63,12 @@ const queryClient = new QueryClient({
       retry: 1,
     },
   },
+});
+
+const asyncStoragePersister = createAsyncStoragePersister({
+  storage: AsyncStorage,
+  key: 'RORK_QUERY_CACHE_V1',
+  throttleTime: 1000,
 });
 
 function RootLayoutNav() {
@@ -187,7 +196,19 @@ export default function RootLayout() {
 
   return (
     <ErrorBoundary>
-      <QueryClientProvider client={queryClient}>
+      <PersistQueryClientProvider
+        client={queryClient}
+        persistOptions={{
+          persister: asyncStoragePersister,
+          maxAge: 24 * 60 * 60 * 1000,
+          dehydrateOptions: {
+            shouldDehydrateQuery: (query) => {
+              const key = JSON.stringify(query.queryKey);
+              return key.includes('football') || key.includes('ufc') || key.includes('f1') || key.includes('nba');
+            },
+          },
+        }}
+      >
         <trpc.Provider client={trpcReactClient} queryClient={queryClient}>
           <GestureHandlerRootView style={styles.container}>
             <SafeProvider provider={ThemeProvider}>
@@ -220,7 +241,7 @@ export default function RootLayout() {
             </SafeProvider>
           </GestureHandlerRootView>
         </trpc.Provider>
-      </QueryClientProvider>
+      </PersistQueryClientProvider>
     </ErrorBoundary>
   );
 }
