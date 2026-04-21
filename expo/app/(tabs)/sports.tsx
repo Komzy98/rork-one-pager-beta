@@ -2514,15 +2514,15 @@ const styles = StyleSheet.create({
     fontWeight: '600' as const,
   },
   tickerSection: {
-    paddingTop: 6,
-    paddingBottom: 14,
+    paddingTop: 8,
+    paddingBottom: 18,
   },
   tickerHeader: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
     paddingHorizontal: 20,
-    marginBottom: 12,
+    marginBottom: 14,
   },
   tickerHeaderLeft: {
     flexDirection: 'row',
@@ -2570,14 +2570,14 @@ const styles = StyleSheet.create({
   },
   tickerList: {
     paddingHorizontal: 20,
-    gap: 12,
+    gap: 14,
   },
   tickerCardWrapper: {
-    width: SCREEN_WIDTH * 0.58,
+    width: SCREEN_WIDTH * 0.66,
   },
   tickerCard: {
     borderRadius: 22,
-    padding: 16,
+    padding: 18,
     borderWidth: 1,
     borderColor: 'rgba(46, 204, 113, 0.25)',
     shadowColor: '#2ECC71',
@@ -2598,7 +2598,7 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-    marginBottom: 12,
+    marginBottom: 16,
   },
   tickerLiveBadge: {
     flexDirection: 'row',
@@ -2630,13 +2630,13 @@ const styles = StyleSheet.create({
     letterSpacing: 0.3,
   },
   tickerTeams: {
-    gap: 6,
-    marginBottom: 10,
+    gap: 10,
+    marginBottom: 14,
   },
   tickerTeamRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 8,
+    gap: 10,
   },
   tickerLogoWrap: {
     width: 26,
@@ -2655,7 +2655,7 @@ const styles = StyleSheet.create({
   },
   tickerTeamName: {
     flex: 1,
-    fontSize: 13,
+    fontSize: 14,
     fontWeight: '600' as const,
     color: '#C8C8D8',
     letterSpacing: -0.1,
@@ -2665,10 +2665,10 @@ const styles = StyleSheet.create({
     fontWeight: '700' as const,
   },
   tickerScore: {
-    fontSize: 18,
+    fontSize: 20,
     fontWeight: '800' as const,
     color: '#E4E4ED',
-    minWidth: 22,
+    minWidth: 24,
     textAlign: 'right' as const,
     letterSpacing: -0.5,
   },
@@ -2678,10 +2678,10 @@ const styles = StyleSheet.create({
   tickerLeague: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 5,
+    gap: 6,
     borderTopWidth: 1,
     borderTopColor: 'rgba(255,255,255,0.06)',
-    paddingTop: 8,
+    paddingTop: 10,
   },
   tickerLeagueLogo: {
     width: 14,
