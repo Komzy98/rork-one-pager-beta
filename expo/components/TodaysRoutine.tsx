@@ -393,6 +393,16 @@ const RoutineItem = ({ habit, communityInfo, minimalVersion, isBusyMode, onToggl
   }, [habit, communityInfo, isCompleted]);
   
   const todaysActivities = programInfo.todaysWorkout;
+
+  const workoutDayLabel = React.useMemo(() => {
+    if (!programInfo.hasProgram || programInfo.isRestDay || !todaysActivities?.title) return null;
+    const raw = String(todaysActivities.title);
+    const afterDash = raw.split(/\s[-–—]\s/).pop() || raw;
+    const cleaned = afterDash.replace(/^day\s*\d+\s*[:\-–—]?\s*/i, '').trim();
+    return cleaned || raw;
+  }, [programInfo.hasProgram, programInfo.isRestDay, todaysActivities]);
+
+  const displayTitle = workoutDayLabel || habit.title;
   
   const handlePress = () => {
     void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
@@ -475,8 +485,13 @@ const RoutineItem = ({ habit, communityInfo, minimalVersion, isBusyMode, onToggl
             ]}
             numberOfLines={1}
           >
-            {habit.title}
+            {displayTitle}
           </Text>
+          {workoutDayLabel ? (
+            <Text style={styles.routineItemSubtitle} numberOfLines={1}>
+              {habit.title}
+            </Text>
+          ) : null}
           
           {programInfo.hasProgram && programInfo.currentDay > 0 && programInfo.totalDays > 0 ? (
             <View style={styles.programProgressInline}>
@@ -537,16 +552,11 @@ const RoutineItem = ({ habit, communityInfo, minimalVersion, isBusyMode, onToggl
             </View>
           )}
 
-          {programInfo.hasProgram && programInfo.todaysWorkout && !isExpanded && (
+          {programInfo.hasProgram && programInfo.todaysWorkout && !isExpanded && programInfo.todaysWorkout.activities && programInfo.todaysWorkout.activities.length > 0 && (
             <View style={[styles.todayReadingPreview, { borderLeftColor: habitColor }]}>
-              <Text style={styles.todayReadingTitle} numberOfLines={1}>
-                {programInfo.todaysWorkout.title}
+              <Text style={styles.todayReadingDesc} numberOfLines={1}>
+                {programInfo.todaysWorkout.activities[0]}
               </Text>
-              {programInfo.todaysWorkout.activities && programInfo.todaysWorkout.activities.length > 0 && (
-                <Text style={styles.todayReadingDesc} numberOfLines={1}>
-                  {programInfo.todaysWorkout.activities[0]}
-                </Text>
-              )}
             </View>
           )}
         </View>
@@ -1305,6 +1315,13 @@ const styles = StyleSheet.create({
   routineItemTitleCompleted: {
     textDecorationLine: 'line-through',
     color: '#B0B8C4',
+  },
+  routineItemSubtitle: {
+    fontSize: 11.5,
+    fontWeight: '600' as const,
+    color: '#94A3B8',
+    letterSpacing: -0.1,
+    marginTop: 1,
   },
   routineItemMeta: {
     flexDirection: 'row',
