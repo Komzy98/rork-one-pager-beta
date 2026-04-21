@@ -430,7 +430,6 @@ const PremiumMatchCard = React.memo(({
               pointerEvents="none"
             />
           ) : null}
-          {isLive ? <View style={styles.liveAccentBar} /> : null}
           <View style={styles.matchHeader}>
             <View style={styles.leagueInfo}>
               {match.leagueLogo ? (
