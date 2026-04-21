@@ -9,13 +9,32 @@ function isValidSupabaseUrl(u: string): boolean {
   if (!u) return false;
   try {
     const parsed = new URL(u);
-    return parsed.protocol === 'https:' || parsed.protocol === 'http:';
+    if (parsed.protocol !== 'https:' && parsed.protocol !== 'http:') return false;
+    const host = parsed.hostname.toLowerCase();
+    if (host === 'supabase.com' || host === 'www.supabase.com' || host === 'app.supabase.com') {
+      return false;
+    }
+    if (!host.endsWith('.supabase.co') && !host.endsWith('.supabase.in') && !host.endsWith('.supabase.net')) {
+      return false;
+    }
+    if (parsed.pathname && parsed.pathname !== '/' && parsed.pathname !== '') return false;
+    return true;
   } catch {
     return false;
   }
 }
 
-export const supabaseUrl = isValidSupabaseUrl(rawUrl) ? rawUrl : '';
+function normalizeSupabaseUrl(u: string): string {
+  if (!u) return '';
+  try {
+    const parsed = new URL(u);
+    return `${parsed.protocol}//${parsed.hostname}`;
+  } catch {
+    return '';
+  }
+}
+
+export const supabaseUrl = isValidSupabaseUrl(rawUrl) ? normalizeSupabaseUrl(rawUrl) : '';
 export const supabaseAnonKey = rawKey;
 
 export const supabaseConfigured = !!supabaseUrl && !!supabaseAnonKey;
@@ -99,7 +118,7 @@ if (supabaseConfigured) {
     console.warn('Supabase env vars missing - cloud sync disabled, using local storage only');
   } else if (!isValidSupabaseUrl(rawUrl)) {
     console.warn(
-      'EXPO_PUBLIC_SUPABASE_URL is invalid. Expected format: https://<project-ref>.supabase.co. Got:',
+      'EXPO_PUBLIC_SUPABASE_URL is invalid. Expected format: https://<project-ref>.supabase.co (NOT the dashboard URL). Got:',
       rawUrl
     );
   } else if (!rawKey) {

@@ -123,7 +123,7 @@ export const syncAllDataToCloud = async (data: Partial<SyncableData>): Promise<b
       raw.includes('NetworkError') ||
       raw.includes('Network request failed');
     const msg = isNetwork
-      ? `Network error reaching Supabase (${supabaseUrl || 'no url set'}). Check your internet connection and that EXPO_PUBLIC_SUPABASE_URL is correct.`
+      ? `Network error reaching Supabase (${supabaseUrl || 'no url set'}). Make sure EXPO_PUBLIC_SUPABASE_URL is your Project API URL like https://<ref>.supabase.co (NOT the dashboard URL on supabase.com).`
       : raw;
     console.warn('[supabaseSync] Sync to cloud failed:', msg, error);
     throw new Error(msg);
