@@ -2026,7 +2026,7 @@ export default function SportsScreen() {
       {sportMode === 'football' && (!hasTeams && !isLoading && !hasError && !hasConfigError) ? (
         <ScrollView
           style={styles.scrollView}
-          contentContainerStyle={[styles.scrollContent, { paddingBottom: insets.bottom + 100 }]}
+          contentContainerStyle={[styles.scrollContent, { paddingBottom: insets.bottom + 180 }]}
           showsVerticalScrollIndicator={false}
           refreshControl={
             <RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor="#007AFF" colors={['#007AFF']} />
@@ -2101,7 +2101,7 @@ export default function SportsScreen() {
           renderItem={renderFlatListItem}
           keyExtractor={flatListKeyExtractor}
           style={styles.scrollView}
-          contentContainerStyle={[styles.scrollContent, { paddingBottom: insets.bottom + 100 }]}
+          contentContainerStyle={[styles.scrollContent, { paddingBottom: insets.bottom + 180 }]}
           showsVerticalScrollIndicator={false}
           initialNumToRender={8}
           maxToRenderPerBatch={6}
