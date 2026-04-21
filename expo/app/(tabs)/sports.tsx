@@ -2824,7 +2824,7 @@ const styles = StyleSheet.create({
   },
   cardInner: {
     borderRadius: 20,
-    padding: 20,
+    padding: 16,
     borderWidth: 1,
     borderColor: 'rgba(0, 0, 0, 0.04)',
     overflow: 'hidden' as const,
@@ -2855,7 +2855,7 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-    marginBottom: 14,
+    marginBottom: 10,
   },
   leagueInfo: {
     flexDirection: 'row',
@@ -2924,7 +2924,7 @@ const styles = StyleSheet.create({
   matchBody: {
     flexDirection: 'row',
     alignItems: 'center',
-    paddingVertical: 8,
+    paddingVertical: 5,
   },
   teamRowLeft: {
     flex: 1,
@@ -2978,7 +2978,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     gap: 6,
     paddingHorizontal: 14,
-    paddingVertical: 10,
+    paddingVertical: 7,
     borderRadius: 14,
     borderWidth: 1,
     borderColor: 'rgba(0,0,0,0.03)',
@@ -2993,9 +2993,9 @@ const styles = StyleSheet.create({
     elevation: 3,
   },
   scoreNum: {
-    fontSize: 28,
+    fontSize: 24,
     fontWeight: '900' as const,
-    letterSpacing: -1.2,
+    letterSpacing: -1,
   },
   scoreDash: {
     fontSize: 18,
@@ -3015,8 +3015,8 @@ const styles = StyleSheet.create({
   matchFooter: {
     flexDirection: 'row',
     alignItems: 'center',
-    marginTop: 14,
-    paddingTop: 12,
+    marginTop: 10,
+    paddingTop: 9,
     borderTopWidth: StyleSheet.hairlineWidth,
   },
   venueText: {
