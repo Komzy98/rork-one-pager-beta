@@ -2,8 +2,21 @@ import { createClient, SupabaseClient } from '@supabase/supabase-js';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { Platform } from 'react-native';
 
-const supabaseUrl = process.env.EXPO_PUBLIC_SUPABASE_URL || '';
-const supabaseAnonKey = process.env.EXPO_PUBLIC_SUPABASE_ANON_KEY || '';
+const rawUrl = (process.env.EXPO_PUBLIC_SUPABASE_URL || '').trim();
+const rawKey = (process.env.EXPO_PUBLIC_SUPABASE_ANON_KEY || '').trim();
+
+function isValidSupabaseUrl(u: string): boolean {
+  if (!u) return false;
+  try {
+    const parsed = new URL(u);
+    return parsed.protocol === 'https:' || parsed.protocol === 'http:';
+  } catch {
+    return false;
+  }
+}
+
+const supabaseUrl = isValidSupabaseUrl(rawUrl) ? rawUrl : '';
+const supabaseAnonKey = rawKey;
 
 export const supabaseConfigured = !!supabaseUrl && !!supabaseAnonKey;
 
@@ -59,19 +72,37 @@ function createStubClient(): SupabaseClient {
   return stub as SupabaseClient;
 }
 
-export const supabase: SupabaseClient = supabaseConfigured
-  ? createClient(supabaseUrl, supabaseAnonKey, {
+function safeCreateClient(): SupabaseClient {
+  try {
+    return createClient(supabaseUrl, supabaseAnonKey, {
       auth: {
         storage: Platform.OS === 'web' ? undefined : AsyncStorage,
         autoRefreshToken: true,
         persistSession: true,
         detectSessionInUrl: false,
       },
-    })
+    });
+  } catch (err) {
+    console.warn('Failed to init Supabase client, falling back to stub:', err);
+    return createStubClient();
+  }
+}
+
+export const supabase: SupabaseClient = supabaseConfigured
+  ? safeCreateClient()
   : createStubClient();
 
 if (supabaseConfigured) {
   console.log('Supabase client initialized');
 } else {
-  console.warn('Supabase env vars missing - cloud sync disabled, using local storage only');
+  if (!rawUrl && !rawKey) {
+    console.warn('Supabase env vars missing - cloud sync disabled, using local storage only');
+  } else if (!isValidSupabaseUrl(rawUrl)) {
+    console.warn(
+      'EXPO_PUBLIC_SUPABASE_URL is invalid. Expected format: https://<project-ref>.supabase.co. Got:',
+      rawUrl
+    );
+  } else if (!rawKey) {
+    console.warn('EXPO_PUBLIC_SUPABASE_ANON_KEY is missing');
+  }
 }
