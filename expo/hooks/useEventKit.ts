@@ -247,16 +247,25 @@ export const [EventKitProvider, useEventKit] = createContextHook(() => {
     });
   }, [events]);
 
-  // Get upcoming events (next 7 days)
+  // Get upcoming events (includes today's events even if they started earlier)
   const getUpcomingEvents = useCallback((days: number = 7): EventKitEvent[] => {
     const now = new Date();
-    const futureDate = new Date();
-    futureDate.setDate(now.getDate() + days);
-    
-    return events.filter(event => {
-      const eventStart = new Date(event.startDate);
-      return eventStart > now && eventStart <= futureDate;
-    }).slice(0, 10); // Limit to 10 events
+    const startOfToday = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+    const futureDate = new Date(startOfToday);
+    futureDate.setDate(startOfToday.getDate() + days);
+    futureDate.setHours(23, 59, 59, 999);
+
+    return events
+      .filter(event => {
+        const eventStart = new Date(event.startDate);
+        const eventEnd = new Date(event.endDate);
+        // Include if event starts within range OR is still ongoing
+        return (
+          (eventStart >= startOfToday && eventStart <= futureDate) ||
+          (eventStart < startOfToday && eventEnd >= now)
+        );
+      })
+      .sort((a, b) => new Date(a.startDate).getTime() - new Date(b.startDate).getTime());
   }, [events]);
 
   // Create a new event
