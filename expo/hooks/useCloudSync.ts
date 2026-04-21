@@ -28,7 +28,7 @@ export const [CloudSyncProvider, useCloudSync] = createContextHook(() => {
   const [isCloudEnabled, setIsCloudEnabled] = useState<boolean>(false);
   const [error, setError] = useState<string | null>(null);
   const [cloudStorage, setCloudStorage] = useState<any>(null);
-  const [useFirebase, setUseFirebase] = useState<boolean>(false);
+  const [useSupabase, setUseSupabase] = useState<boolean>(false);
   const [isInitialized, setIsInitialized] = useState<boolean>(false);
 
   const { isAuthenticated, user } = useAuth();
@@ -66,15 +66,15 @@ export const [CloudSyncProvider, useCloudSync] = createContextHook(() => {
       if (lastSync) {
         setLastSyncTime(lastSync);
       }
-      if (provider === 'firebase') {
-        setUseFirebase(true);
+      if (provider === 'supabase' || provider === 'firebase') {
+        setUseSupabase(true);
       }
     } catch (error) {
       console.error('Failed to load sync status:', error);
     }
   }, []);
 
-  const initializeSync = useCallback(async (preferFirebase = true) => {
+  const initializeSync = useCallback(async (preferSupabase = true) => {
     if (!user) {
       setError('No user found');
       return false;
@@ -89,20 +89,20 @@ export const [CloudSyncProvider, useCloudSync] = createContextHook(() => {
       setSyncStatus('syncing');
       setError(null);
       
-      if (preferFirebase) {
+      if (preferSupabase) {
         try {
-          const firebaseInitialized = await initializeCloudSync();
-          if (firebaseInitialized) {
-            setUseFirebase(true);
+          const supabaseInitialized = await initializeCloudSync();
+          if (supabaseInitialized) {
+            setUseSupabase(true);
             setIsCloudEnabled(true);
             await AsyncStorage.setItem('cloud_sync_enabled', 'true');
-            await AsyncStorage.setItem('cloud_sync_provider', 'firebase');
+            await AsyncStorage.setItem('cloud_sync_provider', 'supabase');
             setSyncStatus('success');
-            console.log('Firebase cloud sync initialized');
+            console.log('Supabase cloud sync initialized');
             return true;
           }
-        } catch (firebaseError: any) {
-          console.log('Firebase initialization failed:', firebaseError?.message || firebaseError);
+        } catch (supabaseError: any) {
+          console.log('Supabase initialization failed:', supabaseError?.message || supabaseError);
         }
       }
       
@@ -147,7 +147,7 @@ export const [CloudSyncProvider, useCloudSync] = createContextHook(() => {
         userProfile: profile || {}
       };
 
-      if (useFirebase) {
+      if (useSupabase) {
         await syncAllDataToCloud(dataToSync);
       } else {
         const storageToUse = storage || cloudStorage;
@@ -170,7 +170,7 @@ export const [CloudSyncProvider, useCloudSync] = createContextHook(() => {
       console.error('Sync to cloud failed:', err);
       return false;
     }
-  }, [isAuthenticated, user, useFirebase, cloudStorage, isCloudEnabled, habits, activities, shows, sports, allTasks, projects, timeEntries, profile, contextsReady]);
+  }, [isAuthenticated, user, useSupabase, cloudStorage, isCloudEnabled, habits, activities, shows, sports, allTasks, projects, timeEntries, profile, contextsReady]);
 
   const syncFromCloud = useCallback(async (storage?: any) => {
     if (!isAuthenticated || !user) {
@@ -193,7 +193,7 @@ export const [CloudSyncProvider, useCloudSync] = createContextHook(() => {
       setError(null);
 
       let cloudData;
-      if (useFirebase) {
+      if (useSupabase) {
         cloudData = await syncAllDataFromCloud();
       } else {
         const storageToUse = storage || cloudStorage;
@@ -228,15 +228,15 @@ export const [CloudSyncProvider, useCloudSync] = createContextHook(() => {
       console.error('Sync from cloud failed:', err);
       return false;
     }
-  }, [isAuthenticated, user, useFirebase, cloudStorage, isCloudEnabled, contextsReady]);
+  }, [isAuthenticated, user, useSupabase, cloudStorage, isCloudEnabled, contextsReady]);
 
-  const enableCloudSync = useCallback(async (preferFirebase = false) => {
+  const enableCloudSync = useCallback(async (preferSupabase = false) => {
     if (!isAuthenticated || !user) {
       setError('Please log in to enable cloud sync');
       return false;
     }
     
-    return await initializeSync(preferFirebase);
+    return await initializeSync(preferSupabase);
   }, [isAuthenticated, user, initializeSync]);
 
   const disableCloudSync = useCallback(async () => {
@@ -258,12 +258,12 @@ export const [CloudSyncProvider, useCloudSync] = createContextHook(() => {
     return uploadSuccess && downloadSuccess;
   }, [cloudStorage, syncToCloud, syncFromCloud]);
 
-  const [firebaseInitAttempted, setFirebaseInitAttempted] = useState<boolean>(false);
+  const [supabaseInitAttempted, setSupabaseInitAttempted] = useState<boolean>(false);
 
   useEffect(() => {
-    const autoInitializeFirebaseSync = async () => {
-      if (isAuthenticated && user && !isCloudEnabled && contextsReady && !firebaseInitAttempted) {
-        setFirebaseInitAttempted(true);
+    const autoInitializeSupabaseSync = async () => {
+      if (isAuthenticated && user && !isCloudEnabled && contextsReady && !supabaseInitAttempted) {
+        setSupabaseInitAttempted(true);
         console.log('Checking cloud sync availability for authenticated user');
         try {
           const initialized = await initializeSync(true);
@@ -275,8 +275,8 @@ export const [CloudSyncProvider, useCloudSync] = createContextHook(() => {
       }
     };
     
-    void autoInitializeFirebaseSync();
-  }, [isAuthenticated, user, isCloudEnabled, contextsReady, firebaseInitAttempted, initializeSync]);
+    void autoInitializeSupabaseSync();
+  }, [isAuthenticated, user, isCloudEnabled, contextsReady, supabaseInitAttempted, initializeSync]);
 
   // Load sync status from storage
   useEffect(() => {
@@ -286,7 +286,7 @@ export const [CloudSyncProvider, useCloudSync] = createContextHook(() => {
   useEffect(() => {
     if (!isCloudEnabled || !isAuthenticated || !user) return;
     
-    if (!useFirebase && !cloudStorage) {
+    if (!useSupabase && !cloudStorage) {
       return;
     }
 
@@ -296,12 +296,12 @@ export const [CloudSyncProvider, useCloudSync] = createContextHook(() => {
     }, 2 * 60 * 1000);
 
     return () => clearInterval(interval);
-  }, [isCloudEnabled, isAuthenticated, user, useFirebase, cloudStorage, syncToCloud]);
+  }, [isCloudEnabled, isAuthenticated, user, useSupabase, cloudStorage, syncToCloud]);
 
   useEffect(() => {
     if (!isCloudEnabled || !isAuthenticated || !user) return;
     
-    if (!useFirebase && !cloudStorage) return;
+    if (!useSupabase && !cloudStorage) return;
 
     const handleAppStateChange = (nextAppState: string) => {
       if (nextAppState === 'active') {
@@ -315,7 +315,7 @@ export const [CloudSyncProvider, useCloudSync] = createContextHook(() => {
     return () => {
       subscription?.remove();
     };
-  }, [isCloudEnabled, isAuthenticated, user, useFirebase, cloudStorage, syncFromCloud]);
+  }, [isCloudEnabled, isAuthenticated, user, useSupabase, cloudStorage, syncFromCloud]);
 
   const syncToCloudWrapper = useCallback(() => syncToCloud(), [syncToCloud]);
   const syncFromCloudWrapper = useCallback(() => syncFromCloud(), [syncFromCloud]);
@@ -335,13 +335,14 @@ export const [CloudSyncProvider, useCloudSync] = createContextHook(() => {
     forceSync,
     
     // Provider info
-    useFirebase,
-    cloudProvider: useFirebase ? 'Firebase' : 'JSONBin',
+    useSupabase,
+    useFirebase: useSupabase,
+    cloudProvider: useSupabase ? 'Supabase' : 'JSONBin',
     
     // Helpers
     isOnline: isCloudEnabled && syncStatus !== 'error',
     
     // Auto-sync status
-    isAutoSyncActive: isCloudEnabled && (useFirebase || !!cloudStorage),
-  }), [syncStatus, lastSyncTime, isCloudEnabled, error, enableCloudSync, disableCloudSync, syncToCloudWrapper, syncFromCloudWrapper, forceSync, useFirebase, cloudStorage]);
+    isAutoSyncActive: isCloudEnabled && (useSupabase || !!cloudStorage),
+  }), [syncStatus, lastSyncTime, isCloudEnabled, error, enableCloudSync, disableCloudSync, syncToCloudWrapper, syncFromCloudWrapper, forceSync, useSupabase, cloudStorage]);
 });

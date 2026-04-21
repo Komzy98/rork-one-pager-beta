@@ -152,7 +152,7 @@ export const [AppProvider, useApp] = createContextHook(() => {
   const queryClient = useQueryClient();
   const { user } = useAuth();
   const userId = user?.id;
-  const firebaseSync = useSupabaseSync(userId);
+  const supabaseSync = useSupabaseSync(userId);
   
   // Get user-specific storage keys - use stable values
   const HABITS_STORAGE_KEY = React.useMemo(() => getUserStorageKey('habits', userId), [userId]);
@@ -285,9 +285,9 @@ export const [AppProvider, useApp] = createContextHook(() => {
       try {
         await unifiedStorage.setItem(HABITS_STORAGE_KEY, JSON.stringify(habits));
         
-        if (userId && firebaseSync.saveToCloud) {
+        if (userId && supabaseSync.saveToCloud) {
           try {
-            await firebaseSync.saveToCloud({ habits });
+            await supabaseSync.saveToCloud({ habits });
             console.log('✅ Habits synced to Supabase');
           } catch (syncError) {
             console.warn('⚠️ Supabase sync failed for habits, data saved locally:', syncError);
@@ -310,9 +310,9 @@ export const [AppProvider, useApp] = createContextHook(() => {
       try {
         await unifiedStorage.setItem(ACTIVITIES_STORAGE_KEY, JSON.stringify(activities));
         
-        if (userId && firebaseSync.saveToCloud) {
+        if (userId && supabaseSync.saveToCloud) {
           try {
-            await firebaseSync.saveToCloud({ activities });
+            await supabaseSync.saveToCloud({ activities });
             console.log('✅ Activities synced to Supabase');
           } catch (syncError) {
             console.warn('⚠️ Supabase sync failed for activities, data saved locally:', syncError);
@@ -335,9 +335,9 @@ export const [AppProvider, useApp] = createContextHook(() => {
       try {
         await unifiedStorage.setItem(SHOWS_STORAGE_KEY, JSON.stringify(shows));
         
-        if (userId && firebaseSync.saveToCloud) {
+        if (userId && supabaseSync.saveToCloud) {
           try {
-            await firebaseSync.saveToCloud({ shows });
+            await supabaseSync.saveToCloud({ shows });
             console.log('✅ Shows synced to Supabase');
           } catch (syncError) {
             console.warn('⚠️ Supabase sync failed for shows, data saved locally:', syncError);

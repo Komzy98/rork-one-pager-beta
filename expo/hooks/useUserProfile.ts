@@ -39,7 +39,7 @@ const createDefaultProfile = (userId: string, email: string, name: string): User
 export const [UserProfileProvider, useUserProfile] = createContextHook(() => {
   const { user, isAuthenticated } = useAuth();
   const userId = user?.id;
-  const firebaseSync = useSupabaseSync(userId);
+  const supabaseSync = useSupabaseSync(userId);
   const [profile, setProfile] = useState<UserProfile | null>(null);
   const [isLoading, setIsLoading] = useState<boolean>(true);
   const [teamLogos, setTeamLogos] = useState<Map<number, string>>(new Map());
@@ -54,16 +54,16 @@ export const [UserProfileProvider, useUserProfile] = createContextHook(() => {
       console.log('📱 [Profile] Checking storage key:', storageKey, 'on platform:', Platform.OS);
       
       let stored: string | null = null;
-      let loadedFromFirebase = false;
+      let loadedFromSupabase = false;
       
-      if (userId && firebaseSync.loadFromCloud) {
+      if (userId && supabaseSync.loadFromCloud) {
         try {
           console.log('☁️ [Profile] Loading from Supabase...');
-          const cloudData = await firebaseSync.loadFromCloud();
+          const cloudData = await supabaseSync.loadFromCloud();
           if (cloudData?.userProfile) {
             console.log('✅ [Profile] Loaded profile from Supabase');
             stored = JSON.stringify(cloudData.userProfile);
-            loadedFromFirebase = true;
+            loadedFromSupabase = true;
             await unifiedStorage.setItem(storageKey, stored);
           } else {
             console.log('📝 [Profile] No profile in Supabase yet');
@@ -83,7 +83,7 @@ export const [UserProfileProvider, useUserProfile] = createContextHook(() => {
         const parsedProfile = JSON.parse(stored);
         console.log('📊 [Profile] Parsed profile:', {
           platform: Platform.OS,
-          source: loadedFromFirebase ? 'Firebase' : 'Local Storage',
+          source: loadedFromSupabase ? 'Supabase' : 'Local Storage',
           name: parsedProfile.name,
           favoriteTeamsCount: parsedProfile.favoriteTeams?.length || 0,
           favoriteTeams: parsedProfile.favoriteTeams?.map((t: UserTeam) => t.name) || []
@@ -96,15 +96,15 @@ export const [UserProfileProvider, useUserProfile] = createContextHook(() => {
           favoriteCountries: parsedProfile.favoriteCountries || []
         };
         setProfile(updatedProfile);
-        console.log('✅ [Profile] Profile loaded successfully on', Platform.OS, ':', updatedProfile.name, 'Teams:', updatedProfile.favoriteTeams?.length, 'Source:', loadedFromFirebase ? 'Firebase' : 'Local');
+        console.log('✅ [Profile] Profile loaded successfully on', Platform.OS, ':', updatedProfile.name, 'Teams:', updatedProfile.favoriteTeams?.length, 'Source:', loadedFromSupabase ? 'Supabase' : 'Local');
         
         if (!parsedProfile.interests || !parsedProfile.favoriteCountries) {
           await unifiedStorage.setItem(storageKey, JSON.stringify(updatedProfile));
           console.log('📝 [Profile] Updated profile with new fields');
           
-          if (!loadedFromFirebase && userId && firebaseSync.saveToCloud) {
+          if (!loadedFromSupabase && userId && supabaseSync.saveToCloud) {
             try {
-              await firebaseSync.saveToCloud({ userProfile: updatedProfile });
+              await supabaseSync.saveToCloud({ userProfile: updatedProfile });
               console.log('☁️ [Profile] Synced updated profile to Supabase');
             } catch (syncError) {
               console.log('⚠️ [Profile] Failed to sync to Supabase:', syncError);
@@ -127,7 +127,7 @@ export const [UserProfileProvider, useUserProfile] = createContextHook(() => {
       setIsLoading(false);
       console.log('✅ [Profile] Profile loading complete, platform:', Platform.OS);
     }
-  }, [firebaseSync]);
+  }, [supabaseSync]);
 
   useEffect(() => {
     console.log('🔄 Profile loading effect triggered:', {
@@ -359,9 +359,9 @@ export const [UserProfileProvider, useUserProfile] = createContextHook(() => {
       await unifiedStorage.setItem(storageKey, JSON.stringify(newProfile));
       console.log('✅ [Profile] Profile saved to storage on', Platform.OS);
       
-      if (userId && firebaseSync.saveToCloud) {
+      if (userId && supabaseSync.saveToCloud) {
         try {
-          await firebaseSync.saveToCloud({ userProfile: newProfile });
+          await supabaseSync.saveToCloud({ userProfile: newProfile });
           console.log('✅ [Profile] User profile synced to Supabase');
         } catch (syncError) {
           console.warn('⚠️ [Profile] Supabase sync failed for user profile, data saved locally:', syncError);

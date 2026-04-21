@@ -330,7 +330,7 @@ export default function LoginScreen() {
     }
     
     try {
-      // Try to create demo user with Firebase first
+      // Try to create demo user with Supabase first
       const demoCredentials = {
         email: 'demo@example.com',
         password: 'demo123',
@@ -346,8 +346,8 @@ export default function LoginScreen() {
         }
         
         Alert.alert(
-          'Demo User Created with Firebase!', 
-          'Demo user created successfully in Firebase.\n\nEmail: demo@example.com\nPassword: demo123\n\nYou are now logged in!',
+          'Demo User Created with Supabase!', 
+          'Demo user created successfully in Supabase.\n\nEmail: demo@example.com\nPassword: demo123\n\nYou are now logged in!',
           [{ text: 'OK' }]
         );
       } else if (signupResult.error?.includes('already exists') || signupResult.error?.includes('email-already-in-use')) {
@@ -357,7 +357,7 @@ export default function LoginScreen() {
         
         Alert.alert(
           'Demo User Already Exists', 
-          'Demo user already exists in Firebase.\n\nEmail: demo@example.com\nPassword: demo123\n\nCredentials filled for you!',
+          'Demo user already exists in Supabase.\n\nEmail: demo@example.com\nPassword: demo123\n\nCredentials filled for you!',
           [{ text: 'OK' }]
         );
       } else {
@@ -370,7 +370,7 @@ export default function LoginScreen() {
           
           Alert.alert(
             'Demo User Created (Local)!', 
-            'Demo user created locally as Firebase signup failed.\n\nEmail: demo@example.com\nPassword: demo123',
+            'Demo user created locally as Supabase signup failed.\n\nEmail: demo@example.com\nPassword: demo123',
             [
               {
                 text: 'Use Demo Credentials',

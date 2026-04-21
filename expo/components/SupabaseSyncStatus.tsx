@@ -6,21 +6,21 @@ import { Cloud, CloudOff, RefreshCw, CheckCircle, AlertCircle, Zap } from 'lucid
 import { COLORS } from '@/constants/colors';
 import { TYPOGRAPHY, SPACING, BORDER_RADIUS } from '@/constants/design';
 
-interface FirebaseSyncStatusProps {
+interface SupabaseSyncStatusProps {
   compact?: boolean;
   showProvider?: boolean;
 }
 
-export default function FirebaseSyncStatus({ compact = false, showProvider = true }: FirebaseSyncStatusProps) {
-  const { 
-    isCloudEnabled, 
-    syncStatus, 
-    lastSyncTime, 
-    useFirebase, 
+export default function SupabaseSyncStatus({ compact = false, showProvider = true }: SupabaseSyncStatusProps) {
+  const {
+    isCloudEnabled,
+    syncStatus,
+    lastSyncTime,
+    useSupabase,
     cloudProvider,
     syncToCloud,
     error,
-    isAutoSyncActive
+    isAutoSyncActive,
   } = useCloudSync();
   const { isAuthenticated, user, isAutoSyncEnabled } = useAuth();
 
@@ -30,12 +30,12 @@ export default function FirebaseSyncStatus({ compact = false, showProvider = tru
 
   const getSyncIcon = () => {
     if (!isCloudEnabled) return <CloudOff size={compact ? 16 : 20} color={COLORS.textSecondary} />;
-    
+
     switch (syncStatus) {
       case 'syncing':
         return <RefreshCw size={compact ? 16 : 20} color={COLORS.primary} />;
       case 'success':
-        return isAutoSyncActive && isAutoSyncEnabled() 
+        return isAutoSyncActive && isAutoSyncEnabled()
           ? <Zap size={compact ? 16 : 20} color={COLORS.success} />
           : <CheckCircle size={compact ? 16 : 20} color={COLORS.success} />;
       case 'error':
@@ -47,17 +47,17 @@ export default function FirebaseSyncStatus({ compact = false, showProvider = tru
 
   const getSyncText = () => {
     if (!isCloudEnabled) return 'Sync disabled';
-    
+
     switch (syncStatus) {
       case 'syncing':
         return 'Syncing...';
       case 'success':
         if (isAutoSyncActive && isAutoSyncEnabled()) {
-          return lastSyncTime 
+          return lastSyncTime
             ? `Auto-sync active • ${new Date(lastSyncTime).toLocaleTimeString()}`
             : 'Auto-sync active';
         }
-        return lastSyncTime 
+        return lastSyncTime
           ? `Last sync: ${new Date(lastSyncTime).toLocaleTimeString()}`
           : 'Synced';
       case 'error':
@@ -88,10 +88,11 @@ export default function FirebaseSyncStatus({ compact = false, showProvider = tru
 
   if (compact) {
     return (
-      <TouchableOpacity 
-        style={styles.compactContainer} 
+      <TouchableOpacity
+        style={styles.compactContainer}
         onPress={handlePress}
         disabled={!isCloudEnabled || syncStatus === 'syncing'}
+        testID="supabase-sync-status-compact"
       >
         <View style={styles.compactContent}>
           {getSyncIcon()}
@@ -105,14 +106,15 @@ export default function FirebaseSyncStatus({ compact = false, showProvider = tru
 
   return (
     <View style={styles.container}>
-      <TouchableOpacity 
+      <TouchableOpacity
         style={[
           styles.syncButton,
           syncStatus === 'success' && styles.successButton,
-          syncStatus === 'error' && styles.errorButton
-        ]} 
+          syncStatus === 'error' && styles.errorButton,
+        ]}
         onPress={handlePress}
         disabled={!isCloudEnabled || syncStatus === 'syncing'}
+        testID="supabase-sync-status"
       >
         <View style={styles.iconContainer}>
           {getSyncIcon()}
@@ -120,7 +122,7 @@ export default function FirebaseSyncStatus({ compact = false, showProvider = tru
         <View style={styles.textContainer}>
           {showProvider && (
             <Text style={styles.providerText}>
-              {useFirebase ? '🔥 Firebase' : cloudProvider}
+              {useSupabase ? 'Supabase' : cloudProvider}
               {isAutoSyncActive && isAutoSyncEnabled() && ' • Auto-sync'}
             </Text>
           )}

@@ -99,8 +99,8 @@ export const [AuthProvider, useAuth] = createContextHook(() => {
   const [isLoading, setIsLoading] = useState<boolean>(true);
   const [isInitialized, setIsInitialized] = useState<boolean>(false);
   const [isGuest, setIsGuest] = useState<boolean>(false);
-  const [firebaseUser, setFirebaseUser] = useState<any>(null);
-  const [firebaseSync, setFirebaseSync] = useState<SupabaseUserSync | null>(null);
+  const [supabaseUser, setSupabaseUser] = useState<any>(null);
+  const [supabaseSync, setSupabaseSync] = useState<SupabaseUserSync | null>(null);
   const [autoSyncEnabled, setAutoSyncEnabled] = useState<boolean>(false);
 
   const [biometricAvailable, setBiometricAvailable] = useState<boolean>(false);
@@ -151,7 +151,7 @@ export const [AuthProvider, useAuth] = createContextHook(() => {
           setIsGuest(false);
           try {
             const newSync = new SupabaseUserSync(parsedUser.id);
-            setFirebaseSync(newSync);
+            setSupabaseSync(newSync);
             setAutoSyncEnabled(true);
             void setSyncUserId(parsedUser.id);
             console.log('☁️ Supabase sync initialized for cached user:', parsedUser.id);
@@ -198,7 +198,7 @@ export const [AuthProvider, useAuth] = createContextHook(() => {
       await AsyncStorage.setItem(AUTH_STORAGE_KEY, JSON.stringify(authUser));
       try {
         const newSync = new SupabaseUserSync(foundUser.id);
-        setFirebaseSync(newSync);
+        setSupabaseSync(newSync);
         setAutoSyncEnabled(true);
         void setSyncUserId(foundUser.id);
       } catch (syncError) {
@@ -248,7 +248,7 @@ export const [AuthProvider, useAuth] = createContextHook(() => {
       await AsyncStorage.setItem(AUTH_STORAGE_KEY, JSON.stringify(authUser));
       try {
         const newSync = new SupabaseUserSync(newUser.id);
-        setFirebaseSync(newSync);
+        setSupabaseSync(newSync);
         setAutoSyncEnabled(true);
         void setSyncUserId(newUser.id);
       } catch (syncError) {
@@ -266,9 +266,9 @@ export const [AuthProvider, useAuth] = createContextHook(() => {
 
   const logout = useCallback(async () => {
     try {
-      if (firebaseSync) {
-        firebaseSync.cleanup();
-        setFirebaseSync(null);
+      if (supabaseSync) {
+        supabaseSync.cleanup();
+        setSupabaseSync(null);
       }
       setAutoSyncEnabled(false);
       try {
@@ -282,13 +282,13 @@ export const [AuthProvider, useAuth] = createContextHook(() => {
         console.log('⚠️ Failed to clear cached auth data:', error);
       }
       setUser(null);
-      setFirebaseUser(null);
+      setSupabaseUser(null);
       setIsGuest(false);
       console.log('✅ Logout successful');
     } catch (error) {
       console.error('💥 Logout error:', error);
     }
-  }, [firebaseSync]);
+  }, [supabaseSync]);
 
   const continueAsGuest = useCallback(async (): Promise<{ success: boolean; error?: string }> => {
     try {
@@ -406,7 +406,7 @@ export const [AuthProvider, useAuth] = createContextHook(() => {
     }
   }, []);
 
-  const getFirebaseSync = useCallback(() => firebaseSync, [firebaseSync]);
+  const getSupabaseSync = useCallback(() => supabaseSync, [supabaseSync]);
   const isAutoSyncEnabled = useCallback(() => autoSyncEnabled, [autoSyncEnabled]);
 
   const enableBiometric = useCallback(async (credentials: LoginCredentials): Promise<{ success: boolean; error?: string }> => {
@@ -530,7 +530,7 @@ export const [AuthProvider, useAuth] = createContextHook(() => {
 
       try {
         const newSync = new SupabaseUserSync(foundUser.id);
-        setFirebaseSync(newSync);
+        setSupabaseSync(newSync);
         setAutoSyncEnabled(true);
         void setSyncUserId(foundUser.id);
       } catch (syncError) {
@@ -579,10 +579,12 @@ export const [AuthProvider, useAuth] = createContextHook(() => {
     deleteAccount,
     createDemoUser,
     clearAllData,
-    getFirebaseSync,
+    getSupabaseSync,
+    getFirebaseSync: getSupabaseSync,
     isAutoSyncEnabled,
-    firebaseUser,
+    supabaseUser,
+    firebaseUser: supabaseUser,
     biometricAuth,
     googleAuthConfig,
-  }), [user, isLoading, isInitialized, isGuest, login, signup, logout, loginWithGoogle, continueAsGuest, convertGuestToUser, updateUser, deleteAccount, createDemoUser, clearAllData, getFirebaseSync, isAutoSyncEnabled, firebaseUser, biometricAuth, googleAuthConfig]);
+  }), [user, isLoading, isInitialized, isGuest, login, signup, logout, loginWithGoogle, continueAsGuest, convertGuestToUser, updateUser, deleteAccount, createDemoUser, clearAllData, getSupabaseSync, isAutoSyncEnabled, supabaseUser, biometricAuth, googleAuthConfig]);
 });
