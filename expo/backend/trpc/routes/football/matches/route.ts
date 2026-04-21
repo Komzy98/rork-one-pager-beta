@@ -116,7 +116,7 @@ async function cachedFetch(url: string, headers: Record<string, string>, cacheKe
     try {
       trackApiCall();
       const controller = new AbortController();
-      const timeoutId = setTimeout(() => controller.abort(), 7000);
+      const timeoutId = setTimeout(() => controller.abort(), 4500);
       const response = await fetch(url, { method: 'GET', headers, signal: controller.signal });
       clearTimeout(timeoutId);
 
@@ -334,34 +334,49 @@ export const getMatchesRoute = publicProcedure
       const allPromises: Promise<any[]>[] = [];
 
       if (hasTeams) {
-        const limitedTeams = targetTeams.slice(0, 8);
+        const limitedTeams = targetTeams.slice(0, 5);
         console.log(`⚽ Fetching ${limitedTeams.length} team-specific queries (fast path)`);
         limitedTeams.forEach(id => allPromises.push(fetchTeamMatches(id)));
         if (hasUserSelectedLeagues) {
-          const limitedLeagues = leagueIds!.slice(0, 6);
+          const limitedLeagues = leagueIds!.slice(0, 3);
           limitedLeagues.forEach(id => allPromises.push(fetchLeagueMatches(id)));
         }
       } else if (hasUserSelectedLeagues) {
-        const limitedLeagues = leagueIds!.slice(0, 10);
+        const limitedLeagues = leagueIds!.slice(0, 6);
         console.log(`⚽ Fetching ${limitedLeagues.length} user-selected leagues`);
         limitedLeagues.forEach(id => allPromises.push(fetchLeagueMatches(id)));
       } else {
-        CORE_LEAGUES.forEach(id => allPromises.push(fetchLeagueMatches(id)));
+        CORE_LEAGUES.slice(0, 5).forEach(id => allPromises.push(fetchLeagueMatches(id)));
       }
 
       if (nationalTeamIds && nationalTeamIds.length > 0) {
-        const limitedNationals = nationalTeamIds.slice(0, 3);
+        const limitedNationals = nationalTeamIds.slice(0, 2);
         limitedNationals.forEach(id => allPromises.push(fetchNationalTeamMatches(id)));
       }
 
       if (includeAfcon) {
-        const keyIntl = [6, 5, 4, 9].slice(0, 2);
+        const keyIntl = [6, 5].slice(0, 1);
         keyIntl.forEach(id => allPromises.push(fetchIntlLeague(id)));
       }
 
       console.log(`🚀 Firing ${allPromises.length} API requests (budget: ${API_CALL_BUDGET_PER_MINUTE - apiCallCount} remaining)`);
-      const allResults = await Promise.all(allPromises);
-      allResults.forEach(addMatches);
+
+      const globalTimeoutMs = 6000;
+      const settlePromise = Promise.allSettled(allPromises);
+      const timeoutPromise = new Promise<'timeout'>(resolve => setTimeout(() => resolve('timeout'), globalTimeoutMs));
+      const raceResult = await Promise.race([settlePromise, timeoutPromise]);
+
+      if (raceResult === 'timeout') {
+        console.warn(`⏱️ Global ${globalTimeoutMs}ms timeout hit for ${type}, returning partial results`);
+        const partialResults = await Promise.all(
+          allPromises.map(p => Promise.race([p, new Promise<any[]>(r => setTimeout(() => r([]), 100))]))
+        );
+        partialResults.forEach(addMatches);
+      } else {
+        raceResult.forEach(r => {
+          if (r.status === 'fulfilled') addMatches(r.value);
+        });
+      }
     } catch (error: any) {
       console.error(`💥 Batch fetch failed: ${error.message}`);
       if (staleTopLevel) {
