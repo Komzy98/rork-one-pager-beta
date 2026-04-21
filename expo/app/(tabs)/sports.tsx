@@ -1360,8 +1360,8 @@ export default function SportsScreen() {
       refetchInterval: activeTab === 'live' ? 60 * 1000 : false,
       staleTime: 45 * 1000,
       gcTime: 5 * 60 * 1000,
-      retry: 1,
-      retryDelay: 1500,
+      retry: 3,
+      retryDelay: (attempt) => Math.min(1000 * Math.pow(2, attempt), 5000),
       refetchOnWindowFocus: false,
       refetchOnReconnect: true,
     }
@@ -1381,8 +1381,8 @@ export default function SportsScreen() {
       refetchInterval: false,
       staleTime: 10 * 60 * 1000,
       gcTime: 30 * 60 * 1000,
-      retry: 1,
-      retryDelay: 1500,
+      retry: 3,
+      retryDelay: (attempt) => Math.min(1000 * Math.pow(2, attempt), 5000),
       refetchOnWindowFocus: false,
       refetchOnReconnect: true,
     }
@@ -1401,8 +1401,8 @@ export default function SportsScreen() {
       refetchInterval: false,
       staleTime: 10 * 60 * 1000,
       gcTime: 60 * 60 * 1000,
-      retry: 1,
-      retryDelay: 1500,
+      retry: 3,
+      retryDelay: (attempt) => Math.min(1000 * Math.pow(2, attempt), 5000),
       refetchOnWindowFocus: false,
       refetchOnReconnect: true,
     }

@@ -109,14 +109,15 @@ async function cachedFetch(url: string, headers: Record<string, string>, cacheKe
     }
   }
 
-  const maxRetries = 1;
+  const maxRetries = 2;
   let lastError: Error | null = null;
 
   for (let attempt = 0; attempt < maxRetries; attempt++) {
     try {
       trackApiCall();
       const controller = new AbortController();
-      const timeoutId = setTimeout(() => controller.abort(), 4500);
+      const perRequestTimeout = attempt === 0 ? 8000 : 6000;
+      const timeoutId = setTimeout(() => controller.abort(), perRequestTimeout);
       const response = await fetch(url, { method: 'GET', headers, signal: controller.signal });
       clearTimeout(timeoutId);
 
@@ -361,7 +362,7 @@ export const getMatchesRoute = publicProcedure
 
       console.log(`🚀 Firing ${allPromises.length} API requests (budget: ${API_CALL_BUDGET_PER_MINUTE - apiCallCount} remaining)`);
 
-      const globalTimeoutMs = 6000;
+      const globalTimeoutMs = 12000;
       const settlePromise = Promise.allSettled(allPromises);
       const timeoutPromise = new Promise<'timeout'>(resolve => setTimeout(() => resolve('timeout'), globalTimeoutMs));
       const raceResult = await Promise.race([settlePromise, timeoutPromise]);
