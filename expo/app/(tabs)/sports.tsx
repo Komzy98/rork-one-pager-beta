@@ -1738,6 +1738,88 @@ export default function SportsScreen() {
     results: ufcResultsFights.length,
   };
 
+  const footballHeader = (
+    <View>
+      {sportMode === 'football' && filteredLiveMatches.length > 0 && (
+        <View style={styles.tickerSection}>
+          <View style={styles.tickerHeader}>
+            <View style={styles.tickerHeaderLeft}>
+              <View style={styles.tickerLiveDot}>
+                <LivePulse color="#FF3B30" size={8} />
+              </View>
+              <Text style={[styles.tickerTitle, { color: isDark ? '#FFFFFF' : '#1C1C1E' }]}>Live Now</Text>
+              <View style={[styles.tickerCountBadge, { backgroundColor: isDark ? 'rgba(255,59,48,0.12)' : 'rgba(255,59,48,0.08)' }]}>
+                <Text style={styles.tickerCountText}>{filteredLiveMatches.length}</Text>
+              </View>
+            </View>
+            <TouchableOpacity
+              onPress={() => setActiveTab('live')}
+              activeOpacity={0.7}
+              style={styles.tickerSeeAllBtn}
+            >
+              <Text style={styles.tickerSeeAll}>See All</Text>
+              <ChevronRight size={14} color="#007AFF" />
+            </TouchableOpacity>
+          </View>
+          <FlatList
+            data={filteredLiveMatches}
+            horizontal
+            showsHorizontalScrollIndicator={false}
+            contentContainerStyle={styles.tickerList}
+            keyExtractor={(item) => item.id}
+            renderItem={({ item, index }) => (
+              <LiveTickerCard
+                match={item}
+                index={index}
+                onPress={() => {
+                  setSelectedMatch(item);
+                  setShowMatchModal(true);
+                }}
+              />
+            )}
+          />
+        </View>
+      )}
+      <View style={styles.tabWrapper}>
+        <TabPill
+          tabs={tabs}
+          activeTab={activeTab}
+          onTabChange={(tab) => setActiveTab(tab as 'live' | 'upcoming' | 'results')}
+          counts={counts}
+          isDark={isDark}
+        />
+      </View>
+      <View style={styles.filterArea}>
+        <View style={styles.filterRow}>
+          <View style={{ flex: 1 }}>
+            <CompetitionFilter
+              selectedLeagues={selectedLeagues}
+              onLeaguesChange={setSelectedLeagues}
+              favoriteLeagues={favoriteLeagues}
+              onToggleFavorite={toggleFavoriteLeague}
+              isDark={isDark}
+            />
+          </View>
+        </View>
+        <View style={styles.filterActionsRow}>
+          <TouchableOpacity
+            style={[
+              styles.standingsBtn,
+              { backgroundColor: isDark ? 'rgba(52, 199, 89, 0.12)' : 'rgba(52, 199, 89, 0.08)' },
+              availableLeaguesForStandings.length === 0 && { opacity: 0.3 },
+            ]}
+            onPress={handleLeagueTablesPress}
+            activeOpacity={0.7}
+            disabled={availableLeaguesForStandings.length === 0}
+          >
+            <BarChart3 size={15} color="#34C759" />
+            <Text style={styles.standingsBtnText}>Tables</Text>
+          </TouchableOpacity>
+        </View>
+      </View>
+    </View>
+  );
+
   return (
     <View style={[styles.container, { backgroundColor: isDark ? '#0D0D1A' : '#F2F2F7' }]}>
       <TabWalkthrough tabName="sports" />
@@ -1927,59 +2009,6 @@ export default function SportsScreen() {
         </LinearGradient>
       </Animated.View>
 
-      {sportMode === 'football' && filteredLiveMatches.length > 0 && (
-        <View style={styles.tickerSection}>
-          <View style={styles.tickerHeader}>
-            <View style={styles.tickerHeaderLeft}>
-              <View style={styles.tickerLiveDot}>
-                <LivePulse color="#FF3B30" size={8} />
-              </View>
-              <Text style={[styles.tickerTitle, { color: isDark ? '#FFFFFF' : '#1C1C1E' }]}>Live Now</Text>
-              <View style={[styles.tickerCountBadge, { backgroundColor: isDark ? 'rgba(255,59,48,0.12)' : 'rgba(255,59,48,0.08)' }]}>
-                <Text style={styles.tickerCountText}>{filteredLiveMatches.length}</Text>
-              </View>
-            </View>
-            <TouchableOpacity 
-              onPress={() => setActiveTab('live')} 
-              activeOpacity={0.7}
-              style={styles.tickerSeeAllBtn}
-            >
-              <Text style={styles.tickerSeeAll}>See All</Text>
-              <ChevronRight size={14} color="#007AFF" />
-            </TouchableOpacity>
-          </View>
-          <FlatList
-            data={filteredLiveMatches}
-            horizontal
-            showsHorizontalScrollIndicator={false}
-            contentContainerStyle={styles.tickerList}
-            keyExtractor={(item) => item.id}
-            renderItem={({ item, index }) => (
-              <LiveTickerCard 
-                match={item} 
-                index={index}
-                onPress={() => {
-                  setSelectedMatch(item);
-                  setShowMatchModal(true);
-                }}
-              />
-            )}
-          />
-        </View>
-      )}
-
-      {sportMode === 'football' && (
-        <View style={styles.tabWrapper}>
-          <TabPill
-            tabs={tabs}
-            activeTab={activeTab}
-            onTabChange={(tab) => setActiveTab(tab as 'live' | 'upcoming' | 'results')}
-            counts={counts}
-            isDark={isDark}
-          />
-        </View>
-      )}
-
       {sportMode === 'ufc' && (
         <View style={styles.tabWrapper}>
           <TabPill
@@ -1992,37 +2021,6 @@ export default function SportsScreen() {
         </View>
       )}
 
-      {sportMode === 'football' && (
-        <View style={styles.filterArea}>
-          <View style={styles.filterRow}>
-            <View style={{ flex: 1 }}>
-              <CompetitionFilter
-                selectedLeagues={selectedLeagues}
-                onLeaguesChange={setSelectedLeagues}
-                favoriteLeagues={favoriteLeagues}
-                onToggleFavorite={toggleFavoriteLeague}
-                isDark={isDark}
-              />
-            </View>
-          </View>
-          <View style={styles.filterActionsRow}>
-            <TouchableOpacity 
-              style={[
-                styles.standingsBtn,
-                { backgroundColor: isDark ? 'rgba(52, 199, 89, 0.12)' : 'rgba(52, 199, 89, 0.08)' },
-                availableLeaguesForStandings.length === 0 && { opacity: 0.3 }
-              ]}
-              onPress={handleLeagueTablesPress}
-              activeOpacity={0.7}
-              disabled={availableLeaguesForStandings.length === 0}
-            >
-              <BarChart3 size={15} color="#34C759" />
-              <Text style={styles.standingsBtnText}>Tables</Text>
-            </TouchableOpacity>
-          </View>
-        </View>
-      )}
-
       {sportMode === 'football' && (!hasTeams && !isLoading && !hasError && !hasConfigError) ? (
         <ScrollView
           style={styles.scrollView}
@@ -2032,6 +2030,7 @@ export default function SportsScreen() {
             <RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor="#007AFF" colors={['#007AFF']} />
           }
         >
+          {footballHeader}
           <View style={styles.setupPrompt}>
             <LinearGradient
               colors={['#1B6B34', '#2ECC71']}
@@ -2094,12 +2093,23 @@ export default function SportsScreen() {
           </TouchableOpacity>
         </View>
       ) : sportMode === 'football' && displayMatches.length === 0 && !isLoading ? (
-        <EmptyState type={activeTab} isDark={isDark} />
+        <ScrollView
+          style={styles.scrollView}
+          contentContainerStyle={[styles.scrollContent, { paddingBottom: insets.bottom + 100 }]}
+          showsVerticalScrollIndicator={false}
+          refreshControl={
+            <RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor="#007AFF" colors={['#007AFF']} />
+          }
+        >
+          {footballHeader}
+          <EmptyState type={activeTab} isDark={isDark} />
+        </ScrollView>
       ) : sportMode === 'football' && !isLoading ? (
         <FlatList
           data={flatListData}
           renderItem={renderFlatListItem}
           keyExtractor={flatListKeyExtractor}
+          ListHeaderComponent={<>{footballHeader}</>}
           style={styles.scrollView}
           contentContainerStyle={[styles.scrollContent, { paddingBottom: insets.bottom + 100 }]}
           showsVerticalScrollIndicator={false}
