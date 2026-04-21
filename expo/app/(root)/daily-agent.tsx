@@ -262,7 +262,7 @@ export default function DailyAgentScreen() {
     const today = todayStr();
     const last7 = last7Dates();
 
-    const habits = (habitsWithStats || []).map(h => ({
+    const habitsFromStore = (habitsWithStats || []).map(h => ({
       name: h.name,
       completedToday: !!h.completions?.[today],
       streak: h.streak,
@@ -271,22 +271,40 @@ export default function DailyAgentScreen() {
       last7DaysCompleted: last7.filter(d => h.completions?.[d]).length,
     }));
 
-    const tasks = (allTasks || []).map(t => {
-      const due = t.dueDate ? new Date(t.dueDate) : null;
-      const todayDate = new Date();
-      const completedToday = t.status === 'completed' && !!t.completedAt?.startsWith(today);
-      const dueToday = !!due && due.toDateString() === todayDate.toDateString();
-      const overdue = !!due && due < todayDate && t.status !== 'completed' && t.status !== 'cancelled';
+    const taskHabits = (allTasks || []).filter(t => t.isHabit);
+    const habitsFromTasks = taskHabits.map(t => {
+      const completions = t.habitCompletions || {};
+      const totalCompletions = Object.values(completions).filter(Boolean).length;
       return {
-        title: t.title,
-        status: t.status,
-        priority: t.priority,
-        category: t.category,
-        completedToday,
-        dueToday,
-        overdue,
+        name: t.title,
+        completedToday: !!completions[today],
+        streak: t.habitStreak ?? 0,
+        totalCompletions,
+        frequencyType: t.habitFrequency?.type,
+        last7DaysCompleted: last7.filter(d => completions[d]).length,
       };
     });
+
+    const habits = [...habitsFromStore, ...habitsFromTasks];
+
+    const tasks = (allTasks || [])
+      .filter(t => !t.isHabit)
+      .map(t => {
+        const due = t.dueDate ? new Date(t.dueDate) : null;
+        const todayDate = new Date();
+        const completedToday = t.status === 'completed' && !!t.completedAt?.startsWith(today);
+        const dueToday = !!due && due.toDateString() === todayDate.toDateString();
+        const overdue = !!due && due < todayDate && t.status !== 'completed' && t.status !== 'cancelled';
+        return {
+          title: t.title,
+          status: t.status,
+          priority: t.priority,
+          category: t.category,
+          completedToday,
+          dueToday,
+          overdue,
+        };
+      });
 
     const showsIn = (shows || []).map(s => ({
       title: s.title,
