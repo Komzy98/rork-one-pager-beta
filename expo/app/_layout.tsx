@@ -1,3 +1,5 @@
+import { configureYounify } from "../services/younify";
+
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { Stack, useRouter } from "expo-router";
 import * as SplashScreen from "expo-splash-screen";
@@ -113,6 +115,11 @@ function RootLayoutNav() {
 
 export default function RootLayout() {
   const router = useRouter();
+  useEffect(() => {
+    configureYounify().catch((error) => {
+      console.error("Younify configure failed:", error);
+    });
+  }, []);
 
   useEffect(() => {
     const hideSplash = async () => {
