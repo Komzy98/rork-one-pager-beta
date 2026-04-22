@@ -22,6 +22,7 @@ import {
 import * as Haptics from 'expo-haptics';
 import { LinearGradient } from 'expo-linear-gradient';
 import { BlurView } from 'expo-blur';
+import { testYounifyServices } from '@/services/younify';
 import { 
   Plus, 
   Play, 
@@ -1862,6 +1863,9 @@ export default function ShowsScreen() {
             />
           }
         >
+          <View style={{ paddingHorizontal: 20, paddingTop: 12 }}>
+  
+</View>
           {trendingQuery.isLoading ? (
             <View style={styles.loadingSection}>
               <ActivityIndicator size="large" color={THEME.primary} />

@@ -2,6 +2,9 @@
   "expo": {
     "name": "One Pager",
     "slug": "onepager",
+    "extra": {
+      "younifySdkKey": "wdqG3OvGmg_90lNxvrwm8uY8pgzx2wPiDMz68dPpncQOBYkepvBCXQJP8OxDDizYlQW78xQiqvy1oLO8QtERNQ0yjKAC6WYg63oq0IXbm29rd5bHyBl7dJ"
+    },
     "version": "1.0.0",
     "orientation": "portrait",
     "icon": "./assets/images/icon.png",
