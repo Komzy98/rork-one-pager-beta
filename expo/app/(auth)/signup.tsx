@@ -72,7 +72,7 @@ export default function SignupScreen() {
   };
 
   const redirectUri = AuthSession.makeRedirectUri({
-    scheme: 'lifesync',
+    scheme: 'onepager',
     path: 'auth',
   });
 

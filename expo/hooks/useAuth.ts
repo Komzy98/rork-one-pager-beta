@@ -679,7 +679,7 @@ export const [AuthProvider, useAuth] = createContextHook(() => {
       }
       setIsLoading(true);
 
-      const redirectTo = AuthSession.makeRedirectUri({ scheme: 'lifesync', path: 'auth' });
+      const redirectTo = AuthSession.makeRedirectUri({ scheme: 'onepager', path: 'auth' });
       console.log('🔗 Supabase Google redirectTo:', redirectTo);
 
       const { data, error } = await supabase.auth.signInWithOAuth({

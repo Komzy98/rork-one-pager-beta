@@ -1,11 +1,11 @@
 {
   "expo": {
     "name": "One Pager",
-    "slug": "lifesync",
+    "slug": "onepager",
     "version": "1.0.0",
     "orientation": "portrait",
     "icon": "./assets/images/icon.png",
-    "scheme": "lifesync",
+    "scheme": "onepager",
     "userInterfaceStyle": "automatic",
     "newArchEnabled": true,
     "splash": {

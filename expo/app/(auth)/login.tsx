@@ -109,7 +109,7 @@ export default function LoginScreen() {
   };
 
   const redirectUri = AuthSession.makeRedirectUri({
-    scheme: 'lifesync',
+    scheme: 'onepager',
     path: 'auth',
   });
 
