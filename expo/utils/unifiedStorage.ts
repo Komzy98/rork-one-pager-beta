@@ -60,5 +60,26 @@ export const unifiedStorage = {
       }
     }
     return AsyncStorage.clear();
-  }
+  },
+
+  async getAllKeys(): Promise<string[]> {
+    if (Platform.OS === 'web') {
+      try {
+        if (typeof window !== 'undefined' && window.localStorage) {
+          const keys: string[] = [];
+          for (let i = 0; i < window.localStorage.length; i++) {
+            const k = window.localStorage.key(i);
+            if (k) keys.push(k);
+          }
+          return keys;
+        }
+        return [];
+      } catch (error) {
+        console.warn('localStorage not available:', error);
+        return [];
+      }
+    }
+    const keys = await AsyncStorage.getAllKeys();
+    return [...keys];
+  },
 };

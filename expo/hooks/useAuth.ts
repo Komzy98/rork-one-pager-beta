@@ -7,6 +7,7 @@ import { AuthUser, LoginCredentials, SignupCredentials } from '@/types/habit';
 import { SupabaseUserSync } from '@/utils/supabaseUserSync';
 import { setSyncUserId } from '@/utils/supabaseSync';
 import { supabase, supabaseConfigured } from '@/utils/supabaseClient';
+import { migrateLocalDataToSupabaseUser } from '@/utils/localToSupabaseMigration';
 
 if (Platform.OS !== 'web') {
   WebBrowser.maybeCompleteAuthSession();
@@ -145,6 +146,13 @@ export const [AuthProvider, useAuth] = createContextHook(() => {
 
     const applySupabaseSession = async (sessionUser: any) => {
       if (!sessionUser || !isMounted) return;
+      if (sessionUser.email) {
+        try {
+          await migrateLocalDataToSupabaseUser(sessionUser.email, sessionUser.id);
+        } catch (migrationError) {
+          console.warn('Local->Supabase migration skipped:', migrationError);
+        }
+      }
       const meta = sessionUser.user_metadata || {};
       const firstName: string = meta.firstName || (meta.full_name ? String(meta.full_name).split(' ')[0] : '') || '';
       const lastName: string = meta.lastName || (meta.full_name ? String(meta.full_name).split(' ').slice(1).join(' ') : '') || '';
@@ -277,6 +285,11 @@ export const [AuthProvider, useAuth] = createContextHook(() => {
         setUser(authUser);
         setSupabaseUser(data.user);
         await AsyncStorage.setItem(AUTH_STORAGE_KEY, JSON.stringify(authUser));
+        try {
+          await migrateLocalDataToSupabaseUser(authUser.email, data.user.id);
+        } catch (migrationError) {
+          console.warn('Local->Supabase migration skipped (login):', migrationError);
+        }
         try {
           const newSync = new SupabaseUserSync(data.user.id);
           setSupabaseSync(newSync);
