@@ -17,6 +17,7 @@
       "supportsTablet": true,
       "bundleIdentifier": "app.rork.OPbeta",
       "usesIcloudStorage": true,
+      "usesAppleSignIn": true,
       "infoPlist": {
         "UIBackgroundModes": [
           "audio",
@@ -111,7 +112,8 @@
         }
       ],
       "expo-web-browser",
-      "expo-audio"
+      "expo-audio",
+      "expo-apple-authentication"
     ],
     "experiments": {
       "typedRoutes": true

@@ -9,6 +9,16 @@ import { setSyncUserId } from '@/utils/supabaseSync';
 import { supabase, supabaseConfigured, supabaseUrl } from '@/utils/supabaseClient';
 import * as AuthSession from 'expo-auth-session';
 import * as Linking from 'expo-linking';
+import * as Crypto from 'expo-crypto';
+
+let AppleAuthentication: typeof import('expo-apple-authentication') | null = null;
+if (Platform.OS === 'ios') {
+  try {
+    AppleAuthentication = require('expo-apple-authentication');
+  } catch {
+    console.log('expo-apple-authentication not available');
+  }
+}
 import { migrateLocalDataToSupabaseUser } from '@/utils/localToSupabaseMigration';
 
 if (Platform.OS !== 'web') {
@@ -738,6 +748,149 @@ export const [AuthProvider, useAuth] = createContextHook(() => {
     }
   }, []);
 
+  const loginWithApple = useCallback(async (): Promise<{ success: boolean; error?: string }> => {
+    try {
+      if (Platform.OS !== 'ios' || !AppleAuthentication) {
+        return { success: false, error: 'Apple Sign-In is only available on iOS' };
+      }
+      const available = await AppleAuthentication.isAvailableAsync();
+      if (!available) {
+        return { success: false, error: 'Apple Sign-In is not available on this device' };
+      }
+
+      setIsLoading(true);
+
+      const rawNonce = Array.from(Crypto.getRandomValues(new Uint8Array(16)))
+        .map((b) => b.toString(16).padStart(2, '0'))
+        .join('');
+      const hashedNonce = await Crypto.digestStringAsync(
+        Crypto.CryptoDigestAlgorithm.SHA256,
+        rawNonce
+      );
+
+      const credential = await AppleAuthentication.signInAsync({
+        requestedScopes: [
+          AppleAuthentication.AppleAuthenticationScope.FULL_NAME,
+          AppleAuthentication.AppleAuthenticationScope.EMAIL,
+        ],
+        nonce: hashedNonce,
+      });
+
+      if (!credential.identityToken) {
+        return { success: false, error: 'No identity token returned from Apple' };
+      }
+
+      const fullName = credential.fullName;
+      const appleDisplayName = [fullName?.givenName, fullName?.familyName]
+        .filter(Boolean)
+        .join(' ')
+        .trim();
+
+      if (supabaseConfigured) {
+        const { data, error } = await supabase.auth.signInWithIdToken({
+          provider: 'apple',
+          token: credential.identityToken,
+          nonce: rawNonce,
+        });
+        if (error || !data.user) {
+          const msg = error?.message || 'Apple sign-in failed';
+          console.warn('Supabase signInWithIdToken (apple) failed:', msg);
+          return { success: false, error: msg };
+        }
+        const supaUser = data.user;
+        const meta = supaUser.user_metadata || {};
+        const displayName: string =
+          meta.name || meta.full_name || appleDisplayName ||
+          (supaUser.email ? String(supaUser.email).split('@')[0] : 'User');
+
+        if (appleDisplayName && !meta.name && !meta.full_name) {
+          try {
+            await supabase.auth.updateUser({
+              data: { name: appleDisplayName, full_name: appleDisplayName },
+            });
+          } catch (updateErr) {
+            console.log('Apple name update skipped:', updateErr);
+          }
+        }
+
+        const authUser: AuthUser = {
+          id: supaUser.id,
+          email: supaUser.email || credential.email || '',
+          name: displayName,
+          avatar: meta.avatar_url || meta.picture,
+          isAuthenticated: true,
+        };
+        setIsGuest(false);
+        setUser(authUser);
+        setSupabaseUser(supaUser);
+        await AsyncStorage.setItem(AUTH_STORAGE_KEY, JSON.stringify(authUser));
+        try {
+          await migrateLocalDataToSupabaseUser(authUser.email, supaUser.id);
+        } catch (migrationError) {
+          console.warn('Local->Supabase migration skipped (apple):', migrationError);
+        }
+        try {
+          const newSync = new SupabaseUserSync(supaUser.id);
+          setSupabaseSync(newSync);
+          setAutoSyncEnabled(true);
+          void setSyncUserId(supaUser.id);
+        } catch (syncError) {
+          console.log('Supabase sync setup skipped:', syncError);
+        }
+        console.log('✅ Supabase Apple login successful');
+        return { success: true };
+      }
+
+      const appleEmail = credential.email || `${credential.user}@privaterelay.appleid.com`;
+      const users = await getUsersDb();
+      let foundUser = users.find(u => u.email.toLowerCase() === appleEmail.toLowerCase() || u.id === `apple_${credential.user}`);
+
+      if (!foundUser) {
+        const newUser: StoredUser = {
+          id: `apple_${credential.user}`,
+          email: appleEmail.toLowerCase(),
+          password: `__apple_oauth_${credential.user}`,
+          firstName: fullName?.givenName || 'Apple',
+          lastName: fullName?.familyName || 'User',
+          name: appleDisplayName || 'Apple User',
+          createdAt: new Date().toISOString(),
+          lastLoginAt: new Date().toISOString(),
+        };
+        await saveUsersDb([...users, newUser]);
+        foundUser = newUser;
+      } else {
+        foundUser.lastLoginAt = new Date().toISOString();
+        await saveUsersDb(users.map(u => u.id === foundUser!.id ? foundUser! : u));
+      }
+
+      const authUser: AuthUser = {
+        id: foundUser.id,
+        email: foundUser.email,
+        name: foundUser.name,
+        avatar: foundUser.avatar,
+        isAuthenticated: true,
+      };
+      setIsGuest(false);
+      setUser(authUser);
+      await AsyncStorage.setItem(AUTH_STORAGE_KEY, JSON.stringify(authUser));
+      console.log('Apple login successful (local)');
+      return { success: true };
+    } catch (error: any) {
+      if (error?.code === 'ERR_REQUEST_CANCELED') {
+        return { success: false, error: 'Cancelled' };
+      }
+      console.error('💥 Apple Sign-In error:', error);
+      return { success: false, error: error?.message || 'Apple sign-in failed. Please try again.' };
+    } finally {
+      setIsLoading(false);
+    }
+  }, []);
+
+  const appleAuthConfig = useMemo(() => ({
+    isAvailable: Platform.OS === 'ios' && !!AppleAuthentication,
+    isConfigured: supabaseConfigured,
+  }), []);
+
   const loginWithGoogle = useCallback(async (
     googleUser: { id: string; email: string; name: string; picture?: string; idToken?: string; nonce?: string }
   ): Promise<{ success: boolean; error?: string }> => {
@@ -879,6 +1032,8 @@ export const [AuthProvider, useAuth] = createContextHook(() => {
     logout,
     loginWithGoogle,
     loginWithGoogleOAuth,
+    loginWithApple,
+    appleAuthConfig,
     continueAsGuest,
     convertGuestToUser,
     updateUser,
@@ -892,5 +1047,5 @@ export const [AuthProvider, useAuth] = createContextHook(() => {
     firebaseUser: supabaseUser,
     biometricAuth,
     googleAuthConfig,
-  }), [user, isLoading, isInitialized, isGuest, login, signup, logout, loginWithGoogle, loginWithGoogleOAuth, continueAsGuest, convertGuestToUser, updateUser, deleteAccount, createDemoUser, clearAllData, getSupabaseSync, isAutoSyncEnabled, supabaseUser, biometricAuth, googleAuthConfig]);
+  }), [user, isLoading, isInitialized, isGuest, login, signup, logout, loginWithGoogle, loginWithGoogleOAuth, loginWithApple, appleAuthConfig, continueAsGuest, convertGuestToUser, updateUser, deleteAccount, createDemoUser, clearAllData, getSupabaseSync, isAutoSyncEnabled, supabaseUser, biometricAuth, googleAuthConfig]);
 });

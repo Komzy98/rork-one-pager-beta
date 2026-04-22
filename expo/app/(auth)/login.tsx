@@ -17,7 +17,7 @@ import { Link, useRouter } from 'expo-router';
 import * as AuthSession from 'expo-auth-session';
 import * as WebBrowser from 'expo-web-browser';
 import * as Crypto from 'expo-crypto';
-import { Mail, Lock, Eye, EyeOff, Settings, Trash2, UserPlus, AlertCircle, CheckCircle, Scan, Fingerprint } from 'lucide-react-native';
+import { Mail, Lock, Eye, EyeOff, Settings, Trash2, UserPlus, AlertCircle, CheckCircle, Scan, Fingerprint, Apple } from 'lucide-react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import * as Haptics from 'expo-haptics';
 import { useAuth } from '@/hooks/useAuth';
@@ -32,7 +32,7 @@ interface ValidationErrors {
 
 export default function LoginScreen() {
   const router = useRouter();
-  const { login, signup, createDemoUser, clearAllData, continueAsGuest, biometricAuth, loginWithGoogle, loginWithGoogleOAuth, googleAuthConfig } = useAuth();
+  const { login, signup, createDemoUser, clearAllData, continueAsGuest, biometricAuth, loginWithGoogle, loginWithGoogleOAuth, googleAuthConfig, loginWithApple, appleAuthConfig } = useAuth();
   const insets = useSafeAreaInsets();
 
 
@@ -51,6 +51,7 @@ export default function LoginScreen() {
   const [biometricLoading, setBiometricLoading] = useState<boolean>(false);
   const [enableBiometricAfterLogin, setEnableBiometricAfterLogin] = useState<boolean>(false);
   const [googleLoading, setGoogleLoading] = useState<boolean>(false);
+  const [appleLoading, setAppleLoading] = useState<boolean>(false);
   
   const emailInputRef = useRef<TextInput>(null);
   const passwordInputRef = useRef<TextInput>(null);
@@ -241,6 +242,46 @@ export default function LoginScreen() {
       Alert.alert('Error', 'Google Sign-In failed. Please try again.');
     } finally {
       setGoogleLoading(false);
+    }
+  };
+
+  const handleAppleSignIn = async () => {
+    if (!appleAuthConfig.isAvailable) {
+      Alert.alert('Not Available', 'Apple Sign-In is only available on iOS devices.');
+      return;
+    }
+
+    const rateCheck = checkAuthRateLimit('login');
+    if (!rateCheck.allowed) {
+      Alert.alert('Too Many Attempts', formatRetryMessage(rateCheck.retryAfterSeconds!));
+      return;
+    }
+    recordAuthAttempt('login');
+
+    if (Platform.OS !== 'web') {
+      Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+    }
+
+    setAppleLoading(true);
+    try {
+      const result = await loginWithApple();
+      if (result.success) {
+        setLoginSuccess(true);
+        triggerSuccessAnimation();
+        if (Platform.OS !== 'web') {
+          Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+        }
+        setTimeout(() => {
+          router.replace('/(tabs)/activities' as any);
+        }, 1200);
+      } else if (result.error && result.error !== 'Cancelled') {
+        Alert.alert('Sign In Failed', result.error);
+      }
+    } catch (error) {
+      console.error('💥 Apple Sign-In error:', error);
+      Alert.alert('Error', 'Apple Sign-In failed. Please try again.');
+    } finally {
+      setAppleLoading(false);
     }
   };
 
@@ -667,6 +708,26 @@ export default function LoginScreen() {
             </View>
           </TouchableOpacity>
 
+          {appleAuthConfig.isAvailable && (
+            <TouchableOpacity
+              style={[styles.appleButton, appleLoading && styles.appleButtonLoading]}
+              onPress={handleAppleSignIn}
+              disabled={isLoading || loginSuccess || appleLoading}
+              testID="apple-signin-button"
+            >
+              <View style={styles.appleButtonContent}>
+                {appleLoading ? (
+                  <ActivityIndicator size="small" color="#ffffff" style={styles.appleIcon} />
+                ) : (
+                  <Apple size={20} color="#ffffff" fill="#ffffff" style={styles.appleIcon} />
+                )}
+                <Text style={styles.appleButtonText}>
+                  {appleLoading ? 'Signing in...' : 'Continue with Apple'}
+                </Text>
+              </View>
+            </TouchableOpacity>
+          )}
+
           {/* Biometric Login Button */}
           {biometricAuth.isAvailable && biometricAuth.isEnabled && Platform.OS !== 'web' && (
             <TouchableOpacity
@@ -1066,6 +1127,30 @@ const styles = StyleSheet.create({
     fontSize: 16,
     fontWeight: '600',
     color: COLORS.primary,
+  },
+  appleButton: {
+    backgroundColor: '#000000',
+    borderRadius: 12,
+    height: 56,
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginBottom: 12,
+  },
+  appleButtonLoading: {
+    opacity: 0.7,
+  },
+  appleButtonContent: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  appleIcon: {
+    marginRight: 12,
+  },
+  appleButtonText: {
+    fontSize: 16,
+    fontWeight: '600' as const,
+    color: '#ffffff',
   },
   googleButton: {
     backgroundColor: COLORS.card,

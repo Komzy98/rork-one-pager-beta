@@ -17,14 +17,14 @@ import * as AuthSession from 'expo-auth-session';
 import * as WebBrowser from 'expo-web-browser';
 import * as Crypto from 'expo-crypto';
 import * as Haptics from 'expo-haptics';
-import { Mail, Lock, User, Eye, EyeOff, UserPlus } from 'lucide-react-native';
+import { Mail, Lock, User, Eye, EyeOff, UserPlus, Apple } from 'lucide-react-native';
 import { useAuth } from '@/hooks/useAuth';
 import { COLORS } from '@/constants/colors';
 import { SignupCredentials } from '@/types/habit';
 import { checkAuthRateLimit, recordAuthAttempt, formatRetryMessage } from '@/utils/authRateLimiter';
 
 export default function SignupScreen() {
-  const { signup, loginWithGoogle, loginWithGoogleOAuth, googleAuthConfig } = useAuth();
+  const { signup, loginWithGoogle, loginWithGoogleOAuth, googleAuthConfig, loginWithApple, appleAuthConfig } = useAuth();
   const [credentials, setCredentials] = useState<SignupCredentials>({
     email: '',
     password: '',
@@ -36,6 +36,40 @@ export default function SignupScreen() {
   const [showConfirmPassword, setShowConfirmPassword] = useState<boolean>(false);
   const [isLoading, setIsLoading] = useState<boolean>(false);
   const [googleLoading, setGoogleLoading] = useState<boolean>(false);
+  const [appleLoading, setAppleLoading] = useState<boolean>(false);
+
+  const handleAppleSignUp = async () => {
+    if (!appleAuthConfig.isAvailable) {
+      Alert.alert('Not Available', 'Apple Sign-In is only available on iOS devices.');
+      return;
+    }
+    const rateCheck = checkAuthRateLimit('signup');
+    if (!rateCheck.allowed) {
+      Alert.alert('Too Many Attempts', formatRetryMessage(rateCheck.retryAfterSeconds!));
+      return;
+    }
+    recordAuthAttempt('signup');
+    if (Platform.OS !== 'web') {
+      void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+    }
+    setAppleLoading(true);
+    try {
+      const result = await loginWithApple();
+      if (result.success) {
+        if (Platform.OS !== 'web') {
+          void Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+        }
+        router.replace('/(onboarding)/welcome' as any);
+      } else if (result.error && result.error !== 'Cancelled') {
+        Alert.alert('Sign Up Failed', result.error);
+      }
+    } catch (error) {
+      console.error('Apple Sign-Up error:', error);
+      Alert.alert('Error', 'Apple Sign-Up failed. Please try again.');
+    } finally {
+      setAppleLoading(false);
+    }
+  };
 
   const redirectUri = AuthSession.makeRedirectUri({
     scheme: 'lifesync',
@@ -331,6 +365,26 @@ export default function SignupScreen() {
             <View style={styles.dividerLine} />
           </View>
 
+          {appleAuthConfig.isAvailable && (
+            <TouchableOpacity
+              style={[styles.appleButton, appleLoading && styles.appleButtonLoading]}
+              onPress={handleAppleSignUp}
+              disabled={isLoading || googleLoading || appleLoading}
+              testID="apple-signup-button"
+            >
+              <View style={styles.appleButtonContent}>
+                {appleLoading ? (
+                  <ActivityIndicator size="small" color="#ffffff" style={styles.appleIcon} />
+                ) : (
+                  <Apple size={20} color="#ffffff" fill="#ffffff" style={styles.appleIcon} />
+                )}
+                <Text style={styles.appleButtonText}>
+                  {appleLoading ? 'Signing up...' : 'Sign up with Apple'}
+                </Text>
+              </View>
+            </TouchableOpacity>
+          )}
+
           <TouchableOpacity
             style={[styles.googleButton, googleLoading && styles.googleButtonLoading]}
             onPress={handleGoogleSignUp}
@@ -472,6 +526,30 @@ const styles = StyleSheet.create({
     fontSize: 16,
     fontWeight: '600',
     color: COLORS.primary,
+  },
+  appleButton: {
+    backgroundColor: '#000000',
+    borderRadius: 12,
+    height: 56,
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginBottom: 12,
+  },
+  appleButtonLoading: {
+    opacity: 0.7,
+  },
+  appleButtonContent: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  appleIcon: {
+    marginRight: 12,
+  },
+  appleButtonText: {
+    fontSize: 16,
+    fontWeight: '600' as const,
+    color: '#ffffff',
   },
   googleButton: {
     backgroundColor: COLORS.card,
