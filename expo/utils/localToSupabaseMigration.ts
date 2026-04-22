@@ -56,13 +56,16 @@ async function copyKeyIfMissing(fromKey: string, toKey: string): Promise<boolean
 
 export async function migrateLocalDataToSupabaseUser(
   email: string,
-  supabaseUserId: string
+  supabaseUserId: string,
+  options?: { force?: boolean }
 ): Promise<{ migrated: boolean; keysCopied: number; oldUserId: string | null }> {
   try {
     const flagKey = getMigratedFlagKey(supabaseUserId);
-    const alreadyMigrated = await unifiedStorage.getItem(flagKey);
-    if (alreadyMigrated === 'true') {
-      return { migrated: false, keysCopied: 0, oldUserId: null };
+    if (!options?.force) {
+      const alreadyMigrated = await unifiedStorage.getItem(flagKey);
+      if (alreadyMigrated === 'true') {
+        return { migrated: false, keysCopied: 0, oldUserId: null };
+      }
     }
 
     const oldUserId = await findLocalUserIdByEmail(email);

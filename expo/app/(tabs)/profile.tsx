@@ -70,7 +70,8 @@ import SwipeableTabContainer from '@/components/SwipeableTabContainer';
 import CustomHeader from '@/components/CustomHeader';
 
 import { useCloudSync } from '@/hooks/useCloudSync';
-import { CheckCircle2, AlertCircle, RefreshCw } from 'lucide-react-native';
+import { CheckCircle2, AlertCircle, RefreshCw, Download } from 'lucide-react-native';
+import { migrateLocalDataToSupabaseUser } from '@/utils/localToSupabaseMigration';
 import { AchievementsBadges } from '@/components/AchievementsBadges';
 import { ChallengeLeaderboard } from '@/components/ChallengeLeaderboard';
 import { MOCK_CHALLENGES } from '@/mocks/socialData';
@@ -193,6 +194,7 @@ export default function ProfileScreen() {
   const [tempSelectedInterests, setTempSelectedInterests] = useState<string[]>([]);
   const [showTabOrderModal, setShowTabOrderModal] = useState<boolean>(false);
   const [tempTabOrder, setTempTabOrder] = useState<string[]>([]);
+  const [isImportingLocal, setIsImportingLocal] = useState<boolean>(false);
 
   const hasInterest = (interestId: string) => profile?.interests?.includes(interestId) ?? false;
   const hasSportsInterest = hasInterest('football');
@@ -1059,6 +1061,56 @@ export default function ProfileScreen() {
                   {syncStatus === 'syncing' ? 'Backing up...' : 'Back Up Now'}
                 </Text>
               </TouchableOpacity>
+
+              {!isGuest && user?.email && (
+                <TouchableOpacity
+                  style={[
+                    styles.syncBackupBtn,
+                    { backgroundColor: colors.surfaceSecondary, marginTop: 8 },
+                    isImportingLocal && { opacity: 0.5 },
+                  ]}
+                  onPress={async () => {
+                    if (!user?.email || !user?.id) return;
+                    void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+                    setIsImportingLocal(true);
+                    try {
+                      const result = await migrateLocalDataToSupabaseUser(user.email, user.id, { force: true });
+                      if (result.keysCopied > 0) {
+                        if (isCloudEnabled) {
+                          await syncToCloud();
+                        }
+                        void Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+                        Alert.alert(
+                          'Import complete',
+                          `Imported ${result.keysCopied} data set${result.keysCopied === 1 ? '' : 's'} from your old local account. Restart the app to see your streaks.`
+                        );
+                      } else if (result.oldUserId) {
+                        Alert.alert('Nothing to import', 'Found an old local account but its data is already in this account.');
+                      } else {
+                        Alert.alert(
+                          'No local data found',
+                          'No old local account was found on this device with this email. Old streaks can only be recovered from a device that still has the local data.'
+                        );
+                      }
+                    } catch (e: any) {
+                      Alert.alert('Import failed', e?.message || 'Could not import local data.');
+                    } finally {
+                      setIsImportingLocal(false);
+                    }
+                  }}
+                  disabled={isImportingLocal}
+                  activeOpacity={0.8}
+                >
+                  {isImportingLocal ? (
+                    <ActivityIndicator size="small" color={colors.text} />
+                  ) : (
+                    <Download size={16} color={colors.text} />
+                  )}
+                  <Text style={[styles.syncBackupBtnText, { color: colors.text }]}>
+                    {isImportingLocal ? 'Importing...' : 'Import Old Local Data'}
+                  </Text>
+                </TouchableOpacity>
+              )}
             </View>
           </View>
 
