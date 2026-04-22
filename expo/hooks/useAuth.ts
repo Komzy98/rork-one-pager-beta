@@ -6,6 +6,7 @@ import * as WebBrowser from 'expo-web-browser';
 import { AuthUser, LoginCredentials, SignupCredentials } from '@/types/habit';
 import { SupabaseUserSync } from '@/utils/supabaseUserSync';
 import { setSyncUserId } from '@/utils/supabaseSync';
+import { supabase, supabaseConfigured } from '@/utils/supabaseClient';
 
 if (Platform.OS !== 'web') {
   WebBrowser.maybeCompleteAuthSession();
@@ -141,25 +142,74 @@ export const [AuthProvider, useAuth] = createContextHook(() => {
 
   useEffect(() => {
     let isMounted = true;
+
+    const applySupabaseSession = async (sessionUser: any) => {
+      if (!sessionUser || !isMounted) return;
+      const meta = sessionUser.user_metadata || {};
+      const firstName: string = meta.firstName || (meta.full_name ? String(meta.full_name).split(' ')[0] : '') || '';
+      const lastName: string = meta.lastName || (meta.full_name ? String(meta.full_name).split(' ').slice(1).join(' ') : '') || '';
+      const displayName: string = meta.name || meta.full_name || [firstName, lastName].filter(Boolean).join(' ') || (sessionUser.email ? String(sessionUser.email).split('@')[0] : 'User');
+      const authUser: AuthUser = {
+        id: sessionUser.id,
+        email: sessionUser.email || '',
+        name: displayName,
+        avatar: meta.avatar_url || meta.picture,
+        isAuthenticated: true,
+      };
+      setUser(authUser);
+      setSupabaseUser(sessionUser);
+      setIsGuest(false);
+      try {
+        await AsyncStorage.setItem(AUTH_STORAGE_KEY, JSON.stringify(authUser));
+      } catch {}
+      try {
+        const newSync = new SupabaseUserSync(sessionUser.id);
+        setSupabaseSync(newSync);
+        setAutoSyncEnabled(true);
+        void setSyncUserId(sessionUser.id);
+      } catch (syncError) {
+        console.log('Supabase sync setup skipped:', syncError);
+      }
+    };
+
     const initialize = async () => {
       try {
-        const cachedUser = await AsyncStorage.getItem(AUTH_STORAGE_KEY);
-        if (cachedUser && isMounted) {
-          const parsedUser = JSON.parse(cachedUser);
-          console.log('📱 Found cached user:', parsedUser.email);
-          setUser(parsedUser);
-          setIsGuest(false);
-          try {
-            const newSync = new SupabaseUserSync(parsedUser.id);
-            setSupabaseSync(newSync);
-            setAutoSyncEnabled(true);
-            void setSyncUserId(parsedUser.id);
-            console.log('☁️ Supabase sync initialized for cached user:', parsedUser.id);
-          } catch (syncError) {
-            console.log('Supabase sync setup skipped on restore:', syncError);
+        if (supabaseConfigured) {
+          const { data: { session } } = await supabase.auth.getSession();
+          if (session?.user && isMounted) {
+            console.log('🔐 Restored Supabase session for:', session.user.email);
+            await applySupabaseSession(session.user);
+          } else {
+            const cachedUser = await AsyncStorage.getItem(AUTH_STORAGE_KEY);
+            if (cachedUser && isMounted) {
+              const parsedUser: AuthUser = JSON.parse(cachedUser);
+              if (!parsedUser.id?.startsWith('guest_')) {
+                console.log('📱 Stale cached user without Supabase session, clearing:', parsedUser.email);
+                await AsyncStorage.removeItem(AUTH_STORAGE_KEY);
+              } else if (isMounted) {
+                setUser(parsedUser);
+                setIsGuest(true);
+              }
+            }
           }
+        } else {
+          const cachedUser = await AsyncStorage.getItem(AUTH_STORAGE_KEY);
+          if (cachedUser && isMounted) {
+            const parsedUser: AuthUser = JSON.parse(cachedUser);
+            console.log('📱 Found cached user (no Supabase):', parsedUser.email);
+            setUser(parsedUser);
+            setIsGuest(!!parsedUser.id?.startsWith('guest_'));
+            if (!parsedUser.id?.startsWith('guest_')) {
+              try {
+                const newSync = new SupabaseUserSync(parsedUser.id);
+                setSupabaseSync(newSync);
+                setAutoSyncEnabled(true);
+                void setSyncUserId(parsedUser.id);
+              } catch {}
+            }
+          }
+          await createDemoUserIfNeeded();
         }
-        await createDemoUserIfNeeded();
       } catch (error) {
         console.error('💥 Error initializing auth:', error);
       } finally {
@@ -171,13 +221,74 @@ export const [AuthProvider, useAuth] = createContextHook(() => {
       }
     };
     void initialize();
-    return () => { isMounted = false; };
+
+    const sub = supabaseConfigured
+      ? supabase.auth.onAuthStateChange((event, session) => {
+          console.log('🔔 Supabase auth event:', event);
+          if (session?.user) {
+            void applySupabaseSession(session.user);
+          } else if (event === 'SIGNED_OUT') {
+            if (isMounted) {
+              setUser(null);
+              setSupabaseUser(null);
+              setIsGuest(false);
+              void AsyncStorage.removeItem(AUTH_STORAGE_KEY);
+            }
+          }
+        })
+      : null;
+
+    return () => {
+      isMounted = false;
+      sub?.data?.subscription?.unsubscribe?.();
+    };
   }, []);
 
   const login = useCallback(async (credentials: LoginCredentials): Promise<{ success: boolean; error?: string }> => {
     try {
       console.log('🔐 Login attempt for:', credentials.email);
       setIsLoading(true);
+
+      if (supabaseConfigured) {
+        const { data, error } = await supabase.auth.signInWithPassword({
+          email: credentials.email.trim().toLowerCase(),
+          password: credentials.password,
+        });
+        if (error || !data.user) {
+          const msg = error?.message || 'Invalid email or password';
+          console.warn('Supabase login failed:', msg);
+          const friendly = /invalid login credentials/i.test(msg)
+            ? 'Invalid email or password'
+            : msg;
+          return { success: false, error: friendly };
+        }
+        const meta = data.user.user_metadata || {};
+        const firstName: string = meta.firstName || '';
+        const lastName: string = meta.lastName || '';
+        const displayName: string = meta.name || [firstName, lastName].filter(Boolean).join(' ') || String(data.user.email).split('@')[0];
+        const authUser: AuthUser = {
+          id: data.user.id,
+          email: data.user.email || credentials.email,
+          name: displayName,
+          avatar: meta.avatar_url || meta.picture,
+          isAuthenticated: true,
+        };
+        setIsGuest(false);
+        setUser(authUser);
+        setSupabaseUser(data.user);
+        await AsyncStorage.setItem(AUTH_STORAGE_KEY, JSON.stringify(authUser));
+        try {
+          const newSync = new SupabaseUserSync(data.user.id);
+          setSupabaseSync(newSync);
+          setAutoSyncEnabled(true);
+          void setSyncUserId(data.user.id);
+        } catch (syncError) {
+          console.log('Supabase sync setup skipped:', syncError);
+        }
+        console.log('✅ Supabase login successful');
+        return { success: true };
+      }
+
       const users = await getUsersDb();
       const foundUser = users.find(u => u.email.toLowerCase() === credentials.email.toLowerCase());
       if (!foundUser) {
@@ -204,11 +315,11 @@ export const [AuthProvider, useAuth] = createContextHook(() => {
       } catch (syncError) {
         console.log('Supabase sync setup skipped:', syncError);
       }
-      console.log('Login successful');
+      console.log('Login successful (local)');
       return { success: true };
-    } catch (error) {
+    } catch (error: any) {
       console.error('💥 Login error:', error);
-      return { success: false, error: 'Login failed' };
+      return { success: false, error: error?.message || 'Login failed' };
     } finally {
       setIsLoading(false);
     }
@@ -217,15 +328,63 @@ export const [AuthProvider, useAuth] = createContextHook(() => {
   const signup = useCallback(async (credentials: SignupCredentials): Promise<{ success: boolean; error?: string }> => {
     try {
       setIsLoading(true);
+      if (credentials.password.length < 6) {
+        return { success: false, error: 'Password should be at least 6 characters' };
+      }
+      const displayName = `${credentials.firstName} ${credentials.lastName}`.trim();
+
+      if (supabaseConfigured) {
+        const { data, error } = await supabase.auth.signUp({
+          email: credentials.email.trim().toLowerCase(),
+          password: credentials.password,
+          options: {
+            data: {
+              firstName: credentials.firstName,
+              lastName: credentials.lastName,
+              name: displayName,
+              full_name: displayName,
+            },
+          },
+        });
+        if (error || !data.user) {
+          const msg = error?.message || 'Signup failed';
+          console.warn('Supabase signup failed:', msg);
+          const friendly = /already registered|already exists/i.test(msg)
+            ? 'An account with this email already exists'
+            : msg;
+          return { success: false, error: friendly };
+        }
+        const authUser: AuthUser = {
+          id: data.user.id,
+          email: data.user.email || credentials.email,
+          name: displayName,
+          isAuthenticated: true,
+        };
+        setIsGuest(false);
+        setUser(authUser);
+        setSupabaseUser(data.user);
+        await AsyncStorage.setItem(AUTH_STORAGE_KEY, JSON.stringify(authUser));
+        try {
+          const newSync = new SupabaseUserSync(data.user.id);
+          setSupabaseSync(newSync);
+          setAutoSyncEnabled(true);
+          void setSyncUserId(data.user.id);
+        } catch (syncError) {
+          console.log('Supabase sync setup skipped on signup:', syncError);
+        }
+        if (!data.session) {
+          console.log('✅ Supabase signup requires email confirmation');
+          return { success: true, error: 'Check your email to confirm your account before signing in.' };
+        }
+        console.log('✅ Supabase signup successful:', authUser.email);
+        return { success: true };
+      }
+
       const users = await getUsersDb();
       const existingUser = users.find(u => u.email.toLowerCase() === credentials.email.toLowerCase());
       if (existingUser) {
         return { success: false, error: 'An account with this email already exists' };
       }
-      if (credentials.password.length < 6) {
-        return { success: false, error: 'Password should be at least 6 characters' };
-      }
-      const displayName = `${credentials.firstName} ${credentials.lastName}`;
       const newUser: StoredUser = {
         id: `user_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
         email: credentials.email.toLowerCase(),
@@ -254,11 +413,11 @@ export const [AuthProvider, useAuth] = createContextHook(() => {
       } catch (syncError) {
         console.log('Supabase sync setup skipped on signup:', syncError);
       }
-      console.log('✅ Signup successful:', authUser.email);
+      console.log('✅ Signup successful (local):', authUser.email);
       return { success: true };
     } catch (error: any) {
-      console.error('💥 Signup error:', error.message);
-      return { success: false, error: 'Signup failed' };
+      console.error('💥 Signup error:', error?.message);
+      return { success: false, error: error?.message || 'Signup failed' };
     } finally {
       setIsLoading(false);
     }
@@ -271,6 +430,13 @@ export const [AuthProvider, useAuth] = createContextHook(() => {
         setSupabaseSync(null);
       }
       setAutoSyncEnabled(false);
+      if (supabaseConfigured) {
+        try {
+          await supabase.auth.signOut();
+        } catch (e) {
+          console.log('Supabase signOut failed:', e);
+        }
+      }
       try {
         await AsyncStorage.removeItem(AUTH_STORAGE_KEY);
         await AsyncStorage.removeItem('biometric_enabled');
