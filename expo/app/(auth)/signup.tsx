@@ -24,7 +24,7 @@ import { SignupCredentials } from '@/types/habit';
 import { checkAuthRateLimit, recordAuthAttempt, formatRetryMessage } from '@/utils/authRateLimiter';
 
 export default function SignupScreen() {
-  const { signup, loginWithGoogle, googleAuthConfig } = useAuth();
+  const { signup, loginWithGoogle, loginWithGoogleOAuth, googleAuthConfig } = useAuth();
   const [credentials, setCredentials] = useState<SignupCredentials>({
     email: '',
     password: '',
@@ -65,6 +65,19 @@ export default function SignupScreen() {
     setGoogleLoading(true);
 
     try {
+      if (googleAuthConfig.useSupabaseOAuth) {
+        const loginResult = await loginWithGoogleOAuth();
+        if (loginResult.success) {
+          if (Platform.OS !== 'web') {
+            void Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+          }
+          router.replace('/(onboarding)/welcome' as any);
+        } else if (loginResult.error && loginResult.error !== 'Cancelled') {
+          Alert.alert('Sign Up Failed', loginResult.error);
+        }
+        return;
+      }
+
       const rawNonce = Array.from(Crypto.getRandomValues(new Uint8Array(16)))
         .map((b) => b.toString(16).padStart(2, '0'))
         .join('');

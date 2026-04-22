@@ -32,7 +32,7 @@ interface ValidationErrors {
 
 export default function LoginScreen() {
   const router = useRouter();
-  const { login, signup, createDemoUser, clearAllData, continueAsGuest, biometricAuth, loginWithGoogle, googleAuthConfig } = useAuth();
+  const { login, signup, createDemoUser, clearAllData, continueAsGuest, biometricAuth, loginWithGoogle, loginWithGoogleOAuth, googleAuthConfig } = useAuth();
   const insets = useSafeAreaInsets();
 
 
@@ -135,6 +135,23 @@ export default function LoginScreen() {
     setGoogleLoading(true);
 
     try {
+      if (googleAuthConfig.useSupabaseOAuth) {
+        const loginResult = await loginWithGoogleOAuth();
+        if (loginResult.success) {
+          setLoginSuccess(true);
+          triggerSuccessAnimation();
+          if (Platform.OS !== 'web') {
+            Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+          }
+          setTimeout(() => {
+            router.replace('/(tabs)/activities' as any);
+          }, 1200);
+        } else if (loginResult.error && loginResult.error !== 'Cancelled') {
+          Alert.alert('Sign In Failed', loginResult.error);
+        }
+        return;
+      }
+
       const rawNonce = Array.from(Crypto.getRandomValues(new Uint8Array(16)))
         .map((b) => b.toString(16).padStart(2, '0'))
         .join('');

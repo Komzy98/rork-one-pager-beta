@@ -6,7 +6,9 @@ import * as WebBrowser from 'expo-web-browser';
 import { AuthUser, LoginCredentials, SignupCredentials } from '@/types/habit';
 import { SupabaseUserSync } from '@/utils/supabaseUserSync';
 import { setSyncUserId } from '@/utils/supabaseSync';
-import { supabase, supabaseConfigured } from '@/utils/supabaseClient';
+import { supabase, supabaseConfigured, supabaseUrl } from '@/utils/supabaseClient';
+import * as AuthSession from 'expo-auth-session';
+import * as Linking from 'expo-linking';
 import { migrateLocalDataToSupabaseUser } from '@/utils/localToSupabaseMigration';
 
 if (Platform.OS !== 'web') {
@@ -660,6 +662,82 @@ export const [AuthProvider, useAuth] = createContextHook(() => {
     }
   }, []);
 
+  const loginWithGoogleOAuth = useCallback(async (): Promise<{ success: boolean; error?: string }> => {
+    try {
+      if (!supabaseConfigured) {
+        return { success: false, error: 'Supabase is not configured' };
+      }
+      setIsLoading(true);
+
+      const redirectTo = AuthSession.makeRedirectUri({ scheme: 'lifesync', path: 'auth' });
+      console.log('🔗 Supabase Google redirectTo:', redirectTo);
+
+      const { data, error } = await supabase.auth.signInWithOAuth({
+        provider: 'google',
+        options: {
+          redirectTo,
+          skipBrowserRedirect: true,
+        },
+      });
+      if (error || !data?.url) {
+        return { success: false, error: error?.message || 'Failed to start Google sign-in' };
+      }
+
+      const result = await WebBrowser.openAuthSessionAsync(data.url, redirectTo);
+      if (result.type !== 'success' || !result.url) {
+        if (result.type === 'cancel' || result.type === 'dismiss') {
+          return { success: false, error: 'Cancelled' };
+        }
+        return { success: false, error: 'Google sign-in failed' };
+      }
+
+      const parsed = Linking.parse(result.url);
+      const params: Record<string, string | undefined> = {
+        ...(parsed.queryParams as any),
+      };
+      const hashIndex = result.url.indexOf('#');
+      if (hashIndex >= 0) {
+        const hash = result.url.substring(hashIndex + 1);
+        const hashParams = new URLSearchParams(hash);
+        hashParams.forEach((v, k) => {
+          if (!params[k]) params[k] = v;
+        });
+      }
+
+      const access_token = params.access_token;
+      const refresh_token = params.refresh_token;
+      const code = params.code;
+
+      if (access_token && refresh_token) {
+        const { data: sessionData, error: sessionError } = await supabase.auth.setSession({
+          access_token,
+          refresh_token,
+        });
+        if (sessionError || !sessionData.user) {
+          return { success: false, error: sessionError?.message || 'Failed to set session' };
+        }
+        console.log('✅ Supabase Google OAuth successful (implicit)');
+        return { success: true };
+      }
+
+      if (code) {
+        const { data: sessionData, error: sessionError } = await supabase.auth.exchangeCodeForSession(code);
+        if (sessionError || !sessionData.user) {
+          return { success: false, error: sessionError?.message || 'Failed to exchange code' };
+        }
+        console.log('✅ Supabase Google OAuth successful (PKCE)');
+        return { success: true };
+      }
+
+      return { success: false, error: 'No session returned from Google' };
+    } catch (error: any) {
+      console.error('💥 Google OAuth error:', error);
+      return { success: false, error: error?.message || 'Google sign-in failed. Please try again.' };
+    } finally {
+      setIsLoading(false);
+    }
+  }, []);
+
   const loginWithGoogle = useCallback(async (
     googleUser: { id: string; email: string; name: string; picture?: string; idToken?: string; nonce?: string }
   ): Promise<{ success: boolean; error?: string }> => {
@@ -786,7 +864,8 @@ export const [AuthProvider, useAuth] = createContextHook(() => {
   const googleAuthConfig = useMemo(() => ({
     clientId: GOOGLE_CLIENT_ID,
     discovery: googleDiscovery,
-    isConfigured: !!GOOGLE_CLIENT_ID,
+    isConfigured: supabaseConfigured || !!GOOGLE_CLIENT_ID,
+    useSupabaseOAuth: supabaseConfigured,
   }), []);
 
   return useMemo(() => ({
@@ -799,6 +878,7 @@ export const [AuthProvider, useAuth] = createContextHook(() => {
     signup,
     logout,
     loginWithGoogle,
+    loginWithGoogleOAuth,
     continueAsGuest,
     convertGuestToUser,
     updateUser,
@@ -812,5 +892,5 @@ export const [AuthProvider, useAuth] = createContextHook(() => {
     firebaseUser: supabaseUser,
     biometricAuth,
     googleAuthConfig,
-  }), [user, isLoading, isInitialized, isGuest, login, signup, logout, loginWithGoogle, continueAsGuest, convertGuestToUser, updateUser, deleteAccount, createDemoUser, clearAllData, getSupabaseSync, isAutoSyncEnabled, supabaseUser, biometricAuth, googleAuthConfig]);
+  }), [user, isLoading, isInitialized, isGuest, login, signup, logout, loginWithGoogle, loginWithGoogleOAuth, continueAsGuest, convertGuestToUser, updateUser, deleteAccount, createDemoUser, clearAllData, getSupabaseSync, isAutoSyncEnabled, supabaseUser, biometricAuth, googleAuthConfig]);
 });
