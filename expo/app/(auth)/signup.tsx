@@ -15,6 +15,7 @@ import {
 import { Link, router } from 'expo-router';
 import * as AuthSession from 'expo-auth-session';
 import * as WebBrowser from 'expo-web-browser';
+import * as Crypto from 'expo-crypto';
 import * as Haptics from 'expo-haptics';
 import { Mail, Lock, User, Eye, EyeOff, UserPlus } from 'lucide-react-native';
 import { useAuth } from '@/hooks/useAuth';
@@ -64,34 +65,67 @@ export default function SignupScreen() {
     setGoogleLoading(true);
 
     try {
-      const authUrl = `${googleAuthConfig.discovery.authorizationEndpoint}?client_id=${googleAuthConfig.clientId}&redirect_uri=${encodeURIComponent(redirectUri)}&response_type=token&scope=${encodeURIComponent('openid email profile')}`;
+      const rawNonce = Array.from(Crypto.getRandomValues(new Uint8Array(16)))
+        .map((b) => b.toString(16).padStart(2, '0'))
+        .join('');
+      const hashedNonce = await Crypto.digestStringAsync(
+        Crypto.CryptoDigestAlgorithm.SHA256,
+        rawNonce
+      );
+
+      const authUrl = `${googleAuthConfig.discovery.authorizationEndpoint}?client_id=${googleAuthConfig.clientId}&redirect_uri=${encodeURIComponent(redirectUri)}&response_type=${encodeURIComponent('id_token token')}&scope=${encodeURIComponent('openid email profile')}&nonce=${hashedNonce}`;
 
       const result = await WebBrowser.openAuthSessionAsync(authUrl, redirectUri);
 
       if (result.type === 'success' && result.url) {
         const params = new URLSearchParams(result.url.split('#')[1] || '');
         const accessToken = params.get('access_token');
+        const idToken = params.get('id_token');
 
-        if (!accessToken) {
-          Alert.alert('Error', 'Failed to get access token from Google.');
+        if (!accessToken && !idToken) {
+          Alert.alert('Error', 'Failed to get token from Google.');
           return;
         }
 
-        const userInfoResponse = await fetch('https://www.googleapis.com/oauth2/v2/userinfo', {
-          headers: { Authorization: `Bearer ${accessToken}` },
-        });
-
-        if (!userInfoResponse.ok) {
-          throw new Error('Failed to fetch Google user info');
+        let userInfo: { id: string; email: string; name?: string; picture?: string } = {
+          id: '', email: '',
+        };
+        if (accessToken) {
+          const userInfoResponse = await fetch('https://www.googleapis.com/oauth2/v2/userinfo', {
+            headers: { Authorization: `Bearer ${accessToken}` },
+          });
+          if (!userInfoResponse.ok) {
+            throw new Error('Failed to fetch Google user info');
+          }
+          userInfo = await userInfoResponse.json();
+        } else if (idToken) {
+          try {
+            const payload = JSON.parse(
+              decodeURIComponent(
+                atob(idToken.split('.')[1].replace(/-/g, '+').replace(/_/g, '/'))
+                  .split('')
+                  .map((c) => '%' + ('00' + c.charCodeAt(0).toString(16)).slice(-2))
+                  .join('')
+              )
+            );
+            userInfo = {
+              id: payload.sub,
+              email: payload.email,
+              name: payload.name,
+              picture: payload.picture,
+            };
+          } catch (e) {
+            console.warn('Failed to decode id_token payload', e);
+          }
         }
-
-        const userInfo = await userInfoResponse.json();
 
         const loginResult = await loginWithGoogle({
           id: userInfo.id,
           email: userInfo.email,
-          name: userInfo.name || userInfo.email.split('@')[0],
+          name: userInfo.name || (userInfo.email ? userInfo.email.split('@')[0] : 'User'),
           picture: userInfo.picture,
+          idToken: idToken || undefined,
+          nonce: rawNonce,
         });
 
         if (loginResult.success) {

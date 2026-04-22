@@ -660,11 +660,58 @@ export const [AuthProvider, useAuth] = createContextHook(() => {
     }
   }, []);
 
-  const loginWithGoogle = useCallback(async (googleUser: { id: string; email: string; name: string; picture?: string }): Promise<{ success: boolean; error?: string }> => {
+  const loginWithGoogle = useCallback(async (
+    googleUser: { id: string; email: string; name: string; picture?: string; idToken?: string; nonce?: string }
+  ): Promise<{ success: boolean; error?: string }> => {
     try {
       console.log('🔐 Google login attempt for:', googleUser.email);
       setIsLoading(true);
 
+      if (supabaseConfigured && googleUser.idToken) {
+        const { data, error } = await supabase.auth.signInWithIdToken({
+          provider: 'google',
+          token: googleUser.idToken,
+          nonce: googleUser.nonce,
+        });
+        if (error || !data.user) {
+          const msg = error?.message || 'Google sign-in failed';
+          console.warn('Supabase signInWithIdToken failed:', msg);
+          return { success: false, error: msg };
+        }
+        const supaUser = data.user;
+        const meta = supaUser.user_metadata || {};
+        const displayName: string =
+          meta.name || meta.full_name || googleUser.name ||
+          (supaUser.email ? String(supaUser.email).split('@')[0] : 'User');
+        const authUser: AuthUser = {
+          id: supaUser.id,
+          email: supaUser.email || googleUser.email,
+          name: displayName,
+          avatar: meta.avatar_url || meta.picture || googleUser.picture,
+          isAuthenticated: true,
+        };
+        setIsGuest(false);
+        setUser(authUser);
+        setSupabaseUser(supaUser);
+        await AsyncStorage.setItem(AUTH_STORAGE_KEY, JSON.stringify(authUser));
+        try {
+          await migrateLocalDataToSupabaseUser(authUser.email, supaUser.id);
+        } catch (migrationError) {
+          console.warn('Local->Supabase migration skipped (google):', migrationError);
+        }
+        try {
+          const newSync = new SupabaseUserSync(supaUser.id);
+          setSupabaseSync(newSync);
+          setAutoSyncEnabled(true);
+          void setSyncUserId(supaUser.id);
+        } catch (syncError) {
+          console.log('Supabase sync setup skipped:', syncError);
+        }
+        console.log('✅ Supabase Google login successful');
+        return { success: true };
+      }
+
+      console.log('⚠️ Falling back to local Google user (no id_token or Supabase not configured)');
       const users = await getUsersDb();
       let foundUser = users.find(u => u.email.toLowerCase() === googleUser.email.toLowerCase());
 
@@ -686,7 +733,7 @@ export const [AuthProvider, useAuth] = createContextHook(() => {
         };
         await saveUsersDb([...users, newUser]);
         foundUser = newUser;
-        console.log('✅ New Google user created:', googleUser.email);
+        console.log('✅ New Google user created (local):', googleUser.email);
       } else {
         foundUser.lastLoginAt = new Date().toISOString();
         if (googleUser.picture && !foundUser.avatar) {
@@ -716,11 +763,11 @@ export const [AuthProvider, useAuth] = createContextHook(() => {
         console.log('Supabase sync setup skipped:', syncError);
       }
 
-      console.log('Google login successful');
+      console.log('Google login successful (local)');
       return { success: true };
-    } catch (error) {
+    } catch (error: any) {
       console.error('💥 Google login error:', error);
-      return { success: false, error: 'Google sign-in failed. Please try again.' };
+      return { success: false, error: error?.message || 'Google sign-in failed. Please try again.' };
     } finally {
       setIsLoading(false);
     }
