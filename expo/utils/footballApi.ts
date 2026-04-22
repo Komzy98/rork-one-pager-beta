@@ -8,8 +8,7 @@ const API_KEY = process.env.EXPO_PUBLIC_FOOTBALL_API_KEY || '';
 const BASE_URL = 'https://v3.football.api-sports.io';
 
 const headers = {
-  'x-rapidapi-key': API_KEY,
-  'x-rapidapi-host': 'v3.football.api-sports.io'
+  'x-apisports-key': API_KEY
 };
 
 // Check if API key is configured
