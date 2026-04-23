@@ -22,7 +22,7 @@ import {
 import * as Haptics from 'expo-haptics';
 import { LinearGradient } from 'expo-linear-gradient';
 import { BlurView } from 'expo-blur';
-import { testYounifyServices } from '@/services/younify';
+import { fetchYounifyContentForConnectedServices } from '@/services/younify';
 import { 
   Plus, 
   Play, 
@@ -67,6 +67,7 @@ import { episodeNotificationService, TrackedShow } from '@/utils/episodeNotifica
 import { useUserProfile } from '@/hooks/useUserProfile';
 import { likedContentService } from '@/utils/likedContentService';
 import WatchProviders from '@/components/WatchProviders';
+import ConnectedServicesRail from '@/components/younify/ConnectedServicesRail';
 
 import TabWalkthrough from '@/components/TabWalkthrough';
 import { useRouter } from 'expo-router';
@@ -770,9 +771,28 @@ export default function ShowsScreen() {
     link?: string;
   } | null>(null);
   const [loadingProviders, setLoadingProviders] = useState(false);
+  const [younifyContent, setYounifyContent] = useState<any[]>([]);
+  const [younifyLoading, setYounifyLoading] = useState(true);
   
   const heroScrollX = useRef(new RNAnimated.Value(0)).current;
   const searchInputRef = useRef<TextInput>(null);
+
+  useEffect(() => {
+    const loadYounifyContent = async () => {
+      try {
+        setYounifyLoading(true);
+        const result = await fetchYounifyContentForConnectedServices();
+        setYounifyContent(Array.isArray(result) ? result : []);
+      } catch (error) {
+        console.error('Failed to load Younify connected content:', error);
+        setYounifyContent([]);
+      } finally {
+        setYounifyLoading(false);
+      }
+    };
+
+    void loadYounifyContent();
+  }, []);
 
   const trendingQuery = useQuery({
     queryKey: ['trending-all'],
@@ -1749,7 +1769,7 @@ export default function ShowsScreen() {
                     if (Platform.OS !== 'web') {
                       void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
                     }
-                    router.push('/(root)/watching-map' as any);
+                    router.push('/(root)/streaming-services' as any);
                   }}
                 >
                   <Globe size={18} color={THEME.textSecondary} />
@@ -1864,8 +1884,12 @@ export default function ShowsScreen() {
           }
         >
           <View style={{ paddingHorizontal: 20, paddingTop: 12 }}>
-  
-</View>
+            <ConnectedServicesRail
+              content={younifyContent}
+              loading={younifyLoading}
+            />
+            <View style={{ marginBottom: 18 }} />
+          </View>
           {trendingQuery.isLoading ? (
             <View style={styles.loadingSection}>
               <ActivityIndicator size="large" color={THEME.primary} />
