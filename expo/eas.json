@@ -3,21 +3,17 @@
     "version": ">= 16.0.0"
   },
   "build": {
-    "base": {
-      "node": "20.19.4",
-      "installCommand": "npm ci --legacy-peer-deps"
-    },
     "development": {
-      "extends": "base",
+      "node": "20.19.4",
       "developmentClient": true,
       "distribution": "internal"
     },
     "preview": {
-      "extends": "base",
+      "node": "20.19.4",
       "distribution": "internal"
     },
     "production": {
-      "extends": "base"
+      "node": "20.19.4"
     }
   },
   "submit": {
