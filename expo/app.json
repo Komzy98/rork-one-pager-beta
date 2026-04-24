@@ -3,7 +3,13 @@
     "name": "One Pager",
     "slug": "onepager",
     "extra": {
-      "younifySdkKey": "wdqG3OvGmg_90lNxvrwm8uY8pgzx2wPiDMz68dPpncQOBYkepvBCXQJP8OxDDizYlQW78xQiqvy1oLO8QtERNQ0yjKAC6WYg63oq0IXbm29rd5bHyBl7dJ"
+      "younifySdkKey": "wdqG3OvGmg_90lNxvrwm8uY8pgzx2wPiDMz68dPpncQOBYkepvBCXQJP8OxDDizYlQW78xQiqvy1oLO8QtERNQ0yjKAC6WYg63oq0IXbm29rd5bHyBl7dJ",
+      "router": {
+        "origin": "https://rork.com/"
+      },
+      "eas": {
+        "projectId": "39ee08f1-7685-4270-a8b8-1240a24ac20c"
+      }
     },
     "version": "1.0.0",
     "orientation": "portrait",
@@ -47,27 +53,29 @@
       "package": "app.rork.opbeta",
       "permissions": [
         "android.permission.VIBRATE",
-        "RECORD_AUDIO",
-        "USE_BIOMETRIC",
-        "USE_FINGERPRINT",
-        "READ_CALENDAR",
-        "WRITE_CALENDAR",
-        "CAMERA",
-        "READ_EXTERNAL_STORAGE",
-        "WRITE_EXTERNAL_STORAGE",
+        "android.permission.RECORD_AUDIO",
+        "android.permission.USE_BIOMETRIC",
+        "android.permission.USE_FINGERPRINT",
+        "android.permission.READ_CALENDAR",
+        "android.permission.WRITE_CALENDAR",
+        "android.permission.CAMERA",
+        "android.permission.READ_EXTERNAL_STORAGE",
+        "android.permission.WRITE_EXTERNAL_STORAGE",
         "android.permission.RECEIVE_BOOT_COMPLETED",
         "android.permission.SCHEDULE_EXACT_ALARM",
-        "ACCESS_COARSE_LOCATION",
-        "ACCESS_FINE_LOCATION",
-        "FOREGROUND_SERVICE",
-        "FOREGROUND_SERVICE_LOCATION",
-        "ACCESS_BACKGROUND_LOCATION"
+        "android.permission.ACCESS_COARSE_LOCATION",
+        "android.permission.ACCESS_FINE_LOCATION",
+        "android.permission.FOREGROUND_SERVICE",
+        "android.permission.FOREGROUND_SERVICE_LOCATION",
+        "android.permission.ACCESS_BACKGROUND_LOCATION",
+        "android.permission.MODIFY_AUDIO_SETTINGS"
       ]
     },
     "web": {
       "favicon": "./assets/images/favicon.png"
     },
     "plugins": [
+      "expo-dev-client",
       [
         "expo-router",
         {
@@ -118,6 +126,7 @@
     ],
     "experiments": {
       "typedRoutes": true
-    }
+    },
+    "owner": "joshkomolafe"
   }
 }

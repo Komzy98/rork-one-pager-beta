@@ -22,7 +22,12 @@ import {
 import * as Haptics from 'expo-haptics';
 import { LinearGradient } from 'expo-linear-gradient';
 import { BlurView } from 'expo-blur';
-import { fetchYounifyContentForConnectedServices } from '@/services/younify';
+import {
+  fetchYounifyBrowseSections,
+  fetchYounifyContentForConnectedServices,
+  getLinkedStreamingServicesList,
+  type YounifyBrowseSection,
+} from '@/services/younify';
 import { 
   Plus, 
   Play, 
@@ -68,9 +73,10 @@ import { useUserProfile } from '@/hooks/useUserProfile';
 import { likedContentService } from '@/utils/likedContentService';
 import WatchProviders from '@/components/WatchProviders';
 import ConnectedServicesRail from '@/components/younify/ConnectedServicesRail';
+import StreamingServicesBrowseTab from '@/components/younify/StreamingServicesBrowseTab';
 
 import TabWalkthrough from '@/components/TabWalkthrough';
-import { useRouter } from 'expo-router';
+import { useRouter, useFocusEffect } from 'expo-router';
 
 
 
@@ -749,7 +755,7 @@ export default function ShowsScreen() {
   const router = useRouter();
   const [showAddModal, setShowAddModal] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
-  const [selectedTab, setSelectedTab] = useState<'discover' | 'my-list'>('discover');
+  const [selectedTab, setSelectedTab] = useState<'discover' | 'streaming' | 'my-list'>('discover');
   const [selectedStatus, setSelectedStatus] = useState<'all' | Show['status']>('all');
 
   const [showThumbnails, setShowThumbnails] = useState<Record<string, string>>({});
@@ -773,26 +779,77 @@ export default function ShowsScreen() {
   const [loadingProviders, setLoadingProviders] = useState(false);
   const [younifyContent, setYounifyContent] = useState<any[]>([]);
   const [younifyLoading, setYounifyLoading] = useState(true);
-  
-  const heroScrollX = useRef(new RNAnimated.Value(0)).current;
-  const searchInputRef = useRef<TextInput>(null);
+  const [hasLinkedServices, setHasLinkedServices] = useState(false);
+  const [linkedStreamingCount, setLinkedStreamingCount] = useState(0);
+  const [streamingSections, setStreamingSections] = useState<YounifyBrowseSection[]>([]);
+  const [streamingLoading, setStreamingLoading] = useState(false);
+  const [streamingInitialized, setStreamingInitialized] = useState(false);
+  const [streamingRefreshing, setStreamingRefreshing] = useState(false);
+
+  const refetchStreamingBrowse = useCallback(async () => {
+    try {
+      setStreamingLoading(true);
+      const linkedList = await getLinkedStreamingServicesList();
+      setLinkedStreamingCount(linkedList.length);
+      setHasLinkedServices(linkedList.length > 0);
+      const rows = await fetchYounifyBrowseSections();
+      setStreamingSections(Array.isArray(rows) ? rows : []);
+    } catch (error) {
+      console.error('Failed to load Younify streaming browse:', error);
+      setStreamingSections([]);
+    } finally {
+      setStreamingLoading(false);
+      setStreamingInitialized(true);
+    }
+  }, []);
+
+  const onStreamingPullRefresh = useCallback(async () => {
+    setStreamingRefreshing(true);
+    try {
+      await refetchStreamingBrowse();
+    } finally {
+      setStreamingRefreshing(false);
+    }
+  }, [refetchStreamingBrowse]);
+
+  const refetchYounifyRail = useCallback(async () => {
+    try {
+      setYounifyLoading(true);
+      const linkedList = await getLinkedStreamingServicesList();
+      setLinkedStreamingCount(linkedList.length);
+      const has = linkedList.length > 0;
+      setHasLinkedServices(has);
+      if (!has) {
+        setYounifyContent([]);
+        return;
+      }
+      const result = await fetchYounifyContentForConnectedServices();
+      setYounifyContent(Array.isArray(result) ? result : []);
+    } catch (error) {
+      console.error('Failed to load Younify connected content:', error);
+      setHasLinkedServices(false);
+      setLinkedStreamingCount(0);
+      setYounifyContent([]);
+    } finally {
+      setYounifyLoading(false);
+    }
+  }, []);
+
+  useFocusEffect(
+    useCallback(() => {
+      void refetchYounifyRail();
+      void refetchStreamingBrowse();
+    }, [refetchYounifyRail, refetchStreamingBrowse]),
+  );
 
   useEffect(() => {
-    const loadYounifyContent = async () => {
-      try {
-        setYounifyLoading(true);
-        const result = await fetchYounifyContentForConnectedServices();
-        setYounifyContent(Array.isArray(result) ? result : []);
-      } catch (error) {
-        console.error('Failed to load Younify connected content:', error);
-        setYounifyContent([]);
-      } finally {
-        setYounifyLoading(false);
-      }
-    };
+    if (selectedTab === 'streaming') {
+      void refetchStreamingBrowse();
+    }
+  }, [selectedTab, refetchStreamingBrowse]);
 
-    void loadYounifyContent();
-  }, []);
+  const heroScrollX = useRef(new RNAnimated.Value(0)).current;
+  const searchInputRef = useRef<TextInput>(null);
 
   const trendingQuery = useQuery({
     queryKey: ['trending-all'],
@@ -1005,7 +1062,7 @@ export default function ShowsScreen() {
 
   const onRefresh = useCallback(async () => {
     setRefreshing(true);
-    await Promise.all([
+    const tasks: Promise<unknown>[] = [
       refetchTrending(),
       refetchPopular(),
       refetchTopRated(),
@@ -1015,9 +1072,27 @@ export default function ShowsScreen() {
       refetchUpcoming(),
       refetchNewEpisodes(),
       refetchRegionTrending(),
-    ]);
+      refetchYounifyRail(),
+    ];
+    if (selectedTab === 'streaming') {
+      tasks.push(refetchStreamingBrowse());
+    }
+    await Promise.all(tasks);
     setRefreshing(false);
-  }, [refetchTrending, refetchPopular, refetchTopRated, refetchNowPlaying, refetchAiringToday, refetchOnTheAir, refetchUpcoming, refetchNewEpisodes, refetchRegionTrending]);
+  }, [
+    selectedTab,
+    refetchTrending,
+    refetchPopular,
+    refetchTopRated,
+    refetchNowPlaying,
+    refetchAiringToday,
+    refetchOnTheAir,
+    refetchUpcoming,
+    refetchNewEpisodes,
+    refetchRegionTrending,
+    refetchYounifyRail,
+    refetchStreamingBrowse,
+  ]);
 
   const heroItems = useMemo(() => {
     if (!trendingQuery.data) return [];
@@ -1796,6 +1871,7 @@ export default function ShowsScreen() {
           <View style={styles.tabsContainerWeb}>
             {[
               { key: 'discover' as const, label: 'Discover', icon: <Sparkles size={14} />, badge: 0 },
+              { key: 'streaming' as const, label: 'Streaming', icon: <Tv size={14} />, badge: 0 },
               { key: 'my-list' as const, label: 'My List', icon: <Bookmark size={14} />, badge: shows.length },
             ].map((tab) => {
               const isActive = selectedTab === tab.key;
@@ -1831,6 +1907,7 @@ export default function ShowsScreen() {
           <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.tabsScrollView} contentContainerStyle={styles.tabsContainer}>
             {[
               { key: 'discover' as const, label: 'Discover', icon: <Sparkles size={14} />, badge: 0 },
+              { key: 'streaming' as const, label: 'Streaming', icon: <Tv size={14} />, badge: 0 },
               { key: 'my-list' as const, label: 'My List', icon: <Bookmark size={14} />, badge: shows.length },
             ].map((tab) => {
               const isActive = selectedTab === tab.key;
@@ -1887,6 +1964,8 @@ export default function ShowsScreen() {
             <ConnectedServicesRail
               content={younifyContent}
               loading={younifyLoading}
+              hasLinkedServices={hasLinkedServices}
+              linkedStreamingCount={linkedStreamingCount}
             />
             <View style={{ marginBottom: 18 }} />
           </View>
@@ -2020,6 +2099,19 @@ export default function ShowsScreen() {
             </>
           )}
         </ScrollView>
+      ) : selectedTab === 'streaming' ? (
+        <View style={styles.content}>
+          <StreamingServicesBrowseTab
+            sections={streamingSections}
+            loading={
+              hasLinkedServices && (!streamingInitialized || streamingLoading)
+            }
+            hasLinkedServices={hasLinkedServices}
+            linkedStreamingCount={linkedStreamingCount}
+            refreshing={streamingRefreshing}
+            onRefresh={onStreamingPullRefresh}
+          />
+        </View>
       ) : selectedTab === 'my-list' ? (
         <View style={styles.myListContainer}>
           <ScrollView 

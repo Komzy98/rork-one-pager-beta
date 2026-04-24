@@ -14,6 +14,7 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { ArrowLeft, Check, Sparkles } from "lucide-react-native";
 import { useRouter } from "expo-router";
 import { configureYounify, fetchYounifyServices } from "@/services/younify";
+import { TMDB_POSTER_ATTRIBUTION } from "@/utils/younifyTmdbPoster";
 
 type YounifyService = {
   id?: string | number;
@@ -111,10 +112,11 @@ export default function StreamingServicesScreen() {
       item.active,
       item.linked,
       item.enabled,
+      Boolean(item.link),
       item.status === "connected",
       item.connectionStatus === "connected",
     ];
-
+  
     return flags.some(Boolean);
   };
 
@@ -219,9 +221,11 @@ export default function StreamingServicesScreen() {
             <Text style={styles.serviceName}>{label}</Text>
 
             <Text style={styles.serviceSubtext}>
-              {connected
-                ? "Already linked to your account"
-                : "Connect to personalise your watch experience"}
+            {connected
+            ? item.link?.profileName
+            ? `Connected as ${item.link.profileName}`
+            : "Already linked to your account"
+            : "Connect to personalise your watch experience"}
             </Text>
 
             <View
@@ -439,6 +443,9 @@ export default function StreamingServicesScreen() {
                 </Pressable>
               </View>
             }
+            ListFooterComponent={
+              <Text style={styles.tmdbAttribution}>{TMDB_POSTER_ATTRIBUTION}</Text>
+            }
           />
         </>
       )}
@@ -545,6 +552,15 @@ const styles = StyleSheet.create({
   heroButtonText: {
     fontSize: 13,
     fontWeight: "700",
+  },
+  tmdbAttribution: {
+    fontSize: 10,
+    lineHeight: 14,
+    color: "#5C6578",
+    textAlign: "center",
+    marginTop: 8,
+    marginBottom: 28,
+    paddingHorizontal: 8,
   },
   listContent: {
     paddingBottom: 38,

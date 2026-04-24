@@ -3,11 +3,11 @@ const express = require("express");
 const cors = require("cors");
 
 const app = express();
+
 app.use(cors());
 app.use(express.json());
 
 const PORT = process.env.PORT || 3000;
-
 const YOUNIFY_MANAGEMENT_API_KEY = process.env.YOUNIFY_MANAGEMENT_API_KEY;
 const YOUNIFY_MANAGEMENT_BASE_URL =
   process.env.YOUNIFY_MANAGEMENT_BASE_URL || "https://api.younify.tv/v1";
@@ -50,7 +50,7 @@ app.post("/create-younify-user", async (req, res) => {
     let refreshToken = data.data?.refresh_token;
 
     if (!response.ok && response.status === 422) {
-      // If the external ID already exists, reuse that user.
+      // Common case for local dev: external_id already exists.
       const usersResponse = await fetch(`${YOUNIFY_MANAGEMENT_BASE_URL}/users`, {
         headers: {
           "x-mmt-api-secret": YOUNIFY_MANAGEMENT_API_KEY,
@@ -69,6 +69,7 @@ app.post("/create-younify-user", async (req, res) => {
         status: response.status,
         body: data,
       });
+
       return res.status(response.status).json({
         error: "Failed to create Younify user",
         details: data,
@@ -137,6 +138,7 @@ app.post("/refresh-younify-user-tokens", async (req, res) => {
         },
       },
     );
+
     const data = await response.json().catch(() => ({}));
 
     if (!response.ok) {
@@ -175,5 +177,6 @@ app.post("/refresh-younify-user-tokens", async (req, res) => {
 });
 
 app.listen(PORT, "0.0.0.0", () => {
-  console.log(`Server running on http://localhost:${PORT}`);
-});
+    console.log(`Server running on http://localhost:${PORT}`);
+  });
+  
