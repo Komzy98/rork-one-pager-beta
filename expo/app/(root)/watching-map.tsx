@@ -73,7 +73,13 @@ const CYAN = '#64D2FF';
 const GLASS = 'rgba(20, 20, 24, 0.78)';
 const GLASS_BORDER = 'rgba(255,255,255,0.08)';
 
-export default function WatchingMapScreen() {
+type WatchingMapScreenProps = {
+  /** When true, rendered inside Shows tab (no stack back — use tabs to leave). */
+  embedded?: boolean;
+};
+
+export default function WatchingMapScreen(props?: WatchingMapScreenProps) {
+  const embedded = props?.embedded ?? false;
   const insets = useSafeAreaInsets();
   const router = useRouter();
   const [viewMode, setViewMode] = useState<ViewMode>('map');
@@ -783,6 +789,10 @@ export default function WatchingMapScreen() {
     </ScrollView>
   );
 
+  const mapChromePadding = embedded
+    ? { top: 8, right: 16, bottom: 240, left: 16 }
+    : { top: 60, right: 20, bottom: 260, left: 20 };
+
   const renderMapView = () => (
     <View style={styles.mapContainer}>
       <MapView
@@ -793,7 +803,7 @@ export default function WatchingMapScreen() {
         showsMyLocationButton={false}
         showsCompass={false}
         customMapStyle={darkMapStyle}
-        mapPadding={{ top: 60, right: 20, bottom: 260, left: 20 }}
+        mapPadding={mapChromePadding}
         onPress={() => {
           if (selectedWatcher || selectedArea) dismissCard();
         }}
@@ -884,7 +894,12 @@ export default function WatchingMapScreen() {
         ))}
       </MapView>
 
-      <View style={[styles.mapFloatingControls, { top: insets.top + 120 }]}>
+      <View
+        style={[
+          styles.mapFloatingControls,
+          { top: embedded ? insets.top + 10 : insets.top + 120 },
+        ]}
+      >
         {renderGlassContainer(
           <View style={styles.mapLivePillContent}>
             <Animated.View style={[styles.livePulseDot, { opacity: liveDotAnim }]} />
@@ -1114,34 +1129,40 @@ export default function WatchingMapScreen() {
 
   return (
     <View style={[styles.container, { backgroundColor: BG }]}>
-      <Stack.Screen options={{ headerShown: false }} />
+      {!embedded ? <Stack.Screen options={{ headerShown: false }} /> : null}
 
-      <Animated.View style={[
-        styles.header,
-        {
-          opacity: headerAnim,
-          transform: [{
-            translateY: headerAnim.interpolate({
-              inputRange: [0, 1],
-              outputRange: [-20, 0],
-            }),
-          }],
-        },
-      ]}>
-        {Platform.OS === 'web' ? (
-          <View style={styles.headerBlurWeb}>
-            <View style={[styles.headerInner, { paddingTop: insets.top + 8 }]}>
-              {renderHeaderContent()}
+      {!embedded ? (
+        <Animated.View
+          style={[
+            styles.header,
+            {
+              opacity: headerAnim,
+              transform: [
+                {
+                  translateY: headerAnim.interpolate({
+                    inputRange: [0, 1],
+                    outputRange: [-20, 0],
+                  }),
+                },
+              ],
+            },
+          ]}
+        >
+          {Platform.OS === 'web' ? (
+            <View style={styles.headerBlurWeb}>
+              <View style={[styles.headerInner, { paddingTop: insets.top + 8 }]}>
+                {renderHeaderContent()}
+              </View>
             </View>
-          </View>
-        ) : (
-          <BlurView intensity={60} tint="dark" style={styles.headerBlurNative}>
-            <View style={[styles.headerInner, { paddingTop: insets.top + 8 }]}>
-              {renderHeaderContent()}
-            </View>
-          </BlurView>
-        )}
-      </Animated.View>
+          ) : (
+            <BlurView intensity={60} tint="dark" style={styles.headerBlurNative}>
+              <View style={[styles.headerInner, { paddingTop: insets.top + 8 }]}>
+                {renderHeaderContent()}
+              </View>
+            </BlurView>
+          )}
+        </Animated.View>
+      ) : null}
 
       {viewMode === 'map' && renderMapView()}
       {viewMode === 'trending' && renderTrendingList()}
@@ -1153,13 +1174,17 @@ export default function WatchingMapScreen() {
     return (
       <>
         <View style={styles.headerRow}>
-          <TouchableOpacity
-            style={styles.backButton}
-            onPress={() => router.back()}
-            activeOpacity={0.7}
-          >
-            <ArrowLeft size={20} color={TEXT_PRIMARY} />
-          </TouchableOpacity>
+          {!embedded ? (
+            <TouchableOpacity
+              style={styles.backButton}
+              onPress={() => router.back()}
+              activeOpacity={0.7}
+            >
+              <ArrowLeft size={20} color={TEXT_PRIMARY} />
+            </TouchableOpacity>
+          ) : (
+            <View style={styles.backButton} />
+          )}
 
           {showSearch ? (
             <View style={styles.searchBar}>

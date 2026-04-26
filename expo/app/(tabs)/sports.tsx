@@ -167,14 +167,16 @@ interface Match {
 let footballIdCounter = 0;
 function transformApiFootballData(fixtures: any[]): Match[] {
   if (!Array.isArray(fixtures)) return [];
+  const LIVE_SHORT_STATUSES = new Set(['LIVE', '1H', '2H', 'HT', 'ET', 'P', 'BT', 'INT', 'SUSP']);
+  const COMPLETED_SHORT_STATUSES = new Set(['FT', 'AET', 'PEN', 'AWD', 'WO']);
   
   return fixtures.map((fixture: any, _index: number) => {
     const status = fixture.fixture?.status?.short;
     let matchStatus: 'Live' | 'Upcoming' | 'Completed' = 'Upcoming';
     
-    if (status === 'LIVE' || status === '1H' || status === '2H' || status === 'HT' || status === 'ET' || status === 'P' || status === 'BT') {
+    if (LIVE_SHORT_STATUSES.has(String(status || '').toUpperCase())) {
       matchStatus = 'Live';
-    } else if (status === 'FT' || status === 'AET' || status === 'PEN' || status === 'AWD' || status === 'WO') {
+    } else if (COMPLETED_SHORT_STATUSES.has(String(status || '').toUpperCase())) {
       matchStatus = 'Completed';
     }
 
@@ -1346,39 +1348,21 @@ export default function SportsScreen() {
     if (activeTab === 'results') setHasViewedResults(true);
   }, [activeTab]);
 
-  const liveQuery = trpc.football.getMatches.useQuery(
-    { 
-      type: 'live', 
+  const includeResultsTab = activeTab === 'results' || hasViewedResults;
+
+  const footballBundleQuery = trpc.football.getMatchesBundle.useQuery(
+    {
+      days: 14,
       teamIds: teamApiIds.length > 0 ? teamApiIds : undefined,
       leagueIds: queryLeagueIds,
       nationalTeamIds: hasNationalTeams ? nationalTeamApiIds : undefined,
       includeAfcon: hasNationalTeams ? true : undefined,
+      includeResults: includeResultsTab,
     },
-    { 
+    {
       enabled: sportMode === 'football',
       refetchInterval: activeTab === 'live' ? 60 * 1000 : false,
       staleTime: 45 * 1000,
-      gcTime: 5 * 60 * 1000,
-      retry: 3,
-      retryDelay: (attempt) => Math.min(1000 * Math.pow(2, attempt), 5000),
-      refetchOnWindowFocus: false,
-      refetchOnReconnect: true,
-    }
-  );
-
-  const upcomingQuery = trpc.football.getMatches.useQuery(
-    { 
-      type: 'upcoming', 
-      days: 14, 
-      teamIds: teamApiIds.length > 0 ? teamApiIds : undefined,
-      leagueIds: queryLeagueIds,
-      nationalTeamIds: hasNationalTeams ? nationalTeamApiIds : undefined,
-      includeAfcon: hasNationalTeams ? true : undefined,
-    },
-    { 
-      enabled: sportMode === 'football',
-      refetchInterval: false,
-      staleTime: 10 * 60 * 1000,
       gcTime: 30 * 60 * 1000,
       retry: 3,
       retryDelay: (attempt) => Math.min(1000 * Math.pow(2, attempt), 5000),
@@ -1387,44 +1371,24 @@ export default function SportsScreen() {
     }
   );
 
-  const resultsQuery = trpc.football.getMatches.useQuery(
-    { 
-      type: 'results', 
-      teamIds: teamApiIds.length > 0 ? teamApiIds : undefined,
-      leagueIds: queryLeagueIds,
-      nationalTeamIds: hasNationalTeams ? nationalTeamApiIds : undefined,
-      includeAfcon: hasNationalTeams ? true : undefined,
-    },
-    { 
-      enabled: sportMode === 'football' && (activeTab === 'results' || hasViewedResults),
-      refetchInterval: false,
-      staleTime: 10 * 60 * 1000,
-      gcTime: 60 * 60 * 1000,
-      retry: 3,
-      retryDelay: (attempt) => Math.min(1000 * Math.pow(2, attempt), 5000),
-      refetchOnWindowFocus: false,
-      refetchOnReconnect: true,
-    }
-  );
-
   const liveMatches = useMemo(() => {
-    const data = liveQuery.data?.response;
+    const data = footballBundleQuery.data?.live?.response;
     if (!data || !Array.isArray(data)) return [];
     return transformApiFootballData(data);
-  }, [liveQuery.data]);
+  }, [footballBundleQuery.data?.live]);
 
   const upcomingMatches = useMemo(() => {
-    const data = upcomingQuery.data?.response;
+    const data = footballBundleQuery.data?.upcoming?.response;
     if (!data || !Array.isArray(data)) return [];
     return transformApiFootballData(data).filter(m => m.status === 'Upcoming')
       .sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime());
-  }, [upcomingQuery.data]);
+  }, [footballBundleQuery.data?.upcoming]);
 
   const completedMatches = useMemo(() => {
-    const data = resultsQuery.data?.response;
+    const data = footballBundleQuery.data?.results?.response;
     if (!data || !Array.isArray(data)) return [];
     return transformApiFootballData(data).filter(m => m.status === 'Completed');
-  }, [resultsQuery.data]);
+  }, [footballBundleQuery.data?.results]);
 
   const availableLeaguesForStandings = useMemo(() => {
     const allMatches = [...liveMatches, ...upcomingMatches, ...completedMatches];
@@ -1746,32 +1710,47 @@ export default function SportsScreen() {
       await Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
     }
     if (sportMode === 'football') {
-      await Promise.all([liveQuery.refetch(), upcomingQuery.refetch(), resultsQuery.refetch()]);
+      await footballBundleQuery.refetch();
     } else {
       await Promise.all([ufcUpcomingQuery.refetch(), ufcResultsQuery.refetch()]);
     }
     setRefreshing(false);
-  }, [liveQuery, upcomingQuery, resultsQuery, ufcUpcomingQuery, ufcResultsQuery, sportMode]);
+  }, [footballBundleQuery, ufcUpcomingQuery, ufcResultsQuery, sportMode]);
 
-  const isLoading = sportMode === 'football'
-    ? (liveQuery.isLoading && upcomingQuery.isLoading && resultsQuery.isLoading)
+  const isLoading =
+    sportMode === 'football'
+      ? footballBundleQuery.isLoading
+      : sportMode === 'ufc'
+        ? ufcUpcomingQuery.isLoading || ufcResultsQuery.isLoading
+        : false;
+  const hasAnyFootballData = (footballBundleQuery.data?.live?.response?.length ?? 0) > 0
+    || (footballBundleQuery.data?.upcoming?.response?.length ?? 0) > 0
+    || (footballBundleQuery.data?.results?.response?.length ?? 0) > 0;
+  const hasConfigError = sportMode === 'football'
+    ? !!(footballBundleQuery.data?.live?.errors?.config
+      || footballBundleQuery.data?.upcoming?.errors?.config
+      || footballBundleQuery.data?.results?.errors?.config)
     : sportMode === 'ufc'
-      ? (ufcUpcomingQuery.isLoading && ufcResultsQuery.isLoading)
+      ? !!(ufcUpcomingQuery.data?.errors?.config || ufcResultsQuery.data?.errors?.config)
       : false;
-  const hasAnyFootballData = (liveQuery.data?.response?.length ?? 0) > 0
-    || (upcomingQuery.data?.response?.length ?? 0) > 0
-    || (resultsQuery.data?.response?.length ?? 0) > 0;
-  const allFootballErrored = liveQuery.isError && upcomingQuery.isError && resultsQuery.isError;
+  const allFootballErrored =
+    footballBundleQuery.isFetched && footballBundleQuery.isError;
   const hasError = sportMode === 'football'
-    ? (allFootballErrored && !isLoading && !hasAnyFootballData)
+    ? (allFootballErrored && !isLoading && !hasAnyFootballData && !hasConfigError)
     : sportMode === 'ufc'
       ? ((ufcUpcomingQuery.isError && ufcResultsQuery.isError) && !isLoading)
       : false;
-  const hasConfigError = sportMode === 'football'
-    ? (liveQuery.data?.errors?.config || upcomingQuery.data?.errors?.config || resultsQuery.data?.errors?.config)
-    : sportMode === 'ufc'
-      ? (ufcUpcomingQuery.data?.errors?.config || ufcResultsQuery.data?.errors?.config)
-      : null;
+  const footballErrorDetail = useMemo(() => {
+    const candidate =
+      footballBundleQuery.error?.message ||
+      (footballBundleQuery.data?.live?.errors
+        ? JSON.stringify(footballBundleQuery.data.live.errors)
+        : '') ||
+      (footballBundleQuery.data?.upcoming?.errors
+        ? JSON.stringify(footballBundleQuery.data.upcoming.errors)
+        : '');
+    return candidate ? String(candidate).slice(0, 220) : null;
+  }, [footballBundleQuery.error?.message, footballBundleQuery.data?.live?.errors, footballBundleQuery.data?.upcoming?.errors]);
 
   const tabs = [
     { key: 'live', label: 'Live', icon: Flame, color: '#FF3B30' },
@@ -2086,7 +2065,12 @@ export default function SportsScreen() {
         </View>
       )}
 
-      {sportMode === 'football' && (!hasTeams && !isLoading && !hasError && !hasConfigError) ? (
+      {sportMode === 'football' &&
+      !hasTeams &&
+      !hasAnyFootballData &&
+      !isLoading &&
+      !hasError &&
+      !hasConfigError ? (
         <ScrollView
           style={styles.scrollView}
           contentContainerStyle={[styles.scrollContent, { paddingBottom: insets.bottom + 100 }]}
@@ -2152,6 +2136,11 @@ export default function SportsScreen() {
           <Text style={[styles.errorSub, { color: isDark ? '#6B6B85' : '#8E8E93' }]}>
             Please check your connection and try again
           </Text>
+          {sportMode === 'football' && footballErrorDetail ? (
+            <Text style={[styles.errorDetail, { color: isDark ? '#9CA3AF' : '#6B7280' }]}>
+              {footballErrorDetail}
+            </Text>
+          ) : null}
           <TouchableOpacity style={styles.retryBtn} onPress={onRefresh} activeOpacity={0.85}>
             <RefreshCw size={16} color="#007AFF" />
             <Text style={styles.retryBtnText}>Try Again</Text>
@@ -3131,6 +3120,13 @@ const styles = StyleSheet.create({
     fontSize: 14,
     textAlign: 'center' as const,
     lineHeight: 20,
+  },
+  errorDetail: {
+    fontSize: 12,
+    textAlign: 'center' as const,
+    lineHeight: 17,
+    marginTop: 8,
+    paddingHorizontal: 18,
   },
   retryBtn: {
     flexDirection: 'row',

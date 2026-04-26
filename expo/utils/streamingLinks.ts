@@ -227,6 +227,299 @@ export function getStreamingPlatform(providerId: number): StreamingPlatform | nu
   return STREAMING_PLATFORMS[providerId] || null;
 }
 
+/**
+ * Open the provider’s catalog search for this title (web URL). Prefer this over `openStreamingApp`
+ * when you want the user to land on title results, not only the app home screen.
+ */
+export async function openStreamingTitleSearch(
+  providerId: number,
+  title: string,
+  year?: number,
+): Promise<boolean> {
+  const platform = STREAMING_PLATFORMS[providerId];
+  if (!platform) return false;
+  const url = platform.searchUrl?.(title, year) ?? platform.webUrl;
+  try {
+    await Linking.openURL(url);
+    return true;
+  } catch (error) {
+    console.error(`Failed to open title search for ${platform.name}:`, error);
+    return false;
+  }
+}
+
+/** Map Younify linked-service id/name to TMDB provider ids used in `STREAMING_PLATFORMS`. */
+export function younifySourceToTmdbProviderId(
+  service: { id?: string; name?: string } | null | undefined,
+): number | null {
+  if (!service) return null;
+  const raw = `${String(service.id ?? "")} ${String(service.name ?? "")}`.toLowerCase();
+  if (!raw.trim()) return null;
+  const rules: { re: RegExp; id: number }[] = [
+    { re: /netflix|nflx/, id: 8 },
+    { re: /disney|disney\+|disneyplus/, id: 337 },
+    { re: /hbo max|hbomax/, id: 1899 },
+    { re: /\bhbo\b(?!\s*max)/, id: 384 },
+    { re: /^max$|\bmax app\b/, id: 1899 },
+    { re: /hulu/, id: 15 },
+    { re: /prime video|amazon prime|amazon video|\bprime\b(?=.*video)|\baiv\b/, id: 9 },
+    { re: /peacock/, id: 386 },
+    { re: /paramount/, id: 531 },
+    { re: /apple tv|appletv|\btv\+\b/, id: 350 },
+    { re: /crunchyroll/, id: 283 },
+    { re: /youtube(?! kids)/, id: 192 },
+    { re: /fubo/, id: 257 },
+    { re: /tubi/, id: 73 },
+    { re: /plex/, id: 1770 },
+    { re: /amc\+|amc plus/, id: 526 },
+    { re: /pluto/, id: 300 },
+    { re: /viki|rakuten/, id: 582 },
+  ];
+  for (const { re, id } of rules) {
+    if (re.test(raw)) return id;
+  }
+  return null;
+}
+
+export function extractContentReleaseYear(item: Record<string, unknown>): number | undefined {
+  const y = item.year ?? item.releaseYear ?? item.release_year;
+  if (typeof y === "number" && y > 1900 && y < 2100) return y;
+  if (typeof y === "string" && /^\d{4}$/.test(y.trim())) {
+    const n = parseInt(y.trim(), 10);
+    if (!Number.isNaN(n)) return n;
+  }
+  const s = item.releaseDate ?? item.release_date ?? item.airDate ?? item.air_date ?? item.first_air_date;
+  if (typeof s === "string" && s.length >= 4) {
+    const n = parseInt(String(s).slice(0, 4), 10);
+    if (!Number.isNaN(n) && n > 1900 && n < 2100) return n;
+  }
+  return undefined;
+}
+
+export type OpenYounifyBrowseItemOptions = {
+  /** When `continue`, we prefer provider deep links and append resume offsets when available. */
+  sectionId?: string;
+};
+
+function pickFirstString(row: Record<string, unknown>, keys: string[]): string | null {
+  for (const k of keys) {
+    const v = row[k];
+    if (typeof v === "string" && v.trim().length > 4) return v.trim();
+  }
+  return null;
+}
+
+/** Provider play / resume URLs from Younify rows (camelCase + snake_case). */
+export function pickWatchNowUrlFromRow(row: Record<string, unknown>): string | null {
+  return pickFirstString(row, [
+    "watchNowUrl",
+    "watch_now_url",
+    "playUrl",
+    "play_url",
+    "deepLink",
+    "deep_link",
+    "providerWatchUrl",
+    "provider_watch_url",
+    "streamingUrl",
+    "streaming_url",
+  ]);
+}
+
+function readPositiveNumber(row: Record<string, unknown>, keys: string[]): number | null {
+  for (const k of keys) {
+    const v = row[k];
+    if (typeof v === "number" && Number.isFinite(v) && v >= 0) return v;
+    if (typeof v === "string" && /^\d+(\.\d+)?$/.test(v.trim())) {
+      const n = parseFloat(v.trim());
+      if (Number.isFinite(n) && n >= 0) return n;
+    }
+  }
+  return null;
+}
+
+/** Fraction watched in (0,1), or percent 1–100 as fraction. */
+function pickFirstNumericProgress(row: Record<string, unknown>): number | null {
+  const keys = [
+    "watchProgress",
+    "watch_progress",
+    "playbackProgress",
+    "playback_progress",
+    "progress",
+    "percentWatched",
+    "percent_watched",
+  ];
+  for (const k of keys) {
+    const v = row[k];
+    if (typeof v === "number" && Number.isFinite(v)) {
+      if (v > 0 && v < 1) return v;
+      if (v >= 1 && v <= 100) return v / 100;
+    }
+    if (typeof v === "string" && /^\d+(\.\d+)?$/.test(v.trim())) {
+      const n = parseFloat(v.trim());
+      if (!Number.isFinite(n) || n <= 0) continue;
+      if (n < 1) return n;
+      if (n <= 100) return n / 100;
+    }
+  }
+  return null;
+}
+
+/**
+ * Best-effort playback offset in **seconds** (Younify may expose extra JSON fields beyond the typed SDK).
+ * Used to append `t=` on Netflix / YouTube when the base URL does not already include a start time.
+ */
+export function getPlaybackResumeSeconds(row: Record<string, unknown>): number | null {
+  const ms = readPositiveNumber(row, [
+    "bookmarkPositionMs",
+    "bookmark_position_ms",
+    "resumePositionMs",
+    "resume_position_ms",
+    "playbackPositionMs",
+    "playback_position_ms",
+    "positionMs",
+    "position_ms",
+    "lastPlayedPositionMs",
+    "last_played_position_ms",
+    "elapsedTimeMs",
+    "elapsed_time_ms",
+    "watchedDurationMs",
+    "watched_duration_ms",
+  ]);
+  if (ms != null && ms > 500) {
+    return Math.min(Math.floor(ms / 1000), 24 * 3600);
+  }
+
+  const sec = readPositiveNumber(row, [
+    "resumeFromSeconds",
+    "resume_from_seconds",
+    "bookmarkTime",
+    "bookmark_time",
+    "playbackPosition",
+    "playback_position",
+    "position",
+    "resumePosition",
+    "resume_position",
+    "elapsedTime",
+    "elapsed_time",
+    "watchedDuration",
+    "watched_duration",
+  ]);
+  if (sec != null && sec > 1) {
+    return Math.min(Math.floor(sec), 24 * 3600);
+  }
+
+  const rawProg = pickFirstNumericProgress(row);
+  const durationMs = Number(row.duration);
+  if (
+    rawProg != null &&
+    rawProg > 0 &&
+    rawProg < 1 &&
+    Number.isFinite(durationMs) &&
+    durationMs > 10_000
+  ) {
+    return Math.min(Math.floor((rawProg * durationMs) / 1000), 24 * 3600);
+  }
+
+  return null;
+}
+
+/** Append start offset when the provider URL supports it and no `t=` / `start=` is present. */
+export function augmentWatchUrlWithResume(url: string, resumeSeconds: number | null): string {
+  if (!url || resumeSeconds == null || resumeSeconds <= 0) return url;
+  if (/[?&]t=\d+/.test(url) || /[?&]start=\d+/.test(url)) return url;
+
+  const lower = url.toLowerCase();
+  const sep = url.includes("?") ? "&" : "?";
+
+  if (lower.includes("netflix.com/watch") || lower.startsWith("nflx://")) {
+    return `${url}${sep}t=${resumeSeconds}`;
+  }
+  if (lower.includes("youtube.com/watch") || lower.includes("youtu.be/")) {
+    return `${url}${sep}t=${resumeSeconds}`;
+  }
+  if (lower.includes("max.com/watch") || lower.includes("hbomax.com")) {
+    return `${url}${sep}t=${resumeSeconds}`;
+  }
+
+  return url;
+}
+
+/** Subtitle for Continue watching tiles: episode + approximate time left. */
+export function formatContinueWatchingMeta(row: Record<string, unknown>): string | null {
+  const season = row.season != null ? String(row.season).trim() : "";
+  const episode = row.episode != null ? String(row.episode).trim() : "";
+  const series = row.series != null ? String(row.series).trim() : "";
+
+  const bits: string[] = [];
+  if (season || episode) {
+    const s = season ? `S${season}` : "";
+    const e = episode ? `E${episode}` : "";
+    if (s && e) bits.push(`${s} ${e}`);
+    else bits.push(s || e);
+  } else if (series && series.length > 0 && series.length < 40) {
+    bits.push(series);
+  }
+
+  const durationMs = Number(row.duration);
+  const posSec = getPlaybackResumeSeconds(row);
+  if (
+    posSec != null &&
+    posSec > 0 &&
+    Number.isFinite(durationMs) &&
+    durationMs > 60_000
+  ) {
+    const totalSec = Math.floor(durationMs / 1000);
+    const leftSec = Math.max(0, totalSec - posSec);
+    if (leftSec > 30 && leftSec < totalSec) {
+      const m = Math.max(1, Math.round(leftSec / 60));
+      bits.push(`${m} min left`);
+    }
+  }
+
+  if (!bits.length) return null;
+  return bits.join(" · ");
+}
+
+/** Younify browse / rail row: deep link when present, else provider title search, else JustWatch. */
+export async function openYounifyBrowseItemOnPlatform(
+  row: Record<string, unknown>,
+  options?: OpenYounifyBrowseItemOptions,
+): Promise<void> {
+  const rawTitle = String(row.title ?? row.name ?? "").trim();
+  const title = rawTitle || "Untitled";
+  const isContinue = options?.sectionId === "continue";
+
+  let watchUrl = pickWatchNowUrlFromRow(row);
+  if (watchUrl && isContinue) {
+    const resumeSec = getPlaybackResumeSeconds(row);
+    watchUrl = augmentWatchUrlWithResume(watchUrl, resumeSec);
+  }
+
+  if (watchUrl) {
+    try {
+      await Linking.openURL(watchUrl);
+    } catch (e) {
+      console.warn("[openYounifyBrowseItemOnPlatform] watch URL failed", e);
+    }
+    return;
+  }
+  const year = extractContentReleaseYear(row);
+  const pid = younifySourceToTmdbProviderId(
+    row.younifySourceService as { id?: string; name?: string } | undefined,
+  );
+  if (pid != null) {
+    await openStreamingTitleSearch(pid, title, year);
+    return;
+  }
+  try {
+    await Linking.openURL(
+      `https://www.justwatch.com/us/search?q=${encodeURIComponent(title)}`,
+    );
+  } catch (e) {
+    console.warn("[openYounifyBrowseItemOnPlatform] JustWatch fallback failed", e);
+  }
+}
+
 export async function openStreamingApp(
   providerId: number,
   title: string,
@@ -245,6 +538,18 @@ export async function openStreamingApp(
   }
 
   try {
+    // Prefer title-specific universal links first. On iOS/Android these often deep-link
+    // into the installed provider app and land closer to the selected title.
+    const searchUrl = platform.searchUrl?.(title, year) || platform.webUrl;
+    try {
+      await Linking.openURL(searchUrl);
+      return true;
+    } catch (searchError) {
+      if (__DEV__) {
+        console.warn(`Title search link failed for ${platform.name}, falling back to app scheme`, searchError);
+      }
+    }
+
     if (Platform.OS !== 'web' && platform.appScheme) {
       const canOpen = await Linking.canOpenURL(platform.appScheme);
       if (canOpen) {
@@ -252,10 +557,6 @@ export async function openStreamingApp(
         return true;
       }
     }
-
-    const searchUrl = platform.searchUrl?.(title, year) || platform.webUrl;
-    await Linking.openURL(searchUrl);
-    return true;
   } catch (error) {
     console.error(`Failed to open ${platform.name}:`, error);
     
@@ -267,8 +568,17 @@ export async function openStreamingApp(
         return false;
       }
     }
+
+  if (fallbackUrl) {
+    try {
+      await Linking.openURL(fallbackUrl);
+      return true;
+    } catch {
+      return false;
+    }
+  }
     
-    return false;
+  return false;
   }
 }
 

@@ -1,14 +1,20 @@
-import React, { useMemo } from "react";
-import { FlatList, StyleSheet, Text, useWindowDimensions, View } from "react-native";
-import { useRouter } from "expo-router";
-import { Pressable } from "react-native";
-import type { YounifySourceServiceSnapshot } from "@/services/younify";
+import React, { useCallback, useMemo } from "react";
 import {
-  getYounifyRailPosterCellWidth,
-  getYounifyStreamingContentPosterUrl,
-} from "@/services/younify";
-import YounifyPosterImage from "@/components/younify/YounifyPosterImage";
+  FlatList,
+  Platform,
+  Pressable,
+  StyleSheet,
+  Text,
+  useWindowDimensions,
+  View,
+} from "react-native";
+import * as Haptics from "expo-haptics";
+import { useRouter } from "expo-router";
+import type { YounifySourceServiceSnapshot } from "@/services/younify";
+import { getYounifyRailPosterCellWidth } from "@/services/younify";
+import TmdbStreamingPosterImage from "@/components/younify/TmdbStreamingPosterImage";
 import YounifyServiceLogoMark from "@/components/younify/YounifyServiceLogoMark";
+import { openYounifyBrowseItemOnPlatform } from "@/utils/streamingLinks";
 
 type YounifyContentItem = {
   id?: string | number;
@@ -53,13 +59,23 @@ export default function ConnectedServicesRail({
     return content;
   }, [content]);
 
+  const onOpenItem = useCallback(async (item: YounifyContentItem) => {
+    if (Platform.OS !== "web") {
+      try {
+        await Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+      } catch {
+        /* ignore */
+      }
+    }
+    await openYounifyBrowseItemOnPlatform(item as Record<string, unknown>);
+  }, []);
+
   const renderSkeletonCard = (_: unknown, index: number) => (
     <View key={`skeleton-${index}`} style={[styles.card, { width: cardWidth }]}>
       <View style={[styles.posterWrap, { aspectRatio: 2 / 3 }]}>
         <View style={styles.posterSkeleton} />
       </View>
       <View style={styles.titleSkeleton} />
-      <View style={styles.badgeSkeleton} />
     </View>
   );
 
@@ -68,16 +84,19 @@ export default function ConnectedServicesRail({
   const renderItem = ({ item }: { item: YounifyContentItem }) => {
     const rawTitle = String(item.title ?? item.name ?? "").trim();
     const title = rawTitle || "Untitled";
-    const thumbUrl = getYounifyStreamingContentPosterUrl(item);
     const svc = item.younifySourceService;
 
     return (
-      <View style={[styles.card, { width: cardWidth }]}>
+      <Pressable
+        style={({ pressed }) => [
+          styles.card,
+          { width: cardWidth },
+          pressed && styles.cardPressed,
+        ]}
+        onPress={() => void onOpenItem(item)}
+      >
         <View style={styles.posterWrap}>
-          <YounifyPosterImage
-            thumbnailUrl={thumbUrl ?? ""}
-            tmdbFallbackTitle={rawTitle.length >= 2 ? rawTitle : null}
-          />
+          <TmdbStreamingPosterImage younifyRow={item as Record<string, unknown>} width={cardWidth} />
           {showProviderLogo && svc ? (
             <View style={styles.logoMark} pointerEvents="none">
               <YounifyServiceLogoMark service={svc} size={Math.max(22, Math.round(cardWidth * 0.22))} />
@@ -88,11 +107,7 @@ export default function ConnectedServicesRail({
         <Text style={styles.title} numberOfLines={2}>
           {title}
         </Text>
-
-        <View style={styles.badge}>
-          <Text style={styles.badgeText}>On your services</Text>
-        </View>
-      </View>
+      </Pressable>
     );
   };
 
@@ -188,6 +203,9 @@ const styles = StyleSheet.create({
     shadowRadius: 12,
     shadowOffset: { width: 0, height: 8 },
   },
+  cardPressed: {
+    opacity: 0.92,
+  },
   /** Height comes from YounifyPosterImage (intrinsic aspect); fallback uses 2:3 */
   posterWrap: {
     position: "relative",
@@ -208,21 +226,6 @@ const styles = StyleSheet.create({
     fontWeight: "700",
     lineHeight: 17,
     minHeight: 34,
-    marginBottom: 8,
-  },
-  badge: {
-    alignSelf: "flex-start",
-    backgroundColor: "#171B26",
-    borderWidth: 1,
-    borderColor: "#2A3247",
-    borderRadius: 999,
-    paddingHorizontal: 8,
-    paddingVertical: 4,
-  },
-  badgeText: {
-    color: "#CFD7FF",
-    fontSize: 10,
-    fontWeight: "700",
   },
   emptyCard: {
     backgroundColor: "#10141C",
@@ -263,13 +266,6 @@ const styles = StyleSheet.create({
   titleSkeleton: {
     width: "80%",
     height: 12,
-    borderRadius: 999,
-    backgroundColor: "#1A2030",
-    marginBottom: 8,
-  },
-  badgeSkeleton: {
-    width: 92,
-    height: 18,
     borderRadius: 999,
     backgroundColor: "#1A2030",
   },

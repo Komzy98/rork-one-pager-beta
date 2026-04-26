@@ -1,24 +1,18 @@
-import React, { useMemo } from "react";
+import React from "react";
 import {
   ActivityIndicator,
-  FlatList,
+  Platform,
   Pressable,
   RefreshControl,
   ScrollView,
   StyleSheet,
   Text,
-  useWindowDimensions,
   View,
 } from "react-native";
-import * as Linking from "expo-linking";
+import { Animated as RNAnimated } from "react-native";
 import { useRouter } from "expo-router";
-import {
-  type YounifyBrowseSection,
-  getYounifyRailPosterCellWidth,
-  getYounifyStreamingContentPosterUrl,
-} from "@/services/younify";
-import YounifyPosterImage from "@/components/younify/YounifyPosterImage";
-import YounifyServiceLogoMark from "@/components/younify/YounifyServiceLogoMark";
+import { type YounifyBrowseSection } from "@/services/younify";
+import YounifyBrowseSectionRow from "@/components/younify/YounifyBrowseSectionRow";
 
 type Props = {
   sections: YounifyBrowseSection[];
@@ -27,6 +21,8 @@ type Props = {
   linkedStreamingCount: number;
   refreshing?: boolean;
   onRefresh?: () => void | Promise<void>;
+  header?: React.ReactNode;
+  onBrowseItemOpenDetails?: (row: Record<string, unknown>) => void | Promise<void>;
 };
 
 export default function StreamingServicesBrowseTab({
@@ -36,35 +32,113 @@ export default function StreamingServicesBrowseTab({
   linkedStreamingCount,
   refreshing = false,
   onRefresh,
+  header,
+  onBrowseItemOpenDetails,
 }: Props) {
   const router = useRouter();
-  const { width: windowWidth } = useWindowDimensions();
-  const tileWidth = useMemo(() => getYounifyRailPosterCellWidth(windowWidth), [windowWidth]);
-  const showProviderLogo = linkedStreamingCount >= 2;
+  const streamingScrollY = React.useRef(new RNAnimated.Value(0)).current;
+  const headerTranslateY = streamingScrollY.interpolate({
+    inputRange: [0, 120],
+    outputRange: [0, -18],
+    extrapolate: "clamp",
+  });
+  const headerScale = streamingScrollY.interpolate({
+    inputRange: [0, 120],
+    outputRange: [1, 0.95],
+    extrapolate: "clamp",
+  });
+  const headerOpacity = streamingScrollY.interpolate({
+    inputRange: [0, 120],
+    outputRange: [1, 0.92],
+    extrapolate: "clamp",
+  });
+
+  const renderAnimatedHeader = header ? (
+    <RNAnimated.View
+      style={{
+        transform: [{ translateY: headerTranslateY }, { scale: headerScale }],
+        opacity: headerOpacity,
+      }}
+    >
+      {header}
+    </RNAnimated.View>
+  ) : null;
 
   if (!hasLinkedServices) {
     return (
-      <View style={styles.centered}>
-        <Text style={styles.emptyTitle}>Link a streaming service</Text>
-        <Text style={styles.emptySubtitle}>
-          Connect Netflix or other providers to see continue watching, trending rows, and more.
-        </Text>
-        <Pressable
-          style={({ pressed }) => [styles.primaryBtn, pressed && styles.primaryBtnPressed]}
-          onPress={() => router.push("/(root)/streaming-services")}
-        >
-          <Text style={styles.primaryBtnText}>Manage streaming services</Text>
-        </Pressable>
-      </View>
+      <RNAnimated.ScrollView
+        style={styles.scroll}
+        contentContainerStyle={styles.scrollContent}
+        showsVerticalScrollIndicator={false}
+        onScroll={RNAnimated.event(
+          [{ nativeEvent: { contentOffset: { y: streamingScrollY } } }],
+          { useNativeDriver: Platform.OS !== "web" },
+        )}
+        scrollEventThrottle={16}
+        refreshControl={
+          onRefresh ? (
+            <RefreshControl
+              refreshing={refreshing}
+              onRefresh={() => void onRefresh()}
+              tintColor="#E50914"
+            />
+          ) : undefined
+        }
+      >
+        {renderAnimatedHeader}
+        <View style={styles.centered}>
+          <Text style={styles.emptyTitle}>Link a streaming service</Text>
+          <Text style={styles.emptySubtitle}>
+            Connect Netflix or other providers to see continue watching, trending rows, and more.
+          </Text>
+          <Pressable
+            style={({ pressed }) => [styles.primaryBtn, pressed && styles.primaryBtnPressed]}
+            onPress={() => router.push("/(root)/streaming-services")}
+          >
+            <Text style={styles.primaryBtnText}>Manage streaming services</Text>
+          </Pressable>
+        </View>
+      </RNAnimated.ScrollView>
     );
   }
 
   if (loading) {
+    // When a hero/header is provided, keep loading feedback inside that hero (skeleton),
+    // instead of rendering a second spinner section below it.
+    if (header) {
+      return (
+        <RNAnimated.ScrollView
+          style={styles.scroll}
+          contentContainerStyle={styles.scrollContent}
+          showsVerticalScrollIndicator={false}
+          onScroll={RNAnimated.event(
+            [{ nativeEvent: { contentOffset: { y: streamingScrollY } } }],
+            { useNativeDriver: Platform.OS !== "web" },
+          )}
+          scrollEventThrottle={16}
+        >
+          {renderAnimatedHeader}
+        </RNAnimated.ScrollView>
+      );
+    }
+
     return (
-      <View style={styles.loadingWrap}>
-        <ActivityIndicator size="large" color="#E50914" />
-        <Text style={styles.loadingText}>Loading your libraries…</Text>
-      </View>
+      <RNAnimated.ScrollView
+        style={styles.scroll}
+        contentContainerStyle={styles.scrollContent}
+        showsVerticalScrollIndicator={false}
+        onScroll={RNAnimated.event(
+          [{ nativeEvent: { contentOffset: { y: streamingScrollY } } }],
+          { useNativeDriver: Platform.OS !== "web" },
+        )}
+        scrollEventThrottle={16}
+      >
+        {renderAnimatedHeader}
+        <View style={styles.loadingWrap}>
+          <ActivityIndicator size="large" color="#E50914" />
+          <Text style={styles.loadingText}>Loading your libraries…</Text>
+        </View>
+      </RNAnimated.ScrollView>
     );
   }
 
@@ -72,26 +146,52 @@ export default function StreamingServicesBrowseTab({
 
   if (!visibleSections.length) {
     return (
-      <View style={styles.centered}>
-        <Text style={styles.emptyTitle}>No rows yet</Text>
-        <Text style={styles.emptySubtitle}>
-          Open the provider app and watch something, then pull to refresh — or try again later.
-        </Text>
-        <Pressable
-          style={({ pressed }) => [styles.secondaryBtn, pressed && styles.secondaryBtnPressed]}
-          onPress={() => router.push("/(root)/streaming-services")}
-        >
-          <Text style={styles.secondaryBtnText}>Service settings</Text>
-        </Pressable>
-      </View>
+      <RNAnimated.ScrollView
+        style={styles.scroll}
+        contentContainerStyle={styles.scrollContent}
+        showsVerticalScrollIndicator={false}
+        onScroll={RNAnimated.event(
+          [{ nativeEvent: { contentOffset: { y: streamingScrollY } } }],
+          { useNativeDriver: Platform.OS !== "web" },
+        )}
+        scrollEventThrottle={16}
+        refreshControl={
+          onRefresh ? (
+            <RefreshControl
+              refreshing={refreshing}
+              onRefresh={() => void onRefresh()}
+              tintColor="#E50914"
+            />
+          ) : undefined
+        }
+      >
+        {renderAnimatedHeader}
+        <View style={styles.centered}>
+          <Text style={styles.emptyTitle}>No rows yet</Text>
+          <Text style={styles.emptySubtitle}>
+            Open the provider app and watch something, then pull to refresh — or try again later.
+          </Text>
+          <Pressable
+            style={({ pressed }) => [styles.secondaryBtn, pressed && styles.secondaryBtnPressed]}
+            onPress={() => router.push("/(root)/streaming-services")}
+          >
+            <Text style={styles.secondaryBtnText}>Service settings</Text>
+          </Pressable>
+        </View>
+      </RNAnimated.ScrollView>
     );
   }
 
   return (
-    <ScrollView
+    <RNAnimated.ScrollView
       style={styles.scroll}
       contentContainerStyle={styles.scrollContent}
       showsVerticalScrollIndicator={false}
+      onScroll={RNAnimated.event(
+        [{ nativeEvent: { contentOffset: { y: streamingScrollY } } }],
+        { useNativeDriver: Platform.OS !== "web" },
+      )}
+      scrollEventThrottle={16}
       refreshControl={
         onRefresh ? (
           <RefreshControl
@@ -102,60 +202,17 @@ export default function StreamingServicesBrowseTab({
         ) : undefined
       }
     >
+      {renderAnimatedHeader}
       {visibleSections.map((section) => (
-        <View key={section.id} style={styles.section}>
-          <Text style={styles.sectionTitle}>{section.title}</Text>
-          <FlatList
-            horizontal
-            data={section.items}
-            keyExtractor={(item, index) =>
-              String((item as any)?.itemID ?? (item as any)?.id ?? `${section.id}-${index}`)
-            }
-            showsHorizontalScrollIndicator={false}
-            contentContainerStyle={styles.rowContent}
-            renderItem={({ item }) => {
-              const row = item as Record<string, any>;
-              const rawTitle = String(row.title ?? row.name ?? "").trim();
-              const title = rawTitle || "Untitled";
-              const thumb = getYounifyStreamingContentPosterUrl(row);
-              const watchUrl =
-                typeof row.watchNowUrl === "string" && row.watchNowUrl.trim()
-                  ? row.watchNowUrl.trim()
-                  : null;
-              const svc = row.younifySourceService;
-
-              return (
-                <Pressable
-                  style={({ pressed }) => [{ width: tileWidth }, pressed && styles.cardPressed]}
-                  onPress={() => {
-                    if (watchUrl) void Linking.openURL(watchUrl);
-                  }}
-                >
-                  <View style={[styles.posterWrap, { width: tileWidth }]}>
-                    <YounifyPosterImage
-                      thumbnailUrl={thumb ?? ""}
-                      tmdbFallbackTitle={rawTitle.length >= 2 ? rawTitle : null}
-                    />
-                    {showProviderLogo && svc ? (
-                      <View style={styles.logoMark} pointerEvents="none">
-                        <YounifyServiceLogoMark
-                          service={svc}
-                          size={Math.max(22, Math.round(tileWidth * 0.22))}
-                        />
-                      </View>
-                    ) : null}
-                  </View>
-                  <Text style={styles.cardTitle} numberOfLines={2}>
-                    {title}
-                  </Text>
-                </Pressable>
-              );
-            }}
-          />
-        </View>
+        <YounifyBrowseSectionRow
+          key={section.id}
+          section={section}
+          linkedStreamingCount={linkedStreamingCount}
+          onItemOpenDetails={onBrowseItemOpenDetails}
+        />
       ))}
       <View style={{ height: 100 }} />
-    </ScrollView>
+    </RNAnimated.ScrollView>
   );
 }
 
@@ -168,48 +225,13 @@ const styles = StyleSheet.create({
     paddingTop: 12,
     paddingBottom: 8,
   },
-  section: {
-    marginBottom: 22,
-  },
-  sectionTitle: {
-    color: "#F5F5F7",
-    fontSize: 18,
-    fontWeight: "800",
-    paddingHorizontal: 20,
-    marginBottom: 12,
-  },
-  rowContent: {
-    paddingHorizontal: 20,
-    gap: 8,
-    alignItems: "flex-start",
-  },
-  cardPressed: {
-    opacity: 0.92,
-  },
-  posterWrap: {
-    position: "relative",
-    borderRadius: 6,
-    overflow: "hidden",
-    backgroundColor: "#0B0E14",
-    marginBottom: 8,
-  },
-  logoMark: {
-    position: "absolute",
-    right: 5,
-    bottom: 5,
-  },
-  cardTitle: {
-    color: "#E8EAEF",
-    fontSize: 12,
-    fontWeight: "700",
-    lineHeight: 16,
-  },
   centered: {
-    flex: 1,
     backgroundColor: "#08080C",
     paddingHorizontal: 28,
-    justifyContent: "center",
+    justifyContent: "flex-start",
     alignItems: "center",
+    minHeight: 320,
+    paddingTop: 28,
   },
   emptyTitle: {
     color: "#F5F5F7",
@@ -255,10 +277,11 @@ const styles = StyleSheet.create({
     fontWeight: "700",
   },
   loadingWrap: {
-    flex: 1,
     backgroundColor: "#08080C",
-    justifyContent: "center",
+    justifyContent: "flex-start",
     alignItems: "center",
+    minHeight: 260,
+    paddingTop: 26,
     paddingBottom: 40,
   },
   loadingText: {

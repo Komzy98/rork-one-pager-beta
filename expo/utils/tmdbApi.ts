@@ -66,6 +66,31 @@ export interface TMDBSearchResponse<T> {
   total_results: number;
 }
 
+function isTmdb404(error: unknown): boolean {
+  return error instanceof Error && /\b404\b/.test(error.message);
+}
+
+/** Timeout abort from AbortController; RN may throw DOMException, not `instanceof Error`. */
+export function isTmdbFetchAbortError(error: unknown): boolean {
+  if (error == null) return false;
+  const e = error as { name?: string; message?: string; constructor?: { name?: string } };
+  if (e.name === "AbortError") return true;
+  if (e.message === "Aborted" || e.message === "The user aborted a request.") return true;
+  if (e.constructor?.name === "DOMException" && (e.name === "AbortError" || e.name === "TimeoutError")) {
+    return true;
+  }
+  return false;
+}
+
+function emptySearchResponse<T>(page: number): TMDBSearchResponse<T> {
+  return {
+    page,
+    results: [],
+    total_pages: 0,
+    total_results: 0,
+  };
+}
+
 export interface WatchProvider {
   display_priority: number;
   logo_path: string;
@@ -104,6 +129,64 @@ export interface TMDBVideosResponse {
 }
 
 class TMDBApi {
+  private build404Fallback<T>(endpoint: string): T {
+    // Search/list endpoints
+    if (
+      endpoint.startsWith('/search/') ||
+      endpoint.includes('/popular') ||
+      endpoint.includes('/top_rated') ||
+      endpoint.includes('/trending/') ||
+      endpoint.includes('/upcoming') ||
+      endpoint.includes('/now_playing') ||
+      endpoint.includes('/airing_today') ||
+      endpoint.includes('/on_the_air')
+    ) {
+      return {
+        page: 1,
+        results: [],
+        total_pages: 0,
+        total_results: 0,
+      } as T;
+    }
+
+    // Watch providers endpoints
+    if (endpoint.includes('/watch/providers')) {
+      return {
+        id: 0,
+        results: {},
+      } as T;
+    }
+
+    // Videos endpoints
+    if (endpoint.endsWith('/videos')) {
+      return {
+        id: 0,
+        results: [],
+      } as T;
+    }
+
+    // TV season details
+    if (/\/tv\/\d+\/season\/\d+/.test(endpoint)) {
+      return {
+        id: 0,
+        name: '',
+        overview: '',
+        air_date: null,
+        season_number: 0,
+        poster_path: null,
+        episode_count: 0,
+        episodes: [],
+      } as T;
+    }
+
+    // Movie / TV details fallback shape
+    if (/^\/movie\/\d+/.test(endpoint) || /^\/tv\/\d+/.test(endpoint)) {
+      return {} as T;
+    }
+
+    return {} as T;
+  }
+
   private async makeRequest<T>(endpoint: string, retries: number = 2): Promise<T> {
     const url = `${TMDB_BASE_URL}${endpoint}${endpoint.includes('?') ? '&' : '?'}api_key=${TMDB_API_KEY}`;
 
@@ -111,10 +194,16 @@ class TMDBApi {
     for (let attempt = 0; attempt <= retries; attempt++) {
       try {
         const controller = new AbortController();
-        const timeoutId = setTimeout(() => controller.abort(), 15000);
+        const timeoutId = setTimeout(() => controller.abort(), 20000);
         const response = await fetch(url, { signal: controller.signal });
         clearTimeout(timeoutId);
         if (!response.ok) {
+          if (response.status === 404) {
+            if (__DEV__) {
+              console.warn(`TMDB 404 for ${endpoint} - returning empty fallback`);
+            }
+            return this.build404Fallback<T>(endpoint);
+          }
           if (response.status >= 500 && attempt < retries) {
             await new Promise((resolve) => setTimeout(resolve, 500 * (attempt + 1)));
             continue;
@@ -126,7 +215,8 @@ class TMDBApi {
         lastError = error;
         const isNetworkError =
           error instanceof TypeError ||
-          (error instanceof Error && error.name === 'AbortError');
+          isTmdbFetchAbortError(error) ||
+          (error instanceof Error && error.name === "AbortError");
         if (isNetworkError && attempt < retries) {
           await new Promise((resolve) => setTimeout(resolve, 500 * (attempt + 1)));
           continue;
@@ -134,20 +224,36 @@ class TMDBApi {
         break;
       }
     }
-    if (lastError instanceof TypeError) {
-      console.warn('TMDB API network unavailable:', (lastError as Error).message);
-    } else {
-      console.error('TMDB API request failed:', lastError);
+    if (isTmdbFetchAbortError(lastError)) {
+      if (__DEV__) {
+        console.warn("TMDB request timed out (20s) or was aborted; using best-effort fallback:", endpoint);
+      }
+      return this.build404Fallback<T>(endpoint);
     }
-    throw lastError instanceof Error ? lastError : new Error('TMDB API request failed');
+    if (lastError instanceof TypeError) {
+      console.warn("TMDB API network unavailable:", (lastError as Error).message);
+    } else {
+      console.error("TMDB API request failed:", lastError);
+    }
+    throw lastError instanceof Error ? lastError : new Error("TMDB API request failed");
   }
 
   async searchMovies(query: string, page: number = 1): Promise<TMDBSearchResponse<TMDBMovie>> {
-    return this.makeRequest(`/search/movie?query=${encodeURIComponent(query)}&page=${page}`);
+    try {
+      return await this.makeRequest(`/search/movie?query=${encodeURIComponent(query)}&page=${page}`);
+    } catch (error) {
+      if (isTmdb404(error)) return emptySearchResponse<TMDBMovie>(page);
+      throw error;
+    }
   }
 
   async searchTVShows(query: string, page: number = 1): Promise<TMDBSearchResponse<TMDBTVShow>> {
-    return this.makeRequest(`/search/tv?query=${encodeURIComponent(query)}&page=${page}`);
+    try {
+      return await this.makeRequest(`/search/tv?query=${encodeURIComponent(query)}&page=${page}`);
+    } catch (error) {
+      if (isTmdb404(error)) return emptySearchResponse<TMDBTVShow>(page);
+      throw error;
+    }
   }
 
   async getTrendingMovies(timeWindow: 'day' | 'week' = 'week'): Promise<TMDBSearchResponse<TMDBMovie>> {
@@ -238,7 +344,12 @@ class TMDBApi {
   }
 
   async searchMulti(query: string, page: number = 1): Promise<TMDBSearchResponse<(TMDBMovie | TMDBTVShow) & { media_type: 'movie' | 'tv' }>> {
-    return this.makeRequest(`/search/multi?query=${encodeURIComponent(query)}&page=${page}`);
+    try {
+      return await this.makeRequest(`/search/multi?query=${encodeURIComponent(query)}&page=${page}`);
+    } catch (error) {
+      if (isTmdb404(error)) return emptySearchResponse<(TMDBMovie | TMDBTVShow) & { media_type: 'movie' | 'tv' }>(page);
+      throw error;
+    }
   }
 
   async getMovieWatchProviders(movieId: number): Promise<WatchProvidersResponse> {

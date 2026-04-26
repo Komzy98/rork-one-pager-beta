@@ -25,6 +25,7 @@ import { BlurView } from 'expo-blur';
 import {
   fetchYounifyBrowseSections,
   fetchYounifyContentForConnectedServices,
+  getYounifyRuntimeIssue,
   getLinkedStreamingServicesList,
   type YounifyBrowseSection,
 } from '@/services/younify';
@@ -53,10 +54,10 @@ import {
   Check,
   Youtube,
   Globe,
-  MapPin,
   Calendar,
   Clock,
   Clapperboard,
+  Flame,
 } from 'lucide-react-native';
 import * as Linking from 'expo-linking';
 import { useQuery, useMutation } from '@tanstack/react-query';
@@ -65,15 +66,20 @@ import { Show, NewShowFormData } from '@/types/habit';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { tmdbApi, TMDBMovie, TMDBTVShow, TMDBTVShowDetails, TMDBEpisode, getGenreNames, formatReleaseDate, formatRating } from '@/utils/tmdbApi';
 import { navigateToShow, showNavigationAlert } from '@/utils/streamingNavigation';
-import { openStreamingApp, getStreamingPlatform } from '@/utils/streamingLinks';
+import { openStreamingApp, getStreamingPlatform, openStreamingTitleSearch, openYounifyBrowseItemOnPlatform, younifySourceToTmdbProviderId } from '@/utils/streamingLinks';
 import { WatchProvider } from '@/utils/tmdbApi';
+import { buildYounifyProviderIndex, pickBestYounifyRowForEpisode, type YounifyProviderIndex } from '@/utils/younifyProviderIndex';
+import { extractTmdbIdFromYounifyRow } from '@/utils/aroundYouImages';
+import { extractTmdbMediaTypeFromYounifyRow } from '@/utils/younifyTmdbPoster';
 
 import { episodeNotificationService, TrackedShow } from '@/utils/episodeNotificationService';
 import { useUserProfile } from '@/hooks/useUserProfile';
 import { likedContentService } from '@/utils/likedContentService';
 import WatchProviders from '@/components/WatchProviders';
-import ConnectedServicesRail from '@/components/younify/ConnectedServicesRail';
+import ConnectedServicesHero from '@/components/younify/ConnectedServicesHero';
 import StreamingServicesBrowseTab from '@/components/younify/StreamingServicesBrowseTab';
+import YounifyBrowseSectionRow from '@/components/younify/YounifyBrowseSectionRow';
+import AroundYouTab from '@/components/shows/AroundYouTab';
 
 import TabWalkthrough from '@/components/TabWalkthrough';
 import { useRouter, useFocusEffect } from 'expo-router';
@@ -131,6 +137,9 @@ interface DetailModalProps {
   isLiked: boolean;
   onToggleLike: () => void;
   onShare: () => void;
+  hasLinkedServices: boolean;
+  younifyProviderIndex: YounifyProviderIndex;
+  onConnectServices: () => void;
 }
 
 function TrailerPlayer({ videoKey, onClose }: { videoKey: string; onClose: () => void }) {
@@ -174,7 +183,23 @@ function TrailerPlayer({ videoKey, onClose }: { videoKey: string; onClose: () =>
   );
 }
 
-function DetailModal({ visible, item, mediaType, onClose, onAddToList, isInList, trackedShow, onToggleNotifications, isTogglingNotifications, isLiked, onToggleLike, onShare }: DetailModalProps) {
+function DetailModal({
+  visible,
+  item,
+  mediaType,
+  onClose,
+  onAddToList,
+  isInList,
+  trackedShow,
+  onToggleNotifications,
+  isTogglingNotifications,
+  isLiked,
+  onToggleLike,
+  onShare,
+  hasLinkedServices,
+  younifyProviderIndex,
+  onConnectServices,
+}: DetailModalProps) {
   const insets = useSafeAreaInsets();
   const scrollY = useRef(new RNAnimated.Value(0)).current;
   const [trailerKey, setTrailerKey] = useState<string | null>(null);
@@ -256,14 +281,45 @@ function DetailModal({ visible, item, mediaType, onClose, onAddToList, isInList,
       ? parseInt((item as TMDBMovie)?.release_date?.split('-')[0] || '0', 10)
       : parseInt((item as TMDBTVShow)?.first_air_date?.split('-')[0] || '0', 10);
     console.log(`🎬 Opening ${provider.provider_name} for "${itemTitle}"`);
-    await openStreamingApp(
-      provider.provider_id,
-      itemTitle,
-      releaseYear || undefined,
-      modalWatchProviders?.link
-    );
-    setOpeningApp(false);
-  }, [item, mediaType, modalWatchProviders?.link]);
+    try {
+      // Deterministic Younify selection: exact provider match first, then best ranked candidate.
+      const tmdbId = item?.id ?? null;
+      const normalizedTitle = itemTitle.trim().toLowerCase().replace(/\s+/g, ' ');
+      const candidatesById = tmdbId != null ? (younifyProviderIndex.rowsByTmdbId.get(tmdbId) ?? []) : [];
+      const candidatesByTitle = younifyProviderIndex.rowsByTitle.get(normalizedTitle) ?? [];
+      const candidates = [...candidatesById, ...candidatesByTitle];
+
+      const exactProviderRow = candidates.find((row) => {
+        const pid = younifySourceToTmdbProviderId(
+          row.younifySourceService as { id?: string; name?: string } | undefined,
+        );
+        return pid === provider.provider_id;
+      });
+
+      if (exactProviderRow) {
+        await openYounifyBrowseItemOnPlatform(exactProviderRow, { sectionId: 'continue' });
+        return;
+      }
+
+      const bestRankedRow = pickBestYounifyRowForEpisode(younifyProviderIndex, {
+        tmdbId,
+        title: itemTitle,
+      });
+      if (bestRankedRow) {
+        await openYounifyBrowseItemOnPlatform(bestRankedRow, { sectionId: 'continue' });
+        return;
+      }
+
+      await openStreamingApp(
+        provider.provider_id,
+        itemTitle,
+        releaseYear || undefined,
+        modalWatchProviders?.link
+      );
+    } finally {
+      setOpeningApp(false);
+    }
+  }, [item, mediaType, modalWatchProviders?.link, younifyProviderIndex]);
 
   const handleOpenJustWatch = useCallback(async () => {
     if (!modalWatchProviders?.link) return;
@@ -354,6 +410,18 @@ function DetailModal({ visible, item, mediaType, onClose, onAddToList, isInList,
           </View>
           
           <View style={styles.detailContent}>
+            {!hasLinkedServices && (
+              <View style={styles.connectServicesCard}>
+                <Text style={styles.connectServicesTitle}>Connect your streaming services</Text>
+                <Text style={styles.connectServicesText}>
+                  Link your services to open titles directly in the right app with one tap.
+                </Text>
+                <TouchableOpacity style={styles.connectServicesButton} onPress={onConnectServices} activeOpacity={0.85}>
+                  <Text style={styles.connectServicesButtonText}>Connect services</Text>
+                </TouchableOpacity>
+              </View>
+            )}
+
             {modalWatchProviders && modalWatchProviders.streaming.length > 0 && (
               <View style={styles.watchNowSection}>
                 <Text style={styles.watchNowLabel}>Watch Now</Text>
@@ -755,7 +823,9 @@ export default function ShowsScreen() {
   const router = useRouter();
   const [showAddModal, setShowAddModal] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
-  const [selectedTab, setSelectedTab] = useState<'discover' | 'streaming' | 'my-list'>('discover');
+  const [selectedTab, setSelectedTab] = useState<
+    'for-you' | 'streaming' | 'watchlist' | 'around-you'
+  >('for-you');
   const [selectedStatus, setSelectedStatus] = useState<'all' | Show['status']>('all');
 
   const [showThumbnails, setShowThumbnails] = useState<Record<string, string>>({});
@@ -781,10 +851,16 @@ export default function ShowsScreen() {
   const [younifyLoading, setYounifyLoading] = useState(true);
   const [hasLinkedServices, setHasLinkedServices] = useState(false);
   const [linkedStreamingCount, setLinkedStreamingCount] = useState(0);
+  const [linkedProviderIds, setLinkedProviderIds] = useState<number[]>([]);
   const [streamingSections, setStreamingSections] = useState<YounifyBrowseSection[]>([]);
   const [streamingLoading, setStreamingLoading] = useState(false);
   const [streamingInitialized, setStreamingInitialized] = useState(false);
   const [streamingRefreshing, setStreamingRefreshing] = useState(false);
+  const [younifyRuntimeBanner, setYounifyRuntimeBanner] = useState<string | null>(null);
+  const younifyEpisodeIndex = useMemo(
+    () => buildYounifyProviderIndex(streamingSections, linkedProviderIds),
+    [streamingSections, linkedProviderIds],
+  );
 
   const refetchStreamingBrowse = useCallback(async () => {
     try {
@@ -792,11 +868,27 @@ export default function ShowsScreen() {
       const linkedList = await getLinkedStreamingServicesList();
       setLinkedStreamingCount(linkedList.length);
       setHasLinkedServices(linkedList.length > 0);
+      const ids = Array.from(
+        new Set(
+          linkedList
+            .map((service: any) =>
+              younifySourceToTmdbProviderId({
+                id: String(service?.id ?? ''),
+                name: String(service?.name ?? ''),
+              }),
+            )
+            .filter((id: number | null): id is number => id != null),
+        ),
+      );
+      setLinkedProviderIds(ids);
       const rows = await fetchYounifyBrowseSections();
       setStreamingSections(Array.isArray(rows) ? rows : []);
     } catch (error) {
-      console.error('Failed to load Younify streaming browse:', error);
+      if (__DEV__) {
+        console.warn('Failed to load Younify streaming browse:', error);
+      }
       setStreamingSections([]);
+      setLinkedProviderIds([]);
     } finally {
       setStreamingLoading(false);
       setStreamingInitialized(true);
@@ -819,6 +911,19 @@ export default function ShowsScreen() {
       setLinkedStreamingCount(linkedList.length);
       const has = linkedList.length > 0;
       setHasLinkedServices(has);
+      const ids = Array.from(
+        new Set(
+          linkedList
+            .map((service: any) =>
+              younifySourceToTmdbProviderId({
+                id: String(service?.id ?? ''),
+                name: String(service?.name ?? ''),
+              }),
+            )
+            .filter((id: number | null): id is number => id != null),
+        ),
+      );
+      setLinkedProviderIds(ids);
       if (!has) {
         setYounifyContent([]);
         return;
@@ -826,10 +931,13 @@ export default function ShowsScreen() {
       const result = await fetchYounifyContentForConnectedServices();
       setYounifyContent(Array.isArray(result) ? result : []);
     } catch (error) {
-      console.error('Failed to load Younify connected content:', error);
+      if (__DEV__) {
+        console.warn('Failed to load Younify connected content:', error);
+      }
       setHasLinkedServices(false);
       setLinkedStreamingCount(0);
       setYounifyContent([]);
+      setLinkedProviderIds([]);
     } finally {
       setYounifyLoading(false);
     }
@@ -843,12 +951,37 @@ export default function ShowsScreen() {
   );
 
   useEffect(() => {
-    if (selectedTab === 'streaming') {
+    if (selectedTab === 'streaming' || selectedTab === 'watchlist') {
       void refetchStreamingBrowse();
     }
   }, [selectedTab, refetchStreamingBrowse]);
 
+  useEffect(() => {
+    setYounifyRuntimeBanner(getYounifyRuntimeIssue());
+  }, [selectedTab, younifyLoading, streamingLoading, streamingRefreshing]);
+
+  const younifyWatchlistSection = useMemo(
+    () => streamingSections.find((s) => s.id === 'watchlist'),
+    [streamingSections],
+  );
+
   const heroScrollX = useRef(new RNAnimated.Value(0)).current;
+  const forYouScrollY = useRef(new RNAnimated.Value(0)).current;
+  const forYouHeroTranslateY = forYouScrollY.interpolate({
+    inputRange: [0, 140],
+    outputRange: [0, -16],
+    extrapolate: 'clamp',
+  });
+  const forYouHeroScale = forYouScrollY.interpolate({
+    inputRange: [0, 140],
+    outputRange: [1, 0.95],
+    extrapolate: 'clamp',
+  });
+  const forYouHeroOpacity = forYouScrollY.interpolate({
+    inputRange: [0, 140],
+    outputRange: [1, 0.9],
+    extrapolate: 'clamp',
+  });
   const searchInputRef = useRef<TextInput>(null);
 
   const trendingQuery = useQuery({
@@ -939,10 +1072,11 @@ export default function ShowsScreen() {
     show: TMDBTVShow;
     details: TMDBTVShowDetails;
     latestEpisode: TMDBEpisode;
+    availableProviderIds: number[];
   }
 
   const newEpisodesQuery = useQuery({
-    queryKey: ['new-episodes-enriched'],
+    queryKey: ['new-episodes-enriched', userCountryCode],
     queryFn: async () => {
       const airingToday = await tmdbApi.getAiringTodayTVShows();
       const onTheAir = await tmdbApi.getOnTheAirTVShows();
@@ -952,13 +1086,26 @@ export default function ShowsScreen() {
       const enriched: TVShowWithEpisode[] = [];
       const detailPromises = uniqueShows.map(async (show) => {
         try {
-          const details = await tmdbApi.getTVShowDetails(show.id);
+          const [details, watchProviders] = await Promise.all([
+            tmdbApi.getTVShowDetails(show.id),
+            tmdbApi.getTVWatchProviders(show.id),
+          ]);
           const ep = details.last_episode_to_air;
           if (ep) {
-            enriched.push({ show, details, latestEpisode: ep });
+            const country = userCountryCode || 'US';
+            const countryProviders =
+              watchProviders?.results?.[country] ||
+              watchProviders?.results?.US ||
+              watchProviders?.results?.GB ||
+              watchProviders?.results?.CA ||
+              null;
+            const availableProviderIds = Array.isArray(countryProviders?.flatrate)
+              ? countryProviders!.flatrate!.map((p: any) => Number(p?.provider_id)).filter((n: number) => Number.isFinite(n))
+              : [];
+            enriched.push({ show, details, latestEpisode: ep, availableProviderIds });
           }
         } catch (err) {
-          if (__DEV__) console.error('Failed to enrich show', show.name, err);
+          if (__DEV__) console.warn('Failed to enrich show', show.name, err);
         }
       });
       await Promise.all(detailPromises);
@@ -1027,7 +1174,9 @@ export default function ShowsScreen() {
             return { id: show.id, url: tmdbApi.getImageUrl(details.poster_path) };
           }
         } catch (error) {
-          if (__DEV__) console.error('Failed to fetch thumbnail for', show.title, error);
+          if (__DEV__) {
+            console.warn('Failed to fetch thumbnail for', show.title, error);
+          }
           return { id: show.id, url: null };
         }
       });
@@ -1074,7 +1223,7 @@ export default function ShowsScreen() {
       refetchRegionTrending(),
       refetchYounifyRail(),
     ];
-    if (selectedTab === 'streaming') {
+    if (selectedTab === 'streaming' || selectedTab === 'watchlist') {
       tasks.push(refetchStreamingBrowse());
     }
     await Promise.all(tasks);
@@ -1181,6 +1330,57 @@ export default function ShowsScreen() {
       setTrackedShowData(null);
     }
   }, []);
+
+  /** Resolve a Younify browse / hero row to TMDB and open the same detail modal as For You. */
+  const handleYounifyRowOpenDetails = useCallback(
+    async (row: Record<string, unknown>) => {
+      const id = extractTmdbIdFromYounifyRow(row);
+      const preferred = extractTmdbMediaTypeFromYounifyRow(row);
+
+      try {
+        if (id != null) {
+          if (preferred === 'tv') {
+            const d = await tmdbApi.getTVShowDetails(id);
+            handleItemPress(d, 'tv');
+            return;
+          }
+          if (preferred === 'movie') {
+            const d = await tmdbApi.getMovieDetails(id);
+            handleItemPress(d, 'movie');
+            return;
+          }
+          try {
+            const d = await tmdbApi.getMovieDetails(id);
+            handleItemPress(d, 'movie');
+            return;
+          } catch {
+            /* not a movie id */
+          }
+          const d = await tmdbApi.getTVShowDetails(id);
+          handleItemPress(d, 'tv');
+          return;
+        }
+
+        const title = String(row.title ?? row.name ?? '').trim();
+        if (title.length >= 2) {
+          const res = await tmdbApi.searchMulti(title, 1);
+          const hit = res?.results?.find((r) => r.media_type === 'movie' || r.media_type === 'tv');
+          if (hit?.id && (hit.media_type === 'movie' || hit.media_type === 'tv')) {
+            if (hit.media_type === 'movie') {
+              const d = await tmdbApi.getMovieDetails(hit.id);
+              handleItemPress(d, 'movie');
+            } else {
+              const d = await tmdbApi.getTVShowDetails(hit.id);
+              handleItemPress(d, 'tv');
+            }
+          }
+        }
+      } catch (e) {
+        if (__DEV__) console.warn('[Shows] Younify row → detail modal failed', e);
+      }
+    },
+    [handleItemPress],
+  );
 
   const handleToggleLike = useCallback(async () => {
     if (!detailModal.item) return;
@@ -1668,7 +1868,38 @@ export default function ShowsScreen() {
     );
   };
 
-  const renderEpisodeCard = useCallback(({ item }: { item: TVShowWithEpisode }) => {
+  const handleOpenEpisodeFromSection = useCallback(async (
+    item: TVShowWithEpisode,
+    mode: 'for-you' | 'streaming',
+  ) => {
+    if (mode === 'streaming') {
+      handleItemPress(item.show, 'tv');
+      return;
+    }
+
+    const linkedPreferredRow = pickBestYounifyRowForEpisode(younifyEpisodeIndex, {
+      tmdbId: item.show.id,
+      title: item.show.name,
+    });
+    if (linkedPreferredRow) {
+      await openYounifyBrowseItemOnPlatform(linkedPreferredRow, { sectionId: 'continue' });
+      return;
+    }
+
+    const title = item.show.name || '';
+    const year = item.show.first_air_date ? Number(item.show.first_air_date.slice(0, 4)) : undefined;
+    const providerIds = item.availableProviderIds;
+
+    for (const providerId of providerIds) {
+      const opened = await openStreamingTitleSearch(providerId, title, year);
+      if (opened) return;
+    }
+
+    // Fallback to details when no provider deeplink opens.
+    handleItemPress(item.show, 'tv');
+  }, [handleItemPress, linkedProviderIds, younifyEpisodeIndex]);
+
+  const renderEpisodeCard = useCallback(({ item, mode = 'for-you' }: { item: TVShowWithEpisode; mode?: 'for-you' | 'streaming' }) => {
     const { show, latestEpisode } = item;
     const backdropUrl = tmdbApi.getImageUrl(show.backdrop_path, 'w780');
     const posterUrl = tmdbApi.getImageUrl(show.poster_path);
@@ -1682,7 +1913,7 @@ export default function ShowsScreen() {
     return (
       <Pressable
         style={epStyles.card}
-        onPress={() => handleItemPress(show, 'tv')}
+        onPress={() => void handleOpenEpisodeFromSection(item, mode)}
       >
         {backdropUrl ? (
           <Image source={{ uri: backdropUrl }} style={epStyles.cardBackdrop} />
@@ -1748,29 +1979,36 @@ export default function ShowsScreen() {
         </View>
       </Pressable>
     );
-  }, [handleItemPress, handleAddFromTMDB, isInList]);
+  }, [handleOpenEpisodeFromSection, handleAddFromTMDB, isInList]);
 
-  const renderNewEpisodesSection = useCallback(() => {
-    const episodes = newEpisodesQuery.data;
+  const renderNewEpisodesSection = useCallback((mode: 'for-you' | 'streaming' = 'for-you') => {
+    let episodes = newEpisodesQuery.data ?? [];
+    if (mode === 'streaming') {
+      episodes = episodes.filter((entry) =>
+        entry.availableProviderIds.some((pid) => linkedProviderIds.includes(pid)),
+      );
+    }
     if (!episodes || episodes.length === 0) return null;
 
     return (
       <View style={styles.section}>
         <View style={styles.sectionHeader}>
-          <BellRing size={18} color={'#00D1FF'} />
-          <Text style={styles.sectionTitle}>Latest Episodes</Text>
+          <BellRing size={18} color={mode === 'streaming' ? THEME.success : '#00D1FF'} />
+          <Text style={styles.sectionTitle}>
+            {mode === 'streaming' ? 'Latest on your services' : 'Latest Episodes'}
+          </Text>
           <ChevronRight size={18} color={THEME.textMuted} />
         </View>
         <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={epStyles.scrollContent}>
           {episodes.map((item) => (
             <View key={`ep-${item.show.id}`}>
-              {renderEpisodeCard({ item })}
+              {renderEpisodeCard({ item, mode })}
             </View>
           ))}
         </ScrollView>
       </View>
     );
-  }, [newEpisodesQuery.data, renderEpisodeCard]);
+  }, [newEpisodesQuery.data, renderEpisodeCard, linkedProviderIds]);
 
   const renderSection = useCallback((title: string, icon: React.ReactNode, items: any[], mediaType: 'movie' | 'tv', isLarge?: boolean) => {
     if (!items || items.length === 0) return null;
@@ -1834,7 +2072,11 @@ export default function ShowsScreen() {
               <View style={styles.titleRow}>
                 <Text style={styles.headerTitle}>Movies & TV</Text>
                 <Text style={styles.headerSubtitle}>
-                  {shows.length > 0 ? `${shows.length} in your list` : 'Discover & track'}
+                  {selectedTab === 'around-you'
+                    ? 'What One Pager users around you are watching'
+                    : shows.length > 0
+                      ? `${shows.length} in your list`
+                      : 'Discover & track'}
                 </Text>
               </View>
               <View style={styles.headerButtons}>
@@ -1870,9 +2112,10 @@ export default function ShowsScreen() {
         {Platform.OS === 'web' ? (
           <View style={styles.tabsContainerWeb}>
             {[
-              { key: 'discover' as const, label: 'Discover', icon: <Sparkles size={14} />, badge: 0 },
+              { key: 'for-you' as const, label: 'For You', icon: <Sparkles size={14} />, badge: 0 },
               { key: 'streaming' as const, label: 'Streaming', icon: <Tv size={14} />, badge: 0 },
-              { key: 'my-list' as const, label: 'My List', icon: <Bookmark size={14} />, badge: shows.length },
+              { key: 'watchlist' as const, label: 'My List', icon: <Bookmark size={14} />, badge: shows.length },
+              { key: 'around-you' as const, label: 'Around You', icon: <Flame size={14} />, badge: 0 },
             ].map((tab) => {
               const isActive = selectedTab === tab.key;
               return (
@@ -1894,21 +2137,14 @@ export default function ShowsScreen() {
                 </TouchableOpacity>
               );
             })}
-            <TouchableOpacity 
-              style={styles.nearbyButton}
-              onPress={() => router.push('/(root)/watching-map' as any)}
-              activeOpacity={0.7}
-            >
-              <MapPin size={14} color={THEME.accent} />
-              <Text style={styles.nearbyButtonText}>Nearby</Text>
-            </TouchableOpacity>
           </View>
         ) : (
           <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.tabsScrollView} contentContainerStyle={styles.tabsContainer}>
             {[
-              { key: 'discover' as const, label: 'Discover', icon: <Sparkles size={14} />, badge: 0 },
+              { key: 'for-you' as const, label: 'For You', icon: <Sparkles size={14} />, badge: 0 },
               { key: 'streaming' as const, label: 'Streaming', icon: <Tv size={14} />, badge: 0 },
-              { key: 'my-list' as const, label: 'My List', icon: <Bookmark size={14} />, badge: shows.length },
+              { key: 'watchlist' as const, label: 'My List', icon: <Bookmark size={14} />, badge: shows.length },
+              { key: 'around-you' as const, label: 'Around You', icon: <Flame size={14} />, badge: 0 },
             ].map((tab) => {
               const isActive = selectedTab === tab.key;
               return (
@@ -1933,25 +2169,36 @@ export default function ShowsScreen() {
                 </TouchableOpacity>
               );
             })}
-            <TouchableOpacity 
-              style={styles.nearbyButton}
-              onPress={() => {
-                void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-                router.push('/(root)/watching-map' as any);
-              }}
-              activeOpacity={0.7}
-            >
-              <MapPin size={14} color={THEME.accent} />
-              <Text style={styles.nearbyButtonText}>Nearby</Text>
-            </TouchableOpacity>
           </ScrollView>
         )}
       </View>
 
-      {selectedTab === 'discover' ? (
-        <ScrollView 
+      {younifyRuntimeBanner ? (
+        <View style={styles.younifyBannerWrap}>
+          <View style={styles.younifyBanner}>
+            <Info size={14} color="#FCD34D" />
+            <Text style={styles.younifyBannerText} numberOfLines={4}>
+              {younifyRuntimeBanner}
+            </Text>
+            <TouchableOpacity
+              style={styles.younifyBannerButton}
+              onPress={() => router.push('/(root)/streaming-services' as any)}
+            >
+              <Text style={styles.younifyBannerButtonText}>Fix</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+      ) : null}
+
+      {selectedTab === 'for-you' ? (
+        <RNAnimated.ScrollView 
           style={styles.content} 
           showsVerticalScrollIndicator={false}
+          onScroll={RNAnimated.event(
+            [{ nativeEvent: { contentOffset: { y: forYouScrollY } } }],
+            { useNativeDriver: Platform.OS !== 'web' }
+          )}
+          scrollEventThrottle={16}
           refreshControl={
             <RefreshControl 
               refreshing={refreshing} 
@@ -1960,15 +2207,6 @@ export default function ShowsScreen() {
             />
           }
         >
-          <View style={{ paddingHorizontal: 20, paddingTop: 12 }}>
-            <ConnectedServicesRail
-              content={younifyContent}
-              loading={younifyLoading}
-              hasLinkedServices={hasLinkedServices}
-              linkedStreamingCount={linkedStreamingCount}
-            />
-            <View style={{ marginBottom: 18 }} />
-          </View>
           {trendingQuery.isLoading ? (
             <View style={styles.loadingSection}>
               <ActivityIndicator size="large" color={THEME.primary} />
@@ -1976,7 +2214,15 @@ export default function ShowsScreen() {
           ) : (
             <>
               {heroItems.length > 0 && (
-                <View style={styles.heroSection}>
+                <RNAnimated.View
+                  style={[
+                    styles.heroSection,
+                    {
+                      transform: [{ translateY: forYouHeroTranslateY }, { scale: forYouHeroScale }],
+                      opacity: forYouHeroOpacity,
+                    },
+                  ]}
+                >
                   <RNAnimated.FlatList
                     data={heroItems}
                     renderItem={renderHeroItem}
@@ -2021,7 +2267,7 @@ export default function ShowsScreen() {
                       );
                     })}
                   </View>
-                </View>
+                </RNAnimated.View>
               )}
 
               {regionTrendingQuery.data && userCountryName && (
@@ -2098,81 +2344,156 @@ export default function ShowsScreen() {
               <View style={{ height: 120 }} />
             </>
           )}
-        </ScrollView>
+        </RNAnimated.ScrollView>
       ) : selectedTab === 'streaming' ? (
         <View style={styles.content}>
-          <StreamingServicesBrowseTab
-            sections={streamingSections}
-            loading={
-              hasLinkedServices && (!streamingInitialized || streamingLoading)
-            }
-            hasLinkedServices={hasLinkedServices}
-            linkedStreamingCount={linkedStreamingCount}
-            refreshing={streamingRefreshing}
-            onRefresh={onStreamingPullRefresh}
-          />
+          <View style={styles.streamingBrowseFlex}>
+            <StreamingServicesBrowseTab
+              sections={streamingSections}
+              loading={
+                hasLinkedServices && (!streamingInitialized || streamingLoading)
+              }
+              hasLinkedServices={hasLinkedServices}
+              linkedStreamingCount={linkedStreamingCount}
+              refreshing={streamingRefreshing}
+              onRefresh={onStreamingPullRefresh}
+              onBrowseItemOpenDetails={handleYounifyRowOpenDetails}
+              header={
+                <>
+                  <View style={styles.streamingRailWrap}>
+                    <ConnectedServicesHero
+                      content={younifyContent}
+                      loading={younifyLoading}
+                      hasLinkedServices={hasLinkedServices}
+                      linkedStreamingCount={linkedStreamingCount}
+                      onOpenDetails={handleYounifyRowOpenDetails}
+                    />
+                  </View>
+                  {renderNewEpisodesSection('streaming')}
+                </>
+              }
+            />
+          </View>
         </View>
-      ) : selectedTab === 'my-list' ? (
+      ) : selectedTab === 'watchlist' ? (
         <View style={styles.myListContainer}>
-          <ScrollView 
-            horizontal 
-            showsHorizontalScrollIndicator={false} 
-            style={styles.statusFilter}
-            contentContainerStyle={styles.statusFilterContent}
-          >
-            {[
-              { key: 'all', label: `All (${shows.length})`, icon: null },
-              { key: 'Watching', label: `Watching (${groupedShows.watching.length})`, icon: <Eye size={14} /> },
-              { key: 'Plan to Watch', label: `Watchlist (${groupedShows.planToWatch.length})`, icon: <Bookmark size={14} /> },
-              { key: 'Completed', label: `Completed (${groupedShows.completed.length})`, icon: <BookmarkCheck size={14} /> },
-              { key: 'On Hold', label: `On Hold (${groupedShows.onHold.length})`, icon: <Pause size={14} /> },
-            ].map((status) => (
-              <TouchableOpacity
-                key={status.key}
-                style={[styles.statusChip, selectedStatus === status.key && styles.statusChipActive]}
-                onPress={() => {
-                  if (Platform.OS !== 'web') void Haptics.selectionAsync();
-                  setSelectedStatus(status.key as any);
-                }}
-              >
-                {status.icon && React.cloneElement(status.icon as React.ReactElement<{ color: string }>, {
-                  color: selectedStatus === status.key ? '#FFF' : THEME.textSecondary
-                })}
-                <Text style={[styles.statusChipText, selectedStatus === status.key && styles.statusChipTextActive]}>
-                  {status.label}
-                </Text>
-              </TouchableOpacity>
-            ))}
-          </ScrollView>
-          
-          {filteredShows.length > 0 ? (
+          {filteredShows.length > 0 ||
+          (younifyWatchlistSection && younifyWatchlistSection.items.length > 0) ? (
             <FlatList
               data={filteredShows}
               renderItem={({ item }) => renderMyListCard({ item })}
               keyExtractor={(item) => item.id}
               numColumns={2}
-              columnWrapperStyle={styles.myListRow}
+              columnWrapperStyle={filteredShows.length ? styles.myListRow : undefined}
               contentContainerStyle={styles.myListContent}
               showsVerticalScrollIndicator={false}
+              ListEmptyComponent={
+                filteredShows.length === 0 ? (
+                  <View style={styles.watchlistGridEmpty}>
+                    <Text style={styles.emptyText}>No saved titles match this filter.</Text>
+                  </View>
+                ) : null
+              }
+              ListHeaderComponent={
+                <>
+                  {hasLinkedServices &&
+                  younifyWatchlistSection &&
+                  younifyWatchlistSection.items.length > 0 ? (
+                    <View style={styles.watchlistYounifyBlock}>
+                      <Text style={styles.watchlistSectionLabel}>From your services</Text>
+                      <YounifyBrowseSectionRow
+                        section={younifyWatchlistSection}
+                        linkedStreamingCount={linkedStreamingCount}
+                        onItemOpenDetails={handleYounifyRowOpenDetails}
+                      />
+                    </View>
+                  ) : null}
+                  <Text style={styles.watchlistSectionLabel}>Saved in app</Text>
+                  <ScrollView
+                    horizontal
+                    showsHorizontalScrollIndicator={false}
+                    style={styles.statusFilter}
+                    contentContainerStyle={styles.statusFilterContent}
+                  >
+                    {[
+                      { key: 'all', label: `All (${shows.length})`, icon: null },
+                      { key: 'Watching', label: `Watching (${groupedShows.watching.length})`, icon: <Eye size={14} /> },
+                      { key: 'Plan to Watch', label: `Plan to watch (${groupedShows.planToWatch.length})`, icon: <Bookmark size={14} /> },
+                      { key: 'Completed', label: `Completed (${groupedShows.completed.length})`, icon: <BookmarkCheck size={14} /> },
+                      { key: 'On Hold', label: `On Hold (${groupedShows.onHold.length})`, icon: <Pause size={14} /> },
+                    ].map((status) => (
+                      <TouchableOpacity
+                        key={status.key}
+                        style={[styles.statusChip, selectedStatus === status.key && styles.statusChipActive]}
+                        onPress={() => {
+                          if (Platform.OS !== 'web') void Haptics.selectionAsync();
+                          setSelectedStatus(status.key as any);
+                        }}
+                      >
+                        {status.icon && React.cloneElement(status.icon as React.ReactElement<{ color: string }>, {
+                          color: selectedStatus === status.key ? '#FFF' : THEME.textSecondary
+                        })}
+                        <Text style={[styles.statusChipText, selectedStatus === status.key && styles.statusChipTextActive]}>
+                          {status.label}
+                        </Text>
+                      </TouchableOpacity>
+                    ))}
+                  </ScrollView>
+                </>
+              }
             />
           ) : (
-            <View style={styles.emptyState}>
-              <View style={styles.emptyIcon}>
-                <Bookmark size={48} color={THEME.textMuted} />
+            <ScrollView
+              showsVerticalScrollIndicator={false}
+              contentContainerStyle={styles.watchlistEmptyScroll}
+              refreshControl={
+                <RefreshControl
+                  refreshing={streamingRefreshing}
+                  onRefresh={() => void onStreamingPullRefresh()}
+                  tintColor={THEME.primary}
+                />
+              }
+            >
+              {hasLinkedServices &&
+              younifyWatchlistSection &&
+              younifyWatchlistSection.items.length > 0 ? (
+                <View style={styles.watchlistYounifyBlock}>
+                  <Text style={styles.watchlistSectionLabel}>From your services</Text>
+                  <YounifyBrowseSectionRow
+                    section={younifyWatchlistSection}
+                    linkedStreamingCount={linkedStreamingCount}
+                    onItemOpenDetails={handleYounifyRowOpenDetails}
+                  />
+                </View>
+              ) : null}
+              <View style={styles.emptyState}>
+                <View style={styles.emptyIcon}>
+                  <Bookmark size={48} color={THEME.textMuted} />
+                </View>
+                <Text style={styles.emptyTitle}>Nothing saved yet</Text>
+                <Text style={styles.emptyText}>
+                  Add titles from For You or connect a streaming service for provider watchlists.
+                </Text>
+                <TouchableOpacity
+                  style={styles.emptyButton}
+                  onPress={() => setSelectedTab('for-you')}
+                >
+                  <Sparkles size={18} color="#FFF" />
+                  <Text style={styles.emptyButtonText}>Browse For You</Text>
+                </TouchableOpacity>
               </View>
-              <Text style={styles.emptyTitle}>Your list is empty</Text>
-              <Text style={styles.emptyText}>
-                Start adding movies and TV shows from the Discover tab
-              </Text>
-              <TouchableOpacity 
-                style={styles.emptyButton}
-                onPress={() => setSelectedTab('discover')}
-              >
-                <Sparkles size={18} color="#FFF" />
-                <Text style={styles.emptyButtonText}>Explore Content</Text>
-              </TouchableOpacity>
-            </View>
+            </ScrollView>
           )}
+        </View>
+      ) : selectedTab === 'around-you' ? (
+        <View style={styles.aroundYouTabWrap}>
+          <AroundYouTab
+            onMediaPress={handleItemPress}
+            onOpenFullMap={() => router.push('/(root)/watching-map' as any)}
+            hasLinkedServices={hasLinkedServices}
+            streamingSections={streamingSections}
+            younifyContent={younifyContent}
+          />
         </View>
       ) : null}
 
@@ -2298,6 +2619,9 @@ export default function ShowsScreen() {
         isLiked={isCurrentItemLiked}
         onToggleLike={handleToggleLike}
         onShare={handleShare}
+        hasLinkedServices={hasLinkedServices}
+        younifyProviderIndex={younifyEpisodeIndex}
+        onConnectServices={() => router.push('/streaming-services' as any)}
       />
 
       {renderStatusModal()}
@@ -2362,6 +2686,40 @@ const styles = StyleSheet.create({
   tabsTrack: {
     paddingBottom: 10,
     backgroundColor: THEME.background,
+  },
+  younifyBannerWrap: {
+    paddingHorizontal: 16,
+    marginBottom: 8,
+  },
+  younifyBanner: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    paddingVertical: 10,
+    paddingHorizontal: 12,
+    borderRadius: 10,
+    borderWidth: 1,
+    borderColor: 'rgba(252, 211, 77, 0.45)',
+    backgroundColor: 'rgba(120, 53, 15, 0.35)',
+  },
+  younifyBannerText: {
+    flex: 1,
+    color: '#FDE68A',
+    fontSize: 12,
+    lineHeight: 16,
+  },
+  younifyBannerButton: {
+    paddingVertical: 4,
+    paddingHorizontal: 8,
+    borderRadius: 8,
+    backgroundColor: 'rgba(252, 211, 77, 0.15)',
+    borderWidth: 1,
+    borderColor: 'rgba(252, 211, 77, 0.5)',
+  },
+  younifyBannerButtonText: {
+    color: '#FCD34D',
+    fontSize: 12,
+    fontWeight: '700',
   },
   tabsScrollView: {
     maxHeight: 46,
@@ -2428,6 +2786,38 @@ const styles = StyleSheet.create({
   },
   content: {
     flex: 1,
+  },
+  streamingRailWrap: {
+    paddingTop: 12,
+    paddingBottom: 4,
+  },
+  streamingBrowseFlex: {
+    flex: 1,
+    minHeight: 0,
+  },
+  aroundYouTabWrap: {
+    flex: 1,
+    minHeight: 0,
+  },
+  watchlistYounifyBlock: {
+    marginBottom: 4,
+  },
+  watchlistSectionLabel: {
+    fontSize: 13,
+    fontWeight: '700',
+    color: THEME.textSecondary,
+    paddingHorizontal: 20,
+    marginTop: 10,
+    marginBottom: 6,
+  },
+  watchlistEmptyScroll: {
+    flexGrow: 1,
+    paddingBottom: 40,
+  },
+  watchlistGridEmpty: {
+    paddingVertical: 28,
+    paddingHorizontal: 24,
+    alignItems: 'center',
   },
   loadingSection: {
     height: HERO_HEIGHT,
@@ -3421,26 +3811,41 @@ const styles = StyleSheet.create({
     color: THEME.textSecondary,
     textAlign: 'center',
   },
-
-  nearbyButton: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    paddingHorizontal: 14,
-    paddingVertical: 9,
-    borderRadius: 12,
-    backgroundColor: 'rgba(255, 70, 85, 0.08)',
-    gap: 5,
-    borderWidth: 1,
-    borderColor: 'rgba(255, 70, 85, 0.15)',
-  },
-  nearbyButtonText: {
-    fontSize: 13,
-    fontWeight: '600' as const,
-    color: THEME.accent,
-    letterSpacing: -0.1,
-  },
   watchNowSection: {
     marginBottom: 16,
+  },
+  connectServicesCard: {
+    marginBottom: 16,
+    padding: 14,
+    borderRadius: 14,
+    borderWidth: 1,
+    borderColor: 'rgba(0, 209, 255, 0.25)',
+    backgroundColor: 'rgba(0, 209, 255, 0.08)',
+  },
+  connectServicesTitle: {
+    fontSize: 14,
+    fontWeight: '700' as const,
+    color: THEME.text,
+    marginBottom: 6,
+  },
+  connectServicesText: {
+    fontSize: 13,
+    color: THEME.textSecondary,
+    lineHeight: 18,
+    marginBottom: 10,
+  },
+  connectServicesButton: {
+    alignSelf: 'flex-start',
+    backgroundColor: '#00D1FF',
+    borderRadius: 10,
+    paddingVertical: 8,
+    paddingHorizontal: 12,
+  },
+  connectServicesButtonText: {
+    fontSize: 12,
+    fontWeight: '700' as const,
+    color: '#04121A',
+    letterSpacing: 0.2,
   },
   watchNowLabel: {
     fontSize: 15,

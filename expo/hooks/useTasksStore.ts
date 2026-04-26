@@ -289,9 +289,6 @@ export const [TaskProvider, useTasks] = createContextHook(() => {
   const tasksQuery = useQuery({
     queryKey: ['tasks', userId],
     queryFn: async (): Promise<Task[]> => {
-      if (!userId) {
-        return initialTasks;
-      }
       try {
         const stored = await unifiedStorage.getItem(TASKS_STORAGE_KEY);
         if (stored) {
@@ -317,9 +314,6 @@ export const [TaskProvider, useTasks] = createContextHook(() => {
   const projectsQuery = useQuery({
     queryKey: ['task-projects', userId],
     queryFn: async (): Promise<TaskProject[]> => {
-      if (!userId) {
-        return [];
-      }
       try {
         const stored = await unifiedStorage.getItem(PROJECTS_STORAGE_KEY);
         return stored ? JSON.parse(stored) : [];
@@ -334,9 +328,6 @@ export const [TaskProvider, useTasks] = createContextHook(() => {
   const timeEntriesQuery = useQuery({
     queryKey: ['task-time-entries', userId],
     queryFn: async (): Promise<TaskTimeEntry[]> => {
-      if (!userId) {
-        return [];
-      }
       try {
         const stored = await unifiedStorage.getItem(TIME_ENTRIES_STORAGE_KEY);
         return stored ? JSON.parse(stored) : [];
@@ -346,6 +337,76 @@ export const [TaskProvider, useTasks] = createContextHook(() => {
       }
     },
   });
+
+  // Hydrate tasks/projects/time entries from Supabase when authenticated.
+  useEffect(() => {
+    if (!userId || !supabaseSync.loadFromCloud) return;
+    let cancelled = false;
+
+    const hydrateFromCloud = async () => {
+      try {
+        const cloudData = await supabaseSync.loadFromCloud();
+        if (!cloudData || cancelled) return;
+
+        if (Array.isArray(cloudData.tasks)) {
+          queryClient.setQueryData(['tasks', userId], cloudData.tasks);
+          await unifiedStorage.setItem(TASKS_STORAGE_KEY, JSON.stringify(cloudData.tasks));
+        }
+        if (Array.isArray(cloudData.taskProjects)) {
+          queryClient.setQueryData(['task-projects', userId], cloudData.taskProjects);
+          await unifiedStorage.setItem(PROJECTS_STORAGE_KEY, JSON.stringify(cloudData.taskProjects));
+        }
+        if (Array.isArray(cloudData.taskTimeEntries)) {
+          queryClient.setQueryData(['task-time-entries', userId], cloudData.taskTimeEntries);
+          await unifiedStorage.setItem(TIME_ENTRIES_STORAGE_KEY, JSON.stringify(cloudData.taskTimeEntries));
+        }
+      } catch (error) {
+        console.warn('⚠️ Supabase cloud hydrate failed for tasks store:', error);
+      }
+    };
+
+    void hydrateFromCloud();
+    return () => {
+      cancelled = true;
+    };
+  }, [
+    userId,
+    supabaseSync,
+    queryClient,
+    TASKS_STORAGE_KEY,
+    PROJECTS_STORAGE_KEY,
+    TIME_ENTRIES_STORAGE_KEY,
+  ]);
+
+  // Listen for remote task updates.
+  useEffect(() => {
+    if (!userId || !supabaseSync.setupRealtimeSync) return;
+    const unsubscribe = supabaseSync.setupRealtimeSync((cloudData) => {
+      if (Array.isArray(cloudData.tasks)) {
+        queryClient.setQueryData(['tasks', userId], cloudData.tasks);
+        void unifiedStorage.setItem(TASKS_STORAGE_KEY, JSON.stringify(cloudData.tasks));
+      }
+      if (Array.isArray(cloudData.taskProjects)) {
+        queryClient.setQueryData(['task-projects', userId], cloudData.taskProjects);
+        void unifiedStorage.setItem(PROJECTS_STORAGE_KEY, JSON.stringify(cloudData.taskProjects));
+      }
+      if (Array.isArray(cloudData.taskTimeEntries)) {
+        queryClient.setQueryData(['task-time-entries', userId], cloudData.taskTimeEntries);
+        void unifiedStorage.setItem(TIME_ENTRIES_STORAGE_KEY, JSON.stringify(cloudData.taskTimeEntries));
+      }
+    });
+
+    return () => {
+      unsubscribe?.();
+    };
+  }, [
+    userId,
+    supabaseSync,
+    queryClient,
+    TASKS_STORAGE_KEY,
+    PROJECTS_STORAGE_KEY,
+    TIME_ENTRIES_STORAGE_KEY,
+  ]);
 
   // Save Tasks Mutation
   const saveTasksMutation = useMutation({
@@ -596,9 +657,56 @@ export const [TaskProvider, useTasks] = createContextHook(() => {
       ? `${mostProductiveHour.padStart(2, '0')}:00` 
       : undefined;
     
-    // Calculate streaks (simplified)
-    const longestStreak = 0; // TODO: Implement proper streak calculation
-    const currentStreak = 0; // TODO: Implement proper streak calculation
+    const completionDayKeys = new Set<string>();
+    for (const log of allCompletionLogs) {
+      if (!log.completedAt) continue;
+      completionDayKeys.add(formatDateStr(new Date(log.completedAt)));
+    }
+
+    const countConsecutiveDaysBackward = (start: Date): number => {
+      let n = 0;
+      const d = new Date(start);
+      d.setHours(0, 0, 0, 0);
+      while (completionDayKeys.has(formatDateStr(d))) {
+        n++;
+        d.setDate(d.getDate() - 1);
+      }
+      return n;
+    };
+
+    let currentStreak = 0;
+    if (completionDayKeys.size > 0) {
+      const todayStart = new Date(now);
+      todayStart.setHours(0, 0, 0, 0);
+      const todayKey = formatDateStr(todayStart);
+      if (completionDayKeys.has(todayKey)) {
+        currentStreak = countConsecutiveDaysBackward(todayStart);
+      } else {
+        const y = new Date(todayStart);
+        y.setDate(y.getDate() - 1);
+        if (completionDayKeys.has(formatDateStr(y))) {
+          currentStreak = countConsecutiveDaysBackward(y);
+        }
+      }
+    }
+
+    let longestStreak = 0;
+    if (completionDayKeys.size > 0) {
+      const sorted = Array.from(completionDayKeys).sort();
+      let run = 1;
+      longestStreak = 1;
+      for (let i = 1; i < sorted.length; i++) {
+        const prev = new Date(sorted[i - 1] + "T12:00:00");
+        const cur = new Date(sorted[i] + "T12:00:00");
+        const diff = Math.round((cur.getTime() - prev.getTime()) / 86400000);
+        if (diff === 1) {
+          run++;
+          longestStreak = Math.max(longestStreak, run);
+        } else {
+          run = 1;
+        }
+      }
+    }
     
     return {
       total,

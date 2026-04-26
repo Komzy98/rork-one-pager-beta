@@ -13,7 +13,11 @@
     "eas:build:preview:ios": "eas build --profile preview --platform ios",
     "eas:build:dev": "eas build --profile development",
     "android": "expo run:android",
-    "ios": "expo run:ios"
+    "ios": "expo run:ios",
+    "ios:sim": "open -a Simulator && npx expo start --dev-client --localhost --port 8081 --ios",
+    "ios:sim:refresh": "open -a Simulator && npx expo start --dev-client --localhost --port 8081 --clear --ios",
+    "ios:sim:full": "bash scripts/run-ios-with-younify-auth.sh",
+    "younify-auth": "node backend/younify-auth/server.js"
   },
   "dependencies": {
     "@expo/vector-icons": "^15.0.3",
@@ -35,6 +39,7 @@
     "expo-constants": "~18.0.10",
     "expo-crypto": "~15.0.8",
     "expo-dev-client": "~6.0.20",
+    "expo-device": "~8.0.10",
     "expo-document-picker": "^55.0.8",
     "expo-haptics": "~15.0.7",
     "expo-image": "~3.0.10",

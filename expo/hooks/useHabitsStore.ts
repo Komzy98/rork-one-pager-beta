@@ -171,9 +171,6 @@ export const [AppProvider, useApp] = createContextHook(() => {
   const habitsQuery = useQuery({
     queryKey: ['habits', userId],
     queryFn: async () => {
-      if (!userId) {
-        return initialHabits;
-      }
       try {
         const storedHabits = await unifiedStorage.getItem(HABITS_STORAGE_KEY);
         if (storedHabits) {
@@ -199,9 +196,6 @@ export const [AppProvider, useApp] = createContextHook(() => {
   const activitiesQuery = useQuery({
     queryKey: ['activities', userId],
     queryFn: async () => {
-      if (!userId) {
-        return initialActivities;
-      }
       try {
         const storedActivities = await unifiedStorage.getItem(ACTIVITIES_STORAGE_KEY);
         if (storedActivities) {
@@ -227,9 +221,6 @@ export const [AppProvider, useApp] = createContextHook(() => {
   const showsQuery = useQuery({
     queryKey: ['shows', userId],
     queryFn: async () => {
-      if (!userId) {
-        return initialShows;
-      }
       try {
         const storedShows = await unifiedStorage.getItem(SHOWS_STORAGE_KEY);
         if (storedShows) {
@@ -255,9 +246,6 @@ export const [AppProvider, useApp] = createContextHook(() => {
   const sportsQuery = useQuery({
     queryKey: ['sports', userId],
     queryFn: async () => {
-      if (!userId) {
-        return initialSportMatches;
-      }
       try {
         const storedSports = await unifiedStorage.getItem(SPORTS_STORAGE_KEY);
         if (storedSports) {
@@ -278,6 +266,86 @@ export const [AppProvider, useApp] = createContextHook(() => {
       }
     },
   });
+
+  // Hydrate local queries from Supabase when authenticated.
+  useEffect(() => {
+    if (!userId || !supabaseSync.loadFromCloud) return;
+    let cancelled = false;
+
+    const hydrateFromCloud = async () => {
+      try {
+        const cloudData = await supabaseSync.loadFromCloud();
+        if (!cloudData || cancelled) return;
+
+        if (Array.isArray(cloudData.habits)) {
+          queryClient.setQueryData(['habits', userId], cloudData.habits);
+          await unifiedStorage.setItem(HABITS_STORAGE_KEY, JSON.stringify(cloudData.habits));
+        }
+        if (Array.isArray(cloudData.activities)) {
+          queryClient.setQueryData(['activities', userId], cloudData.activities);
+          await unifiedStorage.setItem(ACTIVITIES_STORAGE_KEY, JSON.stringify(cloudData.activities));
+        }
+        if (Array.isArray(cloudData.shows)) {
+          queryClient.setQueryData(['shows', userId], cloudData.shows);
+          await unifiedStorage.setItem(SHOWS_STORAGE_KEY, JSON.stringify(cloudData.shows));
+        }
+        if (Array.isArray(cloudData.sports)) {
+          queryClient.setQueryData(['sports', userId], cloudData.sports);
+          await unifiedStorage.setItem(SPORTS_STORAGE_KEY, JSON.stringify(cloudData.sports));
+        }
+      } catch (error) {
+        console.warn('⚠️ Supabase cloud hydrate failed for habits store:', error);
+      }
+    };
+
+    void hydrateFromCloud();
+    return () => {
+      cancelled = true;
+    };
+  }, [
+    userId,
+    supabaseSync,
+    queryClient,
+    HABITS_STORAGE_KEY,
+    ACTIVITIES_STORAGE_KEY,
+    SHOWS_STORAGE_KEY,
+    SPORTS_STORAGE_KEY,
+  ]);
+
+  // Listen for remote updates and patch local cache/storage.
+  useEffect(() => {
+    if (!userId || !supabaseSync.setupRealtimeSync) return;
+    const unsubscribe = supabaseSync.setupRealtimeSync((cloudData) => {
+      if (Array.isArray(cloudData.habits)) {
+        queryClient.setQueryData(['habits', userId], cloudData.habits);
+        void unifiedStorage.setItem(HABITS_STORAGE_KEY, JSON.stringify(cloudData.habits));
+      }
+      if (Array.isArray(cloudData.activities)) {
+        queryClient.setQueryData(['activities', userId], cloudData.activities);
+        void unifiedStorage.setItem(ACTIVITIES_STORAGE_KEY, JSON.stringify(cloudData.activities));
+      }
+      if (Array.isArray(cloudData.shows)) {
+        queryClient.setQueryData(['shows', userId], cloudData.shows);
+        void unifiedStorage.setItem(SHOWS_STORAGE_KEY, JSON.stringify(cloudData.shows));
+      }
+      if (Array.isArray(cloudData.sports)) {
+        queryClient.setQueryData(['sports', userId], cloudData.sports);
+        void unifiedStorage.setItem(SPORTS_STORAGE_KEY, JSON.stringify(cloudData.sports));
+      }
+    });
+
+    return () => {
+      unsubscribe?.();
+    };
+  }, [
+    userId,
+    supabaseSync,
+    queryClient,
+    HABITS_STORAGE_KEY,
+    ACTIVITIES_STORAGE_KEY,
+    SHOWS_STORAGE_KEY,
+    SPORTS_STORAGE_KEY,
+  ]);
 
   // Save mutations
   const saveHabitsMutation = useMutation({

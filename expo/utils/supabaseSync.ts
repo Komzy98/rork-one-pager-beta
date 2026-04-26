@@ -1,7 +1,7 @@
 import { supabase, supabaseConfigured, supabaseUrl } from './supabaseClient';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 
-async function executeWithRetry<T>(fn: () => Promise<T>, retries = 2, delayMs = 800): Promise<T> {
+async function executeWithRetry<T>(fn: () => PromiseLike<T> | T, retries = 2, delayMs = 800): Promise<T> {
   let lastErr: any;
   for (let attempt = 0; attempt <= retries; attempt++) {
     try {
@@ -82,7 +82,7 @@ export const syncAllDataToCloud = async (data: Partial<SyncableData>): Promise<b
   }
   try {
     console.log('[supabaseSync] Upserting user_data for user:', currentUserId, 'at', supabaseUrl);
-    const { error, status } = await executeWithRetry(() =>
+    const upsertResult = await executeWithRetry<any>(() =>
       supabase
         .from(TABLE)
         .upsert(
@@ -94,6 +94,8 @@ export const syncAllDataToCloud = async (data: Partial<SyncableData>): Promise<b
           { onConflict: 'user_id' }
         )
     );
+    const error = upsertResult?.error ?? null;
+    const status = upsertResult?.status;
     if (error) {
       const details = {
         message: error.message,

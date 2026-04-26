@@ -1,6 +1,6 @@
 import { createTRPCRouter } from "./create-context";
 import hiRoute from "./routes/example/hi/route";
-import { getMatchesRoute, getMatchDetailsRoute, getLeagueStandingsRoute, getTeamLogosRoute } from "./routes/football/matches/route";
+import { getMatchesRoute, getMatchesBundleRoute, getMatchDetailsRoute, getLeagueStandingsRoute, getTeamLogosRoute } from "./routes/football/matches/route";
 import { getMmaFightsRoute } from "./routes/mma/fights/route";
 import { generateVoiceRoute } from "./routes/ai/voice/route";
 
@@ -10,6 +10,7 @@ export const appRouter = createTRPCRouter({
   }),
   football: createTRPCRouter({
     getMatches: getMatchesRoute,
+    getMatchesBundle: getMatchesBundleRoute,
     getMatchDetails: getMatchDetailsRoute,
     getLeagueStandings: getLeagueStandingsRoute,
     getTeamLogos: getTeamLogosRoute,

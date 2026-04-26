@@ -1,179 +1,267 @@
 import Constants from "expo-constants";
+import * as Device from "expo-device";
+import { Platform } from "react-native";
 import {
-    Connect,
-    ConnectOptions,
-    LogLevel,
-    StreamingCategories,
-    type TokenHandler,
-  } from "react-native-younify-connect-sdk";
+  Connect,
+  ConnectOptions,
+  LogLevel,
+  StreamingCategories,
+  type TokenHandler,
+} from "react-native-younify-connect-sdk";
 
-  const getBackendUrl = () => {
-    const debuggerHost =
-      Constants.expoConfig?.hostUri ||
-      (Constants as any).manifest?.debuggerHost ||
-      "";
-  
-    const host = debuggerHost.split(":")[0];
-  
-    if (host) {
-      return `http://${host}:3000`;
-    }
-  
-    return "http://localhost:3000";
-  };
-  
-  const YOUNIFY_AUTH_BACKEND_URL = getBackendUrl();
+/**
+ * Younify token minting hits your small Node backend (`create-younify-user`, etc.).
+ * - **Explicit:** `EXPO_PUBLIC_YOUNIFY_AUTH_URL` or `expo.extra.younifyAuthUrl` (required for production devices).
+ * - **Simulator / emulator (__DEV__):** `expo-device` reports `!isDevice` → auth uses host loopback (`127.0.0.1` iOS,
+ *   `10.0.2.2` Android) so a server bound only to localhost on your Mac is reachable.
+ * - **Physical device (__DEV__):** Uses `http://<metro-host>:3000` from Metro’s `hostUri` (auth should listen on `0.0.0.0`
+ *   or set `EXPO_PUBLIC_YOUNIFY_AUTH_URL`). Override with `EXPO_PUBLIC_YOUNIFY_AUTH_USE_METRO_HOST=1` / `USE_LAN` if needed.
+ */
+function getYounifyAuthBackendBaseUrl(): string {
+  const extra = Constants.expoConfig?.extra as Record<string, unknown> | undefined;
+  const fromExtra = [extra?.younifyAuthUrl, extra?.younifyBackendUrl]
+    .map((x) => (typeof x === "string" ? x.trim() : ""))
+    .find((s) => s.length > 0);
+  const fromEnv = process.env.EXPO_PUBLIC_YOUNIFY_AUTH_URL?.trim();
 
-  let configured = false;
-  let younifyUserId: string | null = null;
+  const explicit = fromEnv || fromExtra;
+  if (explicit) {
+    return explicit.replace(/\/$/, "");
+  }
+
+  const forceMetroLanHost =
+    process.env.EXPO_PUBLIC_YOUNIFY_AUTH_USE_METRO_HOST === "1" ||
+    process.env.EXPO_PUBLIC_YOUNIFY_AUTH_USE_LAN === "1";
+
+  if (__DEV__ && !forceMetroLanHost && !Device.isDevice) {
+    if (Platform.OS === "ios") return "http://127.0.0.1:3000";
+    if (Platform.OS === "android") return "http://10.0.2.2:3000";
+  }
+
+  const debuggerHost =
+    Constants.expoConfig?.hostUri || (Constants as any).manifest?.debuggerHost || "";
+  const host = debuggerHost.split(":")[0];
+  if (host) {
+    return `http://${host}:3000`;
+  }
+
+  return "http://127.0.0.1:3000";
+}
+
+/** SDK key must come from EXPO_PUBLIC_YOUNIFY_SDK_KEY (EAS env / .env). */
+function getYounifySdkKey(): string | undefined {
+  const fromEnv = process.env.EXPO_PUBLIC_YOUNIFY_SDK_KEY?.trim() || "";
+  return fromEnv || undefined;
+}
+
+async function readJsonBody(res: Response): Promise<Record<string, unknown>> {
+  const text = await res.text();
+  if (!text.trim()) return {};
+  try {
+    return JSON.parse(text) as Record<string, unknown>;
+  } catch {
+    return { _parseError: true, _bodyPreview: text.slice(0, 240) };
+  }
+}
+
+let configured = false;
+let younifyUserId: string | null = null;
 let younifyAccessToken: string | null = null;
 let younifyRefreshToken: string | null = null;
+let younifyRuntimeIssue: string | null = null;
+
+function setYounifyRuntimeIssue(message: string | null) {
+  younifyRuntimeIssue = message;
+}
+
+export function getYounifyRuntimeIssue(): string | null {
+  return younifyRuntimeIssue;
+}
 
 async function createYounifyUserTokens() {
-  console.log("Calling Younify backend:", `${YOUNIFY_AUTH_BACKEND_URL}/create-younify-user`);
+  const base = getYounifyAuthBackendBaseUrl();
+  const url = `${base}/create-younify-user`;
+  if (__DEV__) console.log("Calling Younify backend:", url);
 
-  const response = await fetch(`${YOUNIFY_AUTH_BACKEND_URL}/create-younify-user`, {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-    },
-    body: JSON.stringify({
-      externalUserId: "one-pager-dev-user",
-    }),
-  });
+  let response: Response;
+  try {
+    response = await fetch(url, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        externalUserId: "one-pager-dev-user",
+      }),
+    });
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err);
+    const errorMessage = `Younify auth unreachable at ${url} (${msg}). Start the backend: expo/backend/younify-auth (node server.js on port 3000).`;
+    setYounifyRuntimeIssue(errorMessage);
+    throw new Error(errorMessage);
+  }
 
-  const data = await response.json();
-  console.log("Backend token response:", data);
+  const data = await readJsonBody(response);
+  if (__DEV__) console.log("Backend token response:", data);
 
-  
   if (!response.ok) {
-    throw new Error(data?.error || "Failed to create Younify user tokens");
+    const errMsg =
+      typeof data.error === "string"
+        ? data.error
+        : `HTTP ${response.status} from Younify auth`;
+    setYounifyRuntimeIssue(errMsg);
+    throw new Error(errMsg);
   }
 
-  if (!data.userId || !data.accessToken || !data.refreshToken) {
-    throw new Error("Backend did not return Younify user tokens");
+  const userId = data.userId as string | undefined;
+  const accessToken = data.accessToken as string | undefined;
+  const refreshToken = data.refreshToken as string | undefined;
+
+  if (!userId || !accessToken || !refreshToken) {
+    const errorMessage = "Backend did not return Younify user tokens";
+    setYounifyRuntimeIssue(errorMessage);
+    throw new Error(errorMessage);
   }
 
-  younifyUserId = data.userId;
-  younifyAccessToken = data.accessToken;
-  younifyRefreshToken = data.refreshToken;
+  younifyUserId = userId;
+  younifyAccessToken = accessToken;
+  younifyRefreshToken = refreshToken;
 
   return {
-    userId: data.userId,
-    accessToken: data.accessToken,
-    refreshToken: data.refreshToken,
+    userId,
+    accessToken,
+    refreshToken,
   };
 }
 
 async function refreshYounifyUserTokens() {
   if (!younifyUserId) {
-    throw new Error("Missing Younify user ID for token refresh");
+    const errorMessage = "Missing Younify user ID for token refresh";
+    setYounifyRuntimeIssue(errorMessage);
+    throw new Error(errorMessage);
   }
 
-  const response = await fetch(`${YOUNIFY_AUTH_BACKEND_URL}/refresh-younify-user-tokens`, {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-    },
-    body: JSON.stringify({
-      userId: younifyUserId,
-    }),
-  });
+  const base = getYounifyAuthBackendBaseUrl();
+  const refreshUrl = `${base}/refresh-younify-user-tokens`;
+  let response: Response;
+  try {
+    response = await fetch(refreshUrl, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        userId: younifyUserId,
+      }),
+    });
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err);
+    const errorMessage = `Younify auth unreachable at ${refreshUrl} (${msg})`;
+    setYounifyRuntimeIssue(errorMessage);
+    throw new Error(errorMessage);
+  }
 
-  const data = await response.json();
+  const data = await readJsonBody(response);
 
   if (!response.ok) {
-    throw new Error(data?.error || "Failed to refresh Younify user tokens");
+    const errMsg =
+      typeof data.error === "string"
+        ? data.error
+        : `HTTP ${response.status} refreshing Younify tokens`;
+    setYounifyRuntimeIssue(errMsg);
+    throw new Error(errMsg);
   }
 
-  if (!data.accessToken || !data.refreshToken) {
-    throw new Error("Backend did not return refreshed Younify tokens");
+  const accessToken = data.accessToken as string | undefined;
+  const refreshToken = data.refreshToken as string | undefined;
+
+  if (!accessToken || !refreshToken) {
+    const errorMessage = "Backend did not return refreshed Younify tokens";
+    setYounifyRuntimeIssue(errorMessage);
+    throw new Error(errorMessage);
   }
 
-  younifyAccessToken = data.accessToken;
-  younifyRefreshToken = data.refreshToken;
+  younifyAccessToken = accessToken;
+  younifyRefreshToken = refreshToken;
 
   return {
-    accessToken: data.accessToken,
-    refreshToken: data.refreshToken,
+    accessToken,
+    refreshToken,
   };
 }
   
-  export async function configureYounify() {
-    if (configured) return Connect.shared;
-  
-    const sdkKey =
-  Constants.expoConfig?.extra?.younifySdkKey ??
-  process.env.EXPO_PUBLIC_YOUNIFY_SDK_KEY;
-  
-    if (!sdkKey) {
-      throw new Error("Missing EXPO_PUBLIC_YOUNIFY_SDK_KEY");
-    }
-    const tokens = await createYounifyUserTokens();
-  
-    const tokenHandler: TokenHandler = new (class implements TokenHandler {
-      onRenew(
-        _expiredAccessToken: string | null,
-        _refreshToken: string | null,
-        renewed: (newAccessToken: string | null, newRefreshToken: string | null) => void
-      ): void {
-        void refreshYounifyUserTokens()
-  .then((newTokens) => {
-    renewed(newTokens.accessToken, newTokens.refreshToken);
-  })
-  .catch((error) => {
-    console.error("Failed to refresh Younify tokens:", error);
-    renewed(null, null);
-  });
-      }
-  
-      onRenewed(_newAccessToken: string, _newRefreshToken: string): void {
-        // add secure persistence later
-      }
-    })();
+export async function configureYounify() {
+  if (configured) return Connect.shared;
 
-    console.log("YOUNIFY SDK KEY (final):", sdkKey);
-  
-    const options: ConnectOptions = {
-        key: sdkKey,
-        logLevel: LogLevel.Warning,
-        tokenHandler,
-        accessToken: tokens.accessToken,
-        refreshToken: tokens.refreshToken,
-      };
-  
-    const connect = Connect.shared;
-    await connect.configure(options);
-  
-    configured = true;
-    return connect;
+  const sdkKey = getYounifySdkKey();
+
+  if (!sdkKey) {
+    const errorMessage = "Missing Younify SDK key: set EXPO_PUBLIC_YOUNIFY_SDK_KEY";
+    setYounifyRuntimeIssue(errorMessage);
+    throw new Error(errorMessage);
   }
-  
-  export async function fetchYounifyServices() {
-    const connect = await configureYounify();
-  
-    console.log("Calling Younify SDK fetchServices...");
-  
-    try {
-      // ✅ Get ALL services (this populates your UI list)
-      const result = await connect.fetchServices(null);
-      console.log("Younify all services:", result);
-  
-      // ✅ Get LINKED services (for debugging)
-      const linked = await connect.fetchLinkedServices(null);
-      console.log("Linked services:", linked);
-  
-      return result; // 👈 IMPORTANT: return ALL services, not linked
-    } catch (error: any) {
-      console.error("Younify SDK fetchServices failed:", {
-        message: error?.message,
-        name: error?.name,
-        stack: error?.stack,
-        raw: error,
-      });
-      throw error;
+  const tokens = await createYounifyUserTokens();
+
+  const tokenHandler: TokenHandler = new (class implements TokenHandler {
+    onRenew(
+      _expiredAccessToken: string | null,
+      _refreshToken: string | null,
+      renewed: (newAccessToken: string | null, newRefreshToken: string | null) => void
+    ): void {
+      void refreshYounifyUserTokens()
+        .then((newTokens) => {
+          renewed(newTokens.accessToken, newTokens.refreshToken);
+        })
+        .catch((error) => {
+          console.error("Failed to refresh Younify tokens:", error);
+          renewed(null, null);
+        });
     }
+
+    onRenewed(_newAccessToken: string, _newRefreshToken: string): void {
+      // add secure persistence later
+    }
+  })();
+
+  const options: ConnectOptions = {
+    key: sdkKey,
+    logLevel: LogLevel.Warning,
+    tokenHandler,
+    accessToken: tokens.accessToken,
+    refreshToken: tokens.refreshToken,
+  };
+
+  const connect = Connect.shared;
+  await connect.configure(options);
+  setYounifyRuntimeIssue(null);
+
+  configured = true;
+  return connect;
+}
+
+export async function fetchYounifyServices() {
+  const connect = await configureYounify();
+
+  console.log("Calling Younify SDK fetchServices...");
+
+  try {
+    const result = await connect.fetchServices(null);
+    console.log("Younify all services:", result);
+
+    const linked = await connect.fetchLinkedServices(null);
+    console.log("Linked services:", linked);
+
+    return result;
+  } catch (error: any) {
+    console.error("Younify SDK fetchServices failed:", {
+      message: error?.message,
+      name: error?.name,
+      stack: error?.stack,
+      raw: error,
+    });
+    throw error;
   }
+}
 
 function normalizeLinkedServices(linkedResult: unknown): any[] {
   if (Array.isArray(linkedResult)) return linkedResult;
@@ -233,17 +321,21 @@ export function getYounifyStreamingContentPosterUrl(item: unknown): string | nul
 }
 
 /**
- * Netflix-style horizontal row: ~3.4–3.5 portrait tiles visible, 2:3 aspect, ~8pt gaps (see parent padding).
+ * Mobile-first horizontal row for 2:3 posters.
+ * Slightly larger cards on phones, a bit denser on larger widths.
  */
 export function getYounifyRailPosterCellWidth(windowWidth: number): number {
   const screenEdgePadding = 40;
   const gapBetweenPosters = 8;
-  /** Visible “cells” including peek of next title (matches Netflix home). */
-  const visiblePosterSlots = 3.42;
+  const visiblePosterSlots =
+    windowWidth < 360 ? 3.05 :
+    windowWidth < 430 ? 3.2 :
+    windowWidth < 520 ? 3.45 :
+    3.7;
   const inner = Math.max(0, windowWidth - screenEdgePadding);
   const gaps = gapBetweenPosters * Math.max(0, visiblePosterSlots - 1);
   const raw = (inner - gaps) / visiblePosterSlots;
-  return Math.round(Math.min(122, Math.max(94, raw)));
+  return Math.round(Math.min(138, Math.max(98, raw)));
 }
 
 export type YounifySourceServiceSnapshot = {

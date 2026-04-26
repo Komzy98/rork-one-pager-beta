@@ -5,15 +5,27 @@
   "build": {
     "development": {
       "node": "20.19.4",
+      "environment": "development",
       "developmentClient": true,
-      "distribution": "internal"
+      "distribution": "internal",
+      "env": {
+        "APP_ENV": "development"
+      }
     },
     "preview": {
       "node": "20.19.4",
-      "distribution": "internal"
+      "environment": "preview",
+      "distribution": "internal",
+      "env": {
+        "APP_ENV": "preview"
+      }
     },
     "production": {
-      "node": "20.19.4"
+      "node": "20.19.4",
+      "environment": "production",
+      "env": {
+        "APP_ENV": "production"
+      }
     }
   },
   "submit": {

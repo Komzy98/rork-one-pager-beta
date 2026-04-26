@@ -34,6 +34,23 @@ const USERS_STORAGE_KEY = '@users_db';
 
 const GOOGLE_CLIENT_ID = process.env.EXPO_PUBLIC_GOOGLE_CLIENT_ID || '';
 
+/** Supabase sign-in uses HTTPS to your project (not the local Metro/tRPC server). */
+function friendlyMessageForAuthNetworkError(error: unknown): string | null {
+  if (!(error instanceof Error)) {
+    return null;
+  }
+  const msg = error.message;
+  if (
+    /Network request failed|Failed to fetch|Load failed|NetworkError|network connection was lost|fetch failed|ECONNREFUSED|ETIMEDOUT|ENOTFOUND/i.test(
+      msg,
+    ) ||
+    (error.name === "TypeError" && /network|fetch|load|failed/i.test(msg))
+  ) {
+    return "Can't connect to the sign-in service. Check your internet and try again.";
+  }
+  return null;
+}
+
 const googleDiscovery = {
   authorizationEndpoint: 'https://accounts.google.com/o/oauth2/v2/auth',
   tokenEndpoint: 'https://oauth2.googleapis.com/token',
@@ -336,7 +353,13 @@ export const [AuthProvider, useAuth] = createContextHook(() => {
       return { success: true };
     } catch (error: any) {
       console.error('💥 Login error:', error);
-      return { success: false, error: error?.message || 'Login failed' };
+      const networkMsg = friendlyMessageForAuthNetworkError(error);
+      if (networkMsg && typeof __DEV__ !== "undefined" && __DEV__) {
+        console.warn(
+          "Email/password sign-in uses Supabase (EXPO_PUBLIC_SUPABASE_URL). It does not use your computer's local Metro server. If this is new, check Wi-Fi in the simulator, or restart Expo with --clear after changing .env.",
+        );
+      }
+      return { success: false, error: networkMsg || error?.message || 'Login failed' };
     } finally {
       setIsLoading(false);
     }
@@ -434,7 +457,8 @@ export const [AuthProvider, useAuth] = createContextHook(() => {
       return { success: true };
     } catch (error: any) {
       console.error('💥 Signup error:', error?.message);
-      return { success: false, error: error?.message || 'Signup failed' };
+      const networkMsg = friendlyMessageForAuthNetworkError(error);
+      return { success: false, error: networkMsg || error?.message || 'Signup failed' };
     } finally {
       setIsLoading(false);
     }

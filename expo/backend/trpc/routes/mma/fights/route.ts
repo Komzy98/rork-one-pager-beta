@@ -1,5 +1,6 @@
 import { z } from 'zod';
 import { publicProcedure } from '@/backend/trpc/create-context';
+import { getFootballApiKeyFromEnv } from '@/backend/utils/footballApiKey';
 
 const MMA_BASE_URL = 'https://v1.mma.api-sports.io';
 
@@ -343,12 +344,12 @@ export const getMmaFightsRoute = publicProcedure
       return cachedResult;
     }
 
-    const apiKey = process.env.FOOTBALL_API_KEY;
+    const apiKey = getFootballApiKeyFromEnv();
 
     console.log(`🥊 MMA API Request - Type: ${type}, API Key present: ${!!apiKey}, Key length: ${apiKey?.length || 0}`);
 
     if (!apiKey) {
-      console.error('❌ FOOTBALL_API_KEY (used for MMA) not found');
+      console.error('❌ No API-Sports key for MMA: set FOOTBALL_API_KEY or EXPO_PUBLIC_FOOTBALL_API_KEY on the server');
       return { response: [], results: 0, errors: { config: 'API key not configured' } };
     }
 

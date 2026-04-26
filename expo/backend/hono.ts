@@ -4,6 +4,7 @@ import { cors } from "hono/cors";
 import { fetchRequestHandler } from "@trpc/server/adapters/fetch";
 import { appRouter } from "./trpc/app-router";
 import { createContext } from "./trpc/create-context";
+import { getFootballApiKeyFromEnv } from "./utils/footballApiKey";
 import { generalRateLimiter, authRateLimiter } from "./middleware/rate-limiter";
 import { payloadSizeLimiter, inputSanitizer } from "./middleware/sanitizer";
 
@@ -61,6 +62,9 @@ const handleTrpcRequest = (c: Context) => {
   });
 };
 
+/** Client `lib/trpc` uses `/api/trpc`; keep `/trpc` for older callers. */
+app.all("/api/trpc", (c) => handleTrpcRequest(c));
+app.all("/api/trpc/*", (c) => handleTrpcRequest(c));
 app.all("/trpc", (c) => handleTrpcRequest(c));
 app.all("/trpc/*", (c) => handleTrpcRequest(c));
 
@@ -79,7 +83,7 @@ app.get("/test", (c) => {
 });
 
 app.get("/debug/env", (c) => {
-  const apiKey = process.env.FOOTBALL_API_KEY;
+  const apiKey = getFootballApiKeyFromEnv();
   return c.json({ 
     footballApiKey: apiKey ? `configured (${apiKey.length} chars, starts with: ${apiKey.substring(0, 4)}...)` : 'NOT SET',
     nodeEnv: process.env.NODE_ENV || 'not set',
@@ -88,13 +92,13 @@ app.get("/debug/env", (c) => {
 });
 
 app.get("/football/test", async (c) => {
-  const apiKey = process.env.FOOTBALL_API_KEY;
+  const apiKey = getFootballApiKeyFromEnv();
   
   if (!apiKey) {
     return c.json({ 
       success: false,
-      error: 'FOOTBALL_API_KEY not configured',
-      hint: 'Check that the environment variable is set in Rork project settings'
+      error: 'Football API key not configured',
+      hint: 'Set FOOTBALL_API_KEY or EXPO_PUBLIC_FOOTBALL_API_KEY for the API server process'
     }, 500);
   }
   

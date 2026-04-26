@@ -117,6 +117,20 @@ export default function RootLayout() {
   const router = useRouter();
   useEffect(() => {
     configureYounify().catch((error) => {
+      const msg = error instanceof Error ? error.message : String(error);
+      const authDown =
+        /Younify auth unreachable|Network request failed/i.test(msg) ||
+        /127\.0\.0\.1:3000|create-younify-user/i.test(msg);
+      if (__DEV__ && authDown) {
+        console.warn(
+          "[Younify] Auth on :3000 is not running — streaming/linked services are off until you start it. Run: npm run younify-auth",
+        );
+        return;
+      }
+      if (__DEV__) {
+        console.warn("Younify configure failed:", error);
+        return;
+      }
       console.error("Younify configure failed:", error);
     });
   }, []);

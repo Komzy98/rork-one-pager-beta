@@ -1,6 +1,8 @@
 import { createTRPCReact } from "@trpc/react-query";
-import { createTRPCClient, httpBatchLink } from "@trpc/client";
+import { createTRPCClient, httpLink } from "@trpc/client";
 import Constants from "expo-constants";
+import * as Device from "expo-device";
+import { Platform } from "react-native";
 import type { AppRouter } from "@/backend/trpc/app-router";
 
 export const trpc = createTRPCReact<AppRouter>();
@@ -39,14 +41,56 @@ const appendTrpcPath = (base: string) => {
   return `${base}/api/trpc`;
 };
 
+/**
+ * iOS + Metro: `localhost` can resolve to ::1 while the packager listens on IPv4, causing
+ * "TypeError: Network request failed". On the iOS *simulator*, LAN hostUri hosts can
+ * be rewritten to 127.0.0.1 to reliably reach the dev server on the host Mac.
+ */
+const normalizeDevBaseUrl = (
+  url: string,
+  options: { rewritePrivateLanToLoopbackOnIosSim?: boolean } = {},
+) => {
+  if (Platform.OS === "web" || typeof __DEV__ === "undefined" || !__DEV__) {
+    return url;
+  }
+
+  const { rewritePrivateLanToLoopbackOnIosSim = false } = options;
+
+  try {
+    const u = new URL(url);
+    if (u.hostname === "localhost" || u.hostname === "[::1]") {
+      u.hostname = "127.0.0.1";
+      return u.origin;
+    }
+    if (
+      rewritePrivateLanToLoopbackOnIosSim &&
+      Platform.OS === "ios" &&
+      !Device.isDevice
+    ) {
+      const h = u.hostname;
+      const isPrivate =
+        /^192\.168\./.test(h) ||
+        /^10\./.test(h) ||
+        /^172\.(1[6-9]|2\d|3[0-1])\./.test(h);
+      if (isPrivate) {
+        u.hostname = "127.0.0.1";
+        return u.origin;
+      }
+    }
+  } catch {
+    return url;
+  }
+  return url;
+};
+
 const getBaseUrl = () => {
   // First priority: explicit environment variable
   const baseUrl = process.env.EXPO_PUBLIC_RORK_API_BASE_URL;
-  
+
   if (baseUrl && baseUrl.trim().length > 0) {
     const normalized = normalizeBaseUrl(baseUrl);
     console.log("🎯 Using env base URL:", normalized);
-    return normalized;
+    return normalizeDevBaseUrl(normalized);
   }
 
   // Second priority: window.location for web
@@ -65,11 +109,14 @@ const getBaseUrl = () => {
     const hostUri = Constants.expoConfig?.hostUri ?? Constants.expoGoConfig?.hostUri;
     if (hostUri) {
       const [host] = hostUri.split("/");
-      const normalizedHost = host?.split(":")[0];
+      const [normalizedHost, hostPort] = host?.split(":") ?? [];
       if (normalizedHost) {
-        const derived = `http://${normalizedHost}:8081`;
+        const derivedPort = hostPort && /^\d+$/.test(hostPort) ? hostPort : "8081";
+        const derived = `http://${normalizedHost}:${derivedPort}`;
         console.log("🎯 Derived base URL from Expo hostUri:", derived);
-        return normalizeBaseUrl(derived);
+        return normalizeDevBaseUrl(normalizeBaseUrl(derived), {
+          rewritePrivateLanToLoopbackOnIosSim: true,
+        });
       }
     }
   } catch (e) {
@@ -78,7 +125,7 @@ const getBaseUrl = () => {
 
   const fallbackUrl = "http://localhost:8081";
   console.warn("⚠️ No base URL found, using fallback:", fallbackUrl);
-  return fallbackUrl;
+  return normalizeDevBaseUrl(fallbackUrl);
 };
 
 const getTrpcUrl = () => {
@@ -88,71 +135,111 @@ const getTrpcUrl = () => {
   return url;
 };
 
+async function trpcFetchWithRetries(
+  trpcUrl: string,
+  init: RequestInit | undefined,
+  logLabel: string,
+): Promise<Response> {
+  const maxRetries = 5;
+  let lastError: Error | null = null;
+
+  for (let attempt = 0; attempt < maxRetries; attempt++) {
+    try {
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), 45000);
+
+      const response = await fetch(trpcUrl, {
+        ...init,
+        signal: controller.signal,
+        mode: "cors",
+        credentials: "omit",
+      });
+
+      clearTimeout(timeoutId);
+      if (typeof __DEV__ !== "undefined" && __DEV__) {
+        console.log(`✅ tRPC ${logLabel} status:`, response.status);
+      }
+
+      const contentType = response.headers.get("content-type") || "";
+      const looksLikeHtml = contentType.includes("text/html");
+
+      if (
+        looksLikeHtml &&
+        attempt < maxRetries - 1
+      ) {
+        const delay = Math.min(1500 * Math.pow(2, attempt), 8000);
+        console.log(
+          `⚠️ tRPC ${logLabel} returned HTML (not JSON), retrying in ${delay}ms (attempt ${attempt + 1}/${maxRetries})`,
+        );
+        try {
+          await response.text();
+        } catch {
+          /* ignore */
+        }
+        await new Promise((r) => setTimeout(r, delay));
+        continue;
+      }
+
+      if (
+        (response.status === 429 ||
+          response.status === 502 ||
+          response.status === 503 ||
+          response.status === 504) &&
+        attempt < maxRetries - 1
+      ) {
+        const delay = Math.min(1500 * Math.pow(2, attempt), 8000);
+        console.log(
+          `⚠️ tRPC ${logLabel} got ${response.status}${looksLikeHtml ? " (HTML)" : ""}, retrying in ${delay}ms (attempt ${attempt + 1}/${maxRetries})`,
+        );
+        try {
+          await response.text();
+        } catch {
+          /* ignore */
+        }
+        await new Promise((r) => setTimeout(r, delay));
+        continue;
+      }
+
+      return response;
+    } catch (error: any) {
+      lastError = error;
+      const isNetworkError =
+        error.message === "Load failed" ||
+        error.message === "Failed to fetch" ||
+        error.name === "AbortError" ||
+        error.name === "TypeError";
+
+      if (isNetworkError && attempt < maxRetries - 1) {
+        const delay = Math.min(1500 * Math.pow(2, attempt), 8000);
+        console.log(
+          `⚠️ tRPC ${logLabel} network error, retrying in ${delay}ms (attempt ${attempt + 1}/${maxRetries})`,
+        );
+        await new Promise((r) => setTimeout(r, delay));
+        continue;
+      }
+
+      console.log(`⚠️ tRPC ${logLabel} failed (${attempt + 1}/${maxRetries}):`, error.message || error);
+      throw error;
+    }
+  }
+
+  throw lastError || new Error("Failed after retries");
+}
+
 export const trpcReactClient = trpc.createClient({
   links: [
-    httpBatchLink({
+    /** Per-procedure requests avoid batched URLs that Metro sometimes answers with HTML. */
+    httpLink({
       url: getTrpcUrl(),
-      maxURLLength: 1500,
-      headers: () => {
-        return {
-          'Content-Type': 'application/json',
-        };
-      },
-      fetch: async (url, options) => {
+      headers: () => ({
+        "Content-Type": "application/json",
+      }),
+      fetch: (url, options) => {
         const trpcUrl = String(url);
-        console.log('🚀 tRPC Request:', trpcUrl.substring(0, 150), options?.method || 'GET');
-
-        const maxRetries = 5;
-        let lastError: Error | null = null;
-
-        for (let attempt = 0; attempt < maxRetries; attempt++) {
-          try {
-            const controller = new AbortController();
-            const timeoutId = setTimeout(() => controller.abort(), 45000);
-
-            const response = await fetch(trpcUrl, {
-              ...options,
-              signal: controller.signal,
-              mode: 'cors',
-              credentials: 'omit',
-            });
-
-            clearTimeout(timeoutId);
-            console.log('✅ tRPC Response status:', response.status);
-
-            // Retry on Rork dev-server cold-start / hibernation (429) or gateway errors (502/503/504).
-            // These commonly return HTML pages that tRPC cannot parse.
-            if ((response.status === 429 || response.status === 502 || response.status === 503 || response.status === 504) && attempt < maxRetries - 1) {
-              const contentType = response.headers.get('content-type') || '';
-              const looksLikeHtml = contentType.includes('text/html');
-              const delay = Math.min(1500 * Math.pow(2, attempt), 8000);
-              console.log(`⚠️ tRPC got ${response.status}${looksLikeHtml ? ' (HTML)' : ''}, retrying in ${delay}ms (attempt ${attempt + 1}/${maxRetries})`);
-              try { await response.text(); } catch {}
-              await new Promise(resolve => setTimeout(resolve, delay));
-              continue;
-            }
-
-            return response;
-          } catch (error: any) {
-            lastError = error;
-            const isNetworkError = error.message === 'Load failed' ||
-                                   error.message === 'Failed to fetch' ||
-                                   error.name === 'AbortError' ||
-                                   error.name === 'TypeError';
-
-            if (isNetworkError && attempt < maxRetries - 1) {
-              const delay = Math.min(1500 * Math.pow(2, attempt), 8000);
-              console.log(`⚠️ tRPC network error, retrying in ${delay}ms (attempt ${attempt + 1}/${maxRetries})`);
-              await new Promise(resolve => setTimeout(resolve, delay));
-              continue;
-            }
-
-            console.log(`⚠️ tRPC request failed (${attempt + 1}/${maxRetries}):`, error.message || error);
-            throw error;
-          }
+        if (typeof __DEV__ !== "undefined" && __DEV__) {
+          console.log("🚀 tRPC Request:", trpcUrl.substring(0, 180), options?.method || "GET");
         }
-
-        throw lastError || new Error('Failed after retries');
+        return trpcFetchWithRetries(trpcUrl, options, "react");
       },
     }),
   ],
@@ -160,52 +247,12 @@ export const trpcReactClient = trpc.createClient({
 
 export const trpcClient = createTRPCClient<AppRouter>({
   links: [
-    httpBatchLink({
+    httpLink({
       url: getTrpcUrl(),
-      headers: () => {
-        return {
-          'Content-Type': 'application/json',
-        };
-      },
-      fetch: async (url, options) => {
-        const trpcUrl = String(url);
-        const maxRetries = 5;
-        let lastError: Error | null = null;
-        for (let attempt = 0; attempt < maxRetries; attempt++) {
-          try {
-            const controller = new AbortController();
-            const timeoutId = setTimeout(() => controller.abort(), 45000);
-            const response = await fetch(trpcUrl, {
-              ...options,
-              signal: controller.signal,
-              mode: 'cors',
-              credentials: 'omit',
-            });
-            clearTimeout(timeoutId);
-            if ((response.status === 429 || response.status === 502 || response.status === 503 || response.status === 504) && attempt < maxRetries - 1) {
-              const delay = Math.min(1500 * Math.pow(2, attempt), 8000);
-              console.log(`⚠️ trpcClient got ${response.status}, retrying in ${delay}ms`);
-              try { await response.text(); } catch {}
-              await new Promise(resolve => setTimeout(resolve, delay));
-              continue;
-            }
-            return response;
-          } catch (error: any) {
-            lastError = error;
-            const isNetworkError = error.message === 'Load failed' ||
-                                   error.message === 'Failed to fetch' ||
-                                   error.name === 'AbortError' ||
-                                   error.name === 'TypeError';
-            if (isNetworkError && attempt < maxRetries - 1) {
-              const delay = Math.min(1500 * Math.pow(2, attempt), 8000);
-              await new Promise(resolve => setTimeout(resolve, delay));
-              continue;
-            }
-            throw error;
-          }
-        }
-        throw lastError || new Error('Failed after retries');
-      },
+      headers: () => ({
+        "Content-Type": "application/json",
+      }),
+      fetch: (url, options) => trpcFetchWithRetries(String(url), options, "client"),
     }),
   ],
 });

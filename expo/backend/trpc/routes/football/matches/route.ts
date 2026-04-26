@@ -1,5 +1,6 @@
 import { z } from 'zod';
 import { publicProcedure } from '@/backend/trpc/create-context';
+import { getFootballApiKeyFromEnv } from '@/backend/utils/footballApiKey';
 
 const BASE_URL = 'https://v3.football.api-sports.io';
 
@@ -178,16 +179,19 @@ export { INTERNATIONAL_COMPETITIONS };
 const CORE_LEAGUES = [39, 140, 78, 135, 61, 2, 3];
 const SECONDARY_LEAGUES = [848, 45, 48, 143, 81, 137, 66];
 
-export const getMatchesRoute = publicProcedure
-  .input(z.object({
-    type: z.enum(['live', 'upcoming', 'today', 'results']),
-    days: z.number().int().min(1).max(90).optional(),
-    leagueIds: z.array(z.number().int().positive().max(99999)).max(100).optional(),
-    teamIds: z.array(z.number().int().positive().max(99999)).max(30).optional(),
-    nationalTeamIds: z.array(z.number().int().positive().max(99999)).max(30).optional(),
-    includeAfcon: z.boolean().optional(),
-  }))
-  .query(async ({ input }) => {
+const getMatchesInputSchema = z.object({
+  type: z.enum(['live', 'upcoming', 'today', 'results']),
+  days: z.number().int().min(1).max(90).optional(),
+  leagueIds: z.array(z.number().int().positive().max(99999)).max(100).optional(),
+  teamIds: z.array(z.number().int().positive().max(99999)).max(30).optional(),
+  nationalTeamIds: z.array(z.number().int().positive().max(99999)).max(30).optional(),
+  includeAfcon: z.boolean().optional(),
+});
+
+type GetMatchesInput = z.infer<typeof getMatchesInputSchema>;
+
+/** Shared implementation; per-type response cache inside keeps repeated calls cheap. */
+async function fetchMatchesByType(input: GetMatchesInput) {
     const { type, days = 14, leagueIds, teamIds, nationalTeamIds, includeAfcon } = input;
 
     const topLevelCacheKey = getCacheKey(type, { days, leagueIds, teamIds, nationalTeamIds, includeAfcon });
@@ -200,13 +204,13 @@ export const getMatchesRoute = publicProcedure
 
     const staleTopLevel = getStaleFromCache(topLevelCacheKey);
 
-    const apiKey = process.env.FOOTBALL_API_KEY;
+    const apiKey = getFootballApiKeyFromEnv();
     const season = getCurrentSeason();
 
     console.log(`🏈 API-Football Request - Type: ${type}, Season: ${season}, Teams: ${teamIds?.length || 0}, NationalTeams: ${nationalTeamIds?.length || 0}, Budget: ${API_CALL_BUDGET_PER_MINUTE - apiCallCount} remaining`);
 
     if (!apiKey) {
-      console.error('❌ FOOTBALL_API_KEY not found in environment');
+      console.error('❌ No football API key: set FOOTBALL_API_KEY or EXPO_PUBLIC_FOOTBALL_API_KEY for the API server');
       if (staleTopLevel) return staleTopLevel;
       return { response: [], results: 0, errors: { config: 'API key not configured' }, paging: {}, parameters: { type, days } };
     }
@@ -418,6 +422,39 @@ export const getMatchesRoute = publicProcedure
 
     setCache(topLevelCacheKey, result);
     return result;
+}
+
+export const getMatchesRoute = publicProcedure
+  .input(getMatchesInputSchema)
+  .query(async ({ input }) => fetchMatchesByType(input));
+
+const getMatchesBundleInputSchema = z.object({
+  days: z.number().int().min(1).max(90).optional(),
+  leagueIds: z.array(z.number().int().positive().max(99999)).max(100).optional(),
+  teamIds: z.array(z.number().int().positive().max(99999)).max(30).optional(),
+  nationalTeamIds: z.array(z.number().int().positive().max(99999)).max(30).optional(),
+  includeAfcon: z.boolean().optional(),
+  /** When false, only live + upcoming are fetched (one client round-trip, fewer upstream calls). */
+  includeResults: z.boolean(),
+});
+
+export const getMatchesBundleRoute = publicProcedure
+  .input(getMatchesBundleInputSchema)
+  .query(async ({ input }) => {
+    const { includeResults, days, leagueIds, teamIds, nationalTeamIds, includeAfcon } = input;
+    const shared: Omit<GetMatchesInput, 'type'> = {
+      days,
+      leagueIds,
+      teamIds,
+      nationalTeamIds,
+      includeAfcon,
+    };
+    const [live, upcoming, results] = await Promise.all([
+      fetchMatchesByType({ ...shared, type: 'live' }),
+      fetchMatchesByType({ ...shared, type: 'upcoming' }),
+      includeResults ? fetchMatchesByType({ ...shared, type: 'results' }) : Promise.resolve(null),
+    ]);
+    return { live, upcoming, results };
   });
 
 export const getTeamLogosRoute = publicProcedure
@@ -426,12 +463,12 @@ export const getTeamLogosRoute = publicProcedure
   }))
   .query(async ({ input }) => {
     const { teamIds } = input;
-    const apiKey = process.env.FOOTBALL_API_KEY;
+    const apiKey = getFootballApiKeyFromEnv();
 
     console.log(`🏆 Fetching team logos for ${teamIds.length} teams`);
 
     if (!apiKey) {
-      console.error('❌ FOOTBALL_API_KEY not found in environment');
+      console.error('❌ No football API key: set FOOTBALL_API_KEY or EXPO_PUBLIC_FOOTBALL_API_KEY for the API server');
       return { logos: {} as Record<number, string> };
     }
 
@@ -477,14 +514,14 @@ export const getLeagueStandingsRoute = publicProcedure
   .query(async ({ input }) => {
     const { leagueId, season: inputSeason } = input;
     
-    const apiKey = process.env.FOOTBALL_API_KEY;
+    const apiKey = getFootballApiKeyFromEnv();
     const season = inputSeason || getCurrentSeason();
     
     console.log(`🏆 API-Football Standings Request - League: ${leagueId}, Season: ${season}`);
     console.log(`🔑 API Key check: ${apiKey ? `configured (${apiKey.length} chars)` : 'NOT CONFIGURED'}`);
     
     if (!apiKey) {
-      console.error('❌ FOOTBALL_API_KEY not found in environment');
+      console.error('❌ No football API key: set FOOTBALL_API_KEY or EXPO_PUBLIC_FOOTBALL_API_KEY for the API server');
       return {
         response: [],
         errors: { config: 'API key not configured' },
@@ -520,13 +557,13 @@ export const getMatchDetailsRoute = publicProcedure
   .query(async ({ input }) => {
     const { fixtureId } = input;
     
-    const apiKey = process.env.FOOTBALL_API_KEY;
+    const apiKey = getFootballApiKeyFromEnv();
     
     console.log(`🏈 API-Football Match Details Request - Fixture: ${fixtureId}`);
     console.log(`🔑 API Key check: ${apiKey ? `configured (${apiKey.length} chars)` : 'NOT CONFIGURED'}`);
     
     if (!apiKey) {
-      console.error('❌ FOOTBALL_API_KEY not found in environment');
+      console.error('❌ No football API key: set FOOTBALL_API_KEY or EXPO_PUBLIC_FOOTBALL_API_KEY for the API server');
       return {
         fixture: null,
         events: [],
