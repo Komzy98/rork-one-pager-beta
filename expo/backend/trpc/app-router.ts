@@ -3,6 +3,7 @@ import hiRoute from "./routes/example/hi/route";
 import { getMatchesRoute, getMatchDetailsRoute, getLeagueStandingsRoute, getTeamLogosRoute } from "./routes/football/matches/route";
 import { getMmaFightsRoute } from "./routes/mma/fights/route";
 import { generateVoiceRoute } from "./routes/ai/voice/route";
+import { createYounifyUserRoute, refreshYounifyTokensRoute } from "./routes/younify/auth/route";
 
 export const appRouter = createTRPCRouter({
   example: createTRPCRouter({
@@ -19,6 +20,10 @@ export const appRouter = createTRPCRouter({
   }),
   ai: createTRPCRouter({
     generateVoice: generateVoiceRoute,
+  }),
+  younify: createTRPCRouter({
+    createUser: createYounifyUserRoute,
+    refreshTokens: refreshYounifyTokensRoute,
   }),
 });
 
