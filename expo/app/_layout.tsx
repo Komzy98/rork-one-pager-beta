@@ -1,4 +1,5 @@
 import { configureYounify } from "../services/younify";
+import { warmupBackend } from "@/lib/trpc";
 
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { Stack, useRouter } from "expo-router";
@@ -116,9 +117,18 @@ function RootLayoutNav() {
 export default function RootLayout() {
   const router = useRouter();
   useEffect(() => {
-    configureYounify().catch((error) => {
-      console.error("Younify configure failed:", error);
-    });
+    (async () => {
+      try {
+        await warmupBackend(60000);
+      } catch (e) {
+        console.warn("Backend warmup failed:", e);
+      }
+      try {
+        await configureYounify();
+      } catch (error) {
+        console.error("Younify configure failed:", error);
+      }
+    })();
   }, []);
 
   useEffect(() => {
