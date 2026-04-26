@@ -6,7 +6,23 @@ import {
     StreamingCategories,
     type TokenHandler,
   } from "react-native-younify-connect-sdk";
-import { trpcClient } from "@/lib/trpc";
+
+  const getBackendUrl = () => {
+    const debuggerHost =
+      Constants.expoConfig?.hostUri ||
+      (Constants as any).manifest?.debuggerHost ||
+      "";
+  
+    const host = debuggerHost.split(":")[0];
+  
+    if (host) {
+      return `http://${host}:3000`;
+    }
+  
+    return "http://localhost:3000";
+  };
+  
+  const YOUNIFY_AUTH_BACKEND_URL = getBackendUrl();
 
   let configured = false;
   let younifyUserId: string | null = null;
@@ -14,13 +30,29 @@ let younifyAccessToken: string | null = null;
 let younifyRefreshToken: string | null = null;
 
 async function createYounifyUserTokens() {
-  console.log("[younify] requesting user tokens via tRPC");
+  console.log("Calling Younify backend:", `${YOUNIFY_AUTH_BACKEND_URL}/create-younify-user`);
 
-  const data = await trpcClient.younify.createUser.mutate({
-    externalUserId: "one-pager-dev-user",
+  const response = await fetch(`${YOUNIFY_AUTH_BACKEND_URL}/create-younify-user`, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({
+      externalUserId: "one-pager-dev-user",
+    }),
   });
 
-  console.log("[younify] received tokens:", { userId: data.userId });
+  const data = await response.json();
+  console.log("Backend token response:", data);
+
+  
+  if (!response.ok) {
+    throw new Error(data?.error || "Failed to create Younify user tokens");
+  }
+
+  if (!data.userId || !data.accessToken || !data.refreshToken) {
+    throw new Error("Backend did not return Younify user tokens");
+  }
 
   younifyUserId = data.userId;
   younifyAccessToken = data.accessToken;
@@ -38,9 +70,25 @@ async function refreshYounifyUserTokens() {
     throw new Error("Missing Younify user ID for token refresh");
   }
 
-  const data = await trpcClient.younify.refreshTokens.mutate({
-    userId: younifyUserId,
+  const response = await fetch(`${YOUNIFY_AUTH_BACKEND_URL}/refresh-younify-user-tokens`, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({
+      userId: younifyUserId,
+    }),
   });
+
+  const data = await response.json();
+
+  if (!response.ok) {
+    throw new Error(data?.error || "Failed to refresh Younify user tokens");
+  }
+
+  if (!data.accessToken || !data.refreshToken) {
+    throw new Error("Backend did not return refreshed Younify tokens");
+  }
 
   younifyAccessToken = data.accessToken;
   younifyRefreshToken = data.refreshToken;

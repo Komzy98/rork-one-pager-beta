@@ -88,52 +88,6 @@ const getTrpcUrl = () => {
   return url;
 };
 
-const getApiHealthUrl = () => {
-  const base = getBaseUrl();
-  const lowerBase = base.toLowerCase();
-  if (lowerBase.endsWith("/api")) return base;
-  return `${base}/api`;
-};
-
-let warmupPromise: Promise<void> | null = null;
-
-/**
- * Wakes up the Rork dev backend before making real tRPC calls.
- * The dev server hibernates and returns 429 HTML (or fails CORS) until warm.
- * Polls /api until it returns 200 or timeout.
- */
-export async function warmupBackend(timeoutMs = 60000): Promise<void> {
-  if (warmupPromise) return warmupPromise;
-  const url = getApiHealthUrl();
-  warmupPromise = (async () => {
-    const start = Date.now();
-    let attempt = 0;
-    while (Date.now() - start < timeoutMs) {
-      attempt++;
-      try {
-        const controller = new AbortController();
-        const t = setTimeout(() => controller.abort(), 8000);
-        const res = await fetch(url, { method: "GET", signal: controller.signal, mode: "cors", credentials: "omit" });
-        clearTimeout(t);
-        if (res.ok) {
-          console.log(`🔥 backend warm after ${attempt} attempt(s)`);
-          try { await res.text(); } catch {}
-          return;
-        }
-        try { await res.text(); } catch {}
-        console.log(`⏳ backend warmup ${url} -> ${res.status}, retrying...`);
-      } catch (e: any) {
-        console.log(`⏳ backend warmup network error: ${e?.message ?? e}`);
-      }
-      await new Promise((r) => setTimeout(r, 2500));
-    }
-    console.warn("⚠️ backend warmup timed out, continuing anyway");
-  })().finally(() => {
-    setTimeout(() => { warmupPromise = null; }, 30_000);
-  });
-  return warmupPromise;
-}
-
 export const trpcReactClient = trpc.createClient({
   links: [
     httpBatchLink({
@@ -148,7 +102,7 @@ export const trpcReactClient = trpc.createClient({
         const trpcUrl = String(url);
         console.log('🚀 tRPC Request:', trpcUrl.substring(0, 150), options?.method || 'GET');
 
-        const maxRetries = 8;
+        const maxRetries = 5;
         let lastError: Error | null = null;
 
         for (let attempt = 0; attempt < maxRetries; attempt++) {
@@ -215,9 +169,8 @@ export const trpcClient = createTRPCClient<AppRouter>({
       },
       fetch: async (url, options) => {
         const trpcUrl = String(url);
-        const maxRetries = 8;
+        const maxRetries = 5;
         let lastError: Error | null = null;
-        try { await warmupBackend(15000); } catch {}
         for (let attempt = 0; attempt < maxRetries; attempt++) {
           try {
             const controller = new AbortController();
