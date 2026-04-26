@@ -7,7 +7,6 @@ import { createContext } from "./trpc/create-context";
 import { getFootballApiKeyFromEnv } from "./utils/footballApiKey";
 import { generalRateLimiter, authRateLimiter } from "./middleware/rate-limiter";
 import { payloadSizeLimiter, inputSanitizer } from "./middleware/sanitizer";
-import younifyAuth from "./routes/younify-auth";
 
 const app = new Hono();
 
@@ -68,9 +67,6 @@ app.all("/api/trpc", (c) => handleTrpcRequest(c));
 app.all("/api/trpc/*", (c) => handleTrpcRequest(c));
 app.all("/trpc", (c) => handleTrpcRequest(c));
 app.all("/trpc/*", (c) => handleTrpcRequest(c));
-
-app.route("/api/younify", younifyAuth);
-app.route("/younify", younifyAuth);
 
 app.get("/", (c) => {
   return c.json({ status: "ok", message: "API is running" });

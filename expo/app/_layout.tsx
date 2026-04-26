@@ -120,10 +120,10 @@ export default function RootLayout() {
       const msg = error instanceof Error ? error.message : String(error);
       const authDown =
         /Younify auth unreachable|Network request failed/i.test(msg) ||
-        /127\.0\.0\.1:(3000|8081)|create-younify-user|\/api\/younify/i.test(msg);
+        /127\.0\.0\.1:3000|create-younify-user/i.test(msg);
       if (__DEV__ && authDown) {
         console.warn(
-          "[Younify] Auth endpoint unreachable — make sure the Expo API server is up and EXPO_PUBLIC_RORK_API_BASE_URL is set; or set YOUNIFY_API_KEY in env.",
+          "[Younify] Auth on :3000 is not running — streaming/linked services are off until you start it. Run: npm run younify-auth",
         );
         return;
       }
