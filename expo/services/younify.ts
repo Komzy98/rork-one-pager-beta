@@ -7,22 +7,40 @@ import {
     type TokenHandler,
   } from "react-native-younify-connect-sdk";
 
-  const getBackendUrl = () => {
-    const debuggerHost =
-      Constants.expoConfig?.hostUri ||
-      (Constants as any).manifest?.debuggerHost ||
-      "";
-  
-    const host = debuggerHost.split(":")[0];
-  
-    if (host) {
-      return `http://${host}:3000`;
+  const stripTrailingSlashes = (value: string) => value.replace(/\/+$/, "");
+const stripKnownSuffixes = (value: string) => {
+  const suffixes = ["/api/trpc", "/trpc", "/api"];
+  const lower = value.toLowerCase();
+  for (const suffix of suffixes) {
+    if (lower.endsWith(suffix)) {
+      return value.slice(0, value.length - suffix.length);
     }
-  
-    return "http://localhost:3000";
-  };
-  
-  const YOUNIFY_AUTH_BACKEND_URL = getBackendUrl();
+  }
+  return value;
+};
+
+const getApiBaseUrl = () => {
+  const envBase = process.env.EXPO_PUBLIC_RORK_API_BASE_URL;
+  if (envBase && envBase.trim().length > 0) {
+    return `${stripKnownSuffixes(stripTrailingSlashes(envBase.trim()))}/api`;
+  }
+
+  if (typeof window !== "undefined" && window.location) {
+    return `${window.location.protocol}//${window.location.host}/api`;
+  }
+
+  const hostUri =
+    Constants.expoConfig?.hostUri ||
+    (Constants as any).manifest?.debuggerHost ||
+    "";
+  const host = hostUri.split("/")[0]?.split(":")[0];
+  if (host) {
+    return `http://${host}:8081/api`;
+  }
+  return "http://localhost:8081/api";
+};
+
+const YOUNIFY_AUTH_BACKEND_URL = getApiBaseUrl();
 
   let configured = false;
   let younifyUserId: string | null = null;
@@ -30,9 +48,9 @@ let younifyAccessToken: string | null = null;
 let younifyRefreshToken: string | null = null;
 
 async function createYounifyUserTokens() {
-  console.log("Calling Younify backend:", `${YOUNIFY_AUTH_BACKEND_URL}/create-younify-user`);
+  console.log("Calling Younify backend:", `${YOUNIFY_AUTH_BACKEND_URL}/younify/create-user`);
 
-  const response = await fetch(`${YOUNIFY_AUTH_BACKEND_URL}/create-younify-user`, {
+  const response = await fetch(`${YOUNIFY_AUTH_BACKEND_URL}/younify/create-user`, {
     method: "POST",
     headers: {
       "Content-Type": "application/json",
@@ -70,7 +88,7 @@ async function refreshYounifyUserTokens() {
     throw new Error("Missing Younify user ID for token refresh");
   }
 
-  const response = await fetch(`${YOUNIFY_AUTH_BACKEND_URL}/refresh-younify-user-tokens`, {
+  const response = await fetch(`${YOUNIFY_AUTH_BACKEND_URL}/younify/refresh-tokens`, {
     method: "POST",
     headers: {
       "Content-Type": "application/json",
