@@ -10,13 +10,15 @@ import {
 } from "react-native-younify-connect-sdk";
 
 /**
- * Younify token minting hits your small Node backend (`create-younify-user`, etc.).
- * - **Explicit:** `EXPO_PUBLIC_YOUNIFY_AUTH_URL` or `expo.extra.younifyAuthUrl` (required for production devices).
- * - **Simulator / emulator (__DEV__):** `expo-device` reports `!isDevice` → auth uses host loopback (`127.0.0.1` iOS,
- *   `10.0.2.2` Android) so a server bound only to localhost on your Mac is reachable.
- * - **Physical device (__DEV__):** Uses `http://<metro-host>:3000` from Metro’s `hostUri` (auth should listen on `0.0.0.0`
- *   or set `EXPO_PUBLIC_YOUNIFY_AUTH_URL`). Override with `EXPO_PUBLIC_YOUNIFY_AUTH_USE_METRO_HOST=1` / `USE_LAN` if needed.
+ * Younify token minting now lives inside the Expo app's Hono backend at `/api/younify/*`,
+ * so it works in Rork (no separate Node server required).
+ * Override with `EXPO_PUBLIC_YOUNIFY_AUTH_URL` or `expo.extra.younifyAuthUrl` if you want to
+ * point at a different host (e.g. a deployed proxy).
  */
+function stripTrailingSlash(s: string) {
+  return s.replace(/\/+$/, "");
+}
+
 function getYounifyAuthBackendBaseUrl(): string {
   const extra = Constants.expoConfig?.extra as Record<string, unknown> | undefined;
   const fromExtra = [extra?.younifyAuthUrl, extra?.younifyBackendUrl]
@@ -26,26 +28,33 @@ function getYounifyAuthBackendBaseUrl(): string {
 
   const explicit = fromEnv || fromExtra;
   if (explicit) {
-    return explicit.replace(/\/$/, "");
+    return stripTrailingSlash(explicit);
   }
 
-  const forceMetroLanHost =
-    process.env.EXPO_PUBLIC_YOUNIFY_AUTH_USE_METRO_HOST === "1" ||
-    process.env.EXPO_PUBLIC_YOUNIFY_AUTH_USE_LAN === "1";
+  const apiBase = process.env.EXPO_PUBLIC_RORK_API_BASE_URL?.trim();
+  if (apiBase) {
+    const cleaned = stripTrailingSlash(apiBase).replace(/\/api\/trpc$|\/trpc$/i, "");
+    return `${cleaned}/api/younify`;
+  }
 
-  if (__DEV__ && !forceMetroLanHost && !Device.isDevice) {
-    if (Platform.OS === "ios") return "http://127.0.0.1:3000";
-    if (Platform.OS === "android") return "http://10.0.2.2:3000";
+  if (typeof window !== "undefined" && window.location) {
+    return `${window.location.protocol}//${window.location.host}/api/younify`;
   }
 
   const debuggerHost =
     Constants.expoConfig?.hostUri || (Constants as any).manifest?.debuggerHost || "";
   const host = debuggerHost.split(":")[0];
   if (host) {
-    return `http://${host}:3000`;
+    if (__DEV__ && Platform.OS === "ios" && !Device.isDevice) {
+      return `http://127.0.0.1:8081/api/younify`;
+    }
+    if (__DEV__ && Platform.OS === "android" && !Device.isDevice) {
+      return `http://10.0.2.2:8081/api/younify`;
+    }
+    return `http://${host}:8081/api/younify`;
   }
 
-  return "http://127.0.0.1:3000";
+  return `http://127.0.0.1:8081/api/younify`;
 }
 
 /** SDK key must come from EXPO_PUBLIC_YOUNIFY_SDK_KEY (EAS env / .env). */
@@ -83,6 +92,7 @@ async function createYounifyUserTokens() {
   const url = `${base}/create-younify-user`;
   if (__DEV__) console.log("Calling Younify backend:", url);
 
+
   let response: Response;
   try {
     response = await fetch(url, {
@@ -96,7 +106,7 @@ async function createYounifyUserTokens() {
     });
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err);
-    const errorMessage = `Younify auth unreachable at ${url} (${msg}). Start the backend: expo/backend/younify-auth (node server.js on port 3000).`;
+    const errorMessage = `Younify auth unreachable at ${url} (${msg}). Make sure the Expo API server is running and EXPO_PUBLIC_RORK_API_BASE_URL points to it.`;
     setYounifyRuntimeIssue(errorMessage);
     throw new Error(errorMessage);
   }
