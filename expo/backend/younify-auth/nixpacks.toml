@@ -1,0 +1,9 @@
+# Fallback if Railway uses Nixpacks instead of Docker.
+[variables]
+NIXPACKS_NODE_VERSION = "20"
+
+[phases.install]
+cmds = ["npm ci"]
+
+[start]
+cmd = "npm start"

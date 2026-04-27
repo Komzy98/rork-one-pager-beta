@@ -10,7 +10,7 @@
         "projectId": "39ee08f1-7685-4270-a8b8-1240a24ac20c"
       }
     },
-    "version": "1.0.0",
+    "version": "2.0.0",
     "orientation": "portrait",
     "icon": "./assets/images/icon.png",
     "scheme": "onepager",
@@ -24,7 +24,7 @@
     "ios": {
       "supportsTablet": true,
       "bundleIdentifier": "app.rork.OPbeta",
-      "buildNumber": "2",
+      "buildNumber": "3",
       "usesIcloudStorage": true,
       "infoPlist": {
         "UIBackgroundModes": [
