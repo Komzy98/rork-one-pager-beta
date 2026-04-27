@@ -1,6 +1,29 @@
 import { supabase, supabaseConfigured, supabaseUrl } from './supabaseClient';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 
+function looksLikeTransportFailure(err: any, msg: string): boolean {
+  const m = msg.toLowerCase();
+  if (
+    m.includes('failed to fetch') ||
+    m.includes('networkerror') ||
+    m.includes('network request failed') ||
+    m.includes('load failed') ||
+    m.includes('the internet connection appears to be offline')
+  ) {
+    return true;
+  }
+  // RN fetch often throws TypeError with a transport message — not every TypeError is network.
+  if (err?.name === 'TypeError') {
+    return (
+      m.includes('network') ||
+      m.includes('fetch') ||
+      m.includes('aborted') ||
+      m.includes('timeout')
+    );
+  }
+  return false;
+}
+
 async function executeWithRetry<T>(fn: () => PromiseLike<T> | T, retries = 2, delayMs = 800): Promise<T> {
   let lastErr: any;
   for (let attempt = 0; attempt <= retries; attempt++) {
@@ -9,11 +32,7 @@ async function executeWithRetry<T>(fn: () => PromiseLike<T> | T, retries = 2, de
     } catch (err: any) {
       lastErr = err;
       const msg = err?.message || String(err);
-      const isNetwork =
-        msg.includes('Failed to fetch') ||
-        msg.includes('NetworkError') ||
-        msg.includes('Network request failed') ||
-        err?.name === 'TypeError';
+      const isNetwork = looksLikeTransportFailure(err, msg);
       console.warn(`[supabaseSync] attempt ${attempt + 1} failed:`, msg, 'retryable:', isNetwork);
       if (!isNetwork || attempt === retries) break;
       await new Promise((r) => setTimeout(r, delayMs * (attempt + 1)));
@@ -104,7 +123,11 @@ export const syncAllDataToCloud = async (data: Partial<SyncableData>): Promise<b
         hint: (error as any).hint,
         status,
       };
-      console.warn('[supabaseSync] Upsert error:', details);
+      try {
+        console.warn('[supabaseSync] Upsert error:', JSON.stringify(details));
+      } catch {
+        console.warn('[supabaseSync] Upsert error:', details);
+      }
       const parts = [
         error.message,
         (error as any).details,
@@ -119,11 +142,10 @@ export const syncAllDataToCloud = async (data: Partial<SyncableData>): Promise<b
     console.log('[supabaseSync] Data synced to Supabase user_data (status', status, ')');
     return true;
   } catch (error: any) {
-    const raw = error?.message || (typeof error === 'string' ? error : JSON.stringify(error));
-    const isNetwork =
-      raw.includes('Failed to fetch') ||
-      raw.includes('NetworkError') ||
-      raw.includes('Network request failed');
+    const raw =
+      error?.message ||
+      (typeof error === 'string' ? error : JSON.stringify(error, Object.getOwnPropertyNames(error)));
+    const isNetwork = looksLikeTransportFailure(error, String(raw));
     const msg = isNetwork
       ? `Network error reaching Supabase (${supabaseUrl || 'no url set'}). Make sure EXPO_PUBLIC_SUPABASE_URL is your Project API URL like https://<ref>.supabase.co (NOT the dashboard URL on supabase.com).`
       : raw;

@@ -1,3 +1,5 @@
+// Required for @supabase/supabase-js on React Native / Hermes (avoids broken URL → "Network request failed").
+import 'react-native-url-polyfill/auto';
 import { createClient, SupabaseClient } from '@supabase/supabase-js';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { Platform } from 'react-native';

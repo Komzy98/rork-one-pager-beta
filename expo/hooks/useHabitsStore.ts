@@ -148,6 +148,13 @@ const migrateDataToUserKeys = async (userId: string) => {
   }
 };
 
+/** Do not replace local habits with cloud [] when this device already has habits (empty cloud row / bad merge). */
+function shouldApplyCloudHabits(cloudHabits: unknown, localHabits: Habit[] | undefined): cloudHabits is Habit[] {
+  if (!Array.isArray(cloudHabits)) return false;
+  if (cloudHabits.length > 0) return true;
+  return !(localHabits && localHabits.length > 0);
+}
+
 export const [AppProvider, useApp] = createContextHook(() => {
   const queryClient = useQueryClient();
   const { user } = useAuth();
@@ -160,12 +167,24 @@ export const [AppProvider, useApp] = createContextHook(() => {
   const SHOWS_STORAGE_KEY = React.useMemo(() => getUserStorageKey('shows', userId), [userId]);
   const SPORTS_STORAGE_KEY = React.useMemo(() => getUserStorageKey('sports', userId), [userId]);
   
-  // Run migration when user changes
+  // Run migration when user changes, then refetch so user-scoped keys pick up migrated data.
   useEffect(() => {
-    if (userId) {
-      void migrateDataToUserKeys(userId);
-    }
-  }, [userId]);
+    if (!userId) return;
+    let cancelled = false;
+    void (async () => {
+      await migrateDataToUserKeys(userId);
+      if (cancelled) return;
+      await Promise.all([
+        queryClient.invalidateQueries({ queryKey: ['habits', userId] }),
+        queryClient.invalidateQueries({ queryKey: ['activities', userId] }),
+        queryClient.invalidateQueries({ queryKey: ['shows', userId] }),
+        queryClient.invalidateQueries({ queryKey: ['sports', userId] }),
+      ]);
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [userId, queryClient]);
   
   // Fetch habits from AsyncStorage
   const habitsQuery = useQuery({
@@ -277,7 +296,8 @@ export const [AppProvider, useApp] = createContextHook(() => {
         const cloudData = await supabaseSync.loadFromCloud();
         if (!cloudData || cancelled) return;
 
-        if (Array.isArray(cloudData.habits)) {
+        const localHabitsHydrate = queryClient.getQueryData<Habit[]>(['habits', userId]);
+        if (shouldApplyCloudHabits(cloudData.habits, localHabitsHydrate)) {
           queryClient.setQueryData(['habits', userId], cloudData.habits);
           await unifiedStorage.setItem(HABITS_STORAGE_KEY, JSON.stringify(cloudData.habits));
         }
@@ -316,7 +336,8 @@ export const [AppProvider, useApp] = createContextHook(() => {
   useEffect(() => {
     if (!userId || !supabaseSync.setupRealtimeSync) return;
     const unsubscribe = supabaseSync.setupRealtimeSync((cloudData) => {
-      if (Array.isArray(cloudData.habits)) {
+      const localHabitsRt = queryClient.getQueryData<Habit[]>(['habits', userId]);
+      if (shouldApplyCloudHabits(cloudData.habits, localHabitsRt)) {
         queryClient.setQueryData(['habits', userId], cloudData.habits);
         void unifiedStorage.setItem(HABITS_STORAGE_KEY, JSON.stringify(cloudData.habits));
       }

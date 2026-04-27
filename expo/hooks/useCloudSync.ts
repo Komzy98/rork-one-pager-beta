@@ -171,7 +171,8 @@ export const [CloudSyncProvider, useCloudSync] = createContextHook(() => {
         ? err.message
         : (err?.message || (typeof err === 'string' ? err : JSON.stringify(err)) || 'Sync failed');
       setError(msg);
-      console.error('Sync to cloud failed:', msg, err);
+      // warn: handled failure (Profile shows error); error would trigger dev LogBox over the whole app
+      console.warn('Sync to cloud failed:', msg, err);
       return false;
     }
   }, [isAuthenticated, user, useSupabase, cloudStorage, isCloudEnabled, habits, activities, shows, sports, allTasks, projects, timeEntries, profile, contextsReady]);
@@ -232,7 +233,7 @@ export const [CloudSyncProvider, useCloudSync] = createContextHook(() => {
         ? err.message
         : (err?.message || (typeof err === 'string' ? err : JSON.stringify(err)) || 'Sync failed');
       setError(msg);
-      console.error('Sync from cloud failed:', msg, err);
+      console.warn('Sync from cloud failed:', msg, err);
       return false;
     }
   }, [isAuthenticated, user, useSupabase, cloudStorage, isCloudEnabled, contextsReady]);
