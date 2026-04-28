@@ -17,10 +17,12 @@
     "ios:sim": "open -a Simulator && npx expo start --dev-client --localhost --port 8081 --ios",
     "ios:sim:refresh": "open -a Simulator && npx expo start --dev-client --localhost --port 8081 --clear --ios",
     "ios:sim:full": "bash scripts/run-ios-with-younify-auth.sh",
-    "younify-auth": "node backend/younify-auth/server.js"
+    "younify-auth": "node backend/younify-auth/server.js",
+    "api:public": "tsx backend/serve.ts"
   },
   "dependencies": {
     "@expo/vector-icons": "^15.0.3",
+    "@hono/node-server": "^1.19.14",
     "@hono/trpc-server": "^0.4.2",
     "@nkzw/create-context-hook": "^1.1.0",
     "@react-native-async-storage/async-storage": "2.2.0",
@@ -31,6 +33,7 @@
     "@trpc/client": "^11.6.0",
     "@trpc/react-query": "^11.6.0",
     "@trpc/server": "^11.6.0",
+    "dotenv": "^17.4.2",
     "expo": "^54.0.22",
     "expo-audio": "~1.1.1",
     "expo-auth-session": "~7.0.10",
@@ -72,6 +75,7 @@
     "react-native-worklets": "^0.8.1",
     "react-native-younify-connect-sdk": "file:./vendor/react-native-younify-connect-sdk-1.0.3.tgz",
     "superjson": "^2.2.6",
+    "tsx": "^4.21.0",
     "zod": "^4.3.6"
   },
   "devDependencies": {
