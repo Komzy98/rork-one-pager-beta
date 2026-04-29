@@ -330,7 +330,7 @@ const formatDistanceKm = (km: number): string => {
 };
 
 export default function EventsScreen() {
-  const { isDark } = useTheme();
+  const { colors } = useTheme();
   const { profile } = useUserProfile();
   const insets = useSafeAreaInsets();
   const [selectedCategory, setSelectedCategory] = useState<string>('all');
@@ -427,16 +427,16 @@ export default function EventsScreen() {
     ));
   }, []);
 
-  const accentColor = '#E84393';
-  const accentLight = '#FDE8F0';
-  const secondaryAccent = '#6C5CE7';
+  const accentColor = colors.primary;
+  const accentLight = colors.primaryLight;
+  const secondaryAccent = colors.secondary;
 
-  const warmBg = isDark ? '#0F0D15' : '#F9F7FC';
-  const cardBg = isDark ? '#1C1926' : '#FFFFFF';
-  const cardBorder = isDark ? '#2D2840' : '#EDE8F5';
-  const subtleText = isDark ? '#8B82A0' : '#7C7291';
-  const mainText = isDark ? '#F0ECF5' : '#1A1428';
-  const secondaryBg = isDark ? '#16131F' : '#F4F0FA';
+  const warmBg = colors.background;
+  const cardBg = colors.card;
+  const cardBorder = colors.border;
+  const subtleText = colors.textSecondary;
+  const mainText = colors.text;
+  const secondaryBg = colors.surfaceSecondary;
 
   const formatAttendees = (count: number): string => {
     if (count >= 1000) return `${(count / 1000).toFixed(1)}k`;
@@ -545,7 +545,7 @@ export default function EventsScreen() {
           <View style={styles.headerActions}>
             <TouchableOpacity
               style={[styles.viewToggle, {
-                backgroundColor: viewMode === 'map' ? accentColor : (isDark ? '#1C1926' : accentLight),
+                backgroundColor: viewMode === 'map' ? accentColor : cardBg,
               }]}
               onPress={toggleViewMode}
               activeOpacity={0.7}
@@ -572,7 +572,7 @@ export default function EventsScreen() {
               </Text>
             </TouchableOpacity>
             <TouchableOpacity
-              style={[styles.headerAction, { backgroundColor: isDark ? '#1C1926' : accentLight }]}
+              style={[styles.headerAction, { backgroundColor: cardBg }]}
               onPress={() => void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light)}
             >
               <Ticket size={20} color={accentColor} />
@@ -672,10 +672,8 @@ export default function EventsScreen() {
               const distanceKm = haversineDistanceKm(USER_LOCATION.latitude, USER_LOCATION.longitude, event.latitude, event.longitude);
               const distanceText = formatDistanceKm(distanceKm);
               const isFree = event.price === 'Free';
-              const priceBg = isFree
-                ? (isDark ? '#1A2E1A' : '#E8F8E8')
-                : (isDark ? '#2D1520' : accentLight);
-              const priceTextColor = isFree ? '#34C759' : accentColor;
+              const priceBg = isFree ? colors.successLight : accentLight;
+              const priceTextColor = isFree ? colors.success : accentColor;
 
               const isActive = selectedMapEvent === event.id;
               return (
@@ -859,13 +857,13 @@ export default function EventsScreen() {
                       styles.mapCardPriceBadge,
                       {
                         backgroundColor: selectedMapEventData.price === 'Free'
-                          ? (isDark ? '#1A2E1A' : '#E8F8E8')
-                          : (isDark ? '#2D1520' : accentLight),
+                          ? colors.successLight
+                          : accentLight,
                       },
                     ]}>
                       <Text style={[
                         styles.mapCardPriceText,
-                        { color: selectedMapEventData.price === 'Free' ? '#34C759' : accentColor },
+                        { color: selectedMapEventData.price === 'Free' ? colors.success : accentColor },
                       ]}>
                         {selectedMapEventData.price}
                       </Text>
@@ -920,7 +918,7 @@ export default function EventsScreen() {
                 <Text style={styles.sectionEmoji}>📋</Text>
                 <Text style={[styles.sectionTitle, { color: mainText }]}>My Upcoming</Text>
               </View>
-              <View style={[styles.countBadge, { backgroundColor: isDark ? '#2D2840' : accentLight }]}>
+              <View style={[styles.countBadge, { backgroundColor: secondaryBg }]}>
                 <Text style={[styles.countText, { color: accentColor }]}>{MY_UPCOMING.length}</Text>
               </View>
             </View>
@@ -943,10 +941,10 @@ export default function EventsScreen() {
                 </View>
                 <View style={styles.upcomingRight}>
                   <View style={[styles.daysBadge, {
-                    backgroundColor: item.daysUntil <= 3 ? (isDark ? '#2D1520' : '#FDE8F0') : secondaryBg,
+                    backgroundColor: item.daysUntil <= 3 ? colors.errorLight : secondaryBg,
                   }]}>
                     <Text style={[styles.daysText, {
-                      color: item.daysUntil <= 3 ? accentColor : secondaryAccent,
+                      color: item.daysUntil <= 3 ? colors.error : secondaryAccent,
                     }]}>
                       {item.daysUntil === 0 ? 'Today' : item.daysUntil === 1 ? 'Tomorrow' : `${item.daysUntil}d`}
                     </Text>
@@ -1093,10 +1091,8 @@ export default function EventsScreen() {
               );
               const distanceText = formatDistanceKm(distanceKm);
               const isFree = event.price === 'Free';
-              const priceBg = isFree
-                ? (isDark ? '#1A2E1A' : '#E8F8E8')
-                : (isDark ? '#2D1520' : accentLight);
-              const priceTextColor = isFree ? '#34C759' : accentColor;
+              const priceBg = isFree ? colors.successLight : accentLight;
+              const priceTextColor = isFree ? colors.success : accentColor;
               return (
                 <TouchableOpacity
                   key={event.id}
@@ -1262,7 +1258,7 @@ export default function EventsScreen() {
               <Text style={styles.sectionEmoji}>🎟️</Text>
               <Text style={[styles.sectionTitle, { color: mainText }]}>My Events</Text>
             </View>
-            <View style={[styles.countBadge, { backgroundColor: isDark ? '#2D2840' : accentLight }]}>
+            <View style={[styles.countBadge, { backgroundColor: secondaryBg }]}>
               <Text style={[styles.countText, { color: accentColor }]}>{savedEvents.length}</Text>
             </View>
           </View>
@@ -1327,7 +1323,7 @@ export default function EventsScreen() {
         </View>
 
         <View style={styles.section}>
-          <View style={[styles.tipCard, { backgroundColor: isDark ? '#1A1828' : '#F0ECFA' }]}>
+          <View style={[styles.tipCard, { backgroundColor: secondaryBg }]}>
             <Text style={styles.tipEmoji}>💡</Text>
             <View style={styles.tipContent}>
               <Text style={[styles.tipTitle, { color: mainText }]}>Event Tip</Text>
@@ -2080,7 +2076,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   smartDiscoveryTabText: {
-    fontSize: 13,
+    fontSize: 11,
     fontWeight: '700' as const,
     textAlign: 'center',
   },

@@ -17,7 +17,7 @@ import { Link, useRouter } from 'expo-router';
 import * as AuthSession from 'expo-auth-session';
 import * as WebBrowser from 'expo-web-browser';
 import * as Crypto from 'expo-crypto';
-import { Mail, Lock, Eye, EyeOff, Settings, Trash2, UserPlus, AlertCircle, CheckCircle, Scan, Fingerprint } from 'lucide-react-native';
+import { Mail, Lock, Eye, EyeOff, Settings, Trash2, UserPlus, AlertCircle, CheckCircle, Scan, Fingerprint, Shield } from 'lucide-react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import * as Haptics from 'expo-haptics';
 import { useAuth } from '@/hooks/useAuth';
@@ -32,7 +32,7 @@ interface ValidationErrors {
 
 export default function LoginScreen() {
   const router = useRouter();
-  const { login, signup, createDemoUser, clearAllData, continueAsGuest, biometricAuth, loginWithGoogle, loginWithGoogleOAuth, googleAuthConfig } = useAuth();
+  const { login, signup, createDemoUser, clearAllData, continueAsGuest, biometricAuth, loginWithGoogle, loginWithGoogleOAuth, googleAuthConfig, mfa } = useAuth();
   const insets = useSafeAreaInsets();
 
 
@@ -518,6 +518,14 @@ export default function LoginScreen() {
           </View>
           <Text style={styles.title}>Sign In</Text>
           <Text style={styles.subtitle}>Enter your credentials to continue</Text>
+          {!mfa?.isSupported ? null : (
+            <View style={styles.securityHintRow}>
+              <Shield size={14} color={mfa.isEnabled ? COLORS.success : COLORS.textLight} />
+              <Text style={styles.securityHintText}>
+                {mfa.isEnabled ? '2FA enabled for this account' : 'Add 2FA in Profile > Security'}
+              </Text>
+            </View>
+          )}
         </View>
 
         <View style={styles.form}>
@@ -867,6 +875,23 @@ const styles = StyleSheet.create({
     fontSize: 16,
     color: COLORS.textLight,
     textAlign: 'center',
+  },
+  securityHintRow: {
+    marginTop: 10,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    borderRadius: 999,
+    backgroundColor: COLORS.surfaceSecondary,
+    borderWidth: 1,
+    borderColor: COLORS.border,
+  },
+  securityHintText: {
+    fontSize: 12,
+    color: COLORS.textLight,
+    fontWeight: '600',
   },
   form: {
     width: '100%',

@@ -575,8 +575,8 @@ export default function ActivitiesScreen() {
     const hasNationalities = profile?.nationalities && profile.nationalities.length > 0;
     
     if (!hasFavoriteTeams && !hasNationalities) {
-      console.log('🔍 [Activities] No favorite teams or nationalities set - showing all matches');
-      return matches;
+      console.log('🔍 [Activities] No favorite teams or nationalities set - showing no favorite matches');
+      return [];
     }
     
     console.log('🔍 [Activities] Filtering', matches.length, 'matches for', 
@@ -1622,7 +1622,7 @@ export default function ActivitiesScreen() {
             </Animated.View>
 
             {/* Live Match Alert */}
-            {liveMatches.length > 0 && !liveBannerDismissed && (
+            {hasSportsInterest && liveMatches.length > 0 && !liveBannerDismissed && (
               <Animated.View 
                 style={[
                   styles.liveMatchAlert,

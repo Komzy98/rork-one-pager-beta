@@ -133,11 +133,11 @@ const AVAILABLE_INTERESTS = [
   { id: 'work', name: 'Work', color: '#8E8E93', tabs: ['tasks'] },
 ];
 
-type ExpandedSection = 'favorites' | 'notifications' | 'appearance' | 'achievements' | 'challenges' | null;
+type ExpandedSection = 'favorites' | 'notifications' | 'security' | 'appearance' | 'achievements' | 'challenges' | null;
 
 export default function ProfileScreen() {
   const { colors, isDark, setThemeMode } = useTheme();
-  const { user, logout, deleteAccount, isGuest } = useAuth();
+  const { user, logout, deleteAccount, isGuest, mfa } = useAuth();
   const {
     profile,
     updateProfile,
@@ -196,6 +196,10 @@ export default function ProfileScreen() {
   const [showTabOrderModal, setShowTabOrderModal] = useState<boolean>(false);
   const [tempTabOrder, setTempTabOrder] = useState<string[]>([]);
   const [isImportingLocal, setIsImportingLocal] = useState<boolean>(false);
+  const [mfaFactorId, setMfaFactorId] = useState<string | null>(null);
+  const [mfaQrCode, setMfaQrCode] = useState<string | null>(null);
+  const [mfaSecret, setMfaSecret] = useState<string | null>(null);
+  const [mfaCode, setMfaCode] = useState<string>('');
 
   const hasInterest = (interestId: string) => profile?.interests?.includes(interestId) ?? false;
   const hasSportsInterest = hasInterest('football');
@@ -211,6 +215,72 @@ export default function ProfileScreen() {
     const newMode = isDark ? 'light' : 'dark';
     setThemeMode(newMode);
   }, [isDark, setThemeMode]);
+
+  const mfaQrImageUri = useCallback((rawQr?: string | null) => {
+    if (!rawQr) return null;
+    if (rawQr.startsWith('data:image')) return rawQr;
+    if (rawQr.trim().startsWith('<svg')) {
+      return `data:image/svg+xml;utf8,${encodeURIComponent(rawQr)}`;
+    }
+    return rawQr;
+  }, []);
+
+  const handleStartMfaSetup = useCallback(async () => {
+    if (!mfa.isSupported) {
+      Alert.alert('Unavailable', 'Two-factor authentication requires cloud auth on mobile.');
+      return;
+    }
+    const result = await mfa.startSetup();
+    if (!result.success || !result.factorId) {
+      Alert.alert('2FA setup failed', result.error || 'Could not start setup');
+      return;
+    }
+    setMfaFactorId(result.factorId);
+    setMfaQrCode(result.qrCode || null);
+    setMfaSecret(result.secret || null);
+    setMfaCode('');
+  }, [mfa]);
+
+  const handleVerifyMfaSetup = useCallback(async () => {
+    if (!mfaFactorId) return;
+    const result = await mfa.verifySetup(mfaFactorId, mfaCode);
+    if (!result.success) {
+      Alert.alert('Verification failed', result.error || 'Invalid code');
+      return;
+    }
+    Alert.alert('2FA enabled', 'Your account is now protected with two-factor authentication.');
+    setMfaFactorId(null);
+    setMfaQrCode(null);
+    setMfaSecret(null);
+    setMfaCode('');
+    await mfa.refreshStatus();
+  }, [mfa, mfaCode, mfaFactorId]);
+
+  const handleDisableMfa = useCallback(async () => {
+    Alert.alert(
+      'Disable two-factor authentication?',
+      'Your account will no longer require a one-time code at login.',
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Disable',
+          style: 'destructive',
+          onPress: async () => {
+            const result = await mfa.disable();
+            if (!result.success) {
+              Alert.alert('Could not disable 2FA', result.error || 'Please try again.');
+              return;
+            }
+            Alert.alert('2FA disabled', 'Two-factor authentication has been turned off.');
+            setMfaFactorId(null);
+            setMfaQrCode(null);
+            setMfaSecret(null);
+            setMfaCode('');
+          },
+        },
+      ]
+    );
+  }, [mfa]);
 
   const pickImage = useCallback(async (source: 'camera' | 'library') => {
     try {
@@ -821,6 +891,128 @@ export default function ProfileScreen() {
               </View>
             )}
 
+            {/* Security */}
+            {!isGuest && (
+              <>
+                <TouchableOpacity 
+                  style={[styles.settingsItem, { backgroundColor: colors.card, borderColor: colors.border }]}
+                  onPress={() => toggleSection('security')}
+                  activeOpacity={0.7}
+                >
+                  <View style={[styles.settingsIconBg, { backgroundColor: colors.warning + '15' }]}>
+                    <Shield size={18} color={colors.warning} />
+                  </View>
+                  <View style={styles.settingsItemContent}>
+                    <Text style={[styles.settingsItemTitle, { color: colors.text }]}>Security</Text>
+                    <Text style={[styles.settingsItemSubtitle, { color: mfa.isEnabled ? colors.success : colors.textTertiary }]}>
+                      {mfa.isEnabled ? 'Two-factor authentication enabled' : 'Two-factor authentication disabled'}
+                    </Text>
+                  </View>
+                  {expandedSection === 'security' ? (
+                    <ChevronUp size={20} color={colors.textTertiary} />
+                  ) : (
+                    <ChevronDown size={20} color={colors.textTertiary} />
+                  )}
+                </TouchableOpacity>
+
+                {expandedSection === 'security' && (
+                  <View style={[styles.expandedContent, { backgroundColor: colors.surfaceSecondary }]}>
+                    {!mfa.isSupported ? (
+                      <Text style={[styles.settingsItemSubtitle, { color: colors.textTertiary }]}>
+                        2FA is available on mobile with cloud auth enabled.
+                      </Text>
+                    ) : (
+                      <>
+                        {!mfa.isEnabled && !mfaFactorId && (
+                          <TouchableOpacity
+                            style={[styles.enableBtn, { backgroundColor: colors.primary }]}
+                            onPress={handleStartMfaSetup}
+                            disabled={mfa.isLoading}
+                          >
+                            {mfa.isLoading ? (
+                              <ActivityIndicator size="small" color={colors.textInverse} />
+                            ) : (
+                              <Shield size={16} color={colors.textInverse} />
+                            )}
+                            <Text style={[styles.enableBtnText, { color: colors.textInverse }]}>Enable Two-Factor Authentication</Text>
+                          </TouchableOpacity>
+                        )}
+
+                        {!mfa.isEnabled && !!mfaFactorId && (
+                          <View style={styles.mfaSetupBox}>
+                            <Text style={[styles.mfaSetupTitle, { color: colors.text }]}>Scan QR in your authenticator app</Text>
+                            {(() => {
+                              const uri = mfaQrImageUri(mfaQrCode);
+                              if (!uri) return null;
+                              return (
+                                <Image
+                                  source={{ uri }}
+                                  style={styles.mfaQrImage}
+                                  contentFit="contain"
+                                />
+                              );
+                            })()}
+                            {!!mfaSecret && (
+                              <Text style={[styles.mfaSecretText, { color: colors.textTertiary }]}>
+                                Manual code: {mfaSecret}
+                              </Text>
+                            )}
+                            <TextInput
+                              value={mfaCode}
+                              onChangeText={setMfaCode}
+                              keyboardType="number-pad"
+                              placeholder="Enter 6-digit code"
+                              placeholderTextColor={colors.textMuted}
+                              style={[styles.mfaCodeInput, { color: colors.text, borderColor: colors.border, backgroundColor: colors.card }]}
+                              maxLength={6}
+                            />
+                            <View style={styles.mfaActionsRow}>
+                              <TouchableOpacity
+                                style={[styles.secondaryBtn, { borderColor: colors.border }]}
+                                onPress={() => {
+                                  setMfaFactorId(null);
+                                  setMfaQrCode(null);
+                                  setMfaSecret(null);
+                                  setMfaCode('');
+                                }}
+                              >
+                                <Text style={[styles.secondaryBtnText, { color: colors.textSecondary }]}>Cancel</Text>
+                              </TouchableOpacity>
+                              <TouchableOpacity
+                                style={[styles.primaryBtn, { backgroundColor: colors.primary }]}
+                                onPress={handleVerifyMfaSetup}
+                                disabled={mfa.isLoading || mfaCode.trim().length < 6}
+                              >
+                                {mfa.isLoading ? (
+                                  <ActivityIndicator size="small" color={colors.textInverse} />
+                                ) : (
+                                  <Text style={[styles.primaryBtnText, { color: colors.textInverse }]}>Verify & Enable</Text>
+                                )}
+                              </TouchableOpacity>
+                            </View>
+                          </View>
+                        )}
+
+                        {mfa.isEnabled && (
+                          <TouchableOpacity
+                            style={[styles.testNotifBtn, { borderColor: colors.error + '40' }]}
+                            onPress={handleDisableMfa}
+                            disabled={mfa.isLoading}
+                          >
+                            {mfa.isLoading ? (
+                              <ActivityIndicator size="small" color={colors.error} />
+                            ) : (
+                              <Text style={[styles.testNotifBtnText, { color: colors.error }]}>Disable Two-Factor Authentication</Text>
+                            )}
+                          </TouchableOpacity>
+                        )}
+                      </>
+                    )}
+                  </View>
+                )}
+              </>
+            )}
+
             {/* Appearance */}
             <TouchableOpacity 
               style={[styles.settingsItem, { backgroundColor: colors.card, borderColor: colors.border }]}
@@ -1189,6 +1381,14 @@ export default function ProfileScreen() {
           {/* Account Actions */}
           <View style={styles.sectionWrapper}>
             <Text style={[styles.sectionTitle, { color: colors.text }]}>Account</Text>
+            {!isGuest && (
+              <View style={[styles.accountSecurityBadge, { backgroundColor: colors.surfaceSecondary, borderColor: colors.border }]}>
+                <Shield size={14} color={mfa.isEnabled ? colors.success : colors.warning} />
+                <Text style={[styles.accountSecurityBadgeText, { color: colors.textSecondary }]}>
+                  {mfa.isEnabled ? '2FA is enabled on your account' : '2FA is off. Enable in Security for better protection.'}
+                </Text>
+              </View>
+            )}
             
             {isGuest ? (
               <>
@@ -1937,6 +2137,62 @@ const styles = StyleSheet.create({
     fontSize: 14,
     fontWeight: '600',
   },
+  mfaSetupBox: {
+    borderRadius: 10,
+    padding: 12,
+    gap: 10,
+  },
+  mfaSetupTitle: {
+    fontSize: 14,
+    fontWeight: '600',
+  },
+  mfaQrImage: {
+    width: 180,
+    height: 180,
+    alignSelf: 'center',
+    borderRadius: 8,
+  },
+  mfaSecretText: {
+    fontSize: 12,
+    lineHeight: 16,
+  },
+  mfaCodeInput: {
+    borderWidth: 1,
+    borderRadius: 10,
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+    fontSize: 16,
+    letterSpacing: 1,
+  },
+  mfaActionsRow: {
+    flexDirection: 'row',
+    gap: 10,
+  },
+  primaryBtn: {
+    flex: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderRadius: 10,
+    minHeight: 42,
+    paddingHorizontal: 12,
+  },
+  primaryBtnText: {
+    fontSize: 14,
+    fontWeight: '600',
+  },
+  secondaryBtn: {
+    flex: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderRadius: 10,
+    minHeight: 42,
+    borderWidth: 1,
+    paddingHorizontal: 12,
+  },
+  secondaryBtnText: {
+    fontSize: 14,
+    fontWeight: '600',
+  },
   themeSection: {
     marginTop: 12,
   },
@@ -1952,6 +2208,21 @@ const styles = StyleSheet.create({
   accountBtnText: {
     fontSize: 16,
     fontWeight: '600',
+  },
+  accountSecurityBadge: {
+    borderRadius: 10,
+    borderWidth: 1,
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+    marginBottom: 10,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+  },
+  accountSecurityBadgeText: {
+    fontSize: 13,
+    fontWeight: '500',
+    flex: 1,
   },
   bottomSpacer: {
     height: 100,

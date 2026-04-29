@@ -9,7 +9,7 @@ import {
   Platform,
 } from 'react-native';
 import { useRouter } from 'expo-router';
-import { ArrowRight, Link2, Sparkles, Tv, ListChecks, Zap } from 'lucide-react-native';
+import { ArrowRight, Link2, Sparkles, Tv, ListChecks, Zap, Shield } from 'lucide-react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import * as Haptics from 'expo-haptics';
 import { LinearGradient } from 'expo-linear-gradient';
@@ -139,6 +139,11 @@ export default function WelcomeScreen() {
             <Text style={styles.skipBtnText}>{profileLoading ? 'Loading…' : 'Skip for now'}</Text>
             <Text style={styles.skipHint}>Use the app with defaults; change anytime in Profile</Text>
           </TouchableOpacity>
+
+          <View style={styles.securityHintCard}>
+            <Shield size={14} color={COLORS.textMuted} />
+            <Text style={styles.securityHintCardText}>Secure your account later with 2FA in Profile.</Text>
+          </View>
 
           <Text style={styles.timeHint}>Full setup takes about 2 minutes · You can skip any step</Text>
 
@@ -285,6 +290,23 @@ const styles = StyleSheet.create({
     textAlign: 'center',
     marginTop: 4,
     paddingHorizontal: 16,
+  },
+  securityHintCard: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 8,
+    borderRadius: 10,
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: ONBOARDING_PREMIUM.hairlineBorder,
+    paddingVertical: 9,
+    paddingHorizontal: 12,
+    backgroundColor: ONBOARDING_PREMIUM.cardBg,
+  },
+  securityHintCardText: {
+    fontSize: 12,
+    color: COLORS.textMuted,
+    fontWeight: '500',
   },
   timeHint: {
     fontSize: 13,

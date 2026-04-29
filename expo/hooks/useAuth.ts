@@ -130,6 +130,8 @@ export const [AuthProvider, useAuth] = createContextHook(() => {
   const [biometricAvailable, setBiometricAvailable] = useState<boolean>(false);
   const [biometricEnabled, setBiometricEnabled] = useState<boolean>(false);
   const [biometricType, setBiometricType] = useState<BiometricType>('None');
+  const [mfaEnabled, setMfaEnabled] = useState<boolean>(false);
+  const [mfaLoading, setMfaLoading] = useState<boolean>(false);
 
   useEffect(() => {
     const checkBiometricAvailability = async () => {
@@ -283,6 +285,167 @@ export const [AuthProvider, useAuth] = createContextHook(() => {
       sub?.data?.subscription?.unsubscribe?.();
     };
   }, []);
+
+  const refreshMfaStatus = useCallback(async (): Promise<{ enabled: boolean; factorId?: string }> => {
+    if (!supabaseConfigured || !user || Platform.OS === 'web') {
+      setMfaEnabled(false);
+      return { enabled: false };
+    }
+    const mfaApi = (supabase.auth as any)?.mfa;
+    if (!mfaApi || typeof mfaApi.listFactors !== 'function') {
+      setMfaEnabled(false);
+      return { enabled: false };
+    }
+
+    setMfaLoading(true);
+    try {
+      const { data, error } = await mfaApi.listFactors();
+      if (error) {
+        console.warn('MFA list factors failed:', error?.message || error);
+        setMfaEnabled(false);
+        return { enabled: false };
+      }
+
+      const allFactors = [
+        ...(Array.isArray(data?.all) ? data.all : []),
+        ...(Array.isArray(data?.totp) ? data.totp : []),
+      ];
+      const verified = allFactors.find((f: any) => f?.status === 'verified');
+      const enabled = !!verified;
+      setMfaEnabled(enabled);
+      return { enabled, factorId: verified?.id };
+    } catch (error) {
+      console.warn('MFA status refresh failed:', error);
+      setMfaEnabled(false);
+      return { enabled: false };
+    } finally {
+      setMfaLoading(false);
+    }
+  }, [user]);
+
+  useEffect(() => {
+    if (!user || !supabaseConfigured || Platform.OS === 'web') {
+      setMfaEnabled(false);
+      return;
+    }
+    void refreshMfaStatus();
+  }, [user?.id, refreshMfaStatus]);
+
+  const startTwoFactorSetup = useCallback(async (): Promise<{
+    success: boolean;
+    factorId?: string;
+    qrCode?: string;
+    secret?: string;
+    uri?: string;
+    error?: string;
+  }> => {
+    if (!supabaseConfigured) return { success: false, error: 'Supabase is not configured' };
+    if (Platform.OS === 'web') return { success: false, error: '2FA setup is only available on mobile right now' };
+    if (!user) return { success: false, error: 'You must be logged in' };
+
+    const mfaApi = (supabase.auth as any)?.mfa;
+    if (!mfaApi || typeof mfaApi.enroll !== 'function') {
+      return { success: false, error: 'MFA is not supported by this auth client' };
+    }
+
+    setMfaLoading(true);
+    try {
+      const { data, error } = await mfaApi.enroll({
+        factorType: 'totp',
+        friendlyName: 'One Pager',
+      });
+      if (error || !data?.id) {
+        return { success: false, error: error?.message || 'Could not start 2FA setup' };
+      }
+      return {
+        success: true,
+        factorId: data.id,
+        qrCode: data?.totp?.qr_code,
+        secret: data?.totp?.secret,
+        uri: data?.totp?.uri,
+      };
+    } catch (error: any) {
+      return { success: false, error: error?.message || 'Could not start 2FA setup' };
+    } finally {
+      setMfaLoading(false);
+    }
+  }, [user]);
+
+  const verifyTwoFactorSetup = useCallback(async (factorId: string, code: string): Promise<{ success: boolean; error?: string }> => {
+    if (!supabaseConfigured) return { success: false, error: 'Supabase is not configured' };
+    if (!factorId) return { success: false, error: 'Missing MFA factor' };
+    if (!code?.trim()) return { success: false, error: 'Enter the 6-digit code' };
+
+    const mfaApi = (supabase.auth as any)?.mfa;
+    if (!mfaApi) return { success: false, error: 'MFA is not supported by this auth client' };
+
+    setMfaLoading(true);
+    try {
+      if (typeof mfaApi.challengeAndVerify === 'function') {
+        const { error } = await mfaApi.challengeAndVerify({
+          factorId,
+          code: code.trim(),
+        });
+        if (error) return { success: false, error: error.message || 'Invalid verification code' };
+      } else {
+        if (typeof mfaApi.challenge !== 'function' || typeof mfaApi.verify !== 'function') {
+          return { success: false, error: 'MFA verification is not supported by this auth client' };
+        }
+        const { data: challengeData, error: challengeError } = await mfaApi.challenge({ factorId });
+        if (challengeError || !challengeData?.id) {
+          return { success: false, error: challengeError?.message || 'Could not issue challenge' };
+        }
+        const { error: verifyError } = await mfaApi.verify({
+          factorId,
+          challengeId: challengeData.id,
+          code: code.trim(),
+        });
+        if (verifyError) return { success: false, error: verifyError.message || 'Invalid verification code' };
+      }
+
+      setMfaEnabled(true);
+      return { success: true };
+    } catch (error: any) {
+      return { success: false, error: error?.message || 'Could not verify 2FA code' };
+    } finally {
+      setMfaLoading(false);
+    }
+  }, []);
+
+  const disableTwoFactor = useCallback(async (): Promise<{ success: boolean; error?: string }> => {
+    if (!supabaseConfigured) return { success: false, error: 'Supabase is not configured' };
+    if (!user) return { success: false, error: 'You must be logged in' };
+
+    const mfaApi = (supabase.auth as any)?.mfa;
+    if (!mfaApi || typeof mfaApi.unenroll !== 'function' || typeof mfaApi.listFactors !== 'function') {
+      return { success: false, error: 'MFA is not supported by this auth client' };
+    }
+
+    setMfaLoading(true);
+    try {
+      const { data, error } = await mfaApi.listFactors();
+      if (error) return { success: false, error: error.message || 'Could not load factors' };
+      const allFactors = [
+        ...(Array.isArray(data?.all) ? data.all : []),
+        ...(Array.isArray(data?.totp) ? data.totp : []),
+      ];
+      const verified = allFactors.find((f: any) => f?.status === 'verified');
+      if (!verified?.id) {
+        setMfaEnabled(false);
+        return { success: true };
+      }
+
+      const { error: unenrollError } = await mfaApi.unenroll({ factorId: verified.id });
+      if (unenrollError) return { success: false, error: unenrollError.message || 'Could not disable 2FA' };
+
+      setMfaEnabled(false);
+      return { success: true };
+    } catch (error: any) {
+      return { success: false, error: error?.message || 'Could not disable 2FA' };
+    } finally {
+      setMfaLoading(false);
+    }
+  }, [user]);
 
   const login = useCallback(async (credentials: LoginCredentials): Promise<{ success: boolean; error?: string }> => {
     try {
@@ -914,6 +1077,16 @@ export const [AuthProvider, useAuth] = createContextHook(() => {
     useSupabaseOAuth: supabaseConfigured,
   }), []);
 
+  const mfa = useMemo(() => ({
+    isSupported: supabaseConfigured && Platform.OS !== 'web',
+    isEnabled: mfaEnabled,
+    isLoading: mfaLoading,
+    refreshStatus: refreshMfaStatus,
+    startSetup: startTwoFactorSetup,
+    verifySetup: verifyTwoFactorSetup,
+    disable: disableTwoFactor,
+  }), [mfaEnabled, mfaLoading, refreshMfaStatus, startTwoFactorSetup, verifyTwoFactorSetup, disableTwoFactor]);
+
   return useMemo(() => ({
     user,
     isLoading,
@@ -938,5 +1111,6 @@ export const [AuthProvider, useAuth] = createContextHook(() => {
     firebaseUser: supabaseUser,
     biometricAuth,
     googleAuthConfig,
-  }), [user, isLoading, isInitialized, isGuest, login, signup, logout, loginWithGoogle, loginWithGoogleOAuth, continueAsGuest, convertGuestToUser, updateUser, deleteAccount, createDemoUser, clearAllData, getSupabaseSync, isAutoSyncEnabled, supabaseUser, biometricAuth, googleAuthConfig]);
+    mfa,
+  }), [user, isLoading, isInitialized, isGuest, login, signup, logout, loginWithGoogle, loginWithGoogleOAuth, continueAsGuest, convertGuestToUser, updateUser, deleteAccount, createDemoUser, clearAllData, getSupabaseSync, isAutoSyncEnabled, supabaseUser, biometricAuth, googleAuthConfig, mfa]);
 });
