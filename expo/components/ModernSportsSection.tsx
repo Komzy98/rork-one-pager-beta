@@ -39,8 +39,8 @@ const getTeamGradient = (index: number): [string, string] => {
   return TEAM_GRADIENTS[index % TEAM_GRADIENTS.length];
 };
 
-/** Cap how many form dots we show (newest first). `slice` never pads — 1 completed match in the pool ⇒ 1 dot only. */
-const FORM_DISPLAY_MAX = 3;
+/** Recent form = last N finished games (newest first). Football convention is often 5; we pad from all comps if league-scoped pool is thin. */
+const FORM_DISPLAY_MAX = 5;
 
 const parseMatchDate = (dateString: string, timeString: string): Date | null => {
   try {
@@ -535,7 +535,7 @@ function ModernSportsSectionComponent({
     return allMatches.filter(match => {
       if (team.apiId && team.apiId > 0) {
         if (match.homeTeamId === team.apiId || match.awayTeamId === team.apiId) return true;
-        if (match.homeTeamId && match.awayTeamId) return false;
+        /** Always fall back to name — a stale/wrong `apiId` on the profile must not hide fixtures that include both team IDs. */
       }
       return isTeamMatch(match.homeTeam, team.name) || isTeamMatch(match.awayTeam, team.name);
     }).sort((a, b) => {
@@ -562,6 +562,10 @@ function ModernSportsSectionComponent({
     if (a.includes(b) || b.includes(a)) return true;
     const normalize = (s: string) => s.replace(/[^a-z0-9]/g, '');
     if (normalize(a) === normalize(b)) return true;
+    /** EPL / PL naming variants from API vs saved profile */
+    const pl = (s: string) =>
+      /premier|epl|^pl$/.test(normalize(s)) || (s.includes('england') && s.includes('premier'));
+    if (pl(a) && pl(b)) return true;
     return false;
   }, []);
 
@@ -579,13 +583,25 @@ function ModernSportsSectionComponent({
     const contextFiltered = contextLeague && contextLeague !== primaryLeague
       ? completedMatches_all.filter(m => leagueMatches(m.league, contextLeague))
       : [];
-    const leagueFiltered = primaryFiltered.length > 0
+    let leagueFiltered = primaryFiltered.length > 0
       ? primaryFiltered
       : contextFiltered.length > 0
         ? contextFiltered
         : completedMatches_all;
-    /** Competition-scoped pool only; never invent matches. One real result ⇒ one dot. */
-    const recentResults = leagueFiltered.slice(0, FORM_DISPLAY_MAX);
+    /** Prefer league-scoped form, but pad with newest overall results so we show up to N real games when the bundle has them. */
+    let recentResults = leagueFiltered.slice(0, FORM_DISPLAY_MAX);
+    if (recentResults.length < FORM_DISPLAY_MAX && completedMatches_all.length > recentResults.length) {
+      const seen = new Set(recentResults.map(m => m.id));
+      for (const m of completedMatches_all) {
+        if (recentResults.length >= FORM_DISPLAY_MAX) break;
+        if (!seen.has(m.id)) {
+          recentResults.push(m);
+          seen.add(m.id);
+        }
+      }
+      recentResults.sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
+      recentResults = recentResults.slice(0, FORM_DISPLAY_MAX);
+    }
     let wins = 0, draws = 0, losses = 0;
     recentResults.forEach(match => {
       const isHome = isTeamMatch(match.homeTeam, team.name);

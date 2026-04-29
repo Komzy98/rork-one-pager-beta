@@ -256,6 +256,7 @@ const LiveTickerCard = React.memo(({
   onPress: () => void; 
   index: number;
 }) => {
+  const { colors } = useTheme();
   const handlePress = useCallback(async () => {
     if (Platform.OS !== 'web') {
       await Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
@@ -270,13 +271,13 @@ const LiveTickerCard = React.memo(({
     <View style={styles.tickerCardWrapper}>
       <TouchableOpacity onPress={handlePress} activeOpacity={0.92}>
         <LinearGradient
-          colors={['#0E1220', '#141A2E', '#0B1A14']}
+          colors={[colors.gradientStart, colors.gradientMiddle, colors.backgroundSecondary]}
           start={{ x: 0, y: 0 }}
           end={{ x: 1, y: 1 }}
           style={styles.tickerCard}
         >
           <LinearGradient
-            colors={['rgba(46,204,113,0.22)', 'transparent']}
+            colors={[`${colors.success}38`, 'transparent']}
             start={{ x: 0, y: 0 }}
             end={{ x: 1, y: 1 }}
             style={styles.tickerSheen}
@@ -284,8 +285,8 @@ const LiveTickerCard = React.memo(({
           />
           <View style={styles.tickerTopRow}>
             <View style={styles.tickerLiveBadge}>
-              <LivePulse color="#FF4757" size={6} />
-              <Text style={styles.tickerLiveText}>LIVE</Text>
+              <LivePulse color={colors.live} size={6} />
+              <Text style={[styles.tickerLiveText, { color: colors.textInverse }]}>LIVE</Text>
             </View>
             {match.elapsed ? (
               <View style={styles.tickerElapsedPill}>
@@ -300,11 +301,11 @@ const LiveTickerCard = React.memo(({
                 {match.homeTeamLogo ? (
                   <Image source={{ uri: match.homeTeamLogo }} style={styles.tickerLogo} />
                 ) : (
-                  <Shield size={14} color="#6B7280" />
+                  <Shield size={14} color={colors.textMuted} />
                 )}
               </View>
-              <Text style={[styles.tickerTeamName, homeWinning && styles.tickerTeamNameWinning]} numberOfLines={1}>{match.homeTeam}</Text>
-              <Text style={[styles.tickerScore, homeWinning && styles.tickerScoreWinning]}>
+              <Text style={[styles.tickerTeamName, { color: colors.text }, homeWinning && { color: colors.success }]} numberOfLines={1}>{match.homeTeam}</Text>
+              <Text style={[styles.tickerScore, { color: colors.text }, homeWinning && { color: colors.success }]}>
                 {match.homeScore ?? 0}
               </Text>
             </View>
@@ -313,11 +314,11 @@ const LiveTickerCard = React.memo(({
                 {match.awayTeamLogo ? (
                   <Image source={{ uri: match.awayTeamLogo }} style={styles.tickerLogo} />
                 ) : (
-                  <Shield size={14} color="#6B7280" />
+                  <Shield size={14} color={colors.textMuted} />
                 )}
               </View>
-              <Text style={[styles.tickerTeamName, awayWinning && styles.tickerTeamNameWinning]} numberOfLines={1}>{match.awayTeam}</Text>
-              <Text style={[styles.tickerScore, awayWinning && styles.tickerScoreWinning]}>
+              <Text style={[styles.tickerTeamName, { color: colors.text }, awayWinning && { color: colors.success }]} numberOfLines={1}>{match.awayTeam}</Text>
+              <Text style={[styles.tickerScore, { color: colors.text }, awayWinning && { color: colors.success }]}>
                 {match.awayScore ?? 0}
               </Text>
             </View>
@@ -327,9 +328,9 @@ const LiveTickerCard = React.memo(({
             {match.leagueLogo ? (
               <Image source={{ uri: match.leagueLogo }} style={styles.tickerLeagueLogo} resizeMode="contain" />
             ) : (
-              <Trophy size={10} color="#6B6B85" />
+              <Trophy size={10} color={colors.textMuted} />
             )}
-            <Text style={styles.tickerLeagueName} numberOfLines={1}>{match.league}</Text>
+            <Text style={[styles.tickerLeagueName, { color: colors.textSecondary }]} numberOfLines={1}>{match.league}</Text>
           </View>
         </LinearGradient>
       </TouchableOpacity>
@@ -341,7 +342,6 @@ const PremiumMatchCard = React.memo(({
   match, 
   isFavoriteTeam, 
   onPress,
-  isDark,
   isNotified,
   onToggleNotification,
   isPinned,
@@ -350,11 +350,11 @@ const PremiumMatchCard = React.memo(({
   isFavoriteTeam: (name: string) => boolean; 
   onPress?: () => void;
   index: number;
-  isDark: boolean;
   isNotified?: boolean;
   onToggleNotification?: (matchId: string) => void;
   isPinned?: boolean;
 }) => {
+  const { colors } = useTheme();
   const isLive = match.status === 'Live';
   const isCompleted = match.status === 'Completed';
   const hasScore = match.homeScore !== null && match.awayScore !== null;
@@ -410,14 +410,13 @@ const PremiumMatchCard = React.memo(({
       >
         <View style={[
           styles.cardInner,
-          { backgroundColor: isDark ? '#151528' : '#FFFFFF' },
-          isDark && styles.cardInnerDark,
+          { backgroundColor: colors.card, borderColor: colors.border },
           isLive && styles.liveCardBorder,
-          isPinned && !isLive && { borderColor: isDark ? 'rgba(245,158,11,0.22)' : 'rgba(245,158,11,0.28)' },
+          isPinned && !isLive && { borderColor: `${colors.warning}55` },
         ]}>
           {isLive ? (
             <LinearGradient
-              colors={['rgba(255,59,48,0.08)', 'transparent']}
+              colors={[`${colors.live}14`, 'transparent']}
               start={{ x: 0, y: 0 }}
               end={{ x: 0, y: 1 }}
               style={styles.cardGlow}
@@ -425,7 +424,7 @@ const PremiumMatchCard = React.memo(({
             />
           ) : isPinned ? (
             <LinearGradient
-              colors={['rgba(245,158,11,0.06)', 'transparent']}
+              colors={[`${colors.warning}12`, 'transparent']}
               start={{ x: 0, y: 0 }}
               end={{ x: 0, y: 1 }}
               style={styles.cardGlow}
@@ -437,37 +436,37 @@ const PremiumMatchCard = React.memo(({
               {match.leagueLogo ? (
                 <Image source={{ uri: match.leagueLogo }} style={styles.leagueLogo} resizeMode="contain" />
               ) : (
-                <View style={[styles.leagueIconFallback, { backgroundColor: isDark ? '#1E1E38' : '#F0F0F5' }]}>
-                  <Trophy size={11} color={isDark ? '#8B8BA7' : '#6B7A99'} />
+                <View style={[styles.leagueIconFallback, { backgroundColor: colors.surfaceSecondary }]}>
+                  <Trophy size={11} color={colors.textMuted} />
                 </View>
               )}
-              <Text style={[styles.leagueName, { color: isDark ? '#6B6B85' : '#8E8E93' }]} numberOfLines={1}>
+              <Text style={[styles.leagueName, { color: colors.textMuted }]} numberOfLines={1}>
                 {match.league}
               </Text>
               {(homeIsFavorite || awayIsFavorite) && (
-                <View style={[styles.favStarHeader, { backgroundColor: isDark ? '#3D2F0A' : '#FEF3C7' }]}>
-                  <Star size={9} color="#F59E0B" fill="#F59E0B" />
+                <View style={[styles.favStarHeader, { backgroundColor: `${colors.warning}28` }]}>
+                  <Star size={9} color={colors.warning} fill={colors.warning} />
                 </View>
               )}
             </View>
             
             {isLive ? (
               <View style={styles.liveIndicator}>
-                <LivePulse color="#FF3B30" size={6} />
-                <Text style={styles.liveText}>LIVE</Text>
+                <LivePulse color={colors.live} size={6} />
+                <Text style={[styles.liveText, { color: colors.live }]}>LIVE</Text>
                 {match.elapsed ? (
-                  <Text style={styles.elapsedText}>{match.elapsed}&apos;</Text>
+                  <Text style={[styles.elapsedText, { color: colors.live }]}>{match.elapsed}&apos;</Text>
                 ) : null}
               </View>
             ) : isCompleted ? (
-              <View style={[styles.statusBadge, { backgroundColor: isDark ? '#1A3D2E' : '#ECFDF5' }]}>
-                <CheckCircle2 size={11} color="#10B981" />
-                <Text style={styles.statusBadgeText}>FT</Text>
+              <View style={[styles.statusBadge, { backgroundColor: `${colors.success}22` }]}>
+                <CheckCircle2 size={11} color={colors.success} />
+                <Text style={[styles.statusBadgeText, { color: colors.success }]}>FT</Text>
               </View>
             ) : (
-              <View style={[styles.statusBadge, { backgroundColor: isDark ? '#1A2E4A' : '#EFF6FF' }]}>
-                <Clock size={11} color="#3B82F6" />
-                <Text style={[styles.statusBadgeText, { color: '#3B82F6' }]}>{getMatchTime()}</Text>
+              <View style={[styles.statusBadge, { backgroundColor: `${colors.primary}18` }]}>
+                <Clock size={11} color={colors.primary} />
+                <Text style={[styles.statusBadgeText, { color: colors.primary }]}>{getMatchTime()}</Text>
               </View>
             )}
           </View>
@@ -477,11 +476,11 @@ const PremiumMatchCard = React.memo(({
                 {match.homeTeamLogo ? (
                   <Image source={{ uri: match.homeTeamLogo }} style={styles.teamLogo} />
                 ) : (
-                  <Shield size={22} color={isDark ? '#5A5A7A' : '#C7C7CC'} />
+                  <Shield size={22} color={colors.textMuted} />
                 )}
               <Text style={[
                 styles.teamNameHorizontal,
-                { color: isDark ? '#E4E4ED' : '#1C1C1E' },
+                { color: colors.text },
                 resultStyle?.home === 'loser' && { opacity: 0.5 },
               ]} numberOfLines={2}>
                 {match.homeTeam}
@@ -493,32 +492,32 @@ const PremiumMatchCard = React.memo(({
                 <View style={[
                   styles.scoreBlock,
                   isLive && styles.scoreBlockLive,
-                  { backgroundColor: isDark ? '#1A1A32' : '#F8F8FC' },
+                  { backgroundColor: colors.surfaceSecondary },
                 ]}>
                   <Text style={[
                     styles.scoreNum,
-                    { color: isDark ? '#FAFAFA' : '#1C1C1E' },
-                    isLive && { color: '#FF3B30' },
-                    resultStyle?.home === 'winner' && { color: '#10B981' },
+                    { color: colors.text },
+                    isLive && { color: colors.live },
+                    resultStyle?.home === 'winner' && { color: colors.success },
                   ]}>
                     {match.homeScore}
                   </Text>
                   <Text style={[
                     styles.scoreDash,
-                    { color: isDark ? '#2E2E4E' : '#D4D4DA' },
+                    { color: colors.border },
                   ]}>:</Text>
                   <Text style={[
                     styles.scoreNum,
-                    { color: isDark ? '#FAFAFA' : '#1C1C1E' },
-                    isLive && { color: '#FF3B30' },
-                    resultStyle?.away === 'winner' && { color: '#10B981' },
+                    { color: colors.text },
+                    isLive && { color: colors.live },
+                    resultStyle?.away === 'winner' && { color: colors.success },
                   ]}>
                     {match.awayScore}
                   </Text>
                 </View>
               ) : (
-                <View style={[styles.vsBlock, { backgroundColor: isDark ? '#1A1A32' : '#F5F5FA' }]}>
-                  <Text style={[styles.vsLabel, { color: isDark ? '#444466' : '#BEBEC4' }]}>VS</Text>
+                <View style={[styles.vsBlock, { backgroundColor: colors.surfaceSecondary }]}>
+                  <Text style={[styles.vsLabel, { color: colors.textMuted }]}>VS</Text>
                 </View>
               )}
             </View>
@@ -526,7 +525,7 @@ const PremiumMatchCard = React.memo(({
             <View style={styles.teamRowRight}>
               <Text style={[
                 styles.teamNameHorizontal,
-                { color: isDark ? '#E4E4ED' : '#1C1C1E', textAlign: 'right' as const },
+                { color: colors.text, textAlign: 'right' as const },
                 resultStyle?.away === 'loser' && { opacity: 0.5 },
               ]} numberOfLines={2}>
                 {match.awayTeam}
@@ -534,23 +533,23 @@ const PremiumMatchCard = React.memo(({
                 {match.awayTeamLogo ? (
                   <Image source={{ uri: match.awayTeamLogo }} style={styles.teamLogo} />
                 ) : (
-                  <Shield size={22} color={isDark ? '#5A5A7A' : '#C7C7CC'} />
+                  <Shield size={22} color={colors.textMuted} />
                 )}
             </View>
           </View>
 
-          <View style={[styles.matchFooter, { borderTopColor: isDark ? '#1E1E38' : '#F0F0F5' }]}>
+          <View style={[styles.matchFooter, { borderTopColor: colors.border }]}>
             <View style={styles.footerLeft}>
               {isPinned && (
                 <View style={styles.pinnedBadge}>
-                  <Pin size={10} color="#F59E0B" />
-                  <Text style={styles.pinnedText}>Pinned</Text>
+                  <Pin size={10} color={colors.warning} />
+                  <Text style={[styles.pinnedText, { color: colors.warning }]}>Pinned</Text>
                 </View>
               )}
               {match.venue ? (
                 <View style={styles.venueRow}>
-                  <MapPin size={10} color={isDark ? '#52526E' : '#AEAEB2'} />
-                  <Text style={[styles.venueText, { color: isDark ? '#52526E' : '#AEAEB2' }]} numberOfLines={1}>
+                  <MapPin size={10} color={colors.textMuted} />
+                  <Text style={[styles.venueText, { color: colors.textMuted }]} numberOfLines={1}>
                     {match.venue}{match.venueCity ? `, ${match.venueCity}` : ''}
                   </Text>
                 </View>
@@ -560,7 +559,7 @@ const PremiumMatchCard = React.memo(({
               <TouchableOpacity
                 style={[
                   styles.bellBtn,
-                  { backgroundColor: isNotified ? (isDark ? '#1A2E4A' : '#EFF6FF') : (isDark ? '#1C1C2E' : '#F5F5F7') },
+                  { backgroundColor: isNotified ? `${colors.primary}22` : colors.surfaceSecondary },
                 ]}
                 onPress={(e) => {
                   e.stopPropagation?.();
@@ -570,9 +569,9 @@ const PremiumMatchCard = React.memo(({
                 hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
               >
                 {isNotified ? (
-                  <Bell size={14} color="#007AFF" fill="#007AFF" />
+                  <Bell size={14} color={colors.primary} fill={colors.primary} />
                 ) : (
-                  <BellOff size={14} color={isDark ? '#52526E' : '#AEAEB2'} />
+                  <BellOff size={14} color={colors.textMuted} />
                 )}
               </TouchableOpacity>
             )}
@@ -588,7 +587,6 @@ const PremiumMatchCard = React.memo(({
     prevProps.match.awayScore === nextProps.match.awayScore &&
     prevProps.match.status === nextProps.match.status &&
     prevProps.match.elapsed === nextProps.match.elapsed &&
-    prevProps.isDark === nextProps.isDark &&
     prevProps.isNotified === nextProps.isNotified &&
     prevProps.isPinned === nextProps.isPinned
   );
@@ -599,14 +597,13 @@ const TabPill = React.memo(({
   activeTab, 
   onTabChange,
   counts,
-  isDark
 }: { 
   tabs: { key: string; label: string; icon: any; color: string }[];
   activeTab: string;
   onTabChange: (tab: string) => void;
   counts: Record<string, number>;
-  isDark: boolean;
 }) => {
+  const { colors, isDark } = useTheme();
   const indicatorAnim = useRef(new Animated.Value(0)).current;
   const [containerWidth, setContainerWidth] = useState<number>(SCREEN_WIDTH - 40);
   const activeIndex = tabs.findIndex(t => t.key === activeTab);
@@ -628,7 +625,7 @@ const TabPill = React.memo(({
     onTabChange(tab);
   }, [onTabChange]);
   
-  const activeColor = tabs[activeIndex]?.color || '#007AFF';
+  const activeColor = tabs[activeIndex]?.color || colors.primary;
   
   return (
     <View 
@@ -636,9 +633,9 @@ const TabPill = React.memo(({
       style={[
         styles.pillContainer, 
         { 
-          backgroundColor: isDark ? '#111122' : '#EAEAF0',
+          backgroundColor: colors.surfaceSecondary,
           borderWidth: 1,
-          borderColor: isDark ? 'rgba(255,255,255,0.04)' : 'rgba(0,0,0,0.04)',
+          borderColor: colors.border,
         }
       ]}
     >
@@ -690,13 +687,13 @@ const TabPill = React.memo(({
             ]}>
               <Icon 
                 size={14} 
-                color={isActive ? tab.color : (isDark ? '#555570' : '#9999A8')} 
+                color={isActive ? tab.color : colors.textMuted} 
                 strokeWidth={isActive ? 2.8 : 2}
               />
             </View>
             <Text style={[
               styles.pillLabel, 
-              { color: isActive ? (isDark ? '#F0F0FA' : '#1A1A24') : (isDark ? '#555570' : '#9999A8') },
+              { color: isActive ? colors.text : colors.textMuted },
               isActive && { fontWeight: '700' as const, letterSpacing: -0.2 }
             ]}>
               {tab.label}
@@ -706,11 +703,11 @@ const TabPill = React.memo(({
                 styles.pillBadge,
                 isActive 
                   ? { backgroundColor: tab.color } 
-                  : { backgroundColor: isDark ? '#252540' : '#D8D8E0' }
+                  : { backgroundColor: colors.surfaceSecondary }
               ]}>
                 <Text style={[
                   styles.pillBadgeText,
-                  { color: isActive ? '#FFFFFF' : (isDark ? '#6B6B85' : '#8E8E93') }
+                  { color: isActive ? colors.textInverse : colors.textMuted }
                 ]}>
                   {count}
                 </Text>
@@ -723,7 +720,8 @@ const TabPill = React.memo(({
   );
 });
 
-const DateHeader = React.memo(({ date, isDark }: { date: string; isDark: boolean }) => {
+const DateHeader = React.memo(({ date }: { date: string }) => {
+  const { colors } = useTheme();
   const formatDate = (dateStr: string) => {
     let d: Date;
     if (dateStr.includes('T')) {

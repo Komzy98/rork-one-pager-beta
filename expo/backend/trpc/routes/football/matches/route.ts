@@ -339,7 +339,8 @@ async function fetchMatchesByType(input: GetMatchesInput) {
       const allPromises: Promise<any[]>[] = [];
 
       if (hasTeams) {
-        const limitedTeams = targetTeams.slice(0, 5);
+        /** Each favorite gets `fixtures?team=&last=20` so Overview form has enough results; cap limits API fan-out. */
+        const limitedTeams = targetTeams.slice(0, 12);
         console.log(`⚽ Fetching ${limitedTeams.length} team-specific queries (fast path)`);
         limitedTeams.forEach(id => allPromises.push(fetchTeamMatches(id)));
         if (hasUserSelectedLeagues) {
