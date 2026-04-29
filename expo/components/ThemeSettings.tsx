@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useMemo, useState } from 'react';
 import {
   View,
   Text,
@@ -6,11 +6,17 @@ import {
   TouchableOpacity,
   ScrollView,
   Modal,
+  Alert,
 } from 'react-native';
-import { Check, Sun, Moon, Smartphone } from 'lucide-react-native';
+import { Check, Sun, Moon, Smartphone, Lock } from 'lucide-react-native';
 import { useTheme } from '@/hooks/useTheme';
-import { PRESET_THEMES } from '@/constants/themes';
-import { ThemeMode } from '@/types/theme';
+import {
+  ALL_PRESET_THEMES,
+  DEFAULT_LIGHT_THEME,
+  DEFAULT_DARK_THEME,
+  getThemeById,
+} from '@/constants/themes';
+import { Theme, ThemeMode, ThemeColors } from '@/types/theme';
 import { SPACING, BORDER_RADIUS, TYPOGRAPHY } from '@/constants/design';
 
 export function ThemeSettings() {
@@ -19,6 +25,7 @@ export function ThemeSettings() {
     themeMode,
     lightThemeId,
     darkThemeId,
+    isPro,
     setThemeMode,
     setLightTheme,
     setDarkTheme,
@@ -27,11 +34,49 @@ export function ThemeSettings() {
   const [showLightThemes, setShowLightThemes] = useState(false);
   const [showDarkThemes, setShowDarkThemes] = useState(false);
 
-  const lightThemes = PRESET_THEMES.filter(t => !t.isDark);
-  const darkThemes = PRESET_THEMES.filter(t => t.isDark);
+  const lightThemesAll = ALL_PRESET_THEMES.filter(t => !t.isDark);
+  const darkThemesAll = ALL_PRESET_THEMES.filter(t => t.isDark);
 
-  const currentLightTheme = PRESET_THEMES.find(t => t.id === lightThemeId);
-  const currentDarkTheme = PRESET_THEMES.find(t => t.id === darkThemeId);
+  const lightStandard = useMemo(
+    () => lightThemesAll.filter(t => t.tier !== 'pro'),
+    [lightThemesAll]
+  );
+  const lightPro = useMemo(
+    () => lightThemesAll.filter(t => t.tier === 'pro'),
+    [lightThemesAll]
+  );
+  const darkStandard = useMemo(
+    () => darkThemesAll.filter(t => t.tier !== 'pro'),
+    [darkThemesAll]
+  );
+  const darkPro = useMemo(
+    () => darkThemesAll.filter(t => t.tier === 'pro'),
+    [darkThemesAll]
+  );
+
+  const currentLightTheme = useMemo((): Theme => {
+    const t = getThemeById(lightThemeId);
+    if (t?.tier === 'pro' && !isPro) return DEFAULT_LIGHT_THEME;
+    return t || DEFAULT_LIGHT_THEME;
+  }, [lightThemeId, isPro]);
+
+  const currentDarkTheme = useMemo((): Theme => {
+    const t = getThemeById(darkThemeId);
+    if (t?.tier === 'pro' && !isPro) return DEFAULT_DARK_THEME;
+    return t || DEFAULT_DARK_THEME;
+  }, [darkThemeId, isPro]);
+
+  const effectiveLightId = useMemo(() => {
+    const t = getThemeById(lightThemeId);
+    if (t?.tier === 'pro' && !isPro) return DEFAULT_LIGHT_THEME.id;
+    return lightThemeId;
+  }, [lightThemeId, isPro]);
+
+  const effectiveDarkId = useMemo(() => {
+    const t = getThemeById(darkThemeId);
+    if (t?.tier === 'pro' && !isPro) return DEFAULT_DARK_THEME.id;
+    return darkThemeId;
+  }, [darkThemeId, isPro]);
 
   const modes: { value: ThemeMode; label: string; icon: typeof Sun }[] = [
     { value: 'light', label: 'Light', icon: Sun },
@@ -123,11 +168,13 @@ export function ThemeSettings() {
             </TouchableOpacity>
           </View>
           <ScrollView style={styles.modalScroll} contentContainerStyle={styles.themeGrid}>
-            {lightThemes.map((theme) => (
+            <Text style={[styles.themeGroupLabel, { color: colors.textMuted }]}>Standard</Text>
+            {lightStandard.map((theme) => (
               <ThemeCard
                 key={theme.id}
                 theme={theme}
-                isSelected={lightThemeId === theme.id}
+                isSelected={effectiveLightId === theme.id}
+                locked={false}
                 onSelect={() => {
                   setLightTheme(theme.id);
                   setShowLightThemes(false);
@@ -135,6 +182,30 @@ export function ThemeSettings() {
                 colors={colors}
               />
             ))}
+            <Text style={[styles.themeGroupLabel, { color: colors.textMuted, marginTop: 16 }]}>Pro</Text>
+            {lightPro.map((theme) => {
+              const locked = theme.tier === 'pro' && !isPro;
+              return (
+                <ThemeCard
+                  key={theme.id}
+                  theme={theme}
+                  isSelected={lightThemeId === theme.id && !locked}
+                  locked={locked}
+                  onSelect={() => {
+                    if (locked) {
+                      Alert.alert(
+                        'Pro theme',
+                        'This theme is included with Pro. Upgrade to unlock Aurora, Sandstone, Glacier, and other premium palettes.'
+                      );
+                      return;
+                    }
+                    setLightTheme(theme.id);
+                    setShowLightThemes(false);
+                  }}
+                  colors={colors}
+                />
+              );
+            })}
           </ScrollView>
         </View>
       </Modal>
@@ -153,11 +224,13 @@ export function ThemeSettings() {
             </TouchableOpacity>
           </View>
           <ScrollView style={styles.modalScroll} contentContainerStyle={styles.themeGrid}>
-            {darkThemes.map((theme) => (
+            <Text style={[styles.themeGroupLabel, { color: colors.textMuted }]}>Standard</Text>
+            {darkStandard.map((theme) => (
               <ThemeCard
                 key={theme.id}
                 theme={theme}
-                isSelected={darkThemeId === theme.id}
+                isSelected={effectiveDarkId === theme.id}
+                locked={false}
                 onSelect={() => {
                   setDarkTheme(theme.id);
                   setShowDarkThemes(false);
@@ -165,6 +238,30 @@ export function ThemeSettings() {
                 colors={colors}
               />
             ))}
+            <Text style={[styles.themeGroupLabel, { color: colors.textMuted, marginTop: 16 }]}>Pro</Text>
+            {darkPro.map((theme) => {
+              const locked = theme.tier === 'pro' && !isPro;
+              return (
+                <ThemeCard
+                  key={theme.id}
+                  theme={theme}
+                  isSelected={darkThemeId === theme.id && !locked}
+                  locked={locked}
+                  onSelect={() => {
+                    if (locked) {
+                      Alert.alert(
+                        'Pro theme',
+                        'This theme is included with Pro. Upgrade to unlock Nebula, Ember, Abyss, and other premium palettes.'
+                      );
+                      return;
+                    }
+                    setDarkTheme(theme.id);
+                    setShowDarkThemes(false);
+                  }}
+                  colors={colors}
+                />
+              );
+            })}
           </ScrollView>
         </View>
       </Modal>
@@ -173,13 +270,14 @@ export function ThemeSettings() {
 }
 
 interface ThemeCardProps {
-  theme: any;
+  theme: Theme;
   isSelected: boolean;
+  locked: boolean;
   onSelect: () => void;
-  colors: any;
+  colors: ThemeColors;
 }
 
-function ThemeCard({ theme, isSelected, onSelect, colors }: ThemeCardProps) {
+function ThemeCard({ theme, isSelected, locked, onSelect, colors }: ThemeCardProps) {
   return (
     <TouchableOpacity
       style={[
@@ -188,12 +286,18 @@ function ThemeCard({ theme, isSelected, onSelect, colors }: ThemeCardProps) {
           backgroundColor: colors.surface,
           borderColor: isSelected ? colors.primary : colors.border,
           borderWidth: isSelected ? 2 : 1,
+          opacity: locked ? 0.72 : 1,
         },
       ]}
       onPress={onSelect}
       activeOpacity={0.7}
     >
-      {isSelected && (
+      {locked && (
+        <View style={[styles.lockBadge, { backgroundColor: colors.surfaceSecondary, borderColor: colors.border }]}>
+          <Lock size={14} color={colors.textSecondary} />
+        </View>
+      )}
+      {isSelected && !locked && (
         <View style={[styles.selectedBadge, { backgroundColor: colors.primary }]}>
           <Check size={16} color={colors.textInverse} />
         </View>
@@ -204,7 +308,10 @@ function ThemeCard({ theme, isSelected, onSelect, colors }: ThemeCardProps) {
         <View style={[styles.colorBlock, { backgroundColor: theme.colors.success }]} />
         <View style={[styles.colorBlock, { backgroundColor: theme.colors.warning }]} />
       </View>
-      <Text style={[styles.themeCardName, { color: colors.text }]}>{theme.name}</Text>
+      <Text style={[styles.themeCardName, { color: colors.text }]}>
+        {theme.name}
+        {locked ? ' · Pro' : ''}
+      </Text>
       <View style={[styles.previewCard, { backgroundColor: theme.colors.background }]}>
         <View style={[styles.previewHeader, { backgroundColor: theme.colors.surface }]}>
           <View style={[styles.previewDot, { backgroundColor: theme.colors.primary }]} />
@@ -294,6 +401,14 @@ const styles = StyleSheet.create({
   themeGrid: {
     padding: SPACING.md,
     gap: SPACING.md,
+    paddingBottom: SPACING.xl,
+  },
+  themeGroupLabel: {
+    ...TYPOGRAPHY.caption,
+    fontWeight: '700' as const,
+    letterSpacing: 0.6,
+    textTransform: 'uppercase' as const,
+    marginBottom: SPACING.xs,
   },
   themeCard: {
     borderRadius: BORDER_RADIUS.lg,
@@ -309,7 +424,19 @@ const styles = StyleSheet.create({
     borderRadius: 12,
     alignItems: 'center',
     justifyContent: 'center',
-    zIndex: 1,
+    zIndex: 2,
+  },
+  lockBadge: {
+    position: 'absolute',
+    top: SPACING.s,
+    right: SPACING.s,
+    width: 28,
+    height: 28,
+    borderRadius: 14,
+    alignItems: 'center',
+    justifyContent: 'center',
+    zIndex: 2,
+    borderWidth: StyleSheet.hairlineWidth,
   },
   colorPalette: {
     flexDirection: 'row',

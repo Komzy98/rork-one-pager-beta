@@ -12,13 +12,14 @@ import {
   Platform,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { ArrowLeft, ArrowRight, Check, Tv } from 'lucide-react-native';
+import { ArrowLeft, ArrowRight, Check } from 'lucide-react-native';
 import { useRouter } from 'expo-router';
 import * as Haptics from 'expo-haptics';
 import OnboardingProgress from '@/components/OnboardingProgress';
 import { ONBOARDING } from '@/constants/onboardingTheme';
 import { COLORS } from '@/constants/colors';
 import { configureYounify, fetchYounifyServices } from '@/services/younify';
+import StreamingServiceListLogo from '@/components/streaming/StreamingServiceListLogo';
 
 type YounifyService = {
   id?: string | number;
@@ -175,8 +176,13 @@ export default function OnboardingStreamingScreen() {
       return (
         <View style={styles.serviceCard}>
           <View style={styles.serviceRow}>
-            <View style={styles.serviceIconWrap}>
-              <Tv size={20} color={COLORS.primary} />
+            <View style={styles.serviceLogoColumn}>
+              <StreamingServiceListLogo
+                service={item as Record<string, unknown>}
+                label={label}
+                size={40}
+                fallbackIconColor={COLORS.primary}
+              />
             </View>
             <View style={styles.serviceMeta}>
               <Text style={styles.serviceName}>{label}</Text>
@@ -365,11 +371,8 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     gap: 12,
   },
-  serviceIconWrap: {
-    width: 40,
-    height: 40,
-    borderRadius: 10,
-    backgroundColor: ONBOARDING.chipBg,
+  serviceLogoColumn: {
+    width: 44,
     justifyContent: 'center',
     alignItems: 'center',
   },

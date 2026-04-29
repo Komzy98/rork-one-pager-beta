@@ -401,6 +401,8 @@ export interface UserProfile {
     timeFormat: '12h' | '24h';
     theme: 'light' | 'dark' | 'auto';
   };
+  /** Drives Pro app themes in Profile; set by purchase / server sync. */
+  subscriptionTier?: 'free' | 'pro';
   tabOrder?: string[];
   onboardingCompleted: boolean;
   createdAt: string;

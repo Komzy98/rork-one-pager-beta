@@ -211,9 +211,9 @@ export default function RootLayout() {
       <QueryClientProvider client={queryClient}>
         <trpc.Provider client={trpcReactClient} queryClient={queryClient}>
           <GestureHandlerRootView style={styles.container}>
-            <SafeProvider provider={ThemeProvider}>
-              <SafeProvider provider={AuthProvider}>
-                <SafeProvider provider={UserProfileProvider}>
+            <SafeProvider provider={AuthProvider}>
+              <SafeProvider provider={UserProfileProvider}>
+                <SafeProvider provider={ThemeProvider}>
                   <SafeProvider provider={UIStateProvider}>
                     <SafeProvider provider={AppProvider}>
                       <SafeProvider provider={TaskProvider}>

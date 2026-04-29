@@ -94,6 +94,7 @@ const HERO_HEIGHT = 480;
 const LARGE_CARD_WIDTH = screenWidth * 0.7;
 const EPISODE_CARD_WIDTH = screenWidth * 0.82;
 
+/** Fixed cinema-style palette for Shows & movies; not driven by global Profile themes. */
 const THEME = {
   background: '#08080C',
   surface: '#111117',

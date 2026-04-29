@@ -55,11 +55,15 @@ export interface ThemeColors {
   tabBarBorder: string;
 }
 
+export type ThemeTier = 'standard' | 'pro';
+
 export interface Theme {
   id: string;
   name: string;
   colors: ThemeColors;
   isDark: boolean;
+  /** Pro-exclusive palettes (Profile → Appearance). Shows/Movies tab keeps its own fixed cinema styling. */
+  tier?: ThemeTier;
 }
 
 export type ThemeMode = 'light' | 'dark' | 'auto';

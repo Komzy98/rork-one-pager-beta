@@ -15,6 +15,7 @@ import { ArrowLeft, Check, Sparkles } from "lucide-react-native";
 import { useRouter } from "expo-router";
 import { configureYounify, fetchYounifyServices } from "@/services/younify";
 import { TMDB_POSTER_ATTRIBUTION } from "@/utils/younifyTmdbPoster";
+import StreamingServiceListLogo from "@/components/streaming/StreamingServiceListLogo";
 
 type YounifyService = {
   id?: string | number;
@@ -217,6 +218,14 @@ export default function StreamingServicesScreen() {
     return (
       <View style={styles.serviceCard}>
         <View style={styles.serviceCardTop}>
+          <View style={styles.serviceLogoColumn}>
+            <StreamingServiceListLogo
+              service={item as Record<string, unknown>}
+              label={label}
+              size={40}
+              fallbackIconColor="#9CA5BE"
+            />
+          </View>
           <View style={styles.serviceMeta}>
             <Text style={styles.serviceName}>{label}</Text>
 
@@ -578,6 +587,11 @@ const styles = StyleSheet.create({
     alignItems: "center",
     justifyContent: "space-between",
     gap: 12,
+  },
+  serviceLogoColumn: {
+    width: 44,
+    justifyContent: "center",
+    alignItems: "center",
   },
   serviceMeta: {
     flex: 1,

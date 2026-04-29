@@ -30,6 +30,7 @@ const createDefaultProfile = (userId: string, email: string, name: string): User
       timeFormat: '12h' as const,
       theme: 'auto' as const
     },
+    subscriptionTier: 'free' as const,
     onboardingCompleted: false,
     createdAt: new Date().toISOString(),
     lastLoginAt: new Date().toISOString()

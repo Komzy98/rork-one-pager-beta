@@ -4,6 +4,7 @@ import { Appearance, ColorSchemeName } from 'react-native';
 import createContextHook from '@nkzw/create-context-hook';
 import { Theme, ThemeMode } from '@/types/theme';
 import { DEFAULT_LIGHT_THEME, DEFAULT_DARK_THEME, getThemeById } from '@/constants/themes';
+import { useProAccess } from '@/hooks/useProAccess';
 
 const THEME_STORAGE_KEY = '@app_theme_settings';
 
@@ -14,6 +15,7 @@ interface ThemeSettings {
 }
 
 export const [ThemeProvider, useTheme] = createContextHook(() => {
+  const isPro = useProAccess();
   const [themeSettings, setThemeSettings] = useState<ThemeSettings>({
     mode: 'light',
     lightThemeId: DEFAULT_LIGHT_THEME.id,
@@ -57,17 +59,31 @@ export const [ThemeProvider, useTheme] = createContextHook(() => {
     }
   };
 
+  const resolveThemeId = useCallback(
+    (themeId: string, slot: 'light' | 'dark'): string => {
+      const candidate = getThemeById(themeId);
+      if (candidate?.tier === 'pro' && !isPro) {
+        return slot === 'dark' ? DEFAULT_DARK_THEME.id : DEFAULT_LIGHT_THEME.id;
+      }
+      return themeId;
+    },
+    [isPro]
+  );
+
   const getCurrentTheme = useCallback((): Theme => {
     const effectiveMode = themeSettings.mode === 'auto'
       ? (systemColorScheme === 'dark' ? 'dark' : 'light')
       : themeSettings.mode;
 
-    const themeId = effectiveMode === 'dark'
+    const slot: 'light' | 'dark' = effectiveMode === 'dark' ? 'dark' : 'light';
+    const rawId = effectiveMode === 'dark'
       ? themeSettings.darkThemeId
       : themeSettings.lightThemeId;
-
-    return getThemeById(themeId) || DEFAULT_LIGHT_THEME;
-  }, [themeSettings, systemColorScheme]);
+    const resolvedId = resolveThemeId(rawId, slot);
+    const found = getThemeById(resolvedId);
+    if (found) return found;
+    return effectiveMode === 'dark' ? DEFAULT_DARK_THEME : DEFAULT_LIGHT_THEME;
+  }, [themeSettings, systemColorScheme, resolveThemeId]);
 
   const setThemeMode = useCallback((mode: ThemeMode) => {
     const newSettings = { ...themeSettings, mode };
@@ -90,6 +106,7 @@ export const [ThemeProvider, useTheme] = createContextHook(() => {
     theme: currentTheme,
     colors: currentTheme.colors,
     isDark: currentTheme.isDark,
+    isPro,
     themeMode: themeSettings.mode,
     lightThemeId: themeSettings.lightThemeId,
     darkThemeId: themeSettings.darkThemeId,
