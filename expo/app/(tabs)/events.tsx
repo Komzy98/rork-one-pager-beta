@@ -513,6 +513,22 @@ export default function EventsScreen() {
   const smartDiscoveryEvents =
     discoveryTab === 'now' ? happeningNowEvents : discoveryTab === 'near' ? nearYouEvents : forYouEvents;
 
+  const smartDiscoveryEventIds = useMemo(
+    () => new Set(smartDiscoveryEvents.map((e) => e.id)),
+    [smartDiscoveryEvents]
+  );
+  const moreEventsForFeed = useMemo(
+    () => filteredEvents.filter((e) => !smartDiscoveryEventIds.has(e.id)),
+    [filteredEvents, smartDiscoveryEventIds]
+  );
+
+  const discoveryFeedTitle =
+    discoveryTab === 'now'
+      ? 'Happening Now'
+      : discoveryTab === 'near'
+        ? 'Near You'
+        : 'For You';
+
   return (
     <View style={[styles.container, { backgroundColor: warmBg }]}>
       <Stack.Screen options={{ headerShown: false }} />
@@ -594,7 +610,11 @@ export default function EventsScreen() {
             activeOpacity={0.85}
             onPress={() => setDiscoveryTab('now')}
           >
-            <Text style={[styles.smartDiscoveryTabText, { color: discoveryTab === 'now' ? '#FFFFFF' : mainText }]}>
+            <Text
+              style={[styles.smartDiscoveryTabText, { color: discoveryTab === 'now' ? '#FFFFFF' : mainText }]}
+              numberOfLines={1}
+              ellipsizeMode="tail"
+            >
               🔥 Happening Now
             </Text>
           </TouchableOpacity>
@@ -609,7 +629,11 @@ export default function EventsScreen() {
             activeOpacity={0.85}
             onPress={() => setDiscoveryTab('near')}
           >
-            <Text style={[styles.smartDiscoveryTabText, { color: discoveryTab === 'near' ? '#FFFFFF' : mainText }]}>
+            <Text
+              style={[styles.smartDiscoveryTabText, { color: discoveryTab === 'near' ? '#FFFFFF' : mainText }]}
+              numberOfLines={1}
+              ellipsizeMode="tail"
+            >
               📍 Near You
             </Text>
           </TouchableOpacity>
@@ -624,7 +648,11 @@ export default function EventsScreen() {
             activeOpacity={0.85}
             onPress={() => setDiscoveryTab('forYou')}
           >
-            <Text style={[styles.smartDiscoveryTabText, { color: discoveryTab === 'forYou' ? '#FFFFFF' : mainText }]}>
+            <Text
+              style={[styles.smartDiscoveryTabText, { color: discoveryTab === 'forYou' ? '#FFFFFF' : mainText }]}
+              numberOfLines={1}
+              ellipsizeMode="tail"
+            >
               🎯 For You
             </Text>
           </TouchableOpacity>
@@ -1040,22 +1068,22 @@ export default function EventsScreen() {
         <View style={styles.section}>
           <View style={styles.sectionHeader}>
             <View style={styles.sectionTitleRow}>
-              <Text style={styles.sectionEmoji}>🎫</Text>
-              <Text style={[styles.sectionTitle, { color: mainText }]}>
-                {selectedCategory === 'all' ? 'All Events' : EVENT_CATEGORIES.find(c => c.id === selectedCategory)?.label || 'Events'}
+              <Text style={styles.sectionEmoji}>
+                {discoveryTab === 'now' ? '🔥' : discoveryTab === 'near' ? '📍' : '🎯'}
               </Text>
+              <Text style={[styles.sectionTitle, { color: mainText }]}>More from {discoveryFeedTitle}</Text>
             </View>
-            <Text style={[styles.resultCount, { color: subtleText }]}>{filteredEvents.length} events</Text>
+            <Text style={[styles.resultCount, { color: subtleText }]}>{moreEventsForFeed.length} events</Text>
           </View>
 
-          {filteredEvents.length === 0 ? (
+          {moreEventsForFeed.length === 0 ? (
             <View style={[styles.emptyState, { backgroundColor: cardBg, borderColor: cardBorder }]}>
-              <Text style={styles.emptyEmoji}>🔍</Text>
-              <Text style={[styles.emptyTitle, { color: mainText }]}>No events found</Text>
-              <Text style={[styles.emptyText, { color: subtleText }]}>Try a different search or category</Text>
+              <Text style={styles.emptyEmoji}>✨</Text>
+              <Text style={[styles.emptyTitle, { color: mainText }]}>You’re all caught up</Text>
+              <Text style={[styles.emptyText, { color: subtleText }]}>No more events for this view</Text>
             </View>
           ) : (
-            filteredEvents.map((event) => {
+            moreEventsForFeed.map((event) => {
               const isExpanded = expandedEvent === event.id;
               const distanceKm = haversineDistanceKm(
                 USER_LOCATION.latitude,
@@ -1076,6 +1104,10 @@ export default function EventsScreen() {
                   onPress={() => {
                     void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
                     setExpandedEvent(isExpanded ? null : event.id);
+                    Alert.alert(
+                      event.title,
+                      `${event.venue}\n${event.location}\n\n${event.description}`
+                    );
                   }}
                   activeOpacity={0.85}
                 >
@@ -1133,7 +1165,7 @@ export default function EventsScreen() {
                     </View>
                   </View>
 
-                  {isExpanded && (
+                  {false && (
                     <View style={[styles.expandedContent, { borderTopColor: cardBorder }]}>
                       <Text style={[styles.eventDescription, { color: mainText }]}>{event.description}</Text>
 
@@ -2042,12 +2074,15 @@ const styles = StyleSheet.create({
     flex: 1,
     borderWidth: 1,
     borderRadius: 18,
-    paddingVertical: 10,
+    height: 44,
+    paddingVertical: 0,
+    justifyContent: 'center',
     alignItems: 'center',
   },
   smartDiscoveryTabText: {
     fontSize: 13,
     fontWeight: '700' as const,
+    textAlign: 'center',
   },
   smartDiscoveryScroll: {
     gap: 12,
