@@ -1053,6 +1053,15 @@ export const getTeamsByCountry = (countryId: string): UserTeam[] => {
   );
 };
 
+/** Public badge URL for API-Football team ids (same host as tRPC fallback in useUserProfile). */
+export function getFootballTeamLogoUrl(team: UserTeam): string | undefined {
+  if (team.logo) return team.logo;
+  if (team.apiId != null && team.apiId > 0) {
+    return `https://media.api-sports.io/football/teams/${team.apiId}.png`;
+  }
+  return undefined;
+}
+
 // Helper function to get teams by league
 export const getTeamsByLeague = (league: string): UserTeam[] => {
   return FOOTBALL_TEAMS.filter(team => 

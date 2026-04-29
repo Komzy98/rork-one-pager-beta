@@ -62,6 +62,7 @@ import {
 import * as Linking from 'expo-linking';
 import { useQuery, useMutation } from '@tanstack/react-query';
 import { useApp } from '@/hooks/useHabitsStore';
+import { useAuth } from '@/hooks/useAuth';
 import { Show, NewShowFormData } from '@/types/habit';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { tmdbApi, TMDBMovie, TMDBTVShow, TMDBTVShowDetails, TMDBEpisode, getGenreNames, formatReleaseDate, formatRating } from '@/utils/tmdbApi';
@@ -819,6 +820,7 @@ function DetailModal({
 
 export default function ShowsScreen() {
   const appContext = useApp();
+  const { user, isInitialized: authInitialized } = useAuth();
   const insets = useSafeAreaInsets();
   const router = useRouter();
   const [showAddModal, setShowAddModal] = useState(false);
@@ -887,8 +889,7 @@ export default function ShowsScreen() {
       if (__DEV__) {
         console.warn('Failed to load Younify streaming browse:', error);
       }
-      setStreamingSections([]);
-      setLinkedProviderIds([]);
+      // Keep previous sections on failure so focus/tab refetches don't wipe rows on transient errors.
     } finally {
       setStreamingLoading(false);
       setStreamingInitialized(true);
@@ -934,10 +935,7 @@ export default function ShowsScreen() {
       if (__DEV__) {
         console.warn('Failed to load Younify connected content:', error);
       }
-      setHasLinkedServices(false);
-      setLinkedStreamingCount(0);
-      setYounifyContent([]);
-      setLinkedProviderIds([]);
+      // Don't zero hero/browse-linked state on transient failures — avoids empty streaming UI after tab blur/focus.
     } finally {
       setYounifyLoading(false);
     }
@@ -950,11 +948,19 @@ export default function ShowsScreen() {
     }, [refetchYounifyRail, refetchStreamingBrowse]),
   );
 
+  /** After login / logout / account switch — Younify is per-user; refresh immediately so the tab isn’t stale. */
+  useEffect(() => {
+    if (!authInitialized) return;
+    void refetchYounifyRail();
+    void refetchStreamingBrowse();
+  }, [authInitialized, user?.id, refetchYounifyRail, refetchStreamingBrowse]);
+
   useEffect(() => {
     if (selectedTab === 'streaming' || selectedTab === 'watchlist') {
       void refetchStreamingBrowse();
+      void refetchYounifyRail();
     }
-  }, [selectedTab, refetchStreamingBrowse]);
+  }, [selectedTab, refetchStreamingBrowse, refetchYounifyRail]);
 
   useEffect(() => {
     setYounifyRuntimeBanner(getYounifyRuntimeIssue());
@@ -964,6 +970,18 @@ export default function ShowsScreen() {
     () => streamingSections.find((s) => s.id === 'watchlist'),
     [streamingSections],
   );
+
+  /** Avoid stripping rows on every focus/tab refetch: `streamingLoading` toggles true while SDK refetches. */
+  const hasStreamingBrowseContent = useMemo(
+    () => streamingSections.some((s) => Array.isArray(s.items) && s.items.length > 0),
+    [streamingSections],
+  );
+
+  const heroStreamingContent = useMemo(() => {
+    if (Array.isArray(younifyContent) && younifyContent.length > 0) return younifyContent;
+    const fallback = streamingSections.flatMap((s) => (Array.isArray(s.items) ? s.items : []));
+    return fallback.slice(0, 60);
+  }, [younifyContent, streamingSections]);
 
   const heroScrollX = useRef(new RNAnimated.Value(0)).current;
   const forYouScrollY = useRef(new RNAnimated.Value(0)).current;
@@ -1880,18 +1898,21 @@ export default function ShowsScreen() {
     const linkedPreferredRow = pickBestYounifyRowForEpisode(younifyEpisodeIndex, {
       tmdbId: item.show.id,
       title: item.show.name,
+      seasonNumber: item.latestEpisode.season_number,
+      episodeNumber: item.latestEpisode.episode_number,
     });
     if (linkedPreferredRow) {
-      await openYounifyBrowseItemOnPlatform(linkedPreferredRow, { sectionId: 'continue' });
+      await openYounifyBrowseItemOnPlatform(linkedPreferredRow);
       return;
     }
 
     const title = item.show.name || '';
     const year = item.show.first_air_date ? Number(item.show.first_air_date.slice(0, 4)) : undefined;
     const providerIds = item.availableProviderIds;
+    const episodeHint = `S${item.latestEpisode.season_number}E${item.latestEpisode.episode_number}`;
 
     for (const providerId of providerIds) {
-      const opened = await openStreamingTitleSearch(providerId, title, year);
+      const opened = await openStreamingTitleSearch(providerId, title, year, episodeHint);
       if (opened) return;
     }
 
@@ -2351,7 +2372,8 @@ export default function ShowsScreen() {
             <StreamingServicesBrowseTab
               sections={streamingSections}
               loading={
-                hasLinkedServices && (!streamingInitialized || streamingLoading)
+                hasLinkedServices &&
+                (!streamingInitialized || (streamingLoading && !hasStreamingBrowseContent))
               }
               hasLinkedServices={hasLinkedServices}
               linkedStreamingCount={linkedStreamingCount}
@@ -2362,8 +2384,8 @@ export default function ShowsScreen() {
                 <>
                   <View style={styles.streamingRailWrap}>
                     <ConnectedServicesHero
-                      content={younifyContent}
-                      loading={younifyLoading}
+                      content={heroStreamingContent}
+                      loading={younifyLoading && heroStreamingContent.length === 0}
                       hasLinkedServices={hasLinkedServices}
                       linkedStreamingCount={linkedStreamingCount}
                       onOpenDetails={handleYounifyRowOpenDetails}

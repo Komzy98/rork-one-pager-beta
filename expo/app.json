@@ -24,7 +24,7 @@
     "ios": {
       "supportsTablet": true,
       "bundleIdentifier": "app.rork.OPbeta",
-      "buildNumber": "4",
+      "buildNumber": "5",
       "usesIcloudStorage": true,
       "infoPlist": {
         "UIBackgroundModes": [

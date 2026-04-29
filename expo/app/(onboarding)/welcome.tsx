@@ -5,373 +5,306 @@ import {
   Text,
   TouchableOpacity,
   Animated,
-  Dimensions,
   Image,
+  Platform,
 } from 'react-native';
 import { useRouter } from 'expo-router';
-import { ArrowRight, Zap, Trophy, Tv, ListChecks } from 'lucide-react-native';
+import { ArrowRight, Link2, Sparkles, Tv, ListChecks, Zap } from 'lucide-react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { LinearGradient } from 'expo-linear-gradient';
 import * as Haptics from 'expo-haptics';
+import { LinearGradient } from 'expo-linear-gradient';
 import { useAuth } from '@/hooks/useAuth';
-
-const { width, height } = Dimensions.get('window');
+import { useUserProfile } from '@/hooks/useUserProfile';
+import { COLORS } from '@/constants/colors';
+import { ONBOARDING_PREMIUM } from '@/constants/onboardingTheme';
 
 const FEATURES = [
-  { icon: Zap, title: 'Smart Habits', desc: 'AI-powered daily routines', delay: 0 },
-  { icon: Trophy, title: 'Live Sports', desc: 'Real-time scores & updates', delay: 80 },
-  { icon: Tv, title: 'Shows & Movies', desc: 'Track your watchlist', delay: 160 },
-  { icon: ListChecks, title: 'Task Manager', desc: 'Stay organised effortlessly', delay: 240 },
+  { icon: Link2, title: 'Streaming services', desc: 'Connect providers for Continue watching & picks' },
+  { icon: Zap, title: 'Smart habits & tasks', desc: 'AI-assisted routines that fit your day' },
+  { icon: Sparkles, title: 'Live sports', desc: 'Scores, teams, and alerts you care about' },
+  { icon: Tv, title: 'Shows & movies', desc: 'Track what you watch in one place' },
+  { icon: ListChecks, title: 'Your overview', desc: 'Calendar, weather, and daily focus' },
 ];
 
 export default function WelcomeScreen() {
   const router = useRouter();
   const { user, isGuest } = useAuth();
+  const { completeOnboarding, isLoading: profileLoading } = useUserProfile();
   const insets = useSafeAreaInsets();
 
-  const logoScale = useRef(new Animated.Value(0.3)).current;
-  const logoOpacity = useRef(new Animated.Value(0)).current;
-  const ringScale = useRef(new Animated.Value(0.5)).current;
-  const ringOpacity = useRef(new Animated.Value(0)).current;
-  const greetingOpacity = useRef(new Animated.Value(0)).current;
-  const greetingSlide = useRef(new Animated.Value(24)).current;
-  const featureAnims = useRef(FEATURES.map(() => ({
-    opacity: new Animated.Value(0),
-    translateX: new Animated.Value(-30),
-  }))).current;
-  const ctaOpacity = useRef(new Animated.Value(0)).current;
-  const ctaSlide = useRef(new Animated.Value(30)).current;
-  const pulseAnim = useRef(new Animated.Value(1)).current;
-  const orbFloat = useRef(new Animated.Value(0)).current;
+  const logoScale = useRef(new Animated.Value(0.92)).current;
+  const contentOpacity = useRef(new Animated.Value(0)).current;
+  const contentY = useRef(new Animated.Value(16)).current;
 
   useEffect(() => {
-    Animated.sequence([
-      Animated.parallel([
-        Animated.spring(logoScale, { toValue: 1, tension: 40, friction: 6, useNativeDriver: true }),
-        Animated.timing(logoOpacity, { toValue: 1, duration: 500, useNativeDriver: true }),
-      ]),
-      Animated.parallel([
-        Animated.spring(ringScale, { toValue: 1, tension: 30, friction: 8, useNativeDriver: true }),
-        Animated.timing(ringOpacity, { toValue: 1, duration: 400, useNativeDriver: true }),
-      ]),
-      Animated.parallel([
-        Animated.timing(greetingOpacity, { toValue: 1, duration: 500, useNativeDriver: true }),
-        Animated.spring(greetingSlide, { toValue: 0, tension: 50, friction: 10, useNativeDriver: true }),
-      ]),
-      Animated.stagger(80, featureAnims.map(a =>
-        Animated.parallel([
-          Animated.timing(a.opacity, { toValue: 1, duration: 350, useNativeDriver: true }),
-          Animated.spring(a.translateX, { toValue: 0, tension: 60, friction: 9, useNativeDriver: true }),
-        ])
-      )),
-      Animated.parallel([
-        Animated.timing(ctaOpacity, { toValue: 1, duration: 400, useNativeDriver: true }),
-        Animated.spring(ctaSlide, { toValue: 0, tension: 50, friction: 8, useNativeDriver: true }),
-      ]),
+    Animated.parallel([
+      Animated.spring(logoScale, { toValue: 1, useNativeDriver: true, tension: 60, friction: 8 }),
+      Animated.timing(contentOpacity, { toValue: 1, duration: 420, useNativeDriver: true }),
+      Animated.spring(contentY, { toValue: 0, useNativeDriver: true, tension: 56, friction: 10 }),
     ]).start();
-
-    Animated.loop(
-      Animated.sequence([
-        Animated.timing(pulseAnim, { toValue: 1.08, duration: 2000, useNativeDriver: true }),
-        Animated.timing(pulseAnim, { toValue: 1, duration: 2000, useNativeDriver: true }),
-      ])
-    ).start();
-
-    Animated.loop(
-      Animated.sequence([
-        Animated.timing(orbFloat, { toValue: 1, duration: 4000, useNativeDriver: true }),
-        Animated.timing(orbFloat, { toValue: 0, duration: 4000, useNativeDriver: true }),
-      ])
-    ).start();
-  }, [logoScale, logoOpacity, ringScale, ringOpacity, greetingOpacity, greetingSlide, featureAnims, ctaOpacity, ctaSlide, pulseAnim, orbFloat]);
+  }, [logoScale, contentOpacity, contentY]);
 
   const handleGetStarted = useCallback(() => {
-    void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+    if (Platform.OS !== 'web') {
+      void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+    }
     router.push('/(onboarding)/interests' as any);
   }, [router]);
 
+  const handleSkipSetup = useCallback(() => {
+    if (profileLoading) return;
+    if (Platform.OS !== 'web') {
+      void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+    }
+    completeOnboarding();
+    router.replace('/(tabs)/activities' as any);
+  }, [completeOnboarding, router, profileLoading]);
+
   const handleCreateAccount = useCallback(() => {
-    void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+    if (Platform.OS !== 'web') {
+      void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+    }
     router.push('/(auth)/signup' as any);
   }, [router]);
 
   const userName = isGuest ? 'there' : user?.name?.split(' ')[0] || 'there';
 
-  const orbTranslateY = orbFloat.interpolate({
-    inputRange: [0, 1],
-    outputRange: [0, -15],
-  });
-
   return (
-    <View style={styles.container}>
-      <LinearGradient
-        colors={['#050505', '#0A0A0A', '#050505']}
-        style={StyleSheet.absoluteFillObject}
-        start={{ x: 0, y: 0 }}
-        end={{ x: 1, y: 1 }}
-      />
-
-      <Animated.View style={[styles.ambientOrb, styles.orbTopRight, { transform: [{ translateY: orbTranslateY }] }]} />
-      <View style={styles.ambientOrb2} />
-      <View style={styles.gridLine1} />
-      <View style={styles.gridLine2} />
-
-      <View style={[styles.content, { paddingTop: insets.top + 50, paddingBottom: insets.bottom + 24 }]}>
-        <View style={styles.topSection}>
-          <View style={styles.logoArea}>
-            <Animated.View style={[styles.logoRing, { transform: [{ scale: Animated.multiply(ringScale, pulseAnim) }], opacity: ringOpacity }]} />
-            <Animated.View style={[styles.logoWrap, { transform: [{ scale: logoScale }], opacity: logoOpacity }]}>
-              <Image
-                source={{ uri: 'https://r2-pub.rork.com/attachments/fjpmfu4g76ll0wi3po34f' }}
-                style={styles.logo}
-                resizeMode="contain"
-              />
-            </Animated.View>
-          </View>
-
-          <Animated.View style={{ opacity: greetingOpacity, transform: [{ translateY: greetingSlide }] }}>
-            <Text style={styles.greeting}>Hey {userName}</Text>
-            <Text style={styles.tagline}>Let's set up your space</Text>
+    <View style={[styles.root, { paddingTop: insets.top + 16, paddingBottom: insets.bottom + 20 }]}>
+      <Animated.View
+        style={{
+          opacity: contentOpacity,
+          transform: [{ translateY: contentY }],
+          flex: 1,
+        }}
+      >
+        <View style={styles.hero}>
+          <Text style={styles.kicker}>Personal setup</Text>
+          <Animated.View style={[styles.logoWrap, { transform: [{ scale: logoScale }] }]}>
+            <Image
+              source={{ uri: 'https://r2-pub.rork.com/attachments/fjpmfu4g76ll0wi3po34f' }}
+              style={styles.logo}
+              resizeMode="contain"
+            />
           </Animated.View>
+          <Text style={styles.greeting}>Hey {userName}</Text>
+          <Text style={styles.tagline}>
+            Let&apos;s tailor One Pager to you — streaming, sports, and habits.
+          </Text>
         </View>
 
-        <View style={styles.featuresSection}>
-          {FEATURES.map((f, i) => {
+        <View style={styles.featureList}>
+          {FEATURES.map((f) => {
             const Icon = f.icon;
             return (
-              <Animated.View
-                key={f.title}
-                style={[
-                  styles.featureRow,
-                  {
-                    opacity: featureAnims[i].opacity,
-                    transform: [{ translateX: featureAnims[i].translateX }],
-                  },
-                ]}
-              >
-                <View style={styles.featureIconWrap}>
-                  <Icon size={18} color="#FFFFFF" strokeWidth={1.8} />
+              <View key={f.title} style={[styles.featureCard, ONBOARDING_PREMIUM.cardElevated]}>
+                <View style={styles.featureIcon}>
+                  <Icon size={20} color={COLORS.primary} strokeWidth={2} />
                 </View>
-                <View style={styles.featureText}>
+                <View style={styles.featureCopy}>
                   <Text style={styles.featureTitle}>{f.title}</Text>
                   <Text style={styles.featureDesc}>{f.desc}</Text>
                 </View>
-              </Animated.View>
+              </View>
             );
           })}
         </View>
 
-        <Animated.View style={[styles.bottomSection, { opacity: ctaOpacity, transform: [{ translateY: ctaSlide }] }]}>
+        <View style={styles.actions}>
           <TouchableOpacity
-            style={styles.ctaButton}
+            style={[styles.primaryBtnOuter, ONBOARDING_PREMIUM.primaryButtonShadow]}
             onPress={handleGetStarted}
-            activeOpacity={0.85}
+            activeOpacity={0.92}
             testID="onboarding-get-started"
           >
-            <View style={styles.ctaInner}>
-              <Text style={styles.ctaText}>Get Started</Text>
-              <View style={styles.ctaArrow}>
-                <ArrowRight size={16} color="#050505" strokeWidth={2.5} />
+            <LinearGradient
+              colors={[COLORS.primary, COLORS.primaryDark]}
+              start={{ x: 0, y: 0 }}
+              end={{ x: 1, y: 1 }}
+              style={styles.primaryBtnGradient}
+            >
+              <Text style={styles.primaryBtnText}>Get started</Text>
+              <View style={styles.primaryBtnIcon}>
+                <ArrowRight size={18} color="#FFF" strokeWidth={2.5} />
               </View>
-            </View>
+            </LinearGradient>
           </TouchableOpacity>
 
-          <Text style={styles.timeHint}>Takes about 1 minute</Text>
+          <TouchableOpacity
+            style={[styles.skipBtn, profileLoading && styles.skipBtnDisabled]}
+            onPress={handleSkipSetup}
+            activeOpacity={0.85}
+            disabled={profileLoading}
+          >
+            <Text style={styles.skipBtnText}>{profileLoading ? 'Loading…' : 'Skip for now'}</Text>
+            <Text style={styles.skipHint}>Use the app with defaults; change anytime in Profile</Text>
+          </TouchableOpacity>
 
-          {isGuest && (
-            <TouchableOpacity
-              style={styles.accountBtn}
-              onPress={handleCreateAccount}
-              activeOpacity={0.7}
-            >
-              <Text style={styles.accountBtnText}>Already have an account?</Text>
+          <Text style={styles.timeHint}>Full setup takes about 2 minutes · You can skip any step</Text>
+
+          {isGuest ? (
+            <TouchableOpacity style={styles.linkRow} onPress={handleCreateAccount} activeOpacity={0.7}>
+              <Text style={styles.linkMuted}>Want an account? </Text>
+              <Text style={styles.linkStrong}>Sign up</Text>
             </TouchableOpacity>
-          )}
-        </Animated.View>
-      </View>
+          ) : null}
+        </View>
+      </Animated.View>
     </View>
   );
 }
 
 const styles = StyleSheet.create({
-  container: {
+  root: {
     flex: 1,
-    backgroundColor: '#050505',
+    backgroundColor: 'transparent',
+    paddingHorizontal: 24,
   },
-  ambientOrb: {
-    position: 'absolute',
-    borderRadius: 999,
+  kicker: {
+    ...ONBOARDING_PREMIUM.kicker,
+    marginBottom: 14,
+    textAlign: 'center',
   },
-  orbTopRight: {
-    width: 300,
-    height: 300,
-    backgroundColor: 'rgba(255,255,255,0.02)',
-    top: -80,
-    right: -100,
-  },
-  ambientOrb2: {
-    position: 'absolute',
-    width: 220,
-    height: 220,
-    borderRadius: 110,
-    backgroundColor: 'rgba(255,255,255,0.015)',
-    bottom: 120,
-    left: -60,
-  },
-  gridLine1: {
-    position: 'absolute',
-    width: 1,
-    height: height,
-    backgroundColor: 'rgba(255,255,255,0.02)',
-    left: width * 0.25,
-  },
-  gridLine2: {
-    position: 'absolute',
-    width: 1,
-    height: height,
-    backgroundColor: 'rgba(255,255,255,0.02)',
-    left: width * 0.75,
-  },
-  content: {
-    flex: 1,
-    paddingHorizontal: 32,
-    justifyContent: 'space-between',
-  },
-  topSection: {
+  hero: {
     alignItems: 'center',
-    gap: 28,
-  },
-  logoArea: {
-    width: 110,
-    height: 110,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  logoRing: {
-    position: 'absolute',
-    width: 110,
-    height: 110,
-    borderRadius: 32,
-    borderWidth: 1,
-    borderColor: 'rgba(255,255,255,0.1)',
+    marginBottom: 28,
   },
   logoWrap: {
-    width: 80,
-    height: 80,
-    borderRadius: 24,
-    backgroundColor: '#FFFFFF',
+    width: 92,
+    height: 92,
     justifyContent: 'center',
     alignItems: 'center',
-    padding: 12,
-    shadowColor: '#FFFFFF',
-    shadowOffset: { width: 0, height: 8 },
-    shadowOpacity: 0.15,
-    shadowRadius: 20,
-    elevation: 8,
+    padding: 14,
+    marginBottom: 22,
+    ...ONBOARDING_PREMIUM.cardElevated,
+    borderRadius: 26,
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: ONBOARDING_PREMIUM.hairlineBorder,
   },
   logo: {
     width: '100%',
     height: '100%',
   },
   greeting: {
-    fontSize: 28,
-    fontWeight: '700' as const,
-    color: '#FFFFFF',
-    textAlign: 'center' as const,
-    letterSpacing: -0.5,
-    marginBottom: 6,
+    ...ONBOARDING_PREMIUM.displayLarge,
+    textAlign: 'center',
+    marginBottom: 10,
   },
   tagline: {
     fontSize: 16,
-    color: '#747474',
-    textAlign: 'center' as const,
-    letterSpacing: 0.2,
+    lineHeight: 24,
+    fontWeight: '500',
+    color: COLORS.textSecondary,
+    textAlign: 'center',
+    paddingHorizontal: 12,
+    maxWidth: 340,
+    alignSelf: 'center',
+    letterSpacing: -0.15,
   },
-  featuresSection: {
+  featureList: {
     gap: 12,
+    marginBottom: 24,
   },
-  featureRow: {
+  featureCard: {
     flexDirection: 'row',
     alignItems: 'center',
-    paddingVertical: 14,
+    paddingVertical: 15,
     paddingHorizontal: 16,
-    backgroundColor: 'rgba(255,255,255,0.03)',
-    borderRadius: 16,
-    borderWidth: 1,
-    borderColor: 'rgba(255,255,255,0.05)',
+    gap: 14,
   },
-  featureIconWrap: {
-    width: 40,
-    height: 40,
-    borderRadius: 12,
-    backgroundColor: 'rgba(255,255,255,0.06)',
+  featureIcon: {
+    width: 46,
+    height: 46,
+    borderRadius: 14,
+    backgroundColor: 'rgba(0, 122, 255, 0.08)',
     justifyContent: 'center',
     alignItems: 'center',
-    marginRight: 14,
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: 'rgba(0, 122, 255, 0.12)',
   },
-  featureText: {
+  featureCopy: {
     flex: 1,
   },
   featureTitle: {
     fontSize: 15,
-    fontWeight: '600' as const,
-    color: '#FFFFFF',
-    marginBottom: 2,
+    fontWeight: '700',
+    color: COLORS.text,
+    marginBottom: 3,
+    letterSpacing: -0.2,
   },
   featureDesc: {
     fontSize: 13,
-    color: '#747474',
+    color: COLORS.textMuted,
+    lineHeight: 19,
+    fontWeight: '500',
   },
-  bottomSection: {
-    alignItems: 'center',
+  actions: {
+    marginTop: 'auto',
     gap: 12,
   },
-  ctaButton: {
-    width: '100%',
+  primaryBtnOuter: {
     borderRadius: 16,
     overflow: 'hidden',
-    shadowColor: '#FFFFFF',
-    shadowOffset: { width: 0, height: 8 },
-    shadowOpacity: 0.15,
-    shadowRadius: 20,
-    elevation: 10,
   },
-  ctaInner: {
+  primaryBtnGradient: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
+    gap: 10,
     paddingVertical: 17,
     paddingHorizontal: 28,
-    gap: 10,
-    backgroundColor: '#FFFFFF',
   },
-  ctaText: {
+  primaryBtnText: {
     fontSize: 17,
-    fontWeight: '700' as const,
-    color: '#050505',
-    letterSpacing: 0.2,
+    fontWeight: '700',
+    color: '#FFFFFF',
   },
-  ctaArrow: {
-    width: 28,
-    height: 28,
-    borderRadius: 14,
-    backgroundColor: 'rgba(5,5,5,0.08)',
+  primaryBtnIcon: {
+    width: 30,
+    height: 30,
+    borderRadius: 15,
+    backgroundColor: 'rgba(255,255,255,0.25)',
     justifyContent: 'center',
     alignItems: 'center',
   },
+  skipBtn: {
+    alignItems: 'center',
+    paddingVertical: 12,
+  },
+  skipBtnDisabled: {
+    opacity: 0.45,
+  },
+  skipBtnText: {
+    fontSize: 16,
+    fontWeight: '600',
+    color: COLORS.primary,
+  },
+  skipHint: {
+    fontSize: 12,
+    color: COLORS.textMuted,
+    textAlign: 'center',
+    marginTop: 4,
+    paddingHorizontal: 16,
+  },
   timeHint: {
     fontSize: 13,
-    color: '#747474',
-    letterSpacing: 0.3,
+    color: COLORS.textMuted,
+    textAlign: 'center',
+    lineHeight: 18,
   },
-  accountBtn: {
-    paddingVertical: 10,
-    paddingHorizontal: 20,
+  linkRow: {
+    flexDirection: 'row',
+    justifyContent: 'center',
+    alignItems: 'center',
+    paddingVertical: 8,
   },
-  accountBtnText: {
+  linkMuted: {
     fontSize: 14,
-    fontWeight: '500' as const,
-    color: '#B3B3B3',
-    letterSpacing: 0.1,
+    color: COLORS.textMuted,
+  },
+  linkStrong: {
+    fontSize: 14,
+    fontWeight: '700',
+    color: COLORS.primary,
   },
 });

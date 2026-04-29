@@ -202,7 +202,8 @@ export const [AppProvider, useApp] = createContextHook(() => {
             return initialHabits;
           }
         }
-        await unifiedStorage.setItem(HABITS_STORAGE_KEY, JSON.stringify(initialHabits));
+        // Do not persist empty defaults here — cloud hydrate can run in parallel; writing [] would
+        // overwrite Supabase-fetched habits on disk (race after login).
         return initialHabits;
       } catch (error) {
         console.error('Error fetching habits:', error);
@@ -227,7 +228,6 @@ export const [AppProvider, useApp] = createContextHook(() => {
             return initialActivities;
           }
         }
-        await unifiedStorage.setItem(ACTIVITIES_STORAGE_KEY, JSON.stringify(initialActivities));
         return initialActivities;
       } catch (error) {
         console.error('Error fetching activities:', error);
@@ -252,7 +252,6 @@ export const [AppProvider, useApp] = createContextHook(() => {
             return initialShows;
           }
         }
-        await unifiedStorage.setItem(SHOWS_STORAGE_KEY, JSON.stringify(initialShows));
         return initialShows;
       } catch (error) {
         console.error('Error fetching shows:', error);
@@ -277,7 +276,6 @@ export const [AppProvider, useApp] = createContextHook(() => {
             return initialSportMatches;
           }
         }
-        await unifiedStorage.setItem(SPORTS_STORAGE_KEY, JSON.stringify(initialSportMatches));
         return initialSportMatches;
       } catch (error) {
         console.error('Error fetching sports:', error);
@@ -293,7 +291,11 @@ export const [AppProvider, useApp] = createContextHook(() => {
 
     const hydrateFromCloud = async () => {
       try {
-        const cloudData = await supabaseSync.loadFromCloud();
+        let cloudData = await supabaseSync.loadFromCloud();
+        if (!cloudData && !cancelled) {
+          await new Promise((r) => setTimeout(r, 700));
+          if (!cancelled) cloudData = await supabaseSync.loadFromCloud();
+        }
         if (!cloudData || cancelled) return;
 
         const localHabitsHydrate = queryClient.getQueryData<Habit[]>(['habits', userId]);
@@ -313,6 +315,10 @@ export const [AppProvider, useApp] = createContextHook(() => {
           queryClient.setQueryData(['sports', userId], cloudData.sports);
           await unifiedStorage.setItem(SPORTS_STORAGE_KEY, JSON.stringify(cloudData.sports));
         }
+        void queryClient.invalidateQueries({ queryKey: ['habits', userId] });
+        void queryClient.invalidateQueries({ queryKey: ['activities', userId] });
+        void queryClient.invalidateQueries({ queryKey: ['shows', userId] });
+        void queryClient.invalidateQueries({ queryKey: ['sports', userId] });
       } catch (error) {
         console.warn('⚠️ Supabase cloud hydrate failed for habits store:', error);
       }

@@ -6,6 +6,7 @@ import { LinearGradient } from 'expo-linear-gradient';
 import { useUserProfile } from '@/hooks/useUserProfile';
 import { LiveFootballMatch, UserTeam, UserNationality } from '@/types/habit';
 import { COLORS } from '@/constants/colors';
+import { useTheme } from '@/hooks/useTheme';
 import { SPACING, cardShadow } from '@/constants/design';
 
 import EnhancedLoadingState from './EnhancedLoadingState';
@@ -37,6 +38,9 @@ const TEAM_GRADIENTS: [string, string][] = [
 const getTeamGradient = (index: number): [string, string] => {
   return TEAM_GRADIENTS[index % TEAM_GRADIENTS.length];
 };
+
+/** Cap how many form dots we show (newest first). `slice` never pads — 1 completed match in the pool ⇒ 1 dot only. */
+const FORM_DISPLAY_MAX = 3;
 
 const parseMatchDate = (dateString: string, timeString: string): Date | null => {
   try {
@@ -418,6 +422,7 @@ const PremiumResultCard = React.memo(({ match, teamName, isTeamMatchFn, onPress 
 });
 
 const TabIndicator = React.memo(({ tabs, activeIndex }: { tabs: { key: string }[]; activeIndex: number }) => {
+  const { colors } = useTheme();
   const translateX = useRef(new Animated.Value(0)).current;
   const tabWidth = (SCREEN_WIDTH - 40 - 6) / tabs.length;
 
@@ -434,6 +439,7 @@ const TabIndicator = React.memo(({ tabs, activeIndex }: { tabs: { key: string }[
     <Animated.View
       style={[
         styles.tabIndicator,
+        { backgroundColor: colors.card },
         {
           width: tabWidth - 6,
           transform: [{ translateX: Animated.add(translateX, new Animated.Value(3)) }],
@@ -444,6 +450,7 @@ const TabIndicator = React.memo(({ tabs, activeIndex }: { tabs: { key: string }[
 });
 
 const PremiumEmptyState = React.memo(({ type }: { type: 'live' | 'next' | 'results' }) => {
+  const { colors } = useTheme();
   const config = {
     live: { icon: Radio, gradient: ['#FF3B30', '#FF6B6B'] as [string, string], title: 'No Live Matches', sub: 'Check back when your teams are playing' },
     next: { icon: Calendar, gradient: ['#007AFF', '#5AC8FA'] as [string, string], title: 'No Upcoming Fixtures', sub: 'Scheduled matches will appear here' },
@@ -456,8 +463,8 @@ const PremiumEmptyState = React.memo(({ type }: { type: 'live' | 'next' | 'resul
       <LinearGradient colors={gradient} start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }} style={styles.premiumEmptyIcon}>
         <Icon size={22} color="#FFFFFF" strokeWidth={2} />
       </LinearGradient>
-      <Text style={styles.premiumEmptyTitle}>{title}</Text>
-      <Text style={styles.premiumEmptySub}>{sub}</Text>
+      <Text style={[styles.premiumEmptyTitle, { color: colors.text }]}>{title}</Text>
+      <Text style={[styles.premiumEmptySub, { color: colors.textSecondary }]}>{sub}</Text>
     </View>
   );
 });
@@ -470,6 +477,7 @@ function ModernSportsSectionComponent({
   onViewAll,
   rawUpcomingCount: _rawUpcomingCount = 0
 }: ModernSportsSectionProps) {
+  const { colors } = useTheme();
   const { profile, isLoading: profileLoading, getTeamLogo } = useUserProfile();
   const [selectedTab, setSelectedTab] = useState<'teams' | 'live' | 'next' | 'results'>('teams');
   const initialTabSetRef = useRef(false);
@@ -576,7 +584,8 @@ function ModernSportsSectionComponent({
       : contextFiltered.length > 0
         ? contextFiltered
         : completedMatches_all;
-    const recentResults = (leagueFiltered.length > 0 ? leagueFiltered : completedMatches_all).slice(0, 5);
+    /** Competition-scoped pool only; never invent matches. One real result ⇒ one dot. */
+    const recentResults = leagueFiltered.slice(0, FORM_DISPLAY_MAX);
     let wins = 0, draws = 0, losses = 0;
     recentResults.forEach(match => {
       const isHome = isTeamMatch(match.homeTeam, team.name);
@@ -754,7 +763,7 @@ function ModernSportsSectionComponent({
         <View style={styles.header}>
           <View style={styles.headerLeft}>
             <Trophy size={20} color="#007AFF" />
-            <Text style={styles.headerTitle}>My Teams</Text>
+            <Text style={[styles.headerTitle, { color: colors.text }]}>My Teams</Text>
           </View>
         </View>
         <EnhancedLoadingState message="Loading matches" type="sports" />
@@ -771,7 +780,7 @@ function ModernSportsSectionComponent({
         <View style={styles.header}>
           <View style={styles.headerLeft}>
             <Trophy size={20} color="#007AFF" />
-            <Text style={styles.headerTitle}>My Teams</Text>
+            <Text style={[styles.headerTitle, { color: colors.text }]}>My Teams</Text>
           </View>
           {onViewAll && (
             <TouchableOpacity onPress={onViewAll} style={styles.addTeamsBtn}>
@@ -780,7 +789,7 @@ function ModernSportsSectionComponent({
           )}
         </View>
         <View style={{ padding: 20, alignItems: 'center' }}>
-          <Text style={{ color: '#9CA3AF', fontSize: 14, textAlign: 'center' }}>Add your favourite teams or select your nationality to track matches</Text>
+          <Text style={{ color: colors.textSecondary, fontSize: 14, textAlign: 'center' }}>Add your favourite teams or select your nationality to track matches</Text>
         </View>
       </View>
     );
@@ -913,7 +922,7 @@ function ModernSportsSectionComponent({
               <View style={styles.formSection}>
                 <Text style={styles.formLabel}>Form</Text>
                 <View style={styles.formDots}>
-                  {stats.recentResults.slice(0, 5).map((match, i) => {
+                  {stats.recentResults.map((match, i) => {
                     const isHome = isTeamMatch(match.homeTeam, team.name);
                     const teamScore = isHome ? (match.homeScore ?? 0) : (match.awayScore ?? 0);
                     const opponentScore = isHome ? (match.awayScore ?? 0) : (match.homeScore ?? 0);
@@ -952,19 +961,19 @@ function ModernSportsSectionComponent({
       <View style={styles.header}>
         <View style={styles.headerLeft}>
           <Trophy size={20} color="#007AFF" />
-          <Text style={styles.headerTitle}>My Teams</Text>
+          <Text style={[styles.headerTitle, { color: colors.text }]}>My Teams</Text>
         </View>
-        <Text style={styles.headerSubtitle}>
+        <Text style={[styles.headerSubtitle, { color: colors.textSecondary }]}>
           {teamsCount} team{teamsCount !== 1 ? 's' : ''} • {allTeamMatches.length} matches
         </Text>
         {onViewAll && (
-          <TouchableOpacity onPress={onViewAll} style={styles.viewAllBtn}>
+          <TouchableOpacity onPress={onViewAll} style={[styles.viewAllBtn, { backgroundColor: colors.surfaceSecondary }]}>
             <Text style={styles.viewAllBtnText}>View All</Text>
           </TouchableOpacity>
         )}
       </View>
 
-      <View style={styles.tabBar}>
+      <View style={[styles.tabBar, { backgroundColor: colors.surfaceSecondary }]}>
         <TabIndicator tabs={tabItems} activeIndex={activeTabIndex} />
         {tabItems.map(tab => {
           const isActive = selectedTab === tab.key;
@@ -978,13 +987,16 @@ function ModernSportsSectionComponent({
             >
               <TabIcon
                 size={12}
-                color={isActive ? (tab.isLive ? '#FF3B30' : '#007AFF') : '#8E8E93'}
+                color={isActive ? (tab.isLive ? '#FF3B30' : colors.primary) : colors.textMuted}
                 strokeWidth={isActive ? 2.5 : 2}
               />
               <Text numberOfLines={1} style={[
                 styles.tabLabel,
-                isActive && styles.tabLabelActive,
-                isActive && tab.isLive && { color: '#FF3B30' },
+                isActive
+                  ? tab.isLive
+                    ? { color: '#FF3B30', fontWeight: '700' as const }
+                    : { color: colors.primary, fontWeight: '700' as const }
+                  : { color: colors.textMuted },
               ]}>{tab.label}</Text>
               {tab.count !== null && tab.count > 0 && (
                 <View style={[

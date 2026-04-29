@@ -301,7 +301,7 @@ export const [TaskProvider, useTasks] = createContextHook(() => {
             return initialTasks;
           }
         }
-        await unifiedStorage.setItem(TASKS_STORAGE_KEY, JSON.stringify(initialTasks));
+        // Avoid persisting [] before cloud hydrate (same race as habits store after login).
         return initialTasks;
       } catch (error) {
         console.error('Error loading tasks:', error);
@@ -345,7 +345,11 @@ export const [TaskProvider, useTasks] = createContextHook(() => {
 
     const hydrateFromCloud = async () => {
       try {
-        const cloudData = await supabaseSync.loadFromCloud();
+        let cloudData = await supabaseSync.loadFromCloud();
+        if (!cloudData && !cancelled) {
+          await new Promise((r) => setTimeout(r, 700));
+          if (!cancelled) cloudData = await supabaseSync.loadFromCloud();
+        }
         if (!cloudData || cancelled) return;
 
         if (Array.isArray(cloudData.tasks)) {
@@ -360,6 +364,9 @@ export const [TaskProvider, useTasks] = createContextHook(() => {
           queryClient.setQueryData(['task-time-entries', userId], cloudData.taskTimeEntries);
           await unifiedStorage.setItem(TIME_ENTRIES_STORAGE_KEY, JSON.stringify(cloudData.taskTimeEntries));
         }
+        void queryClient.invalidateQueries({ queryKey: ['tasks', userId] });
+        void queryClient.invalidateQueries({ queryKey: ['task-projects', userId] });
+        void queryClient.invalidateQueries({ queryKey: ['task-time-entries', userId] });
       } catch (error) {
         console.warn('⚠️ Supabase cloud hydrate failed for tasks store:', error);
       }

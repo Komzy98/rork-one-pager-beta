@@ -10,10 +10,10 @@ import {
 import { useRouter } from 'expo-router';
 import { CheckCircle, Sparkles, ArrowRight, Zap } from 'lucide-react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { LinearGradient } from 'expo-linear-gradient';
 import * as Haptics from 'expo-haptics';
 import { useUserProfile } from '@/hooks/useUserProfile';
 import { getChronotypeInfo, getChronotypePeakLabel } from '@/constants/chronotypes';
+import { COLORS } from '@/constants/colors';
 
 const { width, height } = Dimensions.get('window');
 
@@ -116,16 +116,6 @@ export default function CompleteScreen() {
 
   return (
     <View style={styles.container}>
-      <LinearGradient
-        colors={['#050505', '#0A0A0A', '#050505']}
-        style={StyleSheet.absoluteFillObject}
-        start={{ x: 0.2, y: 0 }}
-        end={{ x: 0.8, y: 1 }}
-      />
-
-      <View style={styles.ambientOrb1} />
-      <View style={styles.ambientOrb2} />
-
       {confettiAnims.map((anim, i) => (
         <Animated.View
           key={i}
@@ -160,7 +150,7 @@ export default function CompleteScreen() {
             />
             <Animated.View style={[styles.checkBg, { transform: [{ scale: checkScale }] }]}>
               <View style={styles.checkInner}>
-                <CheckCircle size={48} color="#050505" strokeWidth={2} />
+                <CheckCircle size={48} color={COLORS.success} strokeWidth={2} />
               </View>
             </Animated.View>
           </View>
@@ -178,7 +168,7 @@ export default function CompleteScreen() {
           ]}
         >
           <View style={styles.summaryHeader}>
-            <Sparkles size={16} color="#FFFFFF" />
+            <Sparkles size={16} color={COLORS.primary} />
             <Text style={styles.summaryTitle}>Your Setup</Text>
           </View>
 
@@ -187,7 +177,7 @@ export default function CompleteScreen() {
           <View style={styles.summaryList}>
             <View style={styles.summaryItem}>
               <View style={styles.summaryIconWrap}>
-                <Zap size={14} color="#FFFFFF" />
+                <Zap size={14} color={COLORS.primary} />
               </View>
               <View style={styles.summaryTextWrap}>
                 <Text style={styles.summaryLabel}>Interests</Text>
@@ -282,7 +272,7 @@ export default function CompleteScreen() {
               testID="onboarding-complete"
             >
               <View style={styles.startBtnInner}>
-                <Text style={styles.startText}>Start Exploring</Text>
+                <Text style={styles.startText}>Start exploring</Text>
                 <View style={styles.startArrow}>
                   <ArrowRight size={16} color="#FFFFFF" strokeWidth={2.5} />
                 </View>
@@ -299,25 +289,7 @@ export default function CompleteScreen() {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#050505',
-  },
-  ambientOrb1: {
-    position: 'absolute',
-    width: 300,
-    height: 300,
-    borderRadius: 150,
-    backgroundColor: 'rgba(255,255,255,0.02)',
-    top: -80,
-    left: -80,
-  },
-  ambientOrb2: {
-    position: 'absolute',
-    width: 220,
-    height: 220,
-    borderRadius: 110,
-    backgroundColor: 'rgba(255,255,255,0.015)',
-    bottom: 60,
-    right: -60,
+    backgroundColor: 'transparent',
   },
   confetti: {
     position: 'absolute',
@@ -344,14 +316,14 @@ const styles = StyleSheet.create({
     height: 90,
     borderRadius: 45,
     borderWidth: 2,
-    borderColor: '#FFFFFF',
+    borderColor: `${COLORS.success}55`,
   },
   checkBg: {
-    shadowColor: '#FFFFFF',
-    shadowOffset: { width: 0, height: 10 },
-    shadowOpacity: 0.2,
-    shadowRadius: 20,
-    elevation: 10,
+    shadowColor: COLORS.shadow,
+    shadowOffset: { width: 0, height: 8 },
+    shadowOpacity: 0.12,
+    shadowRadius: 16,
+    elevation: 8,
   },
   checkInner: {
     width: 90,
@@ -359,19 +331,21 @@ const styles = StyleSheet.create({
     borderRadius: 28,
     justifyContent: 'center',
     alignItems: 'center',
-    backgroundColor: '#FFFFFF',
+    backgroundColor: COLORS.surface,
+    borderWidth: 1,
+    borderColor: COLORS.border,
   },
   title: {
     fontSize: 30,
     fontWeight: '800' as const,
-    color: '#FFFFFF',
+    color: COLORS.text,
     textAlign: 'center' as const,
     marginBottom: 8,
     letterSpacing: -0.5,
   },
   subtitle: {
     fontSize: 16,
-    color: '#747474',
+    color: COLORS.textSecondary,
     textAlign: 'center' as const,
     lineHeight: 22,
   },
@@ -379,9 +353,14 @@ const styles = StyleSheet.create({
     borderRadius: 20,
     padding: 20,
     borderWidth: 1,
-    borderColor: 'rgba(255,255,255,0.08)',
+    borderColor: COLORS.border,
     overflow: 'hidden',
-    backgroundColor: 'rgba(255,255,255,0.03)',
+    backgroundColor: COLORS.surface,
+    shadowColor: COLORS.shadow,
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.06,
+    shadowRadius: 10,
+    elevation: 2,
   },
   summaryHeader: {
     flexDirection: 'row',
@@ -391,11 +370,11 @@ const styles = StyleSheet.create({
   summaryTitle: {
     fontSize: 16,
     fontWeight: '700' as const,
-    color: '#FFFFFF',
+    color: COLORS.text,
   },
   summaryDivider: {
     height: 1,
-    backgroundColor: 'rgba(255,255,255,0.06)',
+    backgroundColor: COLORS.border,
     marginVertical: 14,
   },
   summaryList: {
@@ -409,7 +388,7 @@ const styles = StyleSheet.create({
     width: 36,
     height: 36,
     borderRadius: 11,
-    backgroundColor: 'rgba(255,255,255,0.06)',
+    backgroundColor: COLORS.surfaceSecondary,
     justifyContent: 'center',
     alignItems: 'center',
     marginRight: 12,
@@ -422,14 +401,14 @@ const styles = StyleSheet.create({
   },
   summaryLabel: {
     fontSize: 11,
-    color: '#747474',
+    color: COLORS.textMuted,
     marginBottom: 2,
     fontWeight: '500' as const,
   },
   summaryValue: {
     fontSize: 14,
     fontWeight: '600' as const,
-    color: '#FFFFFF',
+    color: COLORS.text,
   },
   bottomWrap: {
     alignItems: 'center',
@@ -438,11 +417,11 @@ const styles = StyleSheet.create({
     width: width - 64,
     borderRadius: 16,
     overflow: 'hidden',
-    shadowColor: '#FFFFFF',
-    shadowOffset: { width: 0, height: 10 },
+    shadowColor: COLORS.shadow,
+    shadowOffset: { width: 0, height: 6 },
     shadowOpacity: 0.15,
-    shadowRadius: 20,
-    elevation: 10,
+    shadowRadius: 14,
+    elevation: 8,
   },
   startBtnInner: {
     flexDirection: 'row',
@@ -451,24 +430,24 @@ const styles = StyleSheet.create({
     paddingVertical: 17,
     paddingHorizontal: 28,
     gap: 10,
-    backgroundColor: '#FFFFFF',
+    backgroundColor: COLORS.primary,
   },
   startText: {
     fontSize: 17,
     fontWeight: '700' as const,
-    color: '#050505',
+    color: '#FFFFFF',
   },
   startArrow: {
     width: 28,
     height: 28,
     borderRadius: 14,
-    backgroundColor: 'rgba(5,5,5,0.1)',
+    backgroundColor: 'rgba(255,255,255,0.22)',
     justifyContent: 'center',
     alignItems: 'center',
   },
   editHint: {
     fontSize: 13,
-    color: '#747474',
+    color: COLORS.textMuted,
     marginTop: 14,
   },
 });

@@ -1,24 +1,80 @@
-import React, { useState, useEffect, useRef, useCallback } from 'react';
+import React, { useState, useEffect, useRef, useCallback, useMemo } from 'react';
 import { StyleSheet, View, Text, Modal, TouchableOpacity, ScrollView, ActivityIndicator, Image, Animated, Platform, Dimensions, Linking } from 'react-native';
 import { X, MapPin, Trophy, Users, BarChart3, History, AlertTriangle, Activity, Tv, Globe, Building2, Cloud, Thermometer, Wind, Droplets, Play, TrendingUp, Shield, Zap, Clock } from 'lucide-react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import * as Haptics from 'expo-haptics';
 import { COLORS } from '@/constants/colors';
 import { trpc } from '@/lib/trpc';
+import { useTheme } from '@/hooks/useTheme';
 
 const { width: SCREEN_WIDTH } = Dimensions.get('window');
 
-const ACCENT = '#00E5FF';
-const ACCENT_SECONDARY = '#7C4DFF';
-const SURFACE_DARK = '#111318';
-const SURFACE_CARD = '#1A1D24';
-const SURFACE_ELEVATED = '#22262F';
-const BORDER_SUBTLE = 'rgba(255,255,255,0.06)';
-const TEXT_PRIMARY = '#F0F2F5';
-const TEXT_SECONDARY = 'rgba(255,255,255,0.55)';
-const TEXT_MUTED = 'rgba(255,255,255,0.3)';
+/** Team accent colors (home / away) — independent of app light/dark */
 const HOME_COLOR = '#00E5FF';
 const AWAY_COLOR = '#FF5C8A';
+
+export type MatchModalTokens = {
+  accent: string;
+  accentSecondary: string;
+  surfaceMain: string;
+  surfaceCard: string;
+  surfaceElevated: string;
+  borderSubtle: string;
+  textPrimary: string;
+  textSecondary: string;
+  textMuted: string;
+  gradientMid: string;
+  handleBar: string;
+  heroScore: string;
+};
+
+function getMatchModalTokens(isDark: boolean): MatchModalTokens {
+  if (isDark) {
+    return {
+      accent: '#00E5FF',
+      accentSecondary: '#7C4DFF',
+      surfaceMain: '#111318',
+      surfaceCard: '#1A1D24',
+      surfaceElevated: '#22262F',
+      borderSubtle: 'rgba(255,255,255,0.06)',
+      textPrimary: '#F0F2F5',
+      textSecondary: 'rgba(255,255,255,0.55)',
+      textMuted: 'rgba(255,255,255,0.3)',
+      gradientMid: '#0D0F14',
+      handleBar: 'rgba(255,255,255,0.15)',
+      heroScore: '#FFFFFF',
+    };
+  }
+  return {
+    accent: '#0891B2',
+    accentSecondary: '#6366F1',
+    surfaceMain: '#FFFFFF',
+    surfaceCard: '#F3F4F6',
+    surfaceElevated: '#E5E7EB',
+    borderSubtle: 'rgba(15,23,42,0.08)',
+    textPrimary: '#111827',
+    textSecondary: 'rgba(17,24,39,0.65)',
+    textMuted: 'rgba(17,24,39,0.45)',
+    gradientMid: '#F3F4F6',
+    handleBar: 'rgba(15,23,42,0.2)',
+    heroScore: '#111827',
+  };
+}
+
+type MatchModalStyles = ReturnType<typeof createMatchModalStyles>;
+
+const MatchModalShellContext = React.createContext<{
+  tokens: MatchModalTokens;
+  styles: MatchModalStyles;
+} | null>(null);
+
+function useMatchModalShell() {
+  const ctx = React.useContext(MatchModalShellContext);
+  if (!ctx) {
+    throw new Error('useMatchModalShell must be used inside MatchDetailsModal');
+  }
+  return ctx;
+}
 
 type TabType = 'events' | 'lineups' | 'stats' | 'form' | 'h2h' | 'venue';
 
@@ -238,6 +294,7 @@ interface H2HMatch {
 }
 
 const AnimatedStatBar = ({ homeValue, awayValue, label, delay = 0 }: { homeValue: number | string; awayValue: number | string; label: string; delay?: number }) => {
+  const { styles } = useMatchModalShell();
   const animatedWidth = useRef(new Animated.Value(0)).current;
   const fadeAnim = useRef(new Animated.Value(0)).current;
 
@@ -305,6 +362,7 @@ const LineupListView = ({ homeLineup, awayLineup, homeTeam, awayTeam, homeTeamLo
   homeTeamLogo?: string;
   awayTeamLogo?: string;
 }) => {
+  const { styles } = useMatchModalShell();
   const [activeTab, setActiveTab] = useState<LineupTab>('home');
 
   const handleTabChange = async (tab: LineupTab) => {
@@ -447,6 +505,12 @@ export default function MatchDetailsModal({
     { enabled: visible && !!fixtureId }
   );
 
+  const { themeMode } = useTheme();
+  /** Sheet matches profile explicitly choosing Dark — not system Appearance when mode is Auto */
+  const modalDark = themeMode === 'dark';
+  const tokens = useMemo(() => getMatchModalTokens(modalDark), [modalDark]);
+  const styles = useMemo(() => createMatchModalStyles(tokens), [tokens]);
+
   useEffect(() => {
     if (visible) {
       Animated.parallel([
@@ -507,14 +571,17 @@ export default function MatchDetailsModal({
     void fetchWeather();
   }, [fixture?.fixture?.venue?.city, activeTab]);
 
-  const tabs: { id: TabType; label: string; icon: React.ReactNode }[] = [
-    { id: 'events', label: 'Timeline', icon: <Activity size={14} color={activeTab === 'events' ? ACCENT : TEXT_MUTED} /> },
-    { id: 'lineups', label: 'Lineups', icon: <Users size={14} color={activeTab === 'lineups' ? ACCENT : TEXT_MUTED} /> },
-    { id: 'stats', label: 'Stats', icon: <BarChart3 size={14} color={activeTab === 'stats' ? ACCENT : TEXT_MUTED} /> },
-    { id: 'form', label: 'Form', icon: <TrendingUp size={14} color={activeTab === 'form' ? ACCENT : TEXT_MUTED} /> },
-    { id: 'h2h', label: 'H2H', icon: <History size={14} color={activeTab === 'h2h' ? ACCENT : TEXT_MUTED} /> },
-    { id: 'venue', label: 'Venue', icon: <Building2 size={14} color={activeTab === 'venue' ? ACCENT : TEXT_MUTED} /> },
-  ];
+  const tabs: { id: TabType; label: string; icon: React.ReactNode }[] = useMemo(
+    () => [
+      { id: 'events', label: 'Timeline', icon: <Activity size={14} color={activeTab === 'events' ? tokens.accent : tokens.textMuted} /> },
+      { id: 'lineups', label: 'Lineups', icon: <Users size={14} color={activeTab === 'lineups' ? tokens.accent : tokens.textMuted} /> },
+      { id: 'stats', label: 'Stats', icon: <BarChart3 size={14} color={activeTab === 'stats' ? tokens.accent : tokens.textMuted} /> },
+      { id: 'form', label: 'Form', icon: <TrendingUp size={14} color={activeTab === 'form' ? tokens.accent : tokens.textMuted} /> },
+      { id: 'h2h', label: 'H2H', icon: <History size={14} color={activeTab === 'h2h' ? tokens.accent : tokens.textMuted} /> },
+      { id: 'venue', label: 'Venue', icon: <Building2 size={14} color={activeTab === 'venue' ? tokens.accent : tokens.textMuted} /> },
+    ],
+    [tokens, activeTab],
+  );
 
   const renderEventIcon = (type: string, detail: string) => {
     if (type === 'Goal') {
@@ -557,7 +624,11 @@ export default function MatchDetailsModal({
     return (
       <View style={styles.watchCard}>
         <LinearGradient
-          colors={['#0A2E1F', '#0D1A14', SURFACE_CARD]}
+          colors={
+            modalDark
+              ? ['#0A2E1F', '#0D1A14', tokens.surfaceCard]
+              : ['#ECFDF5', '#D1FAE5', tokens.surfaceCard]
+          }
           style={styles.watchCardGradient}
           start={{ x: 0, y: 0 }}
           end={{ x: 1, y: 1 }}
@@ -571,7 +642,7 @@ export default function MatchDetailsModal({
             </View>
             {matchTime !== '' && (
               <View style={styles.watchTimePill}>
-                <Clock size={10} color={ACCENT} />
+                <Clock size={10} color={tokens.accent} />
                 <Text style={styles.watchTimeText}>{matchDate} • {matchTime}</Text>
               </View>
             )}
@@ -593,7 +664,7 @@ export default function MatchDetailsModal({
 
           {broadcastData.note && (
             <View style={styles.watchNoteRow}>
-              <Globe size={10} color={TEXT_MUTED} />
+              <Globe size={10} color={tokens.textMuted} />
               <Text style={styles.watchNoteText}>{broadcastData.note}</Text>
             </View>
           )}
@@ -707,7 +778,7 @@ export default function MatchDetailsModal({
         {goalEvents.length > 0 && (
           <View style={styles.highlightsGoalsList}>
             <View style={styles.highlightsGoalsHeader}>
-              <Zap size={12} color={ACCENT} />
+              <Zap size={12} color={tokens.accent} />
               <Text style={styles.highlightsGoalsTitle}>Goals</Text>
             </View>
             {goalEvents.map((event: MatchEvent, idx: number) => {
@@ -751,7 +822,7 @@ export default function MatchDetailsModal({
       return (
         <View style={styles.emptyState}>
           <View style={styles.emptyStateIcon}>
-            <Activity size={32} color={TEXT_MUTED} />
+            <Activity size={32} color={tokens.textMuted} />
           </View>
           <Text style={styles.emptyStateTitle}>No events yet</Text>
           <Text style={styles.emptyStateSub}>Events will appear as the match progresses</Text>
@@ -829,7 +900,7 @@ export default function MatchDetailsModal({
     if (lineups.length === 0) {
       return (
         <View style={styles.emptyState}>
-          <View style={styles.emptyStateIcon}><Users size={32} color={TEXT_MUTED} /></View>
+          <View style={styles.emptyStateIcon}><Users size={32} color={tokens.textMuted} /></View>
           <Text style={styles.emptyStateTitle}>Lineups not available</Text>
           <Text style={styles.emptyStateSub}>Lineups will be available closer to kick-off</Text>
         </View>
@@ -902,7 +973,7 @@ export default function MatchDetailsModal({
     if (statistics.length === 0) {
       return (
         <View style={styles.emptyState}>
-          <View style={styles.emptyStateIcon}><BarChart3 size={32} color={TEXT_MUTED} /></View>
+          <View style={styles.emptyStateIcon}><BarChart3 size={32} color={tokens.textMuted} /></View>
           <Text style={styles.emptyStateTitle}>Statistics not available</Text>
           <Text style={styles.emptyStateSub}>Stats will be available during/after the match</Text>
         </View>
@@ -993,7 +1064,7 @@ export default function MatchDetailsModal({
               <Text style={styles.venueImageName}>{venueInfo.name || 'Stadium'}</Text>
               {!!venueInfo.city && (
                 <View style={styles.venueLocationRow}>
-                  <MapPin size={12} color={ACCENT} />
+                  <MapPin size={12} color={tokens.accent} />
                   <Text style={styles.venueImageCity}>{venueInfo.city}</Text>
                 </View>
               )}
@@ -1001,11 +1072,11 @@ export default function MatchDetailsModal({
           </View>
         ) : (
           <View style={styles.venueNoImage}>
-            <Building2 size={36} color={TEXT_MUTED} />
+            <Building2 size={36} color={tokens.textMuted} />
             <Text style={styles.venueNoImageName}>{venueInfo.name || 'Stadium TBA'}</Text>
             {!!venueInfo.city && (
               <View style={styles.venueLocationRow}>
-                <MapPin size={12} color={TEXT_SECONDARY} />
+                <MapPin size={12} color={tokens.textSecondary} />
                 <Text style={styles.venueNoImageCity}>{venueInfo.city}</Text>
               </View>
             )}
@@ -1014,7 +1085,7 @@ export default function MatchDetailsModal({
 
         <View style={styles.venueDetailsGrid}>
           <View style={styles.venueDetailBox}>
-            <Building2 size={18} color={ACCENT} />
+            <Building2 size={18} color={tokens.accent} />
             <Text style={styles.venueDetailLabel}>Stadium</Text>
             <Text style={styles.venueDetailVal} numberOfLines={2}>{venueInfo.name || 'TBA'}</Text>
           </View>
@@ -1029,7 +1100,7 @@ export default function MatchDetailsModal({
             <Text style={styles.venueDetailVal}>{venueInfo.city || 'TBA'}</Text>
           </View>
           <View style={styles.venueDetailBox}>
-            <Globe size={18} color={ACCENT_SECONDARY} />
+            <Globe size={18} color={tokens.accentSecondary} />
             <Text style={styles.venueDetailLabel}>Country</Text>
             <Text style={styles.venueDetailVal}>{leagueCountry}</Text>
           </View>
@@ -1037,7 +1108,7 @@ export default function MatchDetailsModal({
 
         <View style={styles.broadcastCard}>
           <View style={styles.broadcastCardHeader}>
-            <Tv size={16} color={ACCENT} />
+            <Tv size={16} color={tokens.accent} />
             <Text style={styles.broadcastCardTitle}>Where to Watch</Text>
           </View>
           <View style={styles.broadcastChips}>
@@ -1132,7 +1203,7 @@ export default function MatchDetailsModal({
     if (homeFormData.length === 0 && awayFormData.length === 0) {
       return (
         <View style={styles.emptyState}>
-          <View style={styles.emptyStateIcon}><TrendingUp size={32} color={TEXT_MUTED} /></View>
+          <View style={styles.emptyStateIcon}><TrendingUp size={32} color={tokens.textMuted} /></View>
           <Text style={styles.emptyStateTitle}>Form not available</Text>
           <Text style={styles.emptyStateSub}>Recent results will appear when available</Text>
         </View>
@@ -1226,7 +1297,7 @@ export default function MatchDetailsModal({
     if (headToHead.length === 0) {
       return (
         <View style={styles.emptyState}>
-          <View style={styles.emptyStateIcon}><History size={32} color={TEXT_MUTED} /></View>
+          <View style={styles.emptyStateIcon}><History size={32} color={tokens.textMuted} /></View>
           <Text style={styles.emptyStateTitle}>No head-to-head data</Text>
           <Text style={styles.emptyStateSub}>H2H history will appear when available</Text>
         </View>
@@ -1339,6 +1410,7 @@ export default function MatchDetailsModal({
       onRequestClose={handleClose}
       statusBarTranslucent
     >
+      <MatchModalShellContext.Provider value={{ tokens, styles }}>
       <View style={styles.overlay}>
         <TouchableOpacity style={StyleSheet.absoluteFill} activeOpacity={1} onPress={handleClose} />
         <Animated.View
@@ -1351,17 +1423,17 @@ export default function MatchDetailsModal({
           </View>
 
           <LinearGradient
-            colors={[SURFACE_DARK, '#0D0F14', SURFACE_DARK]}
+            colors={[tokens.surfaceMain, tokens.gradientMid, tokens.surfaceMain]}
             style={styles.modalBody}
             start={{ x: 0, y: 0 }}
             end={{ x: 0, y: 1 }}
           >
             <Animated.View style={[styles.topBar, { opacity: headerAnim }]}>
               <TouchableOpacity onPress={handleClose} style={styles.closeBtn}>
-                <X size={20} color={TEXT_PRIMARY} />
+                <X size={20} color={tokens.textPrimary} />
               </TouchableOpacity>
               <View style={styles.topBarCenter}>
-                <Trophy size={16} color={ACCENT} />
+                <Trophy size={16} color={tokens.accent} />
                 <Text style={styles.topBarLeague} numberOfLines={1}>{league}</Text>
               </View>
               <View style={{ width: 36 }} />
@@ -1421,7 +1493,7 @@ export default function MatchDetailsModal({
 
               {fixture?.fixture?.venue?.name && (
                 <View style={styles.heroVenueRow}>
-                  <MapPin size={11} color={TEXT_MUTED} />
+                  <MapPin size={11} color={tokens.textMuted} />
                   <Text style={styles.heroVenueText}>{fixture.fixture.venue.name}</Text>
                 </View>
               )}
@@ -1449,7 +1521,7 @@ export default function MatchDetailsModal({
             <ScrollView style={styles.contentScroll} showsVerticalScrollIndicator={false}>
               {isLoading ? (
                 <View style={styles.loadingArea}>
-                  <ActivityIndicator size="large" color={ACCENT} />
+                  <ActivityIndicator size="large" color={tokens.accent} />
                   <Text style={styles.loadingText}>Loading match details...</Text>
                 </View>
               ) : error ? (
@@ -1473,18 +1545,20 @@ export default function MatchDetailsModal({
           </LinearGradient>
         </Animated.View>
       </View>
+      </MatchModalShellContext.Provider>
     </Modal>
   );
 }
 
-const styles = StyleSheet.create({
+function createMatchModalStyles(t: MatchModalTokens) {
+  return StyleSheet.create({
   overlay: {
     flex: 1,
     backgroundColor: 'rgba(0, 0, 0, 0.65)',
     justifyContent: 'flex-end',
   },
   modalSheet: {
-    backgroundColor: SURFACE_DARK,
+    backgroundColor: t.surfaceMain,
     borderTopLeftRadius: 28,
     borderTopRightRadius: 28,
     height: '95%',
@@ -1494,13 +1568,13 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     paddingTop: 10,
     paddingBottom: 4,
-    backgroundColor: SURFACE_DARK,
+    backgroundColor: t.surfaceMain,
   },
   handleBar: {
     width: 40,
     height: 4,
     borderRadius: 2,
-    backgroundColor: 'rgba(255,255,255,0.15)',
+    backgroundColor: t.handleBar,
   },
   modalBody: {
     flex: 1,
@@ -1516,7 +1590,7 @@ const styles = StyleSheet.create({
     width: 36,
     height: 36,
     borderRadius: 18,
-    backgroundColor: SURFACE_ELEVATED,
+    backgroundColor: t.surfaceElevated,
     justifyContent: 'center',
     alignItems: 'center',
   },
@@ -1530,7 +1604,7 @@ const styles = StyleSheet.create({
   topBarLeague: {
     fontSize: 14,
     fontWeight: '600' as const,
-    color: TEXT_SECONDARY,
+    color: t.textSecondary,
   },
   heroSection: {
     paddingHorizontal: 20,
@@ -1546,30 +1620,26 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     gap: 8,
   },
+  /** Layout only — logo renders without ring/border (same pattern as onboarding team pickers) */
   heroLogoRing: {
     width: 56,
     height: 56,
-    borderRadius: 28,
-    backgroundColor: SURFACE_ELEVATED,
-    borderWidth: 2,
-    borderColor: BORDER_SUBTLE,
     justifyContent: 'center',
     alignItems: 'center',
-    overflow: 'hidden',
   },
   heroLogo: {
-    width: 40,
-    height: 40,
+    width: 52,
+    height: 52,
   },
   heroLogoInit: {
     fontSize: 22,
     fontWeight: '800' as const,
-    color: TEXT_PRIMARY,
+    color: t.textPrimary,
   },
   heroTeamName: {
     fontSize: 13,
     fontWeight: '700' as const,
-    color: TEXT_PRIMARY,
+    color: t.textPrimary,
     textAlign: 'center',
     maxWidth: 95,
   },
@@ -1585,7 +1655,7 @@ const styles = StyleSheet.create({
   heroScore: {
     fontSize: 36,
     fontWeight: '900' as const,
-    color: '#FFFFFF',
+    color: t.heroScore,
     letterSpacing: -1,
   },
   heroScoreDivider: {
@@ -1596,7 +1666,7 @@ const styles = StyleSheet.create({
     width: 4,
     height: 4,
     borderRadius: 2,
-    backgroundColor: TEXT_MUTED,
+    backgroundColor: t.textMuted,
   },
   liveBadge: {
     flexDirection: 'row',
@@ -1621,23 +1691,23 @@ const styles = StyleSheet.create({
     letterSpacing: 0.3,
   },
   ftBadge: {
-    backgroundColor: SURFACE_ELEVATED,
+    backgroundColor: t.surfaceElevated,
     paddingHorizontal: 12,
     paddingVertical: 4,
     borderRadius: 8,
     marginTop: 8,
     borderWidth: 1,
-    borderColor: BORDER_SUBTLE,
+    borderColor: t.borderSubtle,
   },
   ftText: {
     fontSize: 11,
     fontWeight: '700' as const,
-    color: TEXT_SECONDARY,
+    color: t.textSecondary,
     letterSpacing: 0.5,
   },
   heroMatchDate: {
     fontSize: 11,
-    color: TEXT_MUTED,
+    color: t.textMuted,
     marginTop: 8,
   },
   heroVenueRow: {
@@ -1649,7 +1719,7 @@ const styles = StyleSheet.create({
   },
   heroVenueText: {
     fontSize: 11,
-    color: TEXT_MUTED,
+    color: t.textMuted,
     fontWeight: '500' as const,
   },
   tabScroll: {
@@ -1668,21 +1738,21 @@ const styles = StyleSheet.create({
     paddingHorizontal: 14,
     paddingVertical: 8,
     borderRadius: 20,
-    backgroundColor: SURFACE_CARD,
+    backgroundColor: t.surfaceCard,
     borderWidth: 1,
-    borderColor: BORDER_SUBTLE,
+    borderColor: t.borderSubtle,
   },
   tabPillActive: {
-    backgroundColor: ACCENT + '15',
-    borderColor: ACCENT + '40',
+    backgroundColor: t.accent + '15',
+    borderColor: t.accent + '40',
   },
   tabPillText: {
     fontSize: 12,
     fontWeight: '600' as const,
-    color: TEXT_MUTED,
+    color: t.textMuted,
   },
   tabPillTextActive: {
-    color: ACCENT,
+    color: t.accent,
     fontWeight: '700' as const,
   },
   contentScroll: {
@@ -1695,7 +1765,7 @@ const styles = StyleSheet.create({
   },
   loadingText: {
     fontSize: 14,
-    color: TEXT_SECONDARY,
+    color: t.textSecondary,
     fontWeight: '500' as const,
   },
   errorArea: {
@@ -1707,12 +1777,12 @@ const styles = StyleSheet.create({
   errorText: {
     fontSize: 15,
     fontWeight: '600' as const,
-    color: TEXT_PRIMARY,
+    color: t.textPrimary,
     textAlign: 'center',
   },
   errorSub: {
     fontSize: 13,
-    color: TEXT_SECONDARY,
+    color: t.textSecondary,
     textAlign: 'center',
   },
   emptyState: {
@@ -1725,7 +1795,7 @@ const styles = StyleSheet.create({
     width: 64,
     height: 64,
     borderRadius: 32,
-    backgroundColor: SURFACE_ELEVATED,
+    backgroundColor: t.surfaceElevated,
     justifyContent: 'center',
     alignItems: 'center',
     marginBottom: 6,
@@ -1733,23 +1803,23 @@ const styles = StyleSheet.create({
   emptyStateTitle: {
     fontSize: 16,
     fontWeight: '700' as const,
-    color: TEXT_PRIMARY,
+    color: t.textPrimary,
     textAlign: 'center',
   },
   emptyStateSub: {
     fontSize: 13,
-    color: TEXT_SECONDARY,
+    color: t.textSecondary,
     textAlign: 'center',
     lineHeight: 18,
   },
   highlightsCard: {
     marginHorizontal: 16,
     marginBottom: 20,
-    backgroundColor: SURFACE_CARD,
+    backgroundColor: t.surfaceCard,
     borderRadius: 16,
     overflow: 'hidden',
     borderWidth: 1,
-    borderColor: BORDER_SUBTLE,
+    borderColor: t.borderSubtle,
   },
   highlightsHeader: {
     flexDirection: 'row',
@@ -1758,7 +1828,7 @@ const styles = StyleSheet.create({
     paddingHorizontal: 14,
     paddingVertical: 10,
     borderBottomWidth: 1,
-    borderBottomColor: BORDER_SUBTLE,
+    borderBottomColor: t.borderSubtle,
   },
   highlightsYTBadge: {
     flexDirection: 'row',
@@ -1775,7 +1845,7 @@ const styles = StyleSheet.create({
   },
   highlightsDate: {
     fontSize: 11,
-    color: TEXT_MUTED,
+    color: t.textMuted,
     fontWeight: '500' as const,
   },
   highlightsVideoArea: {
@@ -1820,7 +1890,7 @@ const styles = StyleSheet.create({
   highlightsTeamName: {
     fontSize: 11,
     fontWeight: '600' as const,
-    color: TEXT_SECONDARY,
+    color: t.textSecondary,
     textAlign: 'center',
     maxWidth: 80,
   },
@@ -1842,12 +1912,12 @@ const styles = StyleSheet.create({
     width: 14,
     height: 2,
     borderRadius: 1,
-    backgroundColor: TEXT_MUTED,
+    backgroundColor: t.textMuted,
   },
   highlightsFTLabel: {
     fontSize: 9,
     fontWeight: '700' as const,
-    color: TEXT_MUTED,
+    color: t.textMuted,
     letterSpacing: 1.5,
     marginTop: 6,
   },
@@ -1866,13 +1936,13 @@ const styles = StyleSheet.create({
   highlightsWatchText: {
     fontSize: 13,
     fontWeight: '600' as const,
-    color: TEXT_PRIMARY,
+    color: t.textPrimary,
   },
   highlightsGoalsList: {
     paddingHorizontal: 14,
     paddingVertical: 10,
     borderTopWidth: 1,
-    borderTopColor: BORDER_SUBTLE,
+    borderTopColor: t.borderSubtle,
   },
   highlightsGoalsHeader: {
     flexDirection: 'row',
@@ -1883,7 +1953,7 @@ const styles = StyleSheet.create({
   highlightsGoalsTitle: {
     fontSize: 12,
     fontWeight: '700' as const,
-    color: ACCENT,
+    color: t.accent,
   },
   highlightsGoalRow: {
     flexDirection: 'row',
@@ -1909,11 +1979,11 @@ const styles = StyleSheet.create({
   highlightsGoalPlayer: {
     fontSize: 13,
     fontWeight: '600' as const,
-    color: TEXT_PRIMARY,
+    color: t.textPrimary,
   },
   highlightsGoalAssist: {
     fontSize: 11,
-    color: TEXT_MUTED,
+    color: t.textMuted,
     marginTop: 1,
   },
   highlightsGoalTime: {
@@ -1929,11 +1999,11 @@ const styles = StyleSheet.create({
     paddingHorizontal: 14,
     paddingVertical: 10,
     borderTopWidth: 1,
-    borderTopColor: BORDER_SUBTLE,
+    borderTopColor: t.borderSubtle,
   },
   highlightsSourcesLabel: {
     fontSize: 10,
-    color: TEXT_MUTED,
+    color: t.textMuted,
     fontWeight: '500' as const,
     marginBottom: 6,
   },
@@ -1942,7 +2012,7 @@ const styles = StyleSheet.create({
     gap: 6,
   },
   highlightsSourceChip: {
-    backgroundColor: SURFACE_ELEVATED,
+    backgroundColor: t.surfaceElevated,
     paddingHorizontal: 10,
     paddingVertical: 5,
     borderRadius: 6,
@@ -1950,7 +2020,7 @@ const styles = StyleSheet.create({
   highlightsSourceText: {
     fontSize: 10,
     fontWeight: '600' as const,
-    color: TEXT_SECONDARY,
+    color: t.textSecondary,
   },
   eventsSection: {
     paddingBottom: 20,
@@ -1965,7 +2035,7 @@ const styles = StyleSheet.create({
     top: 0,
     bottom: 0,
     width: 1,
-    backgroundColor: BORDER_SUBTLE,
+    backgroundColor: t.borderSubtle,
   },
   timelineEventRow: {
     flexDirection: 'row',
@@ -1996,11 +2066,11 @@ const styles = StyleSheet.create({
     width: 28,
     height: 28,
     borderRadius: 14,
-    backgroundColor: SURFACE_ELEVATED,
+    backgroundColor: t.surfaceElevated,
     justifyContent: 'center',
     alignItems: 'center',
     borderWidth: 2,
-    borderColor: SURFACE_CARD,
+    borderColor: t.surfaceCard,
   },
   timelineDotGoal: {
     backgroundColor: '#FFB80030',
@@ -2010,7 +2080,7 @@ const styles = StyleSheet.create({
     fontSize: 13,
   },
   timelineTimePill: {
-    backgroundColor: SURFACE_DARK,
+    backgroundColor: t.surfaceMain,
     paddingHorizontal: 6,
     paddingVertical: 2,
     borderRadius: 4,
@@ -2019,7 +2089,7 @@ const styles = StyleSheet.create({
   timelineTimeText: {
     fontSize: 10,
     fontWeight: '700' as const,
-    color: TEXT_SECONDARY,
+    color: t.textSecondary,
   },
   eventCard: {
     padding: 10,
@@ -2041,20 +2111,20 @@ const styles = StyleSheet.create({
   eventPlayerName: {
     fontSize: 13,
     fontWeight: '700' as const,
-    color: TEXT_PRIMARY,
+    color: t.textPrimary,
     marginBottom: 2,
   },
   eventAssistText: {
     fontSize: 11,
-    color: TEXT_SECONDARY,
+    color: t.textSecondary,
   },
   eventSubText: {
     fontSize: 11,
-    color: ACCENT,
+    color: t.accent,
   },
   eventDetail: {
     fontSize: 10,
-    color: TEXT_MUTED,
+    color: t.textMuted,
     marginTop: 2,
   },
   textRight: {
@@ -2069,12 +2139,12 @@ const styles = StyleSheet.create({
   },
   lineupToggle: {
     flexDirection: 'row',
-    backgroundColor: SURFACE_CARD,
+    backgroundColor: t.surfaceCard,
     borderRadius: 14,
     padding: 4,
     marginBottom: 14,
     borderWidth: 1,
-    borderColor: BORDER_SUBTLE,
+    borderColor: t.borderSubtle,
   },
   lineupToggleBtn: {
     flex: 1,
@@ -2103,7 +2173,7 @@ const styles = StyleSheet.create({
   lineupToggleName: {
     fontSize: 12,
     fontWeight: '600' as const,
-    color: TEXT_MUTED,
+    color: t.textMuted,
     flex: 1,
   },
   lineupToggleIndicator: {
@@ -2112,7 +2182,7 @@ const styles = StyleSheet.create({
     borderRadius: 2,
   },
   lineupInfoCard: {
-    backgroundColor: SURFACE_CARD,
+    backgroundColor: t.surfaceCard,
     borderRadius: 14,
     overflow: 'hidden',
     marginBottom: 14,
@@ -2149,7 +2219,7 @@ const styles = StyleSheet.create({
   lineupInfoTeamName: {
     fontSize: 16,
     fontWeight: '800' as const,
-    color: TEXT_PRIMARY,
+    color: t.textPrimary,
     marginBottom: 4,
   },
   lineupInfoMetaRow: {
@@ -2169,7 +2239,7 @@ const styles = StyleSheet.create({
   },
   lineupCoachText: {
     fontSize: 11,
-    color: TEXT_MUTED,
+    color: t.textMuted,
     fontWeight: '500' as const,
   },
   xiSection: {
@@ -2191,7 +2261,7 @@ const styles = StyleSheet.create({
   xiHeaderText: {
     fontSize: 14,
     fontWeight: '700' as const,
-    color: TEXT_PRIMARY,
+    color: t.textPrimary,
   },
   posGroup: {
     marginBottom: 12,
@@ -2209,7 +2279,7 @@ const styles = StyleSheet.create({
   posGroupLabel: {
     fontSize: 10,
     fontWeight: '700' as const,
-    color: TEXT_MUTED,
+    color: t.textMuted,
     letterSpacing: 0.8,
     textTransform: 'uppercase',
   },
@@ -2219,12 +2289,12 @@ const styles = StyleSheet.create({
   playerRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: SURFACE_CARD,
+    backgroundColor: t.surfaceCard,
     borderRadius: 10,
     padding: 10,
     gap: 10,
     borderWidth: 1,
-    borderColor: BORDER_SUBTLE,
+    borderColor: t.borderSubtle,
   },
   playerNum: {
     width: 30,
@@ -2241,24 +2311,24 @@ const styles = StyleSheet.create({
   playerName: {
     fontSize: 13,
     fontWeight: '600' as const,
-    color: TEXT_PRIMARY,
+    color: t.textPrimary,
     flex: 1,
   },
   playerPos: {
     fontSize: 10,
     fontWeight: '600' as const,
-    color: TEXT_MUTED,
-    backgroundColor: SURFACE_ELEVATED,
+    color: t.textMuted,
+    backgroundColor: t.surfaceElevated,
     paddingHorizontal: 6,
     paddingVertical: 2,
     borderRadius: 4,
   },
   subsCard: {
-    backgroundColor: SURFACE_CARD,
+    backgroundColor: t.surfaceCard,
     borderRadius: 14,
     padding: 14,
     borderWidth: 1,
-    borderColor: BORDER_SUBTLE,
+    borderColor: t.borderSubtle,
   },
   subsColumns: {
     flexDirection: 'row',
@@ -2268,7 +2338,7 @@ const styles = StyleSheet.create({
   },
   subsDivider: {
     width: 1,
-    backgroundColor: BORDER_SUBTLE,
+    backgroundColor: t.borderSubtle,
     marginHorizontal: 10,
   },
   subsColHeader: {
@@ -2278,7 +2348,7 @@ const styles = StyleSheet.create({
     marginBottom: 10,
     paddingBottom: 10,
     borderBottomWidth: 1,
-    borderBottomColor: BORDER_SUBTLE,
+    borderBottomColor: t.borderSubtle,
   },
   subsColLogo: {
     width: 20,
@@ -2288,7 +2358,7 @@ const styles = StyleSheet.create({
   subsColName: {
     fontSize: 11,
     fontWeight: '700' as const,
-    color: TEXT_PRIMARY,
+    color: t.textPrimary,
     flex: 1,
   },
   subRow: {
@@ -2312,7 +2382,7 @@ const styles = StyleSheet.create({
   subName: {
     fontSize: 11,
     fontWeight: '500' as const,
-    color: TEXT_SECONDARY,
+    color: t.textSecondary,
     flex: 1,
   },
   statsSection: {
@@ -2337,49 +2407,49 @@ const styles = StyleSheet.create({
     borderRadius: 16,
   },
   statsTeamLogoFallback: {
-    backgroundColor: SURFACE_ELEVATED,
+    backgroundColor: t.surfaceElevated,
     justifyContent: 'center',
     alignItems: 'center',
   },
   statsTeamInit: {
     fontSize: 14,
     fontWeight: '700' as const,
-    color: TEXT_PRIMARY,
+    color: t.textPrimary,
   },
   statsTeamName: {
     fontSize: 12,
     fontWeight: '600' as const,
-    color: TEXT_SECONDARY,
+    color: t.textSecondary,
     textAlign: 'center',
     maxWidth: 100,
   },
   statsVsText: {
     fontSize: 10,
     fontWeight: '700' as const,
-    color: TEXT_MUTED,
+    color: t.textMuted,
     letterSpacing: 1,
   },
   statsListCard: {
-    backgroundColor: SURFACE_CARD,
+    backgroundColor: t.surfaceCard,
     borderRadius: 14,
     paddingHorizontal: 16,
     paddingVertical: 4,
     borderWidth: 1,
-    borderColor: BORDER_SUBTLE,
+    borderColor: t.borderSubtle,
   },
   statRow: {
     flexDirection: 'row',
     alignItems: 'center',
     paddingVertical: 12,
     borderBottomWidth: 1,
-    borderBottomColor: BORDER_SUBTLE,
+    borderBottomColor: t.borderSubtle,
   },
   statValue: {
     width: 48,
     textAlign: 'center',
     fontSize: 14,
     fontWeight: '700' as const,
-    color: TEXT_SECONDARY,
+    color: t.textSecondary,
   },
   statWinner: {
     color: HOME_COLOR,
@@ -2396,7 +2466,7 @@ const styles = StyleSheet.create({
   statLabel: {
     fontSize: 11,
     fontWeight: '600' as const,
-    color: TEXT_MUTED,
+    color: t.textMuted,
     textAlign: 'center',
     marginBottom: 6,
   },
@@ -2405,7 +2475,7 @@ const styles = StyleSheet.create({
     height: 6,
     borderRadius: 3,
     overflow: 'hidden',
-    backgroundColor: SURFACE_ELEVATED,
+    backgroundColor: t.surfaceElevated,
   },
   statBarHome: {
     backgroundColor: HOME_COLOR,
@@ -2465,23 +2535,23 @@ const styles = StyleSheet.create({
   },
   venueNoImage: {
     height: 140,
-    backgroundColor: SURFACE_CARD,
+    backgroundColor: t.surfaceCard,
     borderRadius: 16,
     justifyContent: 'center',
     alignItems: 'center',
     marginBottom: 16,
     gap: 8,
     borderWidth: 1,
-    borderColor: BORDER_SUBTLE,
+    borderColor: t.borderSubtle,
   },
   venueNoImageName: {
     fontSize: 16,
     fontWeight: '700' as const,
-    color: TEXT_PRIMARY,
+    color: t.textPrimary,
   },
   venueNoImageCity: {
     fontSize: 13,
-    color: TEXT_SECONDARY,
+    color: t.textSecondary,
   },
   venueDetailsGrid: {
     flexDirection: 'row',
@@ -2491,32 +2561,32 @@ const styles = StyleSheet.create({
   },
   venueDetailBox: {
     width: (SCREEN_WIDTH - 48) / 2,
-    backgroundColor: SURFACE_CARD,
+    backgroundColor: t.surfaceCard,
     borderRadius: 12,
     padding: 14,
     alignItems: 'center',
     gap: 6,
     borderWidth: 1,
-    borderColor: BORDER_SUBTLE,
+    borderColor: t.borderSubtle,
   },
   venueDetailLabel: {
     fontSize: 10,
-    color: TEXT_MUTED,
+    color: t.textMuted,
     fontWeight: '500' as const,
   },
   venueDetailVal: {
     fontSize: 13,
     fontWeight: '700' as const,
-    color: TEXT_PRIMARY,
+    color: t.textPrimary,
     textAlign: 'center',
   },
   broadcastCard: {
-    backgroundColor: SURFACE_CARD,
+    backgroundColor: t.surfaceCard,
     borderRadius: 14,
     padding: 14,
     marginBottom: 12,
     borderWidth: 1,
-    borderColor: BORDER_SUBTLE,
+    borderColor: t.borderSubtle,
   },
   broadcastCardHeader: {
     flexDirection: 'row',
@@ -2527,7 +2597,7 @@ const styles = StyleSheet.create({
   broadcastCardTitle: {
     fontSize: 14,
     fontWeight: '700' as const,
-    color: TEXT_PRIMARY,
+    color: t.textPrimary,
   },
   broadcastChips: {
     flexDirection: 'row',
@@ -2542,23 +2612,23 @@ const styles = StyleSheet.create({
     paddingHorizontal: 12,
     paddingVertical: 8,
     borderRadius: 8,
-    backgroundColor: SURFACE_ELEVATED,
+    backgroundColor: t.surfaceElevated,
     borderWidth: 1,
-    borderColor: ACCENT + '15',
+    borderColor: t.accent + '15',
   },
   broadcastChipText: {
     fontSize: 12,
     fontWeight: '600' as const,
-    color: ACCENT,
+    color: t.accent,
   },
   broadcastNote: {
     fontSize: 10,
-    color: TEXT_MUTED,
+    color: t.textMuted,
     textAlign: 'center',
     fontStyle: 'italic',
   },
   weatherCard: {
-    backgroundColor: SURFACE_CARD,
+    backgroundColor: t.surfaceCard,
     borderRadius: 14,
     padding: 14,
     borderWidth: 1,
@@ -2573,7 +2643,7 @@ const styles = StyleSheet.create({
   weatherCardTitle: {
     fontSize: 14,
     fontWeight: '700' as const,
-    color: TEXT_PRIMARY,
+    color: t.textPrimary,
   },
   weatherLoadingRow: {
     flexDirection: 'row',
@@ -2605,13 +2675,13 @@ const styles = StyleSheet.create({
   },
   weatherDesc: {
     fontSize: 13,
-    color: TEXT_SECONDARY,
+    color: t.textSecondary,
     textTransform: 'capitalize',
   },
   weatherDetailsRow: {
     flexDirection: 'row',
     justifyContent: 'space-around',
-    backgroundColor: SURFACE_ELEVATED,
+    backgroundColor: t.surfaceElevated,
     borderRadius: 10,
     padding: 10,
   },
@@ -2621,7 +2691,7 @@ const styles = StyleSheet.create({
   },
   weatherDetailLabel: {
     fontSize: 9,
-    color: TEXT_MUTED,
+    color: t.textMuted,
     fontWeight: '500' as const,
   },
   weatherDetailVal: {
@@ -2631,7 +2701,7 @@ const styles = StyleSheet.create({
   },
   weatherUnavail: {
     fontSize: 12,
-    color: TEXT_MUTED,
+    color: t.textMuted,
     textAlign: 'center',
     paddingVertical: 12,
   },
@@ -2643,12 +2713,12 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-    backgroundColor: SURFACE_CARD,
+    backgroundColor: t.surfaceCard,
     borderRadius: 18,
     padding: 20,
     marginBottom: 20,
     borderWidth: 1,
-    borderColor: BORDER_SUBTLE,
+    borderColor: t.borderSubtle,
   },
   h2hTeam: {
     flex: 1,
@@ -2661,24 +2731,24 @@ const styles = StyleSheet.create({
     borderRadius: 21,
   },
   h2hTeamLogoFallback: {
-    backgroundColor: SURFACE_ELEVATED,
+    backgroundColor: t.surfaceElevated,
     justifyContent: 'center',
     alignItems: 'center',
   },
   h2hTeamInit: {
     fontSize: 16,
     fontWeight: '800' as const,
-    color: TEXT_PRIMARY,
+    color: t.textPrimary,
   },
   h2hWinCount: {
     fontSize: 30,
     fontWeight: '900' as const,
-    color: TEXT_PRIMARY,
+    color: t.textPrimary,
   },
   h2hTeamName: {
     fontSize: 11,
     fontWeight: '600' as const,
-    color: TEXT_SECONDARY,
+    color: t.textSecondary,
     textAlign: 'center',
     maxWidth: 75,
   },
@@ -2686,7 +2756,7 @@ const styles = StyleSheet.create({
     width: '80%',
     height: 3,
     borderRadius: 2,
-    backgroundColor: SURFACE_ELEVATED,
+    backgroundColor: t.surfaceElevated,
     overflow: 'hidden',
   },
   h2hBarFill: {
@@ -2701,41 +2771,41 @@ const styles = StyleSheet.create({
     width: 48,
     height: 48,
     borderRadius: 24,
-    backgroundColor: SURFACE_ELEVATED,
+    backgroundColor: t.surfaceElevated,
     justifyContent: 'center',
     alignItems: 'center',
     marginBottom: 4,
     borderWidth: 1,
-    borderColor: BORDER_SUBTLE,
+    borderColor: t.borderSubtle,
   },
   h2hDrawCount: {
     fontSize: 20,
     fontWeight: '800' as const,
-    color: TEXT_PRIMARY,
+    color: t.textPrimary,
   },
   h2hDrawLabel: {
     fontSize: 11,
     fontWeight: '600' as const,
-    color: TEXT_SECONDARY,
+    color: t.textSecondary,
   },
   h2hTotalText: {
     fontSize: 9,
-    color: TEXT_MUTED,
+    color: t.textMuted,
     marginTop: 3,
   },
   h2hRecentTitle: {
     fontSize: 14,
     fontWeight: '700' as const,
-    color: TEXT_PRIMARY,
+    color: t.textPrimary,
     marginBottom: 10,
   },
   h2hMatchCard: {
-    backgroundColor: SURFACE_CARD,
+    backgroundColor: t.surfaceCard,
     borderRadius: 12,
     padding: 12,
     marginBottom: 8,
     borderWidth: 1,
-    borderColor: BORDER_SUBTLE,
+    borderColor: t.borderSubtle,
   },
   h2hMatchTeams: {
     flexDirection: 'row',
@@ -2746,14 +2816,14 @@ const styles = StyleSheet.create({
     flex: 1,
     fontSize: 12,
     fontWeight: '500' as const,
-    color: TEXT_SECONDARY,
+    color: t.textSecondary,
   },
   h2hMatchWinner: {
     fontWeight: '700' as const,
     color: '#10B981',
   },
   h2hMatchScoreBox: {
-    backgroundColor: SURFACE_ELEVATED,
+    backgroundColor: t.surfaceElevated,
     paddingHorizontal: 12,
     paddingVertical: 5,
     borderRadius: 8,
@@ -2762,11 +2832,11 @@ const styles = StyleSheet.create({
   h2hMatchScoreText: {
     fontSize: 13,
     fontWeight: '800' as const,
-    color: TEXT_PRIMARY,
+    color: t.textPrimary,
   },
   h2hMatchDate: {
     fontSize: 10,
-    color: TEXT_MUTED,
+    color: t.textMuted,
     textAlign: 'center',
   },
   formSection: {
@@ -2776,16 +2846,16 @@ const styles = StyleSheet.create({
   formSectionTitle: {
     fontSize: 14,
     fontWeight: '700' as const,
-    color: TEXT_PRIMARY,
+    color: t.textPrimary,
     marginBottom: 16,
   },
   formTeamCard: {
-    backgroundColor: SURFACE_CARD,
+    backgroundColor: t.surfaceCard,
     borderRadius: 14,
     padding: 14,
     marginBottom: 12,
     borderWidth: 1,
-    borderColor: BORDER_SUBTLE,
+    borderColor: t.borderSubtle,
   },
   formTeamHeader: {
     flexDirection: 'row',
@@ -2814,13 +2884,13 @@ const styles = StyleSheet.create({
   formTeamName: {
     fontSize: 13,
     fontWeight: '700' as const,
-    color: TEXT_PRIMARY,
+    color: t.textPrimary,
     maxWidth: 110,
   },
   formLeagueName: {
     fontSize: 10,
     fontWeight: '500' as const,
-    color: TEXT_MUTED,
+    color: t.textMuted,
     marginTop: 1,
   },
   formWDL: {
@@ -2869,7 +2939,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     paddingVertical: 8,
     borderTopWidth: 1,
-    borderTopColor: BORDER_SUBTLE,
+    borderTopColor: t.borderSubtle,
     gap: 8,
   },
   formResultBadge: {
@@ -2900,12 +2970,12 @@ const styles = StyleSheet.create({
   formOpponentName: {
     fontSize: 12,
     fontWeight: '600' as const,
-    color: TEXT_SECONDARY,
+    color: t.textSecondary,
     flex: 1,
   },
   formMatchDate: {
     fontSize: 10,
-    color: TEXT_MUTED,
+    color: t.textMuted,
     marginTop: 1,
   },
   formScorePill: {
@@ -2913,7 +2983,7 @@ const styles = StyleSheet.create({
     borderRadius: 7,
     paddingHorizontal: 8,
     paddingVertical: 3,
-    backgroundColor: SURFACE_ELEVATED,
+    backgroundColor: t.surfaceElevated,
   },
   formScoreText: {
     fontSize: 12,
@@ -2952,13 +3022,13 @@ const styles = StyleSheet.create({
   watchTitle: {
     fontSize: 15,
     fontWeight: '800' as const,
-    color: TEXT_PRIMARY,
+    color: t.textPrimary,
   },
   watchTimePill: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: 4,
-    backgroundColor: ACCENT + '12',
+    backgroundColor: t.accent + '12',
     paddingHorizontal: 8,
     paddingVertical: 4,
     borderRadius: 8,
@@ -2966,7 +3036,7 @@ const styles = StyleSheet.create({
   watchTimeText: {
     fontSize: 10,
     fontWeight: '600' as const,
-    color: ACCENT,
+    color: t.accent,
   },
   watchChannelsList: {
     flexDirection: 'row',
@@ -3002,12 +3072,12 @@ const styles = StyleSheet.create({
   watchChannelName: {
     fontSize: 12,
     fontWeight: '700' as const,
-    color: TEXT_PRIMARY,
+    color: t.textPrimary,
   },
   watchChannelRegion: {
     fontSize: 9,
     fontWeight: '500' as const,
-    color: TEXT_MUTED,
+    color: t.textMuted,
   },
   watchNoteRow: {
     flexDirection: 'row',
@@ -3017,19 +3087,20 @@ const styles = StyleSheet.create({
   },
   watchNoteText: {
     fontSize: 11,
-    color: TEXT_SECONDARY,
+    color: t.textSecondary,
     fontWeight: '500' as const,
   },
   watchDisclaimer: {
     fontSize: 9,
-    color: TEXT_MUTED,
+    color: t.textMuted,
     textAlign: 'center',
     fontStyle: 'italic',
     marginTop: 4,
   },
   broadcastRegionSmall: {
     fontSize: 9,
-    color: TEXT_MUTED,
+    color: t.textMuted,
     fontWeight: '500' as const,
   },
 });
+}

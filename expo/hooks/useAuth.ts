@@ -12,6 +12,7 @@ import * as Linking from 'expo-linking';
 import * as Crypto from 'expo-crypto';
 
 import { migrateLocalDataToSupabaseUser } from '@/utils/localToSupabaseMigration';
+import { resetYounifySession, setYounifyExternalUserId } from '@/services/younify';
 
 if (Platform.OS !== 'web') {
   WebBrowser.maybeCompleteAuthSession();
@@ -161,6 +162,16 @@ export const [AuthProvider, useAuth] = createContextHook(() => {
     };
     void checkBiometricAvailability();
   }, []);
+
+  /** Isolate Younify `external_id` per app user and clear SDK state on sign-out (prevents linked streaming bleeding across accounts). */
+  useEffect(() => {
+    if (!isInitialized) return;
+    if (user?.id) {
+      setYounifyExternalUserId(user.id);
+    } else {
+      void resetYounifySession();
+    }
+  }, [isInitialized, user?.id]);
 
   useEffect(() => {
     let isMounted = true;
@@ -352,7 +363,8 @@ export const [AuthProvider, useAuth] = createContextHook(() => {
       console.log('Login successful (local)');
       return { success: true };
     } catch (error: any) {
-      console.error('💥 Login error:', error);
+      // warn: handled failure; console.error triggers dev LogBox over the whole app
+      console.warn('Login failed:', error?.message ?? error);
       const networkMsg = friendlyMessageForAuthNetworkError(error);
       if (networkMsg && typeof __DEV__ !== "undefined" && __DEV__) {
         console.warn(
@@ -389,9 +401,11 @@ export const [AuthProvider, useAuth] = createContextHook(() => {
         if (error || !data.user) {
           const msg = error?.message || 'Signup failed';
           console.warn('Supabase signup failed:', msg);
+          const networkFriendly =
+            error != null ? friendlyMessageForAuthNetworkError(error) : friendlyMessageForAuthNetworkError(new Error(msg));
           const friendly = /already registered|already exists/i.test(msg)
             ? 'An account with this email already exists'
-            : msg;
+            : networkFriendly || msg;
           return { success: false, error: friendly };
         }
         const authUser: AuthUser = {
@@ -456,8 +470,14 @@ export const [AuthProvider, useAuth] = createContextHook(() => {
       console.log('✅ Signup successful (local):', authUser.email);
       return { success: true };
     } catch (error: any) {
-      console.error('💥 Signup error:', error?.message);
+      // warn: handled failure; console.error triggers dev LogBox over the whole app
+      console.warn('Signup failed:', error?.message ?? error);
       const networkMsg = friendlyMessageForAuthNetworkError(error);
+      if (networkMsg && typeof __DEV__ !== "undefined" && __DEV__) {
+        console.warn(
+          "Sign-up uses Supabase (EXPO_PUBLIC_SUPABASE_URL). Check simulator Wi‑Fi, VPN/firewall, or restart Expo with --clear after changing .env.",
+        );
+      }
       return { success: false, error: networkMsg || error?.message || 'Signup failed' };
     } finally {
       setIsLoading(false);

@@ -65,10 +65,11 @@ export default function StreamingServicesBrowseTab({
   ) : null;
 
   if (!hasLinkedServices) {
+    // Single CTA lives in the header (ConnectedServicesHero: "Connect services") — no duplicate block below
     return (
       <RNAnimated.ScrollView
         style={styles.scroll}
-        contentContainerStyle={styles.scrollContent}
+        contentContainerStyle={[styles.scrollContent, styles.emptyScrollContent]}
         showsVerticalScrollIndicator={false}
         onScroll={RNAnimated.event(
           [{ nativeEvent: { contentOffset: { y: streamingScrollY } } }],
@@ -86,18 +87,6 @@ export default function StreamingServicesBrowseTab({
         }
       >
         {renderAnimatedHeader}
-        <View style={styles.centered}>
-          <Text style={styles.emptyTitle}>Link a streaming service</Text>
-          <Text style={styles.emptySubtitle}>
-            Connect Netflix or other providers to see continue watching, trending rows, and more.
-          </Text>
-          <Pressable
-            style={({ pressed }) => [styles.primaryBtn, pressed && styles.primaryBtnPressed]}
-            onPress={() => router.push("/(root)/streaming-services")}
-          >
-            <Text style={styles.primaryBtnText}>Manage streaming services</Text>
-          </Pressable>
-        </View>
       </RNAnimated.ScrollView>
     );
   }
@@ -225,6 +214,11 @@ const styles = StyleSheet.create({
     paddingTop: 12,
     paddingBottom: 8,
   },
+  /** When unlinked, only the hero header fills the tab — allow pull-to-refresh and comfortable bottom space */
+  emptyScrollContent: {
+    flexGrow: 1,
+    paddingBottom: 32,
+  },
   centered: {
     backgroundColor: "#08080C",
     paddingHorizontal: 28,
@@ -246,20 +240,6 @@ const styles = StyleSheet.create({
     lineHeight: 21,
     textAlign: "center",
     marginBottom: 22,
-  },
-  primaryBtn: {
-    backgroundColor: "#7C8CFF",
-    paddingHorizontal: 20,
-    paddingVertical: 12,
-    borderRadius: 12,
-  },
-  primaryBtnPressed: {
-    opacity: 0.9,
-  },
-  primaryBtnText: {
-    color: "#FFF",
-    fontSize: 15,
-    fontWeight: "700",
   },
   secondaryBtn: {
     borderWidth: 1,

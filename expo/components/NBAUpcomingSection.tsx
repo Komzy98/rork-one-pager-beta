@@ -22,13 +22,17 @@ import {
   getTeamLogo,
 } from '@/constants/nbaData';
 import { NBAFavoriteTeam } from '@/types/habit';
+import { useTheme } from '@/hooks/useTheme';
 import NBAGameDetailsModal from './NBAGameDetailsModal';
+
+const NBA_ORANGE = '#F26522';
 
 interface NBAUpcomingSectionProps {
   favoriteNBATeams: NBAFavoriteTeam[];
 }
 
 export default function NBAUpcomingSection({ favoriteNBATeams }: NBAUpcomingSectionProps) {
+  const { colors, isDark } = useTheme();
   const [selectedGame, setSelectedGame] = useState<NBAGame | null>(null);
   const [showGameModal, setShowGameModal] = useState<boolean>(false);
 
@@ -145,25 +149,64 @@ export default function NBAUpcomingSection({ favoriteNBATeams }: NBAUpcomingSect
     const team2Won = game.team2.winner === true;
 
     return (
-      <TouchableOpacity key={game.id} activeOpacity={0.85} onPress={() => handleGamePress(game)} style={styles.resultCard}>
+      <TouchableOpacity
+        key={game.id}
+        activeOpacity={0.85}
+        onPress={() => handleGamePress(game)}
+        style={[styles.resultCard, { backgroundColor: colors.card, borderColor: colors.border }]}
+      >
         <View style={styles.resultTeamRow}>
           <View style={styles.resultTeamInfo}>
             <Image source={{ uri: getTeamLogo(game.team1.abbreviation) }} style={styles.resultTeamLogo} resizeMode="contain" />
-            <Text style={[styles.resultTeamName, team1Won && styles.resultTeamWinner]}>{game.team1.abbreviation}</Text>
+            <Text
+              style={[
+                styles.resultTeamName,
+                { color: colors.textMuted },
+                team1Won && { color: colors.text, fontWeight: '700' as const },
+              ]}
+            >
+              {game.team1.abbreviation}
+            </Text>
           </View>
-          <Text style={[styles.resultScore, team1Won && styles.resultScoreWinner]}>{game.team1.score}</Text>
+          <Text
+            style={[
+              styles.resultScore,
+              { color: colors.textMuted },
+              team1Won && { color: colors.text, fontWeight: '800' as const },
+            ]}
+          >
+            {game.team1.score}
+          </Text>
         </View>
-        <View style={styles.resultDivider} />
+        <View style={[styles.resultDivider, { backgroundColor: colors.border }]} />
         <View style={styles.resultTeamRow}>
           <View style={styles.resultTeamInfo}>
             <Image source={{ uri: getTeamLogo(game.team2.abbreviation) }} style={styles.resultTeamLogo} resizeMode="contain" />
-            <Text style={[styles.resultTeamName, team2Won && styles.resultTeamWinner]}>{game.team2.abbreviation}</Text>
+            <Text
+              style={[
+                styles.resultTeamName,
+                { color: colors.textMuted },
+                team2Won && { color: colors.text, fontWeight: '700' as const },
+              ]}
+            >
+              {game.team2.abbreviation}
+            </Text>
           </View>
-          <Text style={[styles.resultScore, team2Won && styles.resultScoreWinner]}>{game.team2.score}</Text>
+          <Text
+            style={[
+              styles.resultScore,
+              { color: colors.textMuted },
+              team2Won && { color: colors.text, fontWeight: '800' as const },
+            ]}
+          >
+            {game.team2.score}
+          </Text>
         </View>
         {!!game.highlights && (
-          <View style={styles.highlightRow}>
-            <Text style={styles.highlightText} numberOfLines={1}>{game.highlights}</Text>
+          <View style={[styles.highlightRow, { backgroundColor: colors.surfaceSecondary }]}>
+            <Text style={[styles.highlightText, { color: colors.textSecondary }]} numberOfLines={1}>
+              {game.highlights}
+            </Text>
           </View>
         )}
       </TouchableOpacity>
@@ -175,9 +218,9 @@ export default function NBAUpcomingSection({ favoriteNBATeams }: NBAUpcomingSect
       <View style={styles.sectionHeader}>
         <View style={styles.headerLeft}>
           <Text style={styles.headerEmoji}>🏀</Text>
-          <Text style={styles.headerTitle}>NBA</Text>
+          <Text style={[styles.headerTitle, { color: colors.text }]}>NBA</Text>
           {upcomingGames.length > 0 && (
-            <View style={styles.countPill}>
+            <View style={[styles.countPill, { backgroundColor: isDark ? 'rgba(242, 101, 34, 0.18)' : '#FFF2EB' }]}>
               <Text style={styles.countPillText}>{upcomingGames.length}</Text>
             </View>
           )}
@@ -188,16 +231,25 @@ export default function NBAUpcomingSection({ favoriteNBATeams }: NBAUpcomingSect
           hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
         >
           <Text style={styles.seeAllText}>See All</Text>
-          <ChevronRight size={14} color="#F26522" />
+          <ChevronRight size={14} color={NBA_ORANGE} />
         </TouchableOpacity>
       </View>
 
       {favoriteNBATeams.length > 0 && (
         <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.teamsRow} contentContainerStyle={styles.teamsRowContent}>
           {favoriteNBATeams.map((team) => (
-            <View key={team.id} style={styles.favTeamChip}>
+            <View
+              key={team.id}
+              style={[
+                styles.favTeamChip,
+                {
+                  backgroundColor: colors.surfaceSecondary,
+                  borderColor: colors.border,
+                },
+              ]}
+            >
               {team.logo && <Image source={{ uri: team.logo }} style={styles.favTeamLogo} resizeMode="contain" />}
-              <Text style={styles.favTeamName}>{team.abbreviation}</Text>
+              <Text style={[styles.favTeamName, { color: colors.text }]}>{team.abbreviation}</Text>
             </View>
           ))}
         </ScrollView>
@@ -205,7 +257,7 @@ export default function NBAUpcomingSection({ favoriteNBATeams }: NBAUpcomingSect
 
       {upcomingGames.length > 0 && (
         <>
-          <Text style={styles.subSectionTitle}>Upcoming Games</Text>
+          <Text style={[styles.subSectionTitle, { color: colors.textMuted }]}>Upcoming Games</Text>
           <ScrollView
             horizontal
             showsHorizontalScrollIndicator={false}
@@ -218,7 +270,7 @@ export default function NBAUpcomingSection({ favoriteNBATeams }: NBAUpcomingSect
 
       {recentResults.length > 0 && (
         <>
-          <Text style={[styles.subSectionTitle, { marginTop: 16 }]}>Recent Results</Text>
+          <Text style={[styles.subSectionTitle, { marginTop: 16, color: colors.textMuted }]}>Recent Results</Text>
           <View style={styles.resultsContainer}>
             {recentResults.map(renderResultGame)}
           </View>
@@ -257,7 +309,6 @@ const styles = StyleSheet.create({
   headerTitle: {
     fontSize: 20,
     fontWeight: '700' as const,
-    color: '#0F172A',
     letterSpacing: -0.4,
   },
   countPill: {
@@ -291,12 +342,10 @@ const styles = StyleSheet.create({
   favTeamChip: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: '#F8FAFC',
     paddingHorizontal: 10,
     paddingVertical: 6,
     borderRadius: 20,
     borderWidth: 1,
-    borderColor: '#E2E8F0',
     gap: 6,
   },
   favTeamLogo: {
@@ -306,12 +355,10 @@ const styles = StyleSheet.create({
   favTeamName: {
     fontSize: 12,
     fontWeight: '700' as const,
-    color: '#334155',
   },
   subSectionTitle: {
     fontSize: 13,
     fontWeight: '600' as const,
-    color: '#94A3B8',
     textTransform: 'uppercase' as const,
     letterSpacing: 0.5,
     paddingHorizontal: 20,
@@ -441,11 +488,9 @@ const styles = StyleSheet.create({
     gap: 8,
   },
   resultCard: {
-    backgroundColor: '#FFFFFF',
     borderRadius: 16,
     padding: 16,
     borderWidth: 1,
-    borderColor: 'rgba(0,0,0,0.04)',
     ...Platform.select({
       ios: {
         shadowColor: '#000',
@@ -474,29 +519,17 @@ const styles = StyleSheet.create({
   resultTeamName: {
     fontSize: 15,
     fontWeight: '600' as const,
-    color: '#64748B',
-  },
-  resultTeamWinner: {
-    color: '#0F172A',
-    fontWeight: '700' as const,
   },
   resultScore: {
     fontSize: 20,
     fontWeight: '600' as const,
-    color: '#94A3B8',
-  },
-  resultScoreWinner: {
-    color: '#0F172A',
-    fontWeight: '800' as const,
   },
   resultDivider: {
     height: 1,
-    backgroundColor: '#F1F5F9',
     marginVertical: 2,
   },
   highlightRow: {
     marginTop: 8,
-    backgroundColor: '#F8FAFC',
     borderRadius: 8,
     paddingHorizontal: 10,
     paddingVertical: 6,
@@ -504,6 +537,5 @@ const styles = StyleSheet.create({
   highlightText: {
     fontSize: 11,
     fontWeight: '600' as const,
-    color: '#64748B',
   },
 });

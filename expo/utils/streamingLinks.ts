@@ -235,10 +235,15 @@ export async function openStreamingTitleSearch(
   providerId: number,
   title: string,
   year?: number,
+  /** Appended to the title for catalog search (e.g. `S1E6`) so results skew toward the specific episode. */
+  episodeSearchHint?: string,
 ): Promise<boolean> {
   const platform = STREAMING_PLATFORMS[providerId];
   if (!platform) return false;
-  const url = platform.searchUrl?.(title, year) ?? platform.webUrl;
+  const t = title.trim();
+  const hint = episodeSearchHint?.trim();
+  const queryTitle = hint ? `${t} ${hint}` : t;
+  const url = platform.searchUrl?.(queryTitle, year) ?? platform.webUrl;
   try {
     await Linking.openURL(url);
     return true;
@@ -311,9 +316,11 @@ function pickFirstString(row: Record<string, unknown>, keys: string[]): string |
 
 /** Provider play / resume URLs from Younify rows (camelCase + snake_case). */
 export function pickWatchNowUrlFromRow(row: Record<string, unknown>): string | null {
-  return pickFirstString(row, [
+  const keys = [
     "watchNowUrl",
     "watch_now_url",
+    "watchUrl",
+    "watch_url",
     "playUrl",
     "play_url",
     "deepLink",
@@ -322,7 +329,326 @@ export function pickWatchNowUrlFromRow(row: Record<string, unknown>): string | n
     "provider_watch_url",
     "streamingUrl",
     "streaming_url",
-  ]);
+    "playbackUrl",
+    "playback_url",
+    "contentUrl",
+    "content_url",
+    "url",
+    "href",
+    "link",
+    "uri",
+    "externalUrl",
+    "external_url",
+    "amazonUrl",
+    "amazon_url",
+    "primeVideoUrl",
+    "prime_video_url",
+  ];
+  const direct = pickFirstString(row, keys);
+  if (direct) return direct;
+  for (const k of keys) {
+    const v = row[k];
+    if (typeof v === "string" && /^https?:\/\//i.test(v.trim())) return v.trim();
+  }
+  return null;
+}
+
+/** ASIN / title id for Amazon Prime Video detail pages (10-char alphanumeric). */
+function extractAmazonVideoAsinFromRow(row: Record<string, unknown>): string | null {
+  const keyHints = [
+    "asin",
+    "ASIN",
+    "amazonAsin",
+    "amazon_asin",
+    "gti",
+    "globalTitleId",
+    "global_title_id",
+    "amazonTitleId",
+    "amazon_title_id",
+  ];
+  for (const k of keyHints) {
+    const v = row[k];
+    if (typeof v === "string") {
+      const t = v.trim();
+      if (/^[A-Z0-9]{10}$/i.test(t)) return t.toUpperCase();
+      const m = t.match(/\/detail\/([A-Z0-9]{10})(?:[\/?#]|$)/i);
+      if (m) return m[1].toUpperCase();
+    }
+  }
+  for (const v of Object.values(row)) {
+    if (typeof v !== "string") continue;
+    if (/\/(?:gp\/video\/|video\/)?detail\/([A-Z0-9]{10})(?:[\/?#]|$)/i.test(v)) {
+      const m = v.match(/\/detail\/([A-Z0-9]{10})(?:[\/?#]|$)/i);
+      if (m) return m[1].toUpperCase();
+    }
+  }
+  return null;
+}
+
+function extractAsinFromAmazonStyleVideoUrl(url: string): string | null {
+  const m = url.match(/\/(?:gp\/video\/|video\/)?detail\/([A-Z0-9]{10})(?:[\/?#]|$)/i);
+  return m ? m[1].toUpperCase() : null;
+}
+
+/**
+ * Raw `amazon.com/gp/video/detail/...` links often open in the browser; `app.primevideo.com/detail/...`
+ * is registered with the Prime Video app on iOS/Android and resumes Continue watching reliably (similar to Netflix+nflx).
+ */
+export function normalizePrimeVideoWatchUrl(url: string): string {
+  const lower = url.toLowerCase();
+  if (!lower.includes("amazon") && !lower.includes("primevideo")) return url;
+
+  try {
+    if (lower.includes("app.primevideo.com")) return url;
+
+    const u = new URL(url);
+    const gti = u.searchParams.get("gti");
+    if (gti && lower.includes("primevideo")) {
+      return `https://app.primevideo.com/detail?gti=${encodeURIComponent(gti)}`;
+    }
+
+    const asin = extractAsinFromAmazonStyleVideoUrl(url);
+    if (asin) {
+      return `https://app.primevideo.com/detail/${asin}`;
+    }
+  } catch {
+    /* keep original */
+  }
+  return url;
+}
+
+/** Build a Prime Video detail URL when Younify omits watch URLs but exposes ASIN/GTI in row metadata. */
+function buildPrimeVideoWatchUrlFromRow(row: Record<string, unknown>): string | null {
+  const svc = row.younifySourceService as { id?: string; name?: string } | undefined;
+  const pid = younifySourceToTmdbProviderId(svc);
+  if (pid !== 9 && pid !== 10) return null;
+
+  for (const key of ["gti", "globalTitleId", "global_title_id", "primeGti", "prime_gti"] as const) {
+    const v = row[key];
+    if (typeof v === "string") {
+      const t = v.trim();
+      if (t.includes("amzn1.")) {
+        return `https://app.primevideo.com/detail?gti=${encodeURIComponent(t)}`;
+      }
+    }
+  }
+
+  const asin = extractAmazonVideoAsinFromRow(row);
+  if (!asin) return null;
+  return `https://app.primevideo.com/detail/${asin}`;
+}
+
+function extractNumericWatchId(row: Record<string, unknown>, keys: string[]): string | null {
+  for (const k of keys) {
+    const v = row[k];
+    if (typeof v === "number" && Number.isFinite(v) && v > 1e3 && v < 1e12) {
+      return String(Math.floor(v));
+    }
+    if (typeof v === "string" && /^\d{5,12}$/.test(v.trim())) return v.trim();
+  }
+  return null;
+}
+
+const UUID_RE =
+  /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+
+function extractUuidContentId(row: Record<string, unknown>): string | null {
+  const keys = [
+    "contentId",
+    "content_id",
+    "providerContentId",
+    "provider_content_id",
+    "playbackContentId",
+    "videoUuid",
+    "video_uuid",
+    "huluContentId",
+    "hulu_content_id",
+  ];
+  for (const k of keys) {
+    const v = row[k];
+    if (typeof v === "string" && UUID_RE.test(v.trim())) return v.trim();
+  }
+  return null;
+}
+
+/**
+ * When Younify omits `watchNowUrl`, build best-effort HTTPS URLs so universal links / apps open (same idea as Prime).
+ */
+function buildProviderFallbackWatchUrl(row: Record<string, unknown>): string | null {
+  const prime = buildPrimeVideoWatchUrlFromRow(row);
+  if (prime) return prime;
+
+  const svc = row.younifySourceService as { id?: string; name?: string } | undefined;
+  const pid = younifySourceToTmdbProviderId(svc);
+  if (pid == null) return null;
+
+  if (pid === 8) {
+    const wid = extractNumericWatchId(row, [
+      "netflixWatchId",
+      "netflix_watch_id",
+      "watchId",
+      "watch_id",
+      "itemID",
+      "item_id",
+      "titleId",
+      "title_id",
+      "videoId",
+      "video_id",
+    ]);
+    if (wid) return `https://www.netflix.com/watch/${wid}`;
+  }
+
+  if (pid === 15) {
+    const u = extractUuidContentId(row);
+    if (u) return `https://www.hulu.com/watch/${u}`;
+  }
+
+  if (pid === 337) {
+    const u = extractUuidContentId(row);
+    if (u) return `https://www.disneyplus.com/video/${u}`;
+  }
+
+  return null;
+}
+
+/**
+ * Improve in-app open rates: Prime → app.primevideo.com; normalize mobile hosts for Disney+/Hulu HTTPS universal links.
+ */
+export function normalizeStreamingWatchUrl(url: string): string {
+  let out = normalizePrimeVideoWatchUrl(url);
+  try {
+    const u = new URL(out);
+    const h = u.hostname.toLowerCase();
+    if (h === "m.disneyplus.com") {
+      u.hostname = "www.disneyplus.com";
+      out = u.toString();
+    }
+    if (h.startsWith("m.hulu.com")) {
+      u.hostname = "www.hulu.com";
+      out = u.toString();
+    }
+    if (h === "m.youtube.com") {
+      u.hostname = "www.youtube.com";
+      out = u.toString();
+    }
+  } catch {
+    /* keep out */
+  }
+  return out;
+}
+
+/** `https://www.disneyplus.com/...` → `disneyplus://www.disneyplus.com/...` for app handoff when HTTPS open fails. */
+function httpsUrlToNativeScheme(httpsUrl: string, schemeWithColon: string): string | null {
+  try {
+    const u = new URL(httpsUrl);
+    if (u.protocol !== "http:" && u.protocol !== "https:") return null;
+    return `${schemeWithColon}//${u.host}${u.pathname}${u.search}`;
+  } catch {
+    return null;
+  }
+}
+
+async function openWatchUrlWithProviderFallbacks(
+  watchUrl: string,
+  row: Record<string, unknown>,
+): Promise<boolean> {
+  try {
+    await Linking.openURL(watchUrl);
+    return true;
+  } catch {
+    /* try native schemes */
+  }
+
+  const svc = row.younifySourceService as { id?: string; name?: string } | undefined;
+  const pid = younifySourceToTmdbProviderId(svc);
+  const lower = watchUrl.toLowerCase();
+
+  if (pid === 8 || lower.includes("netflix.com")) {
+    const m = watchUrl.match(/netflix\.com\/watch\/(\d+)/i);
+    if (m) {
+      try {
+        await Linking.openURL(`nflx://www.netflix.com/watch/${m[1]}`);
+        return true;
+      } catch {
+        /* continue */
+      }
+    }
+  }
+
+  if ((pid === 9 || pid === 10 || pid == null) && /amazon\.|primevideo|aiv/i.test(watchUrl)) {
+    const asin =
+      extractAmazonVideoAsinFromRow(row) ?? extractAsinFromAmazonStyleVideoUrl(watchUrl);
+    if (asin) {
+      try {
+        await Linking.openURL(`aiv://aiv/detail?asin=${asin}`);
+        return true;
+      } catch {
+        /* continue */
+      }
+    }
+  }
+
+  const nativeSchemeAttempts: {
+    hostIncludes: string;
+    providerIds: number[];
+    scheme: string;
+    altScheme?: string;
+  }[] = [
+    { hostIncludes: "disneyplus.com", providerIds: [337], scheme: "disneyplus:" },
+    { hostIncludes: "hulu.com", providerIds: [15], scheme: "hulu:" },
+    {
+      hostIncludes: "max.com",
+      providerIds: [1899, 384],
+      scheme: "max:",
+      altScheme: "hbomax:",
+    },
+    {
+      hostIncludes: "hbomax.com",
+      providerIds: [1899, 384],
+      scheme: "hbomax:",
+      altScheme: "max:",
+    },
+    { hostIncludes: "paramountplus.com", providerIds: [531], scheme: "paramountplus:" },
+    { hostIncludes: "peacocktv.com", providerIds: [386, 387], scheme: "peacock:" },
+    { hostIncludes: "tv.apple.com", providerIds: [350], scheme: "videos:" },
+    { hostIncludes: "crunchyroll.com", providerIds: [283], scheme: "crunchyroll:" },
+    { hostIncludes: "pluto.tv", providerIds: [300], scheme: "pluto:" },
+    { hostIncludes: "tubitv.com", providerIds: [73], scheme: "tubi:" },
+    { hostIncludes: "fubo.tv", providerIds: [257], scheme: "fubo:" },
+    { hostIncludes: "amcplus.com", providerIds: [526], scheme: "amcplus:" },
+    { hostIncludes: "viki.com", providerIds: [582], scheme: "viki:" },
+    { hostIncludes: "plex.tv", providerIds: [1770], scheme: "plex:" },
+    { hostIncludes: "youtube.com", providerIds: [192, 188], scheme: "youtube:" },
+    { hostIncludes: "youtu.be", providerIds: [192, 188], scheme: "youtube:" },
+  ];
+
+  for (const att of nativeSchemeAttempts) {
+    if (!lower.includes(att.hostIncludes)) continue;
+    if (pid != null && !att.providerIds.includes(pid)) continue;
+
+    const primary = httpsUrlToNativeScheme(watchUrl, att.scheme);
+    if (primary) {
+      try {
+        await Linking.openURL(primary);
+        return true;
+      } catch {
+        /* try alt */
+      }
+    }
+    if (att.altScheme) {
+      const alt = httpsUrlToNativeScheme(watchUrl, att.altScheme);
+      if (alt) {
+        try {
+          await Linking.openURL(alt);
+          return true;
+        } catch {
+          /* continue */
+        }
+      }
+    }
+  }
+
+  return false;
 }
 
 function readPositiveNumber(row: Record<string, unknown>, keys: string[]): number | null {
@@ -437,8 +763,31 @@ export function augmentWatchUrlWithResume(url: string, resumeSeconds: number | n
   if (lower.includes("youtube.com/watch") || lower.includes("youtu.be/")) {
     return `${url}${sep}t=${resumeSeconds}`;
   }
-  if (lower.includes("max.com/watch") || lower.includes("hbomax.com")) {
+  if (
+    lower.includes("max.com/watch") ||
+    lower.includes("hbomax.com") ||
+    lower.includes("disneyplus.com") ||
+    lower.includes("hulu.com/watch") ||
+    lower.includes("paramountplus.com") ||
+    lower.includes("peacocktv.com") ||
+    lower.includes("pluto.tv") ||
+    lower.includes("tubitv.com") ||
+    lower.includes("crunchyroll.com") ||
+    lower.includes("viki.com") ||
+    lower.includes("amcplus.com") ||
+    lower.includes("fubo.tv")
+  ) {
     return `${url}${sep}t=${resumeSeconds}`;
+  }
+  // Prime Video (best-effort; some builds honor startTime for continue-watch web/app handoff)
+  if (
+    lower.includes("primevideo.com") ||
+    (lower.includes("amazon.") && lower.includes("/gp/video")) ||
+    lower.startsWith("aiv://")
+  ) {
+    if (!/[?&]starttime=/i.test(url)) {
+      return `${url}${sep}startTime=${resumeSeconds}`;
+    }
   }
 
   return url;
@@ -490,18 +839,24 @@ export async function openYounifyBrowseItemOnPlatform(
   const isContinue = options?.sectionId === "continue";
 
   let watchUrl = pickWatchNowUrlFromRow(row);
+  if (watchUrl) {
+    watchUrl = normalizeStreamingWatchUrl(watchUrl);
+  }
+  if (!watchUrl) {
+    watchUrl = buildProviderFallbackWatchUrl(row);
+  }
   if (watchUrl && isContinue) {
     const resumeSec = getPlaybackResumeSeconds(row);
     watchUrl = augmentWatchUrlWithResume(watchUrl, resumeSec);
   }
 
   if (watchUrl) {
-    try {
-      await Linking.openURL(watchUrl);
-    } catch (e) {
-      console.warn("[openYounifyBrowseItemOnPlatform] watch URL failed", e);
-    }
-    return;
+    const opened = await openWatchUrlWithProviderFallbacks(watchUrl, row);
+    if (opened) return;
+    console.warn(
+      "[openYounifyBrowseItemOnPlatform] watch URL and native fallbacks failed",
+      watchUrl,
+    );
   }
   const year = extractContentReleaseYear(row);
   const pid = younifySourceToTmdbProviderId(
@@ -527,15 +882,29 @@ export async function openStreamingApp(
   fallbackUrl?: string
 ): Promise<boolean> {
   const platform = STREAMING_PLATFORMS[providerId];
-  
+
   if (!platform) {
     console.log(`Unknown streaming provider: ${providerId}`);
     if (fallbackUrl) {
-      await Linking.openURL(fallbackUrl);
-      return true;
+      try {
+        await Linking.openURL(fallbackUrl);
+        return true;
+      } catch {
+        return false;
+      }
     }
     return false;
   }
+
+  const tryFallback = async (): Promise<boolean> => {
+    if (!fallbackUrl) return false;
+    try {
+      await Linking.openURL(fallbackUrl);
+      return true;
+    } catch {
+      return false;
+    }
+  };
 
   try {
     // Prefer title-specific universal links first. On iOS/Android these often deep-link
@@ -546,39 +915,25 @@ export async function openStreamingApp(
       return true;
     } catch (searchError) {
       if (__DEV__) {
-        console.warn(`Title search link failed for ${platform.name}, falling back to app scheme`, searchError);
+        console.warn(
+          `Title search link failed for ${platform.name}, falling back to app scheme`,
+          searchError,
+        );
       }
     }
 
-    if (Platform.OS !== 'web' && platform.appScheme) {
+    if (Platform.OS !== "web" && platform.appScheme) {
       const canOpen = await Linking.canOpenURL(platform.appScheme);
       if (canOpen) {
         await Linking.openURL(platform.appScheme);
         return true;
       }
     }
+
+    return await tryFallback();
   } catch (error) {
     console.error(`Failed to open ${platform.name}:`, error);
-    
-    if (fallbackUrl) {
-      try {
-        await Linking.openURL(fallbackUrl);
-        return true;
-      } catch {
-        return false;
-      }
-    }
-
-  if (fallbackUrl) {
-    try {
-      await Linking.openURL(fallbackUrl);
-      return true;
-    } catch {
-      return false;
-    }
-  }
-    
-  return false;
+    return await tryFallback();
   }
 }
 

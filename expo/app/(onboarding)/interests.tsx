@@ -11,10 +11,10 @@ import {
 import { useRouter } from 'expo-router';
 import { ArrowRight, ArrowLeft, Check } from 'lucide-react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { LinearGradient } from 'expo-linear-gradient';
 import * as Haptics from 'expo-haptics';
 import { useUserProfile } from '@/hooks/useUserProfile';
 import OnboardingProgress from '@/components/OnboardingProgress';
+import { COLORS } from '@/constants/colors';
 
 const { width } = Dimensions.get('window');
 const CARD_WIDTH = (width - 32 * 2 - 12) / 2;
@@ -83,7 +83,7 @@ export default function InterestsScreen() {
   const handleContinue = useCallback(() => {
     void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
     updateInterests(selectedInterests);
-    router.push('/(onboarding)/chronotype' as any);
+    router.push('/(onboarding)/streaming' as any);
   }, [selectedInterests, updateInterests, router]);
 
   const handleBack = useCallback(() => {
@@ -92,28 +92,18 @@ export default function InterestsScreen() {
 
   return (
     <View style={styles.container}>
-      <LinearGradient
-        colors={['#050505', '#0A0A0A', '#050505']}
-        style={StyleSheet.absoluteFillObject}
-        start={{ x: 0.2, y: 0 }}
-        end={{ x: 0.8, y: 1 }}
-      />
-
-      <View style={styles.ambientOrb1} />
-      <View style={styles.ambientOrb2} />
-
       <View style={[styles.header, { paddingTop: insets.top + 12 }]}>
         <TouchableOpacity style={styles.backBtn} onPress={handleBack} activeOpacity={0.7}>
-          <ArrowLeft size={20} color="rgba(255,255,255,0.6)" />
+          <ArrowLeft size={20} color={COLORS.textMuted} />
         </TouchableOpacity>
         <View style={styles.progressWrap}>
-          <OnboardingProgress currentStep={1} totalSteps={4} />
+          <OnboardingProgress currentStep={1} totalSteps={6} />
         </View>
         <View style={styles.headerSpacer} />
       </View>
 
       <Animated.View style={[styles.titleWrap, { opacity: fadeAnim, transform: [{ translateY: titleSlide }] }]}>
-        <Text style={styles.stepLabel}>STEP 1</Text>
+        <Text style={styles.stepLabel}>STEP 1 · INTERESTS</Text>
         <Text style={styles.title}>What excites you?</Text>
         <Text style={styles.subtitle}>Pick your interests to personalise your experience</Text>
       </Animated.View>
@@ -147,16 +137,11 @@ export default function InterestsScreen() {
                   testID={`interest-${interest.id}`}
                 >
                   {isSelected && (
-                    <LinearGradient
-                      colors={['rgba(255,255,255,0.08)', 'rgba(255,255,255,0.02)']}
-                      style={StyleSheet.absoluteFillObject}
-                      start={{ x: 0, y: 0 }}
-                      end={{ x: 1, y: 1 }}
-                    />
+                    <View style={styles.cardSelectedOverlay} />
                   )}
                   {isSelected && (
                     <View style={styles.checkBadge}>
-                      <Check size={10} color="#050505" strokeWidth={3} />
+                      <Check size={10} color="#FFFFFF" strokeWidth={3} />
                     </View>
                   )}
                   <Text style={styles.emoji}>{interest.emoji}</Text>
@@ -204,7 +189,7 @@ export default function InterestsScreen() {
             <Text style={[styles.continueText, selectedInterests.length === 0 && styles.continueTextDisabled]}>
               Continue
             </Text>
-            <ArrowRight size={18} color={selectedInterests.length === 0 ? 'rgba(255,255,255,0.15)' : '#050505'} />
+            <ArrowRight size={18} color={selectedInterests.length === 0 ? COLORS.disabled : '#FFFFFF'} />
           </View>
         </TouchableOpacity>
       </Animated.View>
@@ -215,25 +200,7 @@ export default function InterestsScreen() {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#050505',
-  },
-  ambientOrb1: {
-    position: 'absolute',
-    width: 250,
-    height: 250,
-    borderRadius: 125,
-    backgroundColor: 'rgba(255,255,255,0.015)',
-    top: -60,
-    left: -80,
-  },
-  ambientOrb2: {
-    position: 'absolute',
-    width: 180,
-    height: 180,
-    borderRadius: 90,
-    backgroundColor: 'rgba(255,255,255,0.01)',
-    bottom: 100,
-    right: -50,
+    backgroundColor: 'transparent',
   },
   header: {
     flexDirection: 'row',
@@ -245,7 +212,7 @@ const styles = StyleSheet.create({
     width: 40,
     height: 40,
     borderRadius: 12,
-    backgroundColor: 'rgba(255,255,255,0.05)',
+    backgroundColor: COLORS.surfaceSecondary,
     justifyContent: 'center',
     alignItems: 'center',
   },
@@ -263,20 +230,20 @@ const styles = StyleSheet.create({
   stepLabel: {
     fontSize: 11,
     fontWeight: '700' as const,
-    color: '#B3B3B3',
+    color: COLORS.textMuted,
     letterSpacing: 2.5,
     marginBottom: 10,
   },
   title: {
     fontSize: 28,
     fontWeight: '800' as const,
-    color: '#FFFFFF',
+    color: COLORS.text,
     marginBottom: 8,
     letterSpacing: -0.5,
   },
   subtitle: {
     fontSize: 15,
-    color: '#747474',
+    color: COLORS.textSecondary,
     lineHeight: 22,
   },
   scrollView: {
@@ -293,27 +260,38 @@ const styles = StyleSheet.create({
   },
   card: {
     width: CARD_WIDTH,
-    backgroundColor: 'rgba(255,255,255,0.03)',
+    backgroundColor: COLORS.surface,
     borderRadius: 18,
     padding: 18,
     alignItems: 'center',
     borderWidth: 1,
-    borderColor: 'rgba(255,255,255,0.05)',
+    borderColor: COLORS.border,
     minHeight: 105,
     justifyContent: 'center',
     overflow: 'hidden',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.05,
+    shadowRadius: 4,
+    elevation: 1,
   },
   cardSelected: {
-    borderColor: 'rgba(255,255,255,0.3)',
+    borderColor: COLORS.primary,
+    borderWidth: 2,
+  },
+  cardSelectedOverlay: {
+    ...StyleSheet.absoluteFillObject,
+    backgroundColor: `${COLORS.primary}10`,
+    borderRadius: 18,
   },
   checkBadge: {
     position: 'absolute',
     top: 10,
     right: 10,
-    width: 20,
-    height: 20,
-    borderRadius: 10,
-    backgroundColor: '#FFFFFF',
+    width: 22,
+    height: 22,
+    borderRadius: 11,
+    backgroundColor: COLORS.primary,
     justifyContent: 'center',
     alignItems: 'center',
     zIndex: 2,
@@ -325,18 +303,18 @@ const styles = StyleSheet.create({
   cardLabel: {
     fontSize: 13,
     fontWeight: '600' as const,
-    color: 'rgba(255,255,255,0.7)',
+    color: COLORS.textSecondary,
     textAlign: 'center' as const,
   },
   cardLabelSelected: {
-    color: '#FFFFFF',
+    color: COLORS.text,
   },
   footer: {
     paddingHorizontal: 32,
     paddingTop: 14,
-    borderTopWidth: 1,
-    borderTopColor: 'rgba(255,255,255,0.05)',
-    backgroundColor: 'rgba(5,5,5,0.95)',
+    borderTopWidth: StyleSheet.hairlineWidth,
+    borderTopColor: 'rgba(15, 23, 42, 0.08)',
+    backgroundColor: 'rgba(255, 255, 255, 0.65)',
   },
   selectionInfo: {
     flexDirection: 'row',
@@ -348,24 +326,24 @@ const styles = StyleSheet.create({
     width: 26,
     height: 26,
     borderRadius: 13,
-    backgroundColor: 'rgba(255,255,255,0.05)',
+    backgroundColor: COLORS.surfaceSecondary,
     justifyContent: 'center',
     alignItems: 'center',
   },
   countPillActive: {
-    backgroundColor: 'rgba(255,255,255,0.12)',
+    backgroundColor: `${COLORS.primary}22`,
   },
   countText: {
     fontSize: 12,
     fontWeight: '700' as const,
-    color: 'rgba(255,255,255,0.3)',
+    color: COLORS.textMuted,
   },
   countTextActive: {
-    color: '#FFFFFF',
+    color: COLORS.primary,
   },
   selectionLabel: {
     fontSize: 14,
-    color: '#747474',
+    color: COLORS.textMuted,
   },
   continueBtn: {
     borderRadius: 16,
@@ -380,17 +358,17 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     paddingVertical: 17,
     gap: 8,
-    backgroundColor: '#FFFFFF',
+    backgroundColor: COLORS.primary,
   },
   continueBtnInnerDisabled: {
-    backgroundColor: '#1A1A1A',
+    backgroundColor: COLORS.surfaceSecondary,
   },
   continueText: {
     fontSize: 16,
     fontWeight: '700' as const,
-    color: '#050505',
+    color: '#FFFFFF',
   },
   continueTextDisabled: {
-    color: 'rgba(255,255,255,0.15)',
+    color: COLORS.textMuted,
   },
 });

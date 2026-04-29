@@ -30,6 +30,7 @@ import {
   Check,
 } from 'lucide-react-native';
 import { COLORS, HABIT_COLORS } from '@/constants/colors';
+import { useTheme } from '@/hooks/useTheme';
 import { useSavedHabits } from '@/hooks/useHabitsEnhancement';
 import { useTasks } from '@/hooks/useTasksStore';
 import { useApp } from '@/hooks/useHabitsStore';
@@ -242,6 +243,7 @@ const ExerciseList = ({ activities, habitColor, exerciseGifs, exerciseFormGuides
 };
 
 const RoutineItem = ({ habit, communityInfo, minimalVersion, isBusyMode, onToggle, onRemove, index }: RoutineItemProps) => {
+  const { colors, isDark } = useTheme();
   const scaleAnim = useRef(new Animated.Value(1)).current;
   const fadeAnim = useRef(new Animated.Value(0)).current;
   const slideAnim = useRef(new Animated.Value(20)).current;
@@ -450,7 +452,11 @@ const RoutineItem = ({ habit, communityInfo, minimalVersion, isBusyMode, onToggl
   return (
     <Animated.View style={[
       styles.routineItem,
-      isCompleted && styles.routineItemCompleted,
+      { backgroundColor: colors.surfaceSecondary, borderColor: colors.border },
+      isCompleted && {
+        backgroundColor: isDark ? 'rgba(16, 185, 129, 0.1)' : '#F7FBF8',
+        borderColor: isDark ? 'rgba(16, 185, 129, 0.28)' : 'rgba(16, 185, 129, 0.12)',
+      },
       {
         transform: [{ scale: scaleAnim }, { translateY: slideAnim }],
         opacity: fadeAnim,
@@ -483,14 +489,15 @@ const RoutineItem = ({ habit, communityInfo, minimalVersion, isBusyMode, onToggl
           <Text
             style={[
               styles.routineItemTitle,
-              isCompleted && styles.routineItemTitleCompleted,
+              { color: colors.text },
+              isCompleted && [styles.routineItemTitleCompleted, { color: colors.textMuted }],
             ]}
             numberOfLines={1}
           >
             {displayTitle}
           </Text>
           {workoutDayLabel ? (
-            <Text style={styles.routineItemSubtitle} numberOfLines={1}>
+            <Text style={[styles.routineItemSubtitle, { color: colors.textSecondary }]} numberOfLines={1}>
               {habit.title}
             </Text>
           ) : null}
@@ -701,6 +708,7 @@ export default function TodaysRoutine({
   showHeader = true,
   onViewAll,
 }: TodaysRoutineProps) {
+  const { colors, isDark } = useTheme();
   const savedHabitsContext = useSavedHabits();
   const tasksContext = useTasks();
   const appContext = useApp();
@@ -877,16 +885,16 @@ export default function TodaysRoutine({
 
   if (totalCount === 0) {
     return (
-      <View style={styles.emptyContainer}>
-        <View style={styles.emptyIconWrap}>
-          <Star size={28} color="#F59E0B" fill="#FEF3C7" strokeWidth={2} />
+      <View style={[styles.emptyContainer, { backgroundColor: colors.card, borderColor: colors.border }]}>
+        <View style={[styles.emptyIconWrap, { backgroundColor: isDark ? 'rgba(245, 158, 11, 0.14)' : '#FEF9EE' }]}>
+          <Star size={28} color="#F59E0B" fill={isDark ? 'rgba(245, 158, 11, 0.25)' : '#FEF3C7'} strokeWidth={2} />
         </View>
-        <Text style={styles.emptyTitle}>Start your routine</Text>
-        <Text style={styles.emptyText}>
+        <Text style={[styles.emptyTitle, { color: colors.text }]}>Start your routine</Text>
+        <Text style={[styles.emptyText, { color: colors.textSecondary }]}>
           Add habits to build a daily routine that works for you
         </Text>
         <TouchableOpacity 
-          style={styles.discoverBtn}
+          style={[styles.discoverBtn, { backgroundColor: colors.primary }]}
           onPress={() => router.push('/discover' as any)}
           activeOpacity={0.8}
         >
@@ -900,7 +908,7 @@ export default function TodaysRoutine({
   const allDone = completedCount === totalCount && totalCount > 0;
 
   return (
-    <View style={styles.container}>
+    <View style={[styles.container, { backgroundColor: colors.card, borderColor: colors.border }]}>
       {showHeader && (
         <View style={styles.header}>
           <View style={styles.headerLeft}>
@@ -912,7 +920,7 @@ export default function TodaysRoutine({
                   <TrendingUp size={14} color="#fff" strokeWidth={2.5} />
                 )}
               </View>
-              <Text style={styles.title}>Today&apos;s Routine</Text>
+              <Text style={[styles.title, { color: colors.text }]}>Today&apos;s Routine</Text>
               {busyMode.isEnabled && (
                 <View style={styles.busyModePill}>
                   <Zap size={9} color="#fff" />
@@ -920,7 +928,7 @@ export default function TodaysRoutine({
                 </View>
               )}
             </View>
-            <Text style={styles.subtitle}>
+            <Text style={[styles.subtitle, { color: colors.textSecondary }]}>
               {allDone
                 ? 'All tasks crushed today!' 
                 : busyMode.isEnabled 
@@ -948,17 +956,18 @@ export default function TodaysRoutine({
       )}
 
       <View style={styles.progressSection}>
-        <View style={styles.progressTrack}>
+        <View style={[styles.progressTrack, { backgroundColor: isDark ? colors.border : '#F1F5F9' }]}>
           <Animated.View 
             style={[
               styles.progressFill,
               allDone && styles.progressFillDone,
+              !allDone && isDark && { backgroundColor: colors.text },
               { width: progressWidth }
             ]} 
           />
         </View>
         <View style={styles.progressLabelRow}>
-          <Text style={[styles.progressPercent, allDone && styles.progressPercentDone]}>
+          <Text style={[styles.progressPercent, { color: colors.textSecondary }, allDone && styles.progressPercentDone]}>
             {Math.round(progressPercent)}%
           </Text>
           {allDone && (
@@ -974,7 +983,7 @@ export default function TodaysRoutine({
         <View style={styles.sectionHeader}>
           <View style={styles.sectionHeaderLeft}>
             <CircleDot size={13} color="#F59E0B" strokeWidth={2.5} />
-            <Text style={styles.sectionHeaderText}>Habits</Text>
+            <Text style={[styles.sectionHeaderText, { color: colors.textSecondary }]}>Habits</Text>
           </View>
           <View style={styles.sectionCountPill}>
             <Text style={styles.sectionCountText}>{completedHabitsCount}/{todayHabits.length}</Text>
@@ -1013,7 +1022,7 @@ export default function TodaysRoutine({
       <View style={[styles.sectionHeader, { marginTop: 22 }]}>
         <View style={styles.sectionHeaderLeft}>
           <Target size={13} color="#007AFF" strokeWidth={2.5} />
-          <Text style={styles.sectionHeaderText}>Tasks</Text>
+          <Text style={[styles.sectionHeaderText, { color: colors.textSecondary }]}>Tasks</Text>
         </View>
         <View style={[styles.sectionCountPill, styles.sectionCountPillBlue]}>
           <Text style={[styles.sectionCountText, styles.sectionCountTextBlue]}>{completedTasksCount}/{todayTasks.length}</Text>
@@ -1025,8 +1034,19 @@ export default function TodaysRoutine({
           <View style={styles.routineList}>
             {[...pendingTasks, ...completedTodayTasks].slice(0, 5).map((task: Task) => {
               const taskColor = task.priority === 'high' || task.priority === 'urgent' ? '#EF4444' : '#007AFF';
+              const taskDone = task.status === 'completed';
               return (
-                <Animated.View key={task.id} style={styles.routineItem}>
+                <Animated.View
+                  key={task.id}
+                  style={[
+                    styles.routineItem,
+                    { backgroundColor: colors.surfaceSecondary, borderColor: colors.border },
+                    taskDone && {
+                      backgroundColor: isDark ? 'rgba(16, 185, 129, 0.1)' : '#F7FBF8',
+                      borderColor: isDark ? 'rgba(16, 185, 129, 0.28)' : 'rgba(16, 185, 129, 0.12)',
+                    },
+                  ]}
+                >
                   <TouchableOpacity
                     style={styles.routineItemContent}
                     onPress={() => {
@@ -1062,7 +1082,8 @@ export default function TodaysRoutine({
                       <Text
                         style={[
                           styles.routineItemTitle,
-                          task.status === 'completed' && styles.routineItemTitleCompleted,
+                          { color: colors.text },
+                          taskDone && [styles.routineItemTitleCompleted, { color: colors.textMuted }],
                         ]}
                         numberOfLines={1}
                       >
@@ -1076,7 +1097,7 @@ export default function TodaysRoutine({
                           </View>
                         )}
                         {task.category && (
-                          <Text style={styles.categoryText}>{task.category}</Text>
+                          <Text style={[styles.categoryText, { color: colors.textMuted }]}>{task.category}</Text>
                         )}
                       </View>
                     </View>
@@ -1118,10 +1139,10 @@ export default function TodaysRoutine({
           )}
         </>
       ) : (
-        <View style={styles.emptyTasksContainer}>
-          <Text style={styles.emptyTasksText}>No tasks yet</Text>
+        <View style={[styles.emptyTasksContainer, { backgroundColor: colors.surfaceSecondary, borderColor: colors.border }]}>
+          <Text style={[styles.emptyTasksText, { color: colors.textSecondary }]}>No tasks yet</Text>
           <TouchableOpacity
-            style={styles.addTaskBtn}
+            style={[styles.addTaskBtn, { backgroundColor: colors.primary }]}
             onPress={() => router.push('/tasks' as any)}
             activeOpacity={0.7}
           >

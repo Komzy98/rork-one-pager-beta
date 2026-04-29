@@ -1,19 +1,31 @@
 import { Stack } from 'expo-router';
 import React from 'react';
+import { View, StyleSheet } from 'react-native';
+import { LinearGradient } from 'expo-linear-gradient';
+import { ONBOARDING_PREMIUM } from '@/constants/onboardingTheme';
 
 export default function OnboardingLayout() {
   return (
-    <Stack
-      screenOptions={{
-        headerShown: false,
-        gestureEnabled: false,
-        animation: 'fade_from_bottom',
-        animationDuration: 300,
-        contentStyle: { backgroundColor: '#050505' },
-      }}
-    >
+    <View style={styles.wrap}>
+      <LinearGradient
+        colors={[...ONBOARDING_PREMIUM.gradientColors]}
+        locations={[...ONBOARDING_PREMIUM.gradientLocations]}
+        style={StyleSheet.absoluteFillObject}
+        start={ONBOARDING_PREMIUM.gradientStart}
+        end={ONBOARDING_PREMIUM.gradientEnd}
+      />
+      <Stack
+        screenOptions={{
+          headerShown: false,
+          gestureEnabled: false,
+          animation: 'fade_from_bottom',
+          animationDuration: 280,
+          contentStyle: { backgroundColor: 'transparent' },
+        }}
+      >
       <Stack.Screen name="welcome" />
       <Stack.Screen name="interests" />
+      <Stack.Screen name="streaming" />
       <Stack.Screen name="chronotype" />
       <Stack.Screen name="nationality" />
       <Stack.Screen name="countries" />
@@ -21,5 +33,12 @@ export default function OnboardingLayout() {
       <Stack.Screen name="nba-teams" />
       <Stack.Screen name="complete" options={{ animation: 'fade' }} />
     </Stack>
+    </View>
   );
 }
+
+const styles = StyleSheet.create({
+  wrap: {
+    flex: 1,
+  },
+});

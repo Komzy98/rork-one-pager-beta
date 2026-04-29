@@ -7,16 +7,43 @@ import {
   ScrollView,
   TextInput,
   Animated,
+  Image,
 } from 'react-native';
 import { useRouter } from 'expo-router';
 import { Trophy, ArrowRight, ArrowLeft, Search, Star, Check } from 'lucide-react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { LinearGradient } from 'expo-linear-gradient';
 import * as Haptics from 'expo-haptics';
 import { useUserProfile } from '@/hooks/useUserProfile';
 import { UserTeam } from '@/types/habit';
-import { getPopularTeams, searchTeams } from '@/constants/footballData';
+import { getPopularTeams, searchTeams, getFootballTeamLogoUrl } from '@/constants/footballData';
 import OnboardingProgress from '@/components/OnboardingProgress';
+import { COLORS } from '@/constants/colors';
+
+function FootballTeamAvatar({
+  team,
+  isSelected,
+}: {
+  team: UserTeam;
+  isSelected: boolean;
+}) {
+  const [failed, setFailed] = useState(false);
+  const uri = getFootballTeamLogoUrl(team);
+  const showLogo = Boolean(uri && !failed);
+  return (
+    <View style={styles.teamLogoSlot}>
+      {showLogo ? (
+        <Image
+          source={{ uri: uri! }}
+          style={styles.teamLogo}
+          resizeMode="contain"
+          onError={() => setFailed(true)}
+        />
+      ) : (
+        <Trophy size={22} color={isSelected ? COLORS.primary : COLORS.textMuted} />
+      )}
+    </View>
+  );
+}
 
 export default function TeamsScreen() {
   const router = useRouter();
@@ -79,11 +106,13 @@ export default function TeamsScreen() {
     void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
     if (selectedTeams.length > 0 && profile) {
       const existingTeams = profile.favoriteTeams || [];
-      const newTeams = selectedTeams.filter(team =>
-        !existingTeams.some(existing =>
-          existing.id === team.id || existing.name.toLowerCase() === team.name.toLowerCase()
+      const newTeams = selectedTeams
+        .filter(team =>
+          !existingTeams.some(existing =>
+            existing.id === team.id || existing.name.toLowerCase() === team.name.toLowerCase()
+          )
         )
-      );
+        .map((t) => ({ ...t, logo: t.logo ?? getFootballTeamLogoUrl(t) }));
       const updatedTeams = [...existingTeams, ...newTeams];
       updateProfile({ favoriteTeams: updatedTeams });
     }
@@ -100,22 +129,12 @@ export default function TeamsScreen() {
 
   return (
     <View style={styles.container}>
-      <LinearGradient
-        colors={['#050505', '#0A0A0A', '#050505']}
-        style={StyleSheet.absoluteFillObject}
-        start={{ x: 0.2, y: 0 }}
-        end={{ x: 0.8, y: 1 }}
-      />
-
-      <View style={styles.ambientOrb1} />
-      <View style={styles.ambientOrb2} />
-
       <View style={[styles.header, { paddingTop: insets.top + 12 }]}>
         <TouchableOpacity style={styles.backBtn} onPress={handleBack} activeOpacity={0.7}>
-          <ArrowLeft size={20} color="rgba(255,255,255,0.6)" />
+          <ArrowLeft size={20} color={COLORS.textMuted} />
         </TouchableOpacity>
         <View style={styles.progressWrap}>
-          <OnboardingProgress currentStep={4} totalSteps={4} />
+          <OnboardingProgress currentStep={5} totalSteps={6} />
         </View>
         <TouchableOpacity onPress={handleSkip} activeOpacity={0.7}>
           <Text style={styles.skipText}>Skip</Text>
@@ -123,17 +142,17 @@ export default function TeamsScreen() {
       </View>
 
       <Animated.View style={[styles.titleWrap, { opacity: fadeAnim, transform: [{ translateY: titleSlide }] }]}>
-        <Text style={styles.stepLabel}>STEP 4</Text>
+        <Text style={styles.stepLabel}>STEP 5 · CLUBS</Text>
         <Text style={styles.title}>Follow Your Teams</Text>
         <Text style={styles.subtitle}>Get live scores and updates for your favourite clubs</Text>
       </Animated.View>
 
       <Animated.View style={[styles.searchWrap, { transform: [{ scale: searchScale }] }]}>
-        <Search size={17} color="#747474" />
+        <Search size={17} color={COLORS.textMuted} />
         <TextInput
           style={styles.searchInput}
           placeholder="Search teams..."
-          placeholderTextColor="rgba(255,255,255,0.2)"
+          placeholderTextColor={COLORS.textMuted}
           value={searchQuery}
           onChangeText={setSearchQuery}
         />
@@ -141,7 +160,7 @@ export default function TeamsScreen() {
 
       {!searchQuery && (
         <View style={styles.sectionRow}>
-          <Star size={13} color="#B3B3B3" />
+          <Star size={13} color={COLORS.textMuted} />
           <Text style={styles.sectionLabel}>
             {profile?.favoriteCountries && profile.favoriteCountries.length > 0
               ? 'Teams from Your Countries'
@@ -158,7 +177,7 @@ export default function TeamsScreen() {
         >
           {filteredTeams.length === 0 ? (
             <View style={styles.emptyState}>
-              <Trophy size={36} color="rgba(255,255,255,0.1)" />
+              <Trophy size={36} color={COLORS.border} />
               <Text style={styles.emptyTitle}>No teams found</Text>
               <Text style={styles.emptySub}>
                 {searchQuery ? 'Try a different search' : 'No teams available'}
@@ -174,17 +193,8 @@ export default function TeamsScreen() {
                   onPress={() => toggleTeam(team)}
                   activeOpacity={0.7}
                 >
-                  {isSelected && (
-                    <LinearGradient
-                      colors={['rgba(255,255,255,0.05)', 'rgba(255,255,255,0.01)']}
-                      style={StyleSheet.absoluteFillObject}
-                      start={{ x: 0, y: 0 }}
-                      end={{ x: 1, y: 0 }}
-                    />
-                  )}
-                  <View style={[styles.teamIconWrap, isSelected && styles.teamIconSelected]}>
-                    <Trophy size={16} color={isSelected ? '#050505' : '#B3B3B3'} />
-                  </View>
+                  {isSelected && <View style={styles.cardSelectedOverlay} />}
+                  <FootballTeamAvatar team={team} isSelected={isSelected} />
                   <View style={styles.teamInfo}>
                     <Text style={[styles.teamName, isSelected && styles.teamNameSelected]}>
                       {team.name}
@@ -194,7 +204,7 @@ export default function TeamsScreen() {
                   </View>
                   {isSelected && (
                     <View style={styles.checkCircle}>
-                      <Check size={11} color="#050505" strokeWidth={3} />
+                      <Check size={11} color="#FFFFFF" strokeWidth={3} />
                     </View>
                   )}
                 </TouchableOpacity>
@@ -222,7 +232,7 @@ export default function TeamsScreen() {
         >
           <View style={styles.continueBtnInner}>
             <Text style={styles.continueText}>Continue</Text>
-            <ArrowRight size={18} color="#050505" />
+            <ArrowRight size={18} color="#FFFFFF" />
           </View>
         </TouchableOpacity>
       </View>
@@ -233,25 +243,7 @@ export default function TeamsScreen() {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#050505',
-  },
-  ambientOrb1: {
-    position: 'absolute',
-    width: 250,
-    height: 250,
-    borderRadius: 125,
-    backgroundColor: 'rgba(255,255,255,0.015)',
-    top: -60,
-    right: -80,
-  },
-  ambientOrb2: {
-    position: 'absolute',
-    width: 180,
-    height: 180,
-    borderRadius: 90,
-    backgroundColor: 'rgba(255,255,255,0.01)',
-    bottom: 100,
-    left: -50,
+    backgroundColor: 'transparent',
   },
   header: {
     flexDirection: 'row',
@@ -263,7 +255,7 @@ const styles = StyleSheet.create({
     width: 40,
     height: 40,
     borderRadius: 12,
-    backgroundColor: 'rgba(255,255,255,0.05)',
+    backgroundColor: COLORS.surfaceSecondary,
     justifyContent: 'center',
     alignItems: 'center',
   },
@@ -273,7 +265,7 @@ const styles = StyleSheet.create({
   },
   skipText: {
     fontSize: 14,
-    color: '#747474',
+    color: COLORS.primary,
     fontWeight: '600' as const,
   },
   titleWrap: {
@@ -283,38 +275,38 @@ const styles = StyleSheet.create({
   stepLabel: {
     fontSize: 11,
     fontWeight: '700' as const,
-    color: '#B3B3B3',
+    color: COLORS.textMuted,
     letterSpacing: 2.5,
     marginBottom: 10,
   },
   title: {
     fontSize: 26,
     fontWeight: '800' as const,
-    color: '#FFFFFF',
+    color: COLORS.text,
     marginBottom: 8,
     letterSpacing: -0.5,
   },
   subtitle: {
     fontSize: 14,
-    color: '#747474',
+    color: COLORS.textSecondary,
     lineHeight: 20,
   },
   searchWrap: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: 'rgba(255,255,255,0.03)',
+    backgroundColor: COLORS.surface,
     borderRadius: 14,
     paddingHorizontal: 14,
     paddingVertical: 12,
     marginHorizontal: 32,
     marginBottom: 14,
     borderWidth: 1,
-    borderColor: 'rgba(255,255,255,0.05)',
+    borderColor: COLORS.border,
   },
   searchInput: {
     flex: 1,
     fontSize: 15,
-    color: '#FFFFFF',
+    color: COLORS.text,
     marginLeft: 10,
   },
   sectionRow: {
@@ -327,7 +319,7 @@ const styles = StyleSheet.create({
   sectionLabel: {
     fontSize: 12,
     fontWeight: '600' as const,
-    color: '#747474',
+    color: COLORS.textMuted,
   },
   list: {
     flex: 1,
@@ -339,28 +331,34 @@ const styles = StyleSheet.create({
   teamCard: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: 'rgba(255,255,255,0.03)',
+    backgroundColor: COLORS.surface,
     borderRadius: 16,
     padding: 12,
     marginBottom: 8,
     borderWidth: 1,
-    borderColor: 'rgba(255,255,255,0.05)',
+    borderColor: COLORS.border,
     overflow: 'hidden',
   },
   teamCardSelected: {
-    borderColor: 'rgba(255,255,255,0.25)',
+    borderColor: COLORS.primary,
+    borderWidth: 2,
   },
-  teamIconWrap: {
+  cardSelectedOverlay: {
+    ...StyleSheet.absoluteFillObject,
+    backgroundColor: `${COLORS.primary}0D`,
+    borderRadius: 16,
+  },
+  /** Layout only — no box behind logos (selection shown by card border) */
+  teamLogoSlot: {
     width: 44,
     height: 44,
-    borderRadius: 14,
-    backgroundColor: 'rgba(255,255,255,0.05)',
+    marginRight: 12,
     justifyContent: 'center',
     alignItems: 'center',
-    marginRight: 12,
   },
-  teamIconSelected: {
-    backgroundColor: '#FFFFFF',
+  teamLogo: {
+    width: 40,
+    height: 40,
   },
   teamInfo: {
     flex: 1,
@@ -368,26 +366,26 @@ const styles = StyleSheet.create({
   teamName: {
     fontSize: 15,
     fontWeight: '600' as const,
-    color: '#FFFFFF',
+    color: COLORS.text,
     marginBottom: 2,
   },
   teamNameSelected: {
-    color: '#FFFFFF',
+    color: COLORS.text,
   },
   teamLeague: {
     fontSize: 12,
-    color: '#747474',
+    color: COLORS.textMuted,
     marginBottom: 1,
   },
   teamCountry: {
     fontSize: 11,
-    color: 'rgba(255,255,255,0.18)',
+    color: COLORS.textMuted,
   },
   checkCircle: {
     width: 24,
     height: 24,
     borderRadius: 12,
-    backgroundColor: '#FFFFFF',
+    backgroundColor: COLORS.primary,
     justifyContent: 'center',
     alignItems: 'center',
   },
@@ -398,20 +396,20 @@ const styles = StyleSheet.create({
   emptyTitle: {
     fontSize: 16,
     fontWeight: '600' as const,
-    color: '#747474',
+    color: COLORS.textMuted,
     marginTop: 14,
     marginBottom: 6,
   },
   emptySub: {
     fontSize: 13,
-    color: 'rgba(255,255,255,0.2)',
+    color: COLORS.textMuted,
   },
   footer: {
     paddingHorizontal: 32,
     paddingTop: 14,
-    borderTopWidth: 1,
-    borderTopColor: 'rgba(255,255,255,0.05)',
-    backgroundColor: 'rgba(5,5,5,0.95)',
+    borderTopWidth: StyleSheet.hairlineWidth,
+    borderTopColor: 'rgba(15, 23, 42, 0.08)',
+    backgroundColor: 'rgba(255, 255, 255, 0.65)',
   },
   selectionRow: {
     flexDirection: 'row',
@@ -423,24 +421,24 @@ const styles = StyleSheet.create({
     width: 26,
     height: 26,
     borderRadius: 13,
-    backgroundColor: 'rgba(255,255,255,0.05)',
+    backgroundColor: COLORS.surfaceSecondary,
     justifyContent: 'center',
     alignItems: 'center',
   },
   countChipActive: {
-    backgroundColor: 'rgba(255,255,255,0.12)',
+    backgroundColor: `${COLORS.primary}22`,
   },
   countText: {
     fontSize: 12,
     fontWeight: '700' as const,
-    color: 'rgba(255,255,255,0.3)',
+    color: COLORS.textMuted,
   },
   countTextActive: {
-    color: '#FFFFFF',
+    color: COLORS.primary,
   },
   selectionLabel: {
     fontSize: 14,
-    color: '#747474',
+    color: COLORS.textMuted,
   },
   continueBtn: {
     borderRadius: 16,
@@ -457,11 +455,11 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     paddingVertical: 17,
     gap: 8,
-    backgroundColor: '#FFFFFF',
+    backgroundColor: COLORS.primary,
   },
   continueText: {
     fontSize: 16,
     fontWeight: '700' as const,
-    color: '#050505',
+    color: '#FFFFFF',
   },
 });

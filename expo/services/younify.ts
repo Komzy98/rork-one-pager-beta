@@ -65,10 +65,42 @@ async function readJsonBody(res: Response): Promise<Record<string, unknown>> {
 }
 
 let configured = false;
+/** Which app user the SDK was last configured for (Supabase id, `guest_*`, or local `user_*`). */
+let configuredForExternalUserId: string | null = null;
+/** Current One Pager user id for Younify `external_id` — set from auth via `setYounifyExternalUserId`. */
+let younifyExternalUserId: string | null = null;
 let younifyUserId: string | null = null;
 let younifyAccessToken: string | null = null;
 let younifyRefreshToken: string | null = null;
 let younifyRuntimeIssue: string | null = null;
+
+/**
+ * Call when the signed-in app user is known (e.g. after Supabase / local auth resolves).
+ * Younify maps `external_id` to streaming accounts — a single shared id caused all users to see the same links.
+ */
+export function setYounifyExternalUserId(id: string | null) {
+  const next = id && String(id).trim() ? String(id).trim() : null;
+  younifyExternalUserId = next;
+}
+
+async function clearYounifyInternalState(): Promise<void> {
+  try {
+    await Connect.shared.clearUserData();
+  } catch (e) {
+    if (__DEV__) console.warn("Younify clearUserData failed (continuing reset):", e);
+  }
+  configured = false;
+  configuredForExternalUserId = null;
+  younifyUserId = null;
+  younifyAccessToken = null;
+  younifyRefreshToken = null;
+}
+
+/** Clear Younify SDK state and tokens (call on sign-out or when no user). */
+export async function resetYounifySession(): Promise<void> {
+  await clearYounifyInternalState();
+  younifyExternalUserId = null;
+}
 
 function setYounifyRuntimeIssue(message: string | null) {
   younifyRuntimeIssue = message;
@@ -79,6 +111,14 @@ export function getYounifyRuntimeIssue(): string | null {
 }
 
 async function createYounifyUserTokens() {
+  const externalUserId = younifyExternalUserId;
+  if (!externalUserId) {
+    const errorMessage =
+      "Missing app user for Younify: sign in first (setYounifyExternalUserId not called)";
+    setYounifyRuntimeIssue(errorMessage);
+    throw new Error(errorMessage);
+  }
+
   const base = getYounifyAuthBackendBaseUrl();
   const url = `${base}/create-younify-user`;
   if (__DEV__) console.log("Calling Younify backend:", url);
@@ -91,7 +131,7 @@ async function createYounifyUserTokens() {
         "Content-Type": "application/json",
       },
       body: JSON.stringify({
-        externalUserId: "one-pager-dev-user",
+        externalUserId,
       }),
     });
   } catch (err) {
@@ -191,7 +231,21 @@ async function refreshYounifyUserTokens() {
 }
   
 export async function configureYounify() {
-  if (configured) return Connect.shared;
+  const externalId = younifyExternalUserId;
+  if (!externalId) {
+    const errorMessage =
+      "Younify requires a signed-in app user. Sign in and try again.";
+    setYounifyRuntimeIssue(errorMessage);
+    throw new Error(errorMessage);
+  }
+
+  if (configured && configuredForExternalUserId === externalId) {
+    return Connect.shared;
+  }
+
+  if (configured && configuredForExternalUserId !== externalId) {
+    await clearYounifyInternalState();
+  }
 
   const sdkKey = getYounifySdkKey();
 
@@ -236,6 +290,7 @@ export async function configureYounify() {
   setYounifyRuntimeIssue(null);
 
   configured = true;
+  configuredForExternalUserId = externalId;
   return connect;
 }
 
@@ -549,7 +604,7 @@ export async function fetchYounifyBrowseSections(): Promise<YounifyBrowseSection
     return {
       id: row.id,
       title: row.title,
-      items: scoreAndTrimYounifyItemsBalanced(flat, 24),
+      items: scoreAndTrimYounifyItemsBalanced(flat, 60),
     };
   });
 }
@@ -614,5 +669,5 @@ export async function fetchYounifyContentForConnectedServices() {
     ? contentResult.flatMap((block) => flattenYounifyFetchContentNodes(block))
     : flattenYounifyFetchContentNodes(contentResult);
 
-  return scoreAndTrimYounifyItemsBalanced(normalizedContent, 24);
+  return scoreAndTrimYounifyItemsBalanced(normalizedContent, 60);
 }

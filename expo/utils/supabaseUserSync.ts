@@ -125,11 +125,36 @@ export class SupabaseUserSync {
     }
   }
 
+  /** Avoid RLS returning zero rows because REST ran before the JWT was attached (common right after login). */
+  private async ensureAuthSessionMatchesUser(): Promise<boolean> {
+    if (!supabaseConfigured) return true;
+    const check = async () => {
+      const { data: { session } } = await supabase.auth.getSession();
+      return (
+        !!session?.access_token &&
+        session.user?.id === this.userId
+      );
+    };
+    if (await check()) return true;
+    await new Promise((r) => setTimeout(r, 400));
+    return check();
+  }
+
   async loadFromCloud(): Promise<UserData | null> {
     if (this.disabled) {
       return this.loadFromLocalFallback();
     }
     try {
+      const sessionOk = await this.ensureAuthSessionMatchesUser();
+      if (!sessionOk) {
+        if (__DEV__) {
+          console.warn(
+            'loadFromCloud: Supabase session not ready or user id mismatch, skipping (will retry on next effect).',
+            { expected: this.userId }
+          );
+        }
+        return null;
+      }
       const { data, error } = await this.withTimeout(
         supabase
           .from(TABLE)

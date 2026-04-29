@@ -10,11 +10,11 @@ import {
 import { useRouter } from 'expo-router';
 import { ArrowRight, ArrowLeft, Check, Clock, Sunrise, Moon, Sun } from 'lucide-react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { LinearGradient } from 'expo-linear-gradient';
 import * as Haptics from 'expo-haptics';
 import { useUserProfile } from '@/hooks/useUserProfile';
 import OnboardingProgress from '@/components/OnboardingProgress';
 import { CHRONOTYPES, getChronotypePeakLabel } from '@/constants/chronotypes';
+import { COLORS } from '@/constants/colors';
 import { Chronotype, ChronotypeInfo } from '@/types/habit';
 
 export default function ChronotypeScreen() {
@@ -141,18 +141,11 @@ export default function ChronotypeScreen() {
           activeOpacity={0.8}
           testID={`chronotype-${chrono.id}`}
         >
-          {isSelected && (
-            <LinearGradient
-              colors={['rgba(255,255,255,0.06)', 'rgba(255,255,255,0.01)']}
-              style={StyleSheet.absoluteFillObject}
-              start={{ x: 0, y: 0 }}
-              end={{ x: 1, y: 1 }}
-            />
-          )}
+          {isSelected && <View style={styles.cardSelectedOverlay} />}
 
           {isSelected && (
             <View style={styles.checkBadge}>
-              <Check size={10} color="#050505" strokeWidth={3} />
+              <Check size={10} color="#FFFFFF" strokeWidth={3} />
             </View>
           )}
 
@@ -167,7 +160,7 @@ export default function ChronotypeScreen() {
               <Text style={styles.cardTitle}>{chrono.title}</Text>
             </View>
             <View style={[styles.peakBadge, isSelected && styles.peakBadgeSelected]}>
-              <Icon size={11} color={isSelected ? '#FFFFFF' : 'rgba(255,255,255,0.35)'} />
+              <Icon size={11} color={isSelected ? COLORS.primary : COLORS.textMuted} />
               <Text style={[styles.peakText, isSelected && styles.peakTextSelected]}>
                 {getChronotypePeakLabel(chrono)}
               </Text>
@@ -206,22 +199,12 @@ export default function ChronotypeScreen() {
 
   return (
     <View style={styles.container}>
-      <LinearGradient
-        colors={['#050505', '#0A0A0A', '#050505']}
-        style={StyleSheet.absoluteFillObject}
-        start={{ x: 0.2, y: 0 }}
-        end={{ x: 0.8, y: 1 }}
-      />
-
-      <View style={styles.ambientOrb1} />
-      <View style={styles.ambientOrb2} />
-
       <View style={[styles.header, { paddingTop: insets.top + 12 }]}>
         <TouchableOpacity style={styles.backBtn} onPress={handleBack} activeOpacity={0.7}>
-          <ArrowLeft size={20} color="rgba(255,255,255,0.6)" />
+          <ArrowLeft size={20} color={COLORS.textMuted} />
         </TouchableOpacity>
         <View style={styles.progressWrap}>
-          <OnboardingProgress currentStep={2} totalSteps={4} />
+          <OnboardingProgress currentStep={3} totalSteps={6} />
         </View>
         <TouchableOpacity onPress={handleSkip} activeOpacity={0.7}>
           <Text style={styles.skipText}>Skip</Text>
@@ -229,7 +212,7 @@ export default function ChronotypeScreen() {
       </View>
 
       <Animated.View style={[styles.titleWrap, { opacity: fadeAnim, transform: [{ translateY: titleSlide }] }]}>
-        <Text style={styles.stepLabel}>STEP 2</Text>
+        <Text style={styles.stepLabel}>STEP 3 · ENERGY</Text>
         <Text style={styles.title}>When are you{'\n'}most productive?</Text>
         <Text style={styles.subtitle}>
           Your chronotype helps us optimise your schedule
@@ -267,7 +250,7 @@ export default function ChronotypeScreen() {
             <Text style={[styles.continueText, !selected && styles.continueTextDisabled]}>
               Continue
             </Text>
-            <ArrowRight size={18} color={!selected ? 'rgba(255,255,255,0.15)' : '#050505'} />
+            <ArrowRight size={18} color={!selected ? COLORS.disabled : '#FFFFFF'} />
           </View>
         </TouchableOpacity>
       </Animated.View>
@@ -278,25 +261,7 @@ export default function ChronotypeScreen() {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#050505',
-  },
-  ambientOrb1: {
-    position: 'absolute',
-    width: 250,
-    height: 250,
-    borderRadius: 125,
-    backgroundColor: 'rgba(255,255,255,0.015)',
-    top: -60,
-    right: -80,
-  },
-  ambientOrb2: {
-    position: 'absolute',
-    width: 180,
-    height: 180,
-    borderRadius: 90,
-    backgroundColor: 'rgba(255,255,255,0.01)',
-    bottom: 100,
-    left: -50,
+    backgroundColor: 'transparent',
   },
   header: {
     flexDirection: 'row',
@@ -308,7 +273,7 @@ const styles = StyleSheet.create({
     width: 40,
     height: 40,
     borderRadius: 12,
-    backgroundColor: 'rgba(255,255,255,0.05)',
+    backgroundColor: COLORS.surfaceSecondary,
     justifyContent: 'center',
     alignItems: 'center',
   },
@@ -319,7 +284,7 @@ const styles = StyleSheet.create({
   skipText: {
     fontSize: 14,
     fontWeight: '600' as const,
-    color: '#747474',
+    color: COLORS.primary,
   },
   titleWrap: {
     paddingHorizontal: 32,
@@ -328,21 +293,21 @@ const styles = StyleSheet.create({
   stepLabel: {
     fontSize: 11,
     fontWeight: '700' as const,
-    color: '#B3B3B3',
+    color: COLORS.textMuted,
     letterSpacing: 2.5,
     marginBottom: 10,
   },
   title: {
     fontSize: 26,
     fontWeight: '800' as const,
-    color: '#FFFFFF',
+    color: COLORS.text,
     marginBottom: 8,
     letterSpacing: -0.5,
     lineHeight: 32,
   },
   subtitle: {
     fontSize: 14,
-    color: '#747474',
+    color: COLORS.textSecondary,
     lineHeight: 20,
   },
   scrollView: {
@@ -354,24 +319,30 @@ const styles = StyleSheet.create({
     gap: 10,
   },
   card: {
-    backgroundColor: 'rgba(255,255,255,0.03)',
+    backgroundColor: COLORS.surface,
     borderRadius: 18,
     padding: 16,
     borderWidth: 1,
-    borderColor: 'rgba(255,255,255,0.05)',
+    borderColor: COLORS.border,
     overflow: 'hidden',
   },
   cardSelected: {
-    borderColor: 'rgba(255,255,255,0.25)',
+    borderColor: COLORS.primary,
+    borderWidth: 2,
+  },
+  cardSelectedOverlay: {
+    ...StyleSheet.absoluteFillObject,
+    backgroundColor: `${COLORS.primary}0F`,
+    borderRadius: 18,
   },
   checkBadge: {
     position: 'absolute',
     top: 12,
     right: 12,
-    width: 20,
-    height: 20,
-    borderRadius: 10,
-    backgroundColor: '#FFFFFF',
+    width: 22,
+    height: 22,
+    borderRadius: 11,
+    backgroundColor: COLORS.primary,
     justifyContent: 'center',
     alignItems: 'center',
     zIndex: 2,
@@ -384,13 +355,13 @@ const styles = StyleSheet.create({
     width: 48,
     height: 48,
     borderRadius: 14,
-    backgroundColor: 'rgba(255,255,255,0.04)',
+    backgroundColor: COLORS.surfaceSecondary,
     justifyContent: 'center',
     alignItems: 'center',
     marginRight: 12,
   },
   iconWrapSelected: {
-    backgroundColor: 'rgba(255,255,255,0.08)',
+    backgroundColor: `${COLORS.primary}18`,
   },
   emoji: {
     fontSize: 22,
@@ -401,15 +372,15 @@ const styles = StyleSheet.create({
   cardName: {
     fontSize: 16,
     fontWeight: '700' as const,
-    color: '#FFFFFF',
+    color: COLORS.text,
     marginBottom: 2,
   },
   cardNameSelected: {
-    color: '#FFFFFF',
+    color: COLORS.text,
   },
   cardTitle: {
     fontSize: 12,
-    color: '#747474',
+    color: COLORS.textMuted,
     fontWeight: '500' as const,
   },
   peakBadge: {
@@ -419,26 +390,26 @@ const styles = StyleSheet.create({
     paddingHorizontal: 8,
     paddingVertical: 5,
     borderRadius: 8,
-    backgroundColor: 'rgba(255,255,255,0.04)',
+    backgroundColor: COLORS.surfaceSecondary,
     marginRight: 26,
   },
   peakBadgeSelected: {
-    backgroundColor: 'rgba(255,255,255,0.08)',
+    backgroundColor: `${COLORS.primary}22`,
   },
   peakText: {
     fontSize: 10,
     fontWeight: '700' as const,
-    color: '#747474',
+    color: COLORS.textMuted,
   },
   peakTextSelected: {
-    color: '#FFFFFF',
+    color: COLORS.primary,
   },
   expandedContent: {
     overflow: 'hidden',
   },
   cardDescription: {
     fontSize: 13,
-    color: '#747474',
+    color: COLORS.textSecondary,
     lineHeight: 19,
     marginBottom: 10,
   },
@@ -451,19 +422,19 @@ const styles = StyleSheet.create({
     paddingHorizontal: 10,
     paddingVertical: 5,
     borderRadius: 8,
-    backgroundColor: 'rgba(255,255,255,0.06)',
+    backgroundColor: COLORS.surfaceSecondary,
   },
   traitText: {
     fontSize: 11,
     fontWeight: '600' as const,
-    color: '#B3B3B3',
+    color: COLORS.textSecondary,
   },
   footer: {
     paddingHorizontal: 32,
     paddingTop: 14,
-    borderTopWidth: 1,
-    borderTopColor: 'rgba(255,255,255,0.05)',
-    backgroundColor: 'rgba(5,5,5,0.95)',
+    borderTopWidth: StyleSheet.hairlineWidth,
+    borderTopColor: 'rgba(15, 23, 42, 0.08)',
+    backgroundColor: 'rgba(255, 255, 255, 0.65)',
   },
   continueBtn: {
     borderRadius: 16,
@@ -478,17 +449,17 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     paddingVertical: 17,
     gap: 8,
-    backgroundColor: '#FFFFFF',
+    backgroundColor: COLORS.primary,
   },
   continueBtnInnerDisabled: {
-    backgroundColor: '#1A1A1A',
+    backgroundColor: COLORS.surfaceSecondary,
   },
   continueText: {
     fontSize: 16,
     fontWeight: '700' as const,
-    color: '#050505',
+    color: '#FFFFFF',
   },
   continueTextDisabled: {
-    color: 'rgba(255,255,255,0.15)',
+    color: COLORS.textMuted,
   },
 });

@@ -3,6 +3,7 @@ import { ActivityIndicator, StyleSheet, View, type StyleProp, type ViewStyle } f
 import { Image } from "expo-image";
 import { tmdbPosterSizeForContainerWidth } from "@/utils/aroundYouImages";
 import { resolveTmdbPosterUrlForYounifyRow } from "@/utils/younifyTmdbPoster";
+import { getYounifyStreamingContentPosterUrl } from "@/services/younify";
 
 type Props = {
   younifyRow: Record<string, unknown>;
@@ -30,11 +31,20 @@ export default function StreamingHeroTmdbPoster({ younifyRow, widthDp, style }: 
       try {
         const u = await resolveTmdbPosterUrlForYounifyRow(younifyRow, size);
         if (!cancelled) {
-          if (u) setUri(u);
-          else setFailed(true);
+          if (u) {
+            setUri(u);
+          } else {
+            const fallback = getYounifyStreamingContentPosterUrl(younifyRow);
+            if (fallback) setUri(fallback);
+            else setFailed(true);
+          }
         }
       } catch {
-        if (!cancelled) setFailed(true);
+        if (!cancelled) {
+          const fallback = getYounifyStreamingContentPosterUrl(younifyRow);
+          if (fallback) setUri(fallback);
+          else setFailed(true);
+        }
       }
     })();
     return () => {

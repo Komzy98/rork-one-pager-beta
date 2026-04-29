@@ -214,6 +214,7 @@ export default function SignupScreen() {
           </View>
           <Text style={styles.title}>Create Account</Text>
           <Text style={styles.subtitle}>Join us and start your personalised journey</Text>
+          <Text style={styles.skipHint}>After signing up you can skip setup anytime and finish later in Profile.</Text>
         </View>
 
         <View style={styles.form}>
@@ -400,6 +401,14 @@ const styles = StyleSheet.create({
     fontSize: 16,
     color: COLORS.textLight,
     textAlign: 'center',
+  },
+  skipHint: {
+    fontSize: 13,
+    color: COLORS.textMuted,
+    textAlign: 'center',
+    marginTop: 10,
+    lineHeight: 18,
+    paddingHorizontal: 12,
   },
   form: {
     width: '100%',

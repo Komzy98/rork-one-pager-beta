@@ -1,22 +1,24 @@
 import React, { useEffect, useRef } from 'react';
-import { View, StyleSheet, Animated, Text } from 'react-native';
+import { View, StyleSheet, Animated, Text, Platform } from 'react-native';
+import { COLORS } from '@/constants/colors';
 
 interface OnboardingProgressProps {
   currentStep: number;
   totalSteps: number;
 }
 
+/** Premium step indicator: soft track, saturated fill, clear typography scale. */
 export default function OnboardingProgress({ currentStep, totalSteps }: OnboardingProgressProps) {
   const segmentAnims = useRef(
-    Array.from({ length: totalSteps }).map(() => new Animated.Value(0))
+    Array.from({ length: totalSteps }).map(() => new Animated.Value(0)),
   ).current;
 
   useEffect(() => {
     segmentAnims.forEach((anim, i) => {
       Animated.spring(anim, {
         toValue: i < currentStep ? 1 : 0,
-        tension: 60,
-        friction: 10,
+        tension: 70,
+        friction: 12,
         useNativeDriver: false,
       }).start();
     });
@@ -35,10 +37,6 @@ export default function OnboardingProgress({ currentStep, totalSteps }: Onboardi
                     inputRange: [0, 1],
                     outputRange: ['0%', '100%'],
                   }),
-                  backgroundColor: anim.interpolate({
-                    inputRange: [0, 1],
-                    outputRange: ['rgba(255,255,255,0.06)', '#FFFFFF'],
-                  }),
                 },
               ]}
             />
@@ -46,7 +44,7 @@ export default function OnboardingProgress({ currentStep, totalSteps }: Onboardi
         ))}
       </View>
       <Text style={styles.stepIndicator}>
-        {currentStep} of {totalSteps}
+        Step {currentStep} of {totalSteps}
       </Text>
     </View>
   );
@@ -59,24 +57,25 @@ const styles = StyleSheet.create({
   },
   segmentRow: {
     flexDirection: 'row',
-    gap: 6,
+    gap: 8,
     width: '100%',
   },
   segmentTrack: {
     flex: 1,
-    height: 3,
-    backgroundColor: 'rgba(255,255,255,0.08)',
-    borderRadius: 2,
+    height: Platform.OS === 'ios' ? 4 : 5,
+    backgroundColor: 'rgba(15, 23, 42, 0.07)',
+    borderRadius: 100,
     overflow: 'hidden',
   },
   segmentFill: {
     height: '100%',
-    borderRadius: 2,
+    borderRadius: 100,
+    backgroundColor: COLORS.primary,
   },
   stepIndicator: {
     fontSize: 11,
-    fontWeight: '500' as const,
-    color: 'rgba(255,255,255,0.25)',
-    letterSpacing: 0.5,
+    fontWeight: '600',
+    color: COLORS.textMuted,
+    letterSpacing: 0.4,
   },
 });

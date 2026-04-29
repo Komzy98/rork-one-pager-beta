@@ -12,12 +12,12 @@ import {
 import { useRouter } from 'expo-router';
 import { ArrowRight, ArrowLeft, Search, Check } from 'lucide-react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { LinearGradient } from 'expo-linear-gradient';
 import * as Haptics from 'expo-haptics';
 import { useUserProfile } from '@/hooks/useUserProfile';
 import { NBAFavoriteTeam } from '@/types/habit';
 import { ALL_NBA_TEAMS, searchNBATeams, NBATeamInfo, getTeamColor } from '@/constants/nbaData';
 import OnboardingProgress from '@/components/OnboardingProgress';
+import { COLORS } from '@/constants/colors';
 
 type ConferenceFilter = 'all' | 'Eastern' | 'Western';
 
@@ -98,22 +98,12 @@ export default function NBATeamsScreen() {
 
   return (
     <View style={styles.container}>
-      <LinearGradient
-        colors={['#050505', '#0D1117', '#050505']}
-        style={StyleSheet.absoluteFillObject}
-        start={{ x: 0.2, y: 0 }}
-        end={{ x: 0.8, y: 1 }}
-      />
-
-      <View style={styles.ambientOrb1} />
-      <View style={styles.ambientOrb2} />
-
       <View style={[styles.header, { paddingTop: insets.top + 12 }]}>
         <TouchableOpacity style={styles.backBtn} onPress={handleBack} activeOpacity={0.7}>
-          <ArrowLeft size={20} color="rgba(255,255,255,0.6)" />
+          <ArrowLeft size={20} color={COLORS.textMuted} />
         </TouchableOpacity>
         <View style={styles.progressWrap}>
-          <OnboardingProgress currentStep={4} totalSteps={4} />
+          <OnboardingProgress currentStep={5} totalSteps={6} />
         </View>
         <TouchableOpacity onPress={handleSkip} activeOpacity={0.7}>
           <Text style={styles.skipText}>Skip</Text>
@@ -121,19 +111,20 @@ export default function NBATeamsScreen() {
       </View>
 
       <Animated.View style={[styles.titleWrap, { opacity: fadeAnim, transform: [{ translateY: titleSlide }] }]}>
+        <Text style={styles.stepKicker}>STEP 5 · NBA</Text>
         <View style={styles.nbaEmojiRow}>
           <Text style={styles.nbaEmoji}>🏀</Text>
         </View>
-        <Text style={styles.title}>Pick Your Team</Text>
+        <Text style={styles.title}>Pick your team</Text>
         <Text style={styles.subtitle}>Follow NBA teams for upcoming games and scores</Text>
       </Animated.View>
 
       <Animated.View style={[styles.searchWrap, { transform: [{ scale: searchScale }] }]}>
-        <Search size={17} color="#747474" />
+        <Search size={17} color={COLORS.textMuted} />
         <TextInput
           style={styles.searchInput}
           placeholder="Search NBA teams..."
-          placeholderTextColor="rgba(255,255,255,0.2)"
+          placeholderTextColor={COLORS.textMuted}
           value={searchQuery}
           onChangeText={setSearchQuery}
         />
@@ -180,11 +171,8 @@ export default function NBATeamsScreen() {
                   activeOpacity={0.7}
                 >
                   {isSelected && (
-                    <LinearGradient
-                      colors={[`${teamColor}18`, `${teamColor}08`]}
-                      style={StyleSheet.absoluteFillObject}
-                      start={{ x: 0, y: 0 }}
-                      end={{ x: 1, y: 0 }}
+                    <View
+                      style={[StyleSheet.absoluteFillObject, { backgroundColor: `${teamColor}22` }]}
                     />
                   )}
                     <Image
@@ -233,15 +221,10 @@ export default function NBATeamsScreen() {
           onPress={handleContinue}
           activeOpacity={0.85}
         >
-          <LinearGradient
-            colors={['#F26522', '#E85D1A']}
-            start={{ x: 0, y: 0 }}
-            end={{ x: 1, y: 0 }}
-            style={styles.continueBtnInner}
-          >
+          <View style={styles.continueBtnInner}>
             <Text style={styles.continueText}>Continue</Text>
             <ArrowRight size={18} color="#fff" />
-          </LinearGradient>
+          </View>
         </TouchableOpacity>
       </View>
     </View>
@@ -251,25 +234,7 @@ export default function NBATeamsScreen() {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#050505',
-  },
-  ambientOrb1: {
-    position: 'absolute',
-    width: 250,
-    height: 250,
-    borderRadius: 125,
-    backgroundColor: 'rgba(242, 101, 34, 0.03)',
-    top: -60,
-    right: -80,
-  },
-  ambientOrb2: {
-    position: 'absolute',
-    width: 180,
-    height: 180,
-    borderRadius: 90,
-    backgroundColor: 'rgba(29, 66, 138, 0.03)',
-    bottom: 100,
-    left: -50,
+    backgroundColor: 'transparent',
   },
   header: {
     flexDirection: 'row',
@@ -281,7 +246,7 @@ const styles = StyleSheet.create({
     width: 40,
     height: 40,
     borderRadius: 12,
-    backgroundColor: 'rgba(255,255,255,0.05)',
+    backgroundColor: COLORS.surfaceSecondary,
     justifyContent: 'center',
     alignItems: 'center',
   },
@@ -291,12 +256,19 @@ const styles = StyleSheet.create({
   },
   skipText: {
     fontSize: 14,
-    color: '#747474',
+    color: COLORS.primary,
     fontWeight: '600' as const,
   },
   titleWrap: {
     paddingHorizontal: 32,
     marginBottom: 18,
+  },
+  stepKicker: {
+    fontSize: 11,
+    fontWeight: '700' as const,
+    color: COLORS.textMuted,
+    letterSpacing: 2,
+    marginBottom: 6,
   },
   nbaEmojiRow: {
     marginBottom: 10,
@@ -307,31 +279,31 @@ const styles = StyleSheet.create({
   title: {
     fontSize: 26,
     fontWeight: '800' as const,
-    color: '#FFFFFF',
+    color: COLORS.text,
     marginBottom: 8,
     letterSpacing: -0.5,
   },
   subtitle: {
     fontSize: 14,
-    color: '#747474',
+    color: COLORS.textSecondary,
     lineHeight: 20,
   },
   searchWrap: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: 'rgba(255,255,255,0.03)',
+    backgroundColor: COLORS.surface,
     borderRadius: 14,
     paddingHorizontal: 14,
     paddingVertical: 12,
     marginHorizontal: 32,
     marginBottom: 12,
     borderWidth: 1,
-    borderColor: 'rgba(255,255,255,0.05)',
+    borderColor: COLORS.border,
   },
   searchInput: {
     flex: 1,
     fontSize: 15,
-    color: '#FFFFFF',
+    color: COLORS.text,
     marginLeft: 10,
   },
   conferenceRow: {
@@ -344,21 +316,21 @@ const styles = StyleSheet.create({
     paddingHorizontal: 16,
     paddingVertical: 7,
     borderRadius: 20,
-    backgroundColor: 'rgba(255,255,255,0.04)',
+    backgroundColor: COLORS.surface,
     borderWidth: 1,
-    borderColor: 'rgba(255,255,255,0.06)',
+    borderColor: COLORS.border,
   },
   confChipActive: {
-    backgroundColor: 'rgba(242, 101, 34, 0.15)',
-    borderColor: 'rgba(242, 101, 34, 0.3)',
+    backgroundColor: `${COLORS.primary}18`,
+    borderColor: COLORS.primary,
   },
   confChipText: {
     fontSize: 12,
     fontWeight: '600' as const,
-    color: '#747474',
+    color: COLORS.textMuted,
   },
   confChipTextActive: {
-    color: '#F26522',
+    color: COLORS.primary,
   },
   list: {
     flex: 1,
@@ -370,16 +342,17 @@ const styles = StyleSheet.create({
   teamCard: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: 'rgba(255,255,255,0.03)',
+    backgroundColor: COLORS.surface,
     borderRadius: 16,
     padding: 12,
     marginBottom: 8,
     borderWidth: 1,
-    borderColor: 'rgba(255,255,255,0.05)',
+    borderColor: COLORS.border,
     overflow: 'hidden',
   },
   teamCardSelected: {
-    borderColor: 'rgba(242, 101, 34, 0.3)',
+    borderColor: COLORS.primary,
+    borderWidth: 2,
   },
   teamLogo: {
     width: 40,
@@ -392,11 +365,11 @@ const styles = StyleSheet.create({
   teamName: {
     fontSize: 15,
     fontWeight: '600' as const,
-    color: '#FFFFFF',
+    color: COLORS.text,
     marginBottom: 3,
   },
   teamNameSelected: {
-    color: '#FFFFFF',
+    color: COLORS.text,
   },
   teamMeta: {
     flexDirection: 'row',
@@ -405,7 +378,7 @@ const styles = StyleSheet.create({
   },
   teamAbbr: {
     fontSize: 12,
-    color: '#747474',
+    color: COLORS.textMuted,
     fontWeight: '600' as const,
   },
   confBadge: {
@@ -435,19 +408,19 @@ const styles = StyleSheet.create({
   emptyTitle: {
     fontSize: 16,
     fontWeight: '600' as const,
-    color: '#747474',
+    color: COLORS.textMuted,
     marginBottom: 6,
   },
   emptySub: {
     fontSize: 13,
-    color: 'rgba(255,255,255,0.2)',
+    color: COLORS.textMuted,
   },
   footer: {
     paddingHorizontal: 32,
     paddingTop: 14,
-    borderTopWidth: 1,
-    borderTopColor: 'rgba(255,255,255,0.05)',
-    backgroundColor: 'rgba(5,5,5,0.95)',
+    borderTopWidth: StyleSheet.hairlineWidth,
+    borderTopColor: 'rgba(15, 23, 42, 0.08)',
+    backgroundColor: 'rgba(255, 255, 255, 0.65)',
   },
   selectionRow: {
     flexDirection: 'row',
@@ -459,33 +432,33 @@ const styles = StyleSheet.create({
     width: 26,
     height: 26,
     borderRadius: 13,
-    backgroundColor: 'rgba(255,255,255,0.05)',
+    backgroundColor: COLORS.surfaceSecondary,
     justifyContent: 'center',
     alignItems: 'center',
   },
   countChipActive: {
-    backgroundColor: 'rgba(242, 101, 34, 0.2)',
+    backgroundColor: `${COLORS.primary}22`,
   },
   countText: {
     fontSize: 12,
     fontWeight: '700' as const,
-    color: 'rgba(255,255,255,0.3)',
+    color: COLORS.textMuted,
   },
   countTextActive: {
-    color: '#F26522',
+    color: COLORS.primary,
   },
   selectionLabel: {
     fontSize: 14,
-    color: '#747474',
+    color: COLORS.textMuted,
   },
   continueBtn: {
     borderRadius: 16,
     overflow: 'hidden',
-    shadowColor: '#F26522',
-    shadowOffset: { width: 0, height: 6 },
-    shadowOpacity: 0.2,
-    shadowRadius: 14,
-    elevation: 8,
+    shadowColor: COLORS.shadow,
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.12,
+    shadowRadius: 10,
+    elevation: 6,
   },
   continueBtnInner: {
     flexDirection: 'row',
@@ -493,6 +466,7 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     paddingVertical: 17,
     gap: 8,
+    backgroundColor: COLORS.primary,
   },
   continueText: {
     fontSize: 16,

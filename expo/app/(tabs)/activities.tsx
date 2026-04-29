@@ -130,7 +130,7 @@ function buildSpeechSummaryText(summary: string): string {
 }
 
 export default function ActivitiesScreen() {
-  const { colors } = useTheme();
+  const { colors, isDark } = useTheme();
   const appContext = useApp();
   const tasksContext = useTasks();
   const userProfileData = useUserProfile();
@@ -1256,16 +1256,44 @@ export default function ActivitiesScreen() {
   };
 
   const handleOpenNewEpisode = useCallback(
-    async (item: { tmdbId: number; showTitle: string; platform: string }) => {
+    async (item: TrackedShowEpisode) => {
+      const isRecentRelease =
+        item.latestEpisode?.airDate &&
+        new Date(item.latestEpisode.airDate) >= new Date(Date.now() - 7 * 24 * 60 * 60 * 1000);
+      const ep = isRecentRelease ? item.latestEpisode : item.nextEpisode;
+
+      if (Platform.OS !== 'web') {
+        await Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+      }
+
+      if (!ep) {
+        if (item.tmdbId) {
+          setShowInfoModal({
+            visible: true,
+            tmdbId: item.tmdbId,
+            mediaType: 'tv',
+            title: item.showTitle,
+            platform: item.platform,
+          });
+        } else {
+          router.push('/shows' as any);
+        }
+        return;
+      }
+
+      const episodeHint = `S${ep.seasonNumber}E${ep.episodeNumber}`;
+
       if (linkedStreamingCount > 0) {
         try {
-          // Deterministic pick from cached Younify rows, ranked by linked-provider order.
           const matchedRow = pickBestYounifyRowForEpisode(younifyEpisodeIndex, {
             tmdbId: item.tmdbId,
             title: item.showTitle,
+            seasonNumber: ep.seasonNumber,
+            episodeNumber: ep.episodeNumber,
           });
           if (matchedRow) {
-            await openYounifyBrowseItemOnPlatform(matchedRow, { sectionId: 'continue' });
+            // Do not use `continue`: that applies resume offsets for in-progress playback, not “new episode”.
+            await openYounifyBrowseItemOnPlatform(matchedRow);
             return;
           }
         } catch (error) {
@@ -1275,7 +1303,7 @@ export default function ActivitiesScreen() {
 
       const providerId = platformNameToProviderId(item.platform);
       if (providerId) {
-        const opened = await openStreamingTitleSearch(providerId, item.showTitle);
+        const opened = await openStreamingTitleSearch(providerId, item.showTitle, undefined, episodeHint);
         if (opened) return;
       }
       if (item.tmdbId) {
@@ -1290,7 +1318,7 @@ export default function ActivitiesScreen() {
         router.push('/shows' as any);
       }
     },
-    [linkedStreamingCount, younifyEpisodeIndex],
+    [linkedStreamingCount, younifyEpisodeIndex, router],
   );
 
   const renderLoadingState = () => (
@@ -1852,8 +1880,8 @@ export default function ActivitiesScreen() {
             <View style={styles.section}>
               <View style={styles.sectionHeaderRow}>
                 <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
-                  <Calendar size={20} color={COLORS.text} strokeWidth={2} />
-                  <Text style={styles.sectionTitle}>Upcoming Events</Text>
+                  <Calendar size={20} color={colors.text} strokeWidth={2} />
+                  <Text style={[styles.sectionTitle, { color: colors.text }]}>Upcoming Events</Text>
                 </View>
                 {eventKit.isEventKitAvailable && (
                   <TouchableOpacity 
@@ -1872,10 +1900,10 @@ export default function ActivitiesScreen() {
                 
                 if (calendars.length === 0 && (!eventKit.isEventKitAvailable || !eventKit.hasPermission)) {
                   return (
-                    <View style={styles.emptyCalendarCard}>
-                      <Calendar size={40} color={COLORS.textLight} />
-                      <Text style={styles.emptyCalendarTitle}>No Calendar</Text>
-                      <Text style={styles.emptyCalendarText}>
+                    <View style={[styles.emptyCalendarCard, { backgroundColor: colors.card, borderColor: colors.border }]}>
+                      <Calendar size={40} color={colors.textMuted} />
+                      <Text style={[styles.emptyCalendarTitle, { color: colors.text }]}>No Calendar</Text>
+                      <Text style={[styles.emptyCalendarText, { color: colors.textSecondary }]}>
                         Connect your calendar to see upcoming events
                       </Text>
                       <View style={styles.calendarActions}>
@@ -1901,18 +1929,18 @@ export default function ActivitiesScreen() {
                 return (
                   <View style={styles.eventsContainer}>
                     {upcomingEvents.length === 0 ? (
-                      <View style={styles.emptyCalendarCard}>
-                        <Calendar size={32} color={COLORS.textLight} />
-                        <Text style={styles.emptyCalendarText}>No events 2+ weeks out</Text>
+                      <View style={[styles.emptyCalendarCard, { backgroundColor: colors.card, borderColor: colors.border }]}>
+                        <Calendar size={32} color={colors.textMuted} />
+                        <Text style={[styles.emptyCalendarText, { color: colors.textSecondary }]}>No events 2+ weeks out</Text>
                       </View>
                     ) : upcomingEvents.slice(0, 4).map((event, index) => (
-                      <View key={`${event.id}-${index}`} style={styles.eventCard}>
+                      <View key={`${event.id}-${index}`} style={[styles.eventCard, { backgroundColor: colors.card, borderColor: colors.border }]}>
                         <View style={[styles.eventIndicator, { 
                           backgroundColor: COLORS.primary 
                         }]} />
                         <View style={styles.eventInfo}>
-                          <Text style={styles.eventTitle}>{event.title}</Text>
-                          <Text style={styles.eventTime}>
+                          <Text style={[styles.eventTitle, { color: colors.text }]}>{event.title}</Text>
+                          <Text style={[styles.eventTime, { color: colors.textSecondary }]}>
                             {new Date(event.startDate).toLocaleDateString('en-GB', { 
                               weekday: 'short', 
                               month: 'short', 
@@ -1946,7 +1974,7 @@ export default function ActivitiesScreen() {
                     <View style={styles.newEpisodesIconWrap}>
                       <BellRing size={16} color="#E50914" />
                     </View>
-                    <Text style={styles.newEpisodesTitle}>New Episodes</Text>
+                    <Text style={[styles.newEpisodesTitle, { color: colors.text }]}>New Episodes</Text>
                     <View style={styles.newEpisodesCountPill}>
                       <Text style={styles.newEpisodesCountText}>{visibleEpisodes.length}</Text>
                     </View>
@@ -1956,7 +1984,7 @@ export default function ActivitiesScreen() {
                   </TouchableOpacity>
                 </View>
 
-                <View style={styles.newEpisodesList}>
+                <View style={[styles.newEpisodesList, { backgroundColor: colors.card, borderWidth: StyleSheet.hairlineWidth, borderColor: colors.border }]}>
                   {visibleEpisodes.slice(0, 5).map((item, index) => {
                     const isRecentRelease = item.latestEpisode?.airDate && new Date(item.latestEpisode.airDate) >= new Date(Date.now() - 7 * 24 * 60 * 60 * 1000);
                     const episode = isRecentRelease ? item.latestEpisode : item.nextEpisode;
@@ -1989,6 +2017,7 @@ export default function ActivitiesScreen() {
                         key={`${item.showId}-${index}`}
                         style={[
                           styles.newEpisodeCard,
+                          { borderBottomColor: colors.border },
                           index === (visibleEpisodes.slice(0, 5).length ?? 0) - 1 && { borderBottomWidth: 0 },
                         ]}
                         onPress={() => void handleOpenNewEpisode(item)}
@@ -2014,8 +2043,8 @@ export default function ActivitiesScreen() {
                           )}
                         </View>
                         <View style={styles.newEpisodeInfo}>
-                          <Text style={styles.newEpisodeShowTitle} numberOfLines={1}>{item.showTitle}</Text>
-                          <Text style={styles.newEpisodeDetail} numberOfLines={1}>
+                          <Text style={[styles.newEpisodeShowTitle, { color: colors.text }]} numberOfLines={1}>{item.showTitle}</Text>
+                          <Text style={[styles.newEpisodeDetail, { color: colors.textSecondary }]} numberOfLines={1}>
                             S{episode.seasonNumber}E{episode.episodeNumber}: {episode.name}
                           </Text>
                           <View style={styles.newEpisodeMetaRow}>
@@ -2042,9 +2071,9 @@ export default function ActivitiesScreen() {
             <View style={styles.cwSection}>
               <View style={styles.cwHeader}>
                 <View style={styles.cwHeaderLeft}>
-                  <Text style={styles.cwTitle}>Continue Watching</Text>
+                  <Text style={[styles.cwTitle, { color: colors.text }]}>Continue Watching</Text>
                   {continueWatchingItems.length > 0 && (
-                    <View style={styles.cwCountPill}>
+                    <View style={[styles.cwCountPill, { backgroundColor: colors.primary }]}>
                       <Text style={styles.cwCountText}>{continueWatchingItems.length}</Text>
                     </View>
                   )}
@@ -2169,33 +2198,36 @@ export default function ActivitiesScreen() {
                     );
                   })}
                   <TouchableOpacity 
-                    style={styles.cwAddCard}
+                    style={[styles.cwAddCard, { backgroundColor: colors.surfaceSecondary }]}
                     onPress={() => router.push('/shows' as any)}
                     activeOpacity={0.7}
                   >
                     <View style={styles.cwAddInner}>
-                      <View style={styles.cwAddIcon}>
-                        <Tv size={20} color="#94A3B8" />
+                      <View style={[styles.cwAddIcon, { backgroundColor: isDark ? colors.border : '#E2E8F0' }]}>
+                        <Tv size={20} color={colors.textMuted} />
                       </View>
-                      <Text style={styles.cwAddText}>Add Show</Text>
+                      <Text style={[styles.cwAddText, { color: colors.textSecondary }]}>Add Show</Text>
                     </View>
                   </TouchableOpacity>
                 </ScrollView>
               ) : (
                 <TouchableOpacity 
-                  style={styles.cwEmptyCard}
+                  style={[
+                    styles.cwEmptyCard,
+                    { backgroundColor: colors.card, borderColor: colors.border },
+                  ]}
                   onPress={() => router.push('/shows' as any)}
                   activeOpacity={0.8}
                 >
                   <View style={styles.cwEmptyInner}>
-                    <View style={styles.cwEmptyIconWrap}>
-                      <Tv size={24} color="#64748B" />
+                    <View style={[styles.cwEmptyIconWrap, { backgroundColor: isDark ? 'rgba(99, 102, 241, 0.15)' : '#EEF2FF' }]}>
+                      <Tv size={24} color={colors.textSecondary} />
                     </View>
                     <View style={styles.cwEmptyTextWrap}>
-                      <Text style={styles.cwEmptyTitle}>Track what you watch</Text>
-                      <Text style={styles.cwEmptyDesc}>Add shows and movies to your watchlist</Text>
+                      <Text style={[styles.cwEmptyTitle, { color: colors.text }]}>Track what you watch</Text>
+                      <Text style={[styles.cwEmptyDesc, { color: colors.textSecondary }]}>Add shows and movies to your watchlist</Text>
                     </View>
-                    <ChevronRight size={18} color="#94A3B8" />
+                    <ChevronRight size={18} color={colors.textMuted} />
                   </View>
                 </TouchableOpacity>
               )}
@@ -2207,7 +2239,7 @@ export default function ActivitiesScreen() {
               <View style={styles.upNextSection}>
                 <View style={styles.upNextHeader}>
                   <View style={styles.upNextHeaderLeft}>
-                    <Text style={styles.upNextTitle}>Up Next</Text>
+                    <Text style={[styles.upNextTitle, { color: colors.text }]}>Up Next</Text>
                     <View style={styles.upNextCountPill}>
                       <Text style={styles.upNextCountText}>{planToWatchWithThumbnails.length}</Text>
                     </View>
@@ -2217,11 +2249,11 @@ export default function ActivitiesScreen() {
                   </TouchableOpacity>
                 </View>
                 
-                <View style={styles.upNextList}>
+                <View style={[styles.upNextList, { backgroundColor: colors.card, borderWidth: StyleSheet.hairlineWidth, borderColor: colors.border }]}>
                   {planToWatchWithThumbnails.slice(0, 4).map((show, index) => (
                     <TouchableOpacity 
                       key={show.id} 
-                      style={[styles.upNextCard, index === planToWatchWithThumbnails.slice(0, 4).length - 1 && { borderBottomWidth: 0 }]}
+                      style={[styles.upNextCard, { borderBottomColor: colors.border }, index === planToWatchWithThumbnails.slice(0, 4).length - 1 && { borderBottomWidth: 0 }]}
                       onPress={() => {
                         if (show.tmdbId && show.mediaType) {
                           setShowInfoModal({ visible: true, tmdbId: show.tmdbId, mediaType: show.mediaType, title: show.title, platform: show.platform });
@@ -2248,8 +2280,8 @@ export default function ActivitiesScreen() {
                         )}
                       </View>
                       <View style={styles.upNextInfo}>
-                        <Text style={styles.upNextShowTitle} numberOfLines={1}>{show.title}</Text>
-                        <Text style={styles.upNextShowMeta}>
+                        <Text style={[styles.upNextShowTitle, { color: colors.text }]} numberOfLines={1}>{show.title}</Text>
+                        <Text style={[styles.upNextShowMeta, { color: colors.textSecondary }]}>
                           {show.type === 'Series' ? 'TV Series' : show.type} · {show.platform}
                         </Text>
                       </View>
