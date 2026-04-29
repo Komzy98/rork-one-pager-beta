@@ -741,7 +741,7 @@ const GradientDivider = ({ isDark }: { isDark: boolean }) => (
 
 export default function DiscoverScreen() {
   const insets = useSafeAreaInsets();
-  const { isDark } = useTheme();
+  const { isDark, colors } = useTheme();
   const { addCommunityHabit, removeSavedHabit, isHabitSaved, savedCount, communityHabitIds, savedHabits } = useSavedHabits();
   const { recentlyViewedIds, addRecentlyViewed } = useRecentlyViewed();
   const { habits } = useApp();
@@ -897,7 +897,7 @@ export default function DiscoverScreen() {
   const showHomeContent = !isShowingFiltered;
   const showTrending = searchFocused && searchQuery.length === 0;
 
-  const bgColor = isDark ? '#0A0A18' : '#F5F6FA';
+  const bgColor = colors.background;
 
   return (
     <View style={[styles.container, { backgroundColor: bgColor }]}>

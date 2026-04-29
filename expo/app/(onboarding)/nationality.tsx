@@ -17,7 +17,6 @@ import { useOnboardingStepMeta } from '@/hooks/useOnboardingStepMeta';
 import OnboardingProgress from '@/components/OnboardingProgress';
 import { ALL_NATIONS, REGION_LABELS, REGION_ORDER, Nation } from '@/constants/nations';
 import { COLORS } from '@/constants/colors';
-import { NationFlag } from '@/components/NationFlag';
 
 export default function NationalityScreen() {
   const router = useRouter();
@@ -173,7 +172,9 @@ export default function NationalityScreen() {
                 activeOpacity={0.7}
               >
                 {isSelected && <View style={styles.nationSelectedOverlay} />}
-                <NationFlag code={nation.code} width={44} style={styles.listFlag} />
+                <View style={[styles.flagCircle, isSelected && styles.flagCircleSelected]}>
+                  <Text style={styles.flagEmoji}>{nation.flag}</Text>
+                </View>
                 <View style={styles.nationInfo}>
                   <Text style={[styles.nationName, isSelected && styles.nationNameSelected]}>
                     {nation.name}
@@ -195,7 +196,9 @@ export default function NationalityScreen() {
         {selectedNationalities.length > 0 && (
           <View style={styles.selectedRow}>
             {selectedNationalities.slice(0, 6).map((n) => (
-              <NationFlag key={n.id} code={n.code} width={30} borderRadius={5} />
+              <View key={n.id} style={styles.footerFlagBubble}>
+                <Text style={styles.footerFlagEmoji}>{n.flag}</Text>
+              </View>
             ))}
             {selectedNationalities.length > 6 && (
               <Text style={styles.moreText}>+{selectedNationalities.length - 6}</Text>
@@ -341,8 +344,20 @@ const styles = StyleSheet.create({
     backgroundColor: `${COLORS.primary}0D`,
     borderRadius: 16,
   },
-  listFlag: {
+  flagCircle: {
+    width: 44,
+    height: 44,
+    borderRadius: 14,
+    backgroundColor: COLORS.surfaceSecondary,
+    justifyContent: 'center',
+    alignItems: 'center',
     marginRight: 12,
+  },
+  flagCircleSelected: {
+    backgroundColor: `${COLORS.primary}14`,
+  },
+  flagEmoji: {
+    fontSize: 22,
   },
   nationInfo: {
     flex: 1,
@@ -385,6 +400,17 @@ const styles = StyleSheet.create({
     fontSize: 12,
     color: COLORS.textMuted,
     marginLeft: 4,
+  },
+  footerFlagBubble: {
+    width: 32,
+    height: 32,
+    borderRadius: 10,
+    backgroundColor: COLORS.surfaceSecondary,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  footerFlagEmoji: {
+    fontSize: 18,
   },
   continueBtn: {
     borderRadius: 16,

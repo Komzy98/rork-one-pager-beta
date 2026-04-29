@@ -1,5 +1,6 @@
 import React, { useState, useRef, useCallback, useEffect, useMemo } from 'react';
 import {
+  Alert,
   StyleSheet,
   View,
   Text,
@@ -39,6 +40,7 @@ import {
 import { LinearGradient } from 'expo-linear-gradient';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useTheme } from '@/hooks/useTheme';
+import { useUserProfile } from '@/hooks/useUserProfile';
 import * as Haptics from 'expo-haptics';
 import { Stack } from 'expo-router';
 import MapView, { Marker } from 'react-native-maps';
@@ -46,6 +48,7 @@ import MapView, { Marker } from 'react-native-maps';
 const { width: SCREEN_WIDTH } = Dimensions.get('window');
 
 type ViewMode = 'list' | 'map';
+type DiscoveryTab = 'now' | 'near' | 'forYou';
 
 interface Event {
   id: string;
@@ -267,8 +270,68 @@ const QUICK_STATS = [
   { label: 'This Month', value: '3', emoji: '📅' },
 ];
 
+const USER_LOCATION = { latitude: 51.5074, longitude: -0.1278 }; // Mock "near you" (London) for MVP UI
+const toRadians = (deg: number) => (deg * Math.PI) / 180;
+const haversineDistanceKm = (lat1: number, lon1: number, lat2: number, lon2: number) => {
+  const R = 6371; // km
+  const dLat = toRadians(lat2 - lat1);
+  const dLon = toRadians(lon2 - lon1);
+  const a =
+    Math.sin(dLat / 2) * Math.sin(dLat / 2) +
+    Math.cos(toRadians(lat1)) * Math.cos(toRadians(lat2)) * Math.sin(dLon / 2) * Math.sin(dLon / 2);
+  const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+  return R * c;
+};
+
+const parseEventStartDateTime = (event: Event): Date | null => {
+  if (!event.date || !event.time) return null;
+  const dateStr = event.date.trim();
+  if (dateStr.toLowerCase().includes('ongoing')) return null;
+
+  // e.g. "Sat, 12 Apr" / "Fri, 18 Apr" + add current year
+  const year = new Date().getFullYear();
+  const base = new Date(`${dateStr} ${year}`);
+  if (Number.isNaN(base.getTime())) return null;
+
+  const timeStart = event.time.split('-')[0]?.trim();
+  if (!timeStart) return base;
+  const parts = timeStart.split(':');
+  if (parts.length >= 2) {
+    const hours = Number(parts[0]);
+    const minutes = Number(parts[1]);
+    if (!Number.isNaN(hours) && !Number.isNaN(minutes)) {
+      base.setHours(hours, minutes, 0, 0);
+    }
+  }
+
+  return base;
+};
+
+const getDaysUntilEvent = (event: Event): number | null => {
+  const start = parseEventStartDateTime(event);
+  if (!start) return null;
+  const diffMs = start.getTime() - Date.now();
+  return Math.ceil(diffMs / (1000 * 60 * 60 * 24));
+};
+
+const getCountdownLabel = (event: Event): string => {
+  const days = getDaysUntilEvent(event);
+  if (days === null) return 'Soon';
+  if (days <= 0) return 'Starting soon';
+  if (days === 1) return 'Tomorrow';
+  if (days === 2) return '2 days to go';
+  return `${days} days to go`;
+};
+
+const formatDistanceKm = (km: number): string => {
+  if (!Number.isFinite(km)) return '';
+  if (km < 1) return `${Math.round(km * 1000)} m`;
+  return `${km.toFixed(1)} km`;
+};
+
 export default function EventsScreen() {
   const { isDark } = useTheme();
+  const { profile } = useUserProfile();
   const insets = useSafeAreaInsets();
   const [selectedCategory, setSelectedCategory] = useState<string>('all');
   const [searchQuery, setSearchQuery] = useState<string>('');
@@ -277,6 +340,7 @@ export default function EventsScreen() {
   const [expandedEvent, setExpandedEvent] = useState<string | null>(null);
   const [viewMode, setViewMode] = useState<ViewMode>('list');
   const [selectedMapEvent, setSelectedMapEvent] = useState<string | null>(null);
+  const [discoveryTab, setDiscoveryTab] = useState<DiscoveryTab>('now');
   const mapRef = useRef<MapView>(null);
   const viewToggleAnim = useRef(new Animated.Value(0)).current;
 
@@ -379,6 +443,76 @@ export default function EventsScreen() {
     return count.toString();
   };
 
+  const baseEvents = filteredEvents.length > 0 ? filteredEvents : events;
+  const savedEvents = useMemo(() => {
+    const list = events.filter(e => e.isSaved);
+    return list.sort((a, b) => {
+      const da = getDaysUntilEvent(a);
+      const db = getDaysUntilEvent(b);
+      if (da === null && db === null) return 0;
+      if (da === null) return 1;
+      if (db === null) return -1;
+      return da - db;
+    });
+  }, [events]);
+
+  const forYouCategorySet = useMemo(() => {
+    const set = new Set<string>();
+    const interests = (profile?.interests || []).map(i => i.toLowerCase());
+    const hasSports = (profile?.favoriteTeams?.length || 0) > 0;
+    if (hasSports) set.add('sports');
+
+    if (interests.some(i => i.includes('music') || i.includes('concert') || i.includes('rock') || i.includes('live'))) {
+      set.add('music');
+    }
+    if (interests.some(i => i.includes('sport') || i.includes('football') || i.includes('gym') || i.includes('fitness'))) {
+      set.add('sports');
+    }
+    if (interests.some(i => i.includes('theatre') || i.includes('theater') || i.includes('acting'))) {
+      set.add('theatre');
+    }
+    if (interests.some(i => i.includes('food') || i.includes('drink') || i.includes('cooking') || i.includes('restaurant'))) {
+      set.add('food');
+    }
+    if (interests.some(i => i.includes('art') || i.includes('design') || i.includes('painting') || i.includes('creative'))) {
+      set.add('arts');
+    }
+    if (interests.some(i => i.includes('tech') || i.includes('ai') || i.includes('coding') || i.includes('startup') || i.includes('network'))) {
+      set.add('tech');
+    }
+    if (interests.some(i => i.includes('night') || i.includes('party') || i.includes('club'))) {
+      set.add('nightlife');
+    }
+
+    return set;
+  }, [profile?.favoriteTeams, profile?.interests]);
+
+  const happeningNowEvents = useMemo(() => {
+    if (baseEvents.length === 0) return [];
+    return baseEvents.filter(e => e.isHot || e.isFeatured).slice(0, 4);
+  }, [baseEvents]);
+
+  const nearYouEvents = useMemo(() => {
+    if (baseEvents.length === 0) return [];
+    return [...baseEvents]
+      .sort((a, b) => {
+        const da = haversineDistanceKm(USER_LOCATION.latitude, USER_LOCATION.longitude, a.latitude, a.longitude);
+        const db = haversineDistanceKm(USER_LOCATION.latitude, USER_LOCATION.longitude, b.latitude, b.longitude);
+        return da - db;
+      })
+      .slice(0, 4);
+  }, [baseEvents]);
+
+  const forYouEvents = useMemo(() => {
+    if (baseEvents.length === 0) return [];
+    const matches = baseEvents.filter(e => forYouCategorySet.has(e.category)).slice(0, 4);
+    if (matches.length > 0) return matches;
+    return baseEvents.filter(e => e.isFeatured || e.isHot).slice(0, 4);
+  }, [baseEvents, forYouCategorySet]);
+
+  const smartDiscoveryEvents =
+    discoveryTab === 'now' ? happeningNowEvents : discoveryTab === 'near' ? nearYouEvents : forYouEvents;
+
   return (
     <View style={[styles.container, { backgroundColor: warmBg }]}>
       <Stack.Screen options={{ headerShown: false }} />
@@ -445,6 +579,148 @@ export default function EventsScreen() {
             </TouchableOpacity>
           )}
         </View>
+      </View>
+
+      <View style={[styles.smartDiscoveryWrap, { paddingTop: 4 }]}>
+        <View style={styles.smartDiscoveryTabs}>
+          <TouchableOpacity
+            style={[
+              styles.smartDiscoveryTab,
+              {
+                backgroundColor: discoveryTab === 'now' ? accentColor : cardBg,
+                borderColor: discoveryTab === 'now' ? accentColor : cardBorder,
+              },
+            ]}
+            activeOpacity={0.85}
+            onPress={() => setDiscoveryTab('now')}
+          >
+            <Text style={[styles.smartDiscoveryTabText, { color: discoveryTab === 'now' ? '#FFFFFF' : mainText }]}>
+              🔥 Happening Now
+            </Text>
+          </TouchableOpacity>
+          <TouchableOpacity
+            style={[
+              styles.smartDiscoveryTab,
+              {
+                backgroundColor: discoveryTab === 'near' ? accentColor : cardBg,
+                borderColor: discoveryTab === 'near' ? accentColor : cardBorder,
+              },
+            ]}
+            activeOpacity={0.85}
+            onPress={() => setDiscoveryTab('near')}
+          >
+            <Text style={[styles.smartDiscoveryTabText, { color: discoveryTab === 'near' ? '#FFFFFF' : mainText }]}>
+              📍 Near You
+            </Text>
+          </TouchableOpacity>
+          <TouchableOpacity
+            style={[
+              styles.smartDiscoveryTab,
+              {
+                backgroundColor: discoveryTab === 'forYou' ? accentColor : cardBg,
+                borderColor: discoveryTab === 'forYou' ? accentColor : cardBorder,
+              },
+            ]}
+            activeOpacity={0.85}
+            onPress={() => setDiscoveryTab('forYou')}
+          >
+            <Text style={[styles.smartDiscoveryTabText, { color: discoveryTab === 'forYou' ? '#FFFFFF' : mainText }]}>
+              🎯 For You
+            </Text>
+          </TouchableOpacity>
+        </View>
+
+        <ScrollView
+          horizontal
+          showsHorizontalScrollIndicator={false}
+          contentContainerStyle={styles.smartDiscoveryScroll}
+        >
+          {smartDiscoveryEvents.length === 0 ? (
+            <View style={styles.smartDiscoveryEmpty}>
+              <Text style={{ color: subtleText, fontWeight: '600' as const }}>No events match yet</Text>
+            </View>
+          ) : (
+            smartDiscoveryEvents.map((event) => {
+              const distanceKm = haversineDistanceKm(USER_LOCATION.latitude, USER_LOCATION.longitude, event.latitude, event.longitude);
+              const distanceText = formatDistanceKm(distanceKm);
+              const isFree = event.price === 'Free';
+              const priceBg = isFree
+                ? (isDark ? '#1A2E1A' : '#E8F8E8')
+                : (isDark ? '#2D1520' : accentLight);
+              const priceTextColor = isFree ? '#34C759' : accentColor;
+
+              const isActive = selectedMapEvent === event.id;
+              return (
+                <TouchableOpacity
+                  key={event.id}
+                  style={[
+                    styles.discoveryCard,
+                    { backgroundColor: cardBg, borderColor: cardBorder },
+                    isActive && { borderColor: accentColor },
+                  ]}
+                  activeOpacity={0.9}
+                  onPress={() => {
+                    void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+                    setSelectedMapEvent(event.id);
+                    setExpandedEvent(event.id);
+                    if (viewMode === 'map') {
+                      mapRef.current?.animateToRegion(
+                        {
+                          latitude: event.latitude,
+                          longitude: event.longitude,
+                          latitudeDelta: 0.06,
+                          longitudeDelta: 0.06,
+                        },
+                        900
+                      );
+                    }
+                  }}
+                >
+                  <Image source={{ uri: event.image }} style={styles.discoveryCardImage} />
+
+                  <View style={styles.discoveryCardInfo}>
+                    <View style={styles.discoveryCardTop}>
+                      <Text style={styles.discoveryCardTitle} numberOfLines={1}>
+                        {event.title}
+                      </Text>
+                      <TouchableOpacity
+                        hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+                        onPress={(e) => {
+                          e.stopPropagation();
+                          toggleSaved(event.id);
+                        }}
+                      >
+                        <Heart
+                          size={18}
+                          color={event.isSaved ? accentColor : subtleText}
+                          fill={event.isSaved ? accentColor : 'transparent'}
+                        />
+                      </TouchableOpacity>
+                    </View>
+
+                    <Text style={styles.discoveryMeta} numberOfLines={1}>
+                      {event.date} · {event.time}
+                    </Text>
+
+                    <View style={styles.discoveryBottomRow}>
+                      <View style={styles.discoveryDistance}>
+                        <MapPin size={12} color={subtleText} />
+                        <Text style={styles.discoveryDistanceText} numberOfLines={1}>
+                          {distanceText}
+                        </Text>
+                      </View>
+                      <View style={[styles.discoveryPriceBadge, { backgroundColor: priceBg }]}>
+                        <Text style={[styles.discoveryPriceText, { color: priceTextColor }]}>
+                          {event.price}
+                        </Text>
+                      </View>
+                    </View>
+                  </View>
+                </TouchableOpacity>
+              );
+            })
+          )}
+        </ScrollView>
       </View>
 
       {viewMode === 'map' ? (
@@ -599,7 +875,7 @@ export default function EventsScreen() {
         onScroll={Animated.event([{ nativeEvent: { contentOffset: { y: scrollY } } }], { useNativeDriver: false })}
         scrollEventThrottle={16}
       >
-        <View style={styles.statsRow}>
+        <View style={[styles.statsRow, { display: 'none' }]}>
           {QUICK_STATS.map((stat, index) => (
             <View key={index} style={[styles.statCard, { backgroundColor: cardBg, borderColor: cardBorder }]}>
               <Text style={styles.statEmoji}>{stat.emoji}</Text>
@@ -609,7 +885,7 @@ export default function EventsScreen() {
           ))}
         </View>
 
-        {MY_UPCOMING.length > 0 && !searchQuery && selectedCategory === 'all' && (
+        {MY_UPCOMING.length > 0 && !searchQuery && selectedCategory === 'all' && false && (
           <View style={styles.section}>
             <View style={styles.sectionHeader}>
               <View style={styles.sectionTitleRow}>
@@ -654,7 +930,7 @@ export default function EventsScreen() {
           </View>
         )}
 
-        {featuredEvents.length > 0 && !searchQuery && selectedCategory === 'all' && (
+        {featuredEvents.length > 0 && !searchQuery && selectedCategory === 'all' && false && (
           <View style={styles.section}>
             <View style={styles.sectionHeader}>
               <View style={styles.sectionTitleRow}>
@@ -781,6 +1057,18 @@ export default function EventsScreen() {
           ) : (
             filteredEvents.map((event) => {
               const isExpanded = expandedEvent === event.id;
+              const distanceKm = haversineDistanceKm(
+                USER_LOCATION.latitude,
+                USER_LOCATION.longitude,
+                event.latitude,
+                event.longitude
+              );
+              const distanceText = formatDistanceKm(distanceKm);
+              const isFree = event.price === 'Free';
+              const priceBg = isFree
+                ? (isDark ? '#1A2E1A' : '#E8F8E8')
+                : (isDark ? '#2D1520' : accentLight);
+              const priceTextColor = isFree ? '#34C759' : accentColor;
               return (
                 <TouchableOpacity
                   key={event.id}
@@ -803,8 +1091,22 @@ export default function EventsScreen() {
                     <View style={styles.eventInfo}>
                       <View style={styles.eventTop}>
                         <Text style={[styles.eventTitle, { color: mainText }]} numberOfLines={1}>{event.title}</Text>
-                        <TouchableOpacity onPress={() => toggleSaved(event.id)} hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}>
-                          <Heart size={18} color={event.isSaved ? accentColor : subtleText} fill={event.isSaved ? accentColor : 'transparent'} />
+                      <TouchableOpacity
+                        style={[
+                          styles.saveInterestedPill,
+                          { borderColor: cardBorder, backgroundColor: event.isSaved ? 'rgba(232, 67, 147, 0.12)' : 'transparent' },
+                        ]}
+                        onPress={(e) => {
+                          e.stopPropagation();
+                          toggleSaved(event.id);
+                        }}
+                        hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+                        activeOpacity={0.85}
+                      >
+                        <Heart size={18} color={event.isSaved ? accentColor : subtleText} fill={event.isSaved ? accentColor : 'transparent'} />
+                        <Text style={[styles.saveInterestedText, { color: event.isSaved ? accentColor : subtleText }]}>
+                          {event.isSaved ? 'Saved' : 'Interested'}
+                        </Text>
                         </TouchableOpacity>
                       </View>
                       <View style={styles.eventVenueRow}>
@@ -814,14 +1116,18 @@ export default function EventsScreen() {
                       <View style={styles.eventMeta}>
                         <View style={styles.eventMetaItem}>
                           <Calendar size={12} color={subtleText} />
-                          <Text style={[styles.eventMetaText, { color: subtleText }]}>{event.date}</Text>
+                        <Text style={[styles.eventMetaText, { color: subtleText }]} numberOfLines={1}>
+                          {event.date} · {event.time}
+                        </Text>
                         </View>
-                        <View style={[styles.eventPriceBadge, { backgroundColor: event.price === 'Free' ? (isDark ? '#1A2E1A' : '#E8F8E8') : (isDark ? '#2D1520' : accentLight) }]}>
-                          <Text style={[styles.eventPriceText, { color: event.price === 'Free' ? '#34C759' : accentColor }]}>{event.price}</Text>
+                      <View style={[styles.eventPriceBadge, { backgroundColor: priceBg }]}>
+                        <Text style={[styles.eventPriceText, { color: priceTextColor }]}>{event.price}</Text>
                         </View>
                         <View style={styles.eventMetaItem}>
-                          <Users size={12} color={subtleText} />
-                          <Text style={[styles.eventMetaText, { color: subtleText }]}>{formatAttendees(event.attendees)}</Text>
+                        <MapPin size={12} color={subtleText} />
+                        <Text style={[styles.eventMetaText, { color: subtleText }]} numberOfLines={1}>
+                          {distanceText}
+                        </Text>
                         </View>
                       </View>
                     </View>
@@ -854,6 +1160,51 @@ export default function EventsScreen() {
                         ))}
                       </View>
 
+                      <View style={styles.expandedQuickActionsGrid}>
+                        <TouchableOpacity
+                          style={[styles.quickActionBtn, { borderColor: cardBorder }]}
+                          onPress={(e) => {
+                            e.stopPropagation();
+                            Alert.alert('Remind me', 'Reminders UI coming soon.');
+                          }}
+                          activeOpacity={0.85}
+                        >
+                          <Clock size={14} color={subtleText} />
+                          <Text style={styles.quickActionText}>Remind</Text>
+                        </TouchableOpacity>
+                        <TouchableOpacity
+                          style={[styles.quickActionBtn, { borderColor: cardBorder }]}
+                          onPress={(e) => {
+                            e.stopPropagation();
+                            Alert.alert('Add to calendar', 'Calendar sync UI coming soon.');
+                          }}
+                          activeOpacity={0.85}
+                        >
+                          <Calendar size={14} color={subtleText} />
+                          <Text style={styles.quickActionText}>Calendar</Text>
+                        </TouchableOpacity>
+                        <TouchableOpacity
+                          style={[styles.quickActionBtn, { borderColor: cardBorder }]}
+                          onPress={(e) => {
+                            e.stopPropagation();
+                            Alert.alert('Share', 'Share UI coming soon.');
+                          }}
+                          activeOpacity={0.85}
+                        >
+                          <Text style={styles.quickActionText}>Share</Text>
+                        </TouchableOpacity>
+                        <TouchableOpacity
+                          style={[styles.quickActionBtn, { borderColor: cardBorder }]}
+                          onPress={(e) => {
+                            e.stopPropagation();
+                            Alert.alert('Directions', 'Directions UI coming soon.');
+                          }}
+                          activeOpacity={0.85}
+                        >
+                          <Text style={styles.quickActionText}>Directions</Text>
+                        </TouchableOpacity>
+                      </View>
+
                       <TouchableOpacity
                         style={[styles.getTicketsBtn, { backgroundColor: accentColor }]}
                         onPress={() => void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium)}
@@ -870,6 +1221,76 @@ export default function EventsScreen() {
                 </TouchableOpacity>
               );
             })
+          )}
+        </View>
+
+        <View style={styles.section}>
+          <View style={styles.sectionHeader}>
+            <View style={styles.sectionTitleRow}>
+              <Text style={styles.sectionEmoji}>🎟️</Text>
+              <Text style={[styles.sectionTitle, { color: mainText }]}>My Events</Text>
+            </View>
+            <View style={[styles.countBadge, { backgroundColor: isDark ? '#2D2840' : accentLight }]}>
+              <Text style={[styles.countText, { color: accentColor }]}>{savedEvents.length}</Text>
+            </View>
+          </View>
+
+          {savedEvents.length === 0 ? (
+            <View style={[styles.emptyState, { backgroundColor: cardBg, borderColor: cardBorder }]}>
+              <Text style={styles.emptyEmoji}>🔖</Text>
+              <Text style={[styles.emptyTitle, { color: mainText }]}>Save events to stay on top</Text>
+              <Text style={[styles.emptyText, { color: subtleText }]}>Tap the heart on any event</Text>
+            </View>
+          ) : (
+            savedEvents.slice(0, 4).map((event) => (
+              <TouchableOpacity
+                key={event.id}
+                style={[styles.savedEventRow, { backgroundColor: cardBg, borderColor: cardBorder }]}
+                activeOpacity={0.85}
+                onPress={() => {
+                  setSelectedMapEvent(event.id);
+                  setExpandedEvent(event.id);
+                }}
+              >
+                <Image source={{ uri: event.image }} style={styles.savedEventThumb} />
+                <View style={styles.savedEventInfo}>
+                  <Text style={styles.savedEventTitle} numberOfLines={1}>
+                    {event.title}
+                  </Text>
+                  <Text style={[styles.savedEventMeta, { color: subtleText }]} numberOfLines={1}>
+                    {event.date} · {event.time}
+                  </Text>
+                  <Text style={[styles.savedEventCountdown, { color: accentColor }]} numberOfLines={1}>
+                    {getCountdownLabel(event)}
+                  </Text>
+                </View>
+
+                <View style={styles.savedEventActions}>
+                  <TouchableOpacity
+                    style={[styles.savedQuickBtn, { borderColor: cardBorder }]}
+                    onPress={(e) => {
+                      e.stopPropagation();
+                      Alert.alert('Remind me', 'Reminders UI coming soon.');
+                    }}
+                    activeOpacity={0.8}
+                  >
+                    <Clock size={14} color={subtleText} />
+                    <Text style={styles.savedQuickBtnText}>Remind</Text>
+                  </TouchableOpacity>
+                  <TouchableOpacity
+                    style={[styles.savedQuickBtn, { borderColor: cardBorder }]}
+                    onPress={(e) => {
+                      e.stopPropagation();
+                      Alert.alert('Add to calendar', 'Calendar sync UI coming soon.');
+                    }}
+                    activeOpacity={0.8}
+                  >
+                    <Calendar size={14} color={subtleText} />
+                    <Text style={styles.savedQuickBtnText}>Calendar</Text>
+                  </TouchableOpacity>
+                </View>
+              </TouchableOpacity>
+            ))
           )}
         </View>
 
@@ -1606,5 +2027,180 @@ const styles = StyleSheet.create({
   webMapEventPrice: {
     fontSize: 14,
     fontWeight: '700' as const,
+  },
+  // Smart discovery (Events tab)
+  smartDiscoveryWrap: {
+    paddingHorizontal: 20,
+    marginBottom: 6,
+  },
+  smartDiscoveryTabs: {
+    flexDirection: 'row',
+    gap: 8,
+    marginBottom: 10,
+  },
+  smartDiscoveryTab: {
+    flex: 1,
+    borderWidth: 1,
+    borderRadius: 18,
+    paddingVertical: 10,
+    alignItems: 'center',
+  },
+  smartDiscoveryTabText: {
+    fontSize: 13,
+    fontWeight: '700' as const,
+  },
+  smartDiscoveryScroll: {
+    gap: 12,
+    paddingRight: 20,
+    paddingLeft: 0,
+  },
+  smartDiscoveryEmpty: {
+    paddingVertical: 20,
+    paddingHorizontal: 10,
+    borderRadius: 16,
+    borderWidth: 1,
+  },
+  discoveryCard: {
+    width: SCREEN_WIDTH * 0.78,
+    borderRadius: 18,
+    borderWidth: 1,
+    overflow: 'hidden',
+  },
+  discoveryCardImage: {
+    width: '100%',
+    height: 140,
+    resizeMode: 'cover',
+  },
+  discoveryCardInfo: {
+    padding: 12,
+  },
+  discoveryCardTop: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'flex-start',
+    gap: 8,
+  },
+  discoveryCardTitle: {
+    fontSize: 15,
+    fontWeight: '800' as const,
+    flex: 1,
+  },
+  discoveryMeta: {
+    marginTop: 6,
+    fontSize: 12,
+    fontWeight: '600' as const,
+  },
+  discoveryBottomRow: {
+    marginTop: 10,
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    gap: 10,
+  },
+  discoveryDistance: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+  },
+  discoveryDistanceText: {
+    fontSize: 12,
+    fontWeight: '700' as const,
+    flexShrink: 1,
+  },
+  discoveryPriceBadge: {
+    paddingHorizontal: 10,
+    paddingVertical: 4,
+    borderRadius: 12,
+  },
+  discoveryPriceText: {
+    fontSize: 12,
+    fontWeight: '800' as const,
+  },
+
+  saveInterestedPill: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    borderRadius: 999,
+  },
+  saveInterestedText: {
+    fontSize: 12,
+    fontWeight: '800' as const,
+  },
+
+  expandedQuickActionsGrid: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 8,
+    marginBottom: 10,
+  },
+  quickActionBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    paddingHorizontal: 10,
+    paddingVertical: 10,
+    borderWidth: 1,
+    borderRadius: 14,
+  },
+  quickActionText: {
+    fontSize: 13,
+    fontWeight: '700' as const,
+  },
+
+  // Saved events section (Events tab)
+  savedEventRow: {
+    marginHorizontal: 20,
+    marginBottom: 10,
+    borderRadius: 18,
+    borderWidth: 1,
+    overflow: 'hidden',
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+    padding: 12,
+  },
+  savedEventThumb: {
+    width: 54,
+    height: 54,
+    borderRadius: 14,
+    resizeMode: 'cover',
+  },
+  savedEventInfo: {
+    flex: 1,
+    minWidth: 0,
+  },
+  savedEventTitle: {
+    fontSize: 15,
+    fontWeight: '800' as const,
+  },
+  savedEventMeta: {
+    marginTop: 4,
+    fontSize: 12,
+    fontWeight: '600' as const,
+  },
+  savedEventCountdown: {
+    marginTop: 8,
+    fontSize: 12,
+    fontWeight: '800' as const,
+  },
+  savedEventActions: {
+    gap: 8,
+    alignItems: 'flex-end',
+  },
+  savedQuickBtn: {
+    borderWidth: 1,
+    borderRadius: 12,
+    paddingHorizontal: 10,
+    paddingVertical: 8,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+  },
+  savedQuickBtnText: {
+    fontSize: 12,
+    fontWeight: '800' as const,
   },
 });

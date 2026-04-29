@@ -20,7 +20,6 @@ import { useUserProfile } from '@/hooks/useUserProfile';
 import { getChronotypeInfo, getChronotypePeakLabel } from '@/constants/chronotypes';
 import { COLORS } from '@/constants/colors';
 import { ONBOARDING_PREMIUM } from '@/constants/onboardingTheme';
-import { NationFlag } from '@/components/NationFlag';
 
 const { width, height } = Dimensions.get('window');
 
@@ -327,11 +326,9 @@ export default function CompleteScreen() {
         node: (
           <View style={styles.summaryItem}>
             <View style={styles.summaryIconWrap}>
-              {profile.nationalities[0]?.code ? (
-                <NationFlag code={profile.nationalities[0].code} width={40} borderRadius={8} />
-              ) : (
-                <Text style={styles.summaryEmoji}>🏳️</Text>
-              )}
+              <Text style={styles.summaryEmoji}>
+                {profile.nationalities[0]?.flag?.trim() || '🏳️'}
+              </Text>
             </View>
             <View style={styles.summaryTextWrap}>
               <Text style={styles.summaryLabel}>Nationality</Text>

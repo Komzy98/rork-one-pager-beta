@@ -58,6 +58,23 @@ const { width: SCREEN_WIDTH } = Dimensions.get('window');
 
 type SportMode = 'football' | 'ufc' | 'f1' | 'nba';
 
+/**
+ * Live Now carousel cards: fixed forest→navy gradient + light text.
+ * Intentionally NOT tied to `sf.text` / light theme — the reference design is always a dark
+ * green card on a light app background; using theme body colors made light mode render dark text
+ * on a gradient that ended in white, which broke the old look.
+ */
+const LIVE_TICKER_GRADIENT = ['#0A1A12', '#145A32', '#1A1A2E'] as const;
+const LIVE_TICKER_SHEEN = 'rgba(50, 215, 75, 0.22)';
+const LIVE_TICKER_TEXT = {
+  team: 'rgba(255,255,255,0.96)',
+  score: '#FFFFFF',
+  league: 'rgba(255,255,255,0.52)',
+  live: '#FF4757',
+  elapsedBg: 'rgba(0,0,0,0.38)',
+  elapsedText: '#FFFFFF',
+} as const;
+
 /** Fixed iOS-style sports chrome — ignores Profile → Appearance (match cards, headers, UFC cards). */
 function sportsFixedPalette(isDark: boolean) {
   if (isDark) {
@@ -83,6 +100,8 @@ function sportsFixedPalette(isDark: boolean) {
       info: '#5E5CE6',
       secondary: '#BF5AF2',
       errorLight: '#3A1A1A',
+      tickerGradient: ['#0A1A12', '#145A32', '#1A1A2E'] as const,
+      tickerSheen: 'rgba(50, 215, 75, 0.22)',
       ufcGradient: ['#0A0606', '#0E0814', '#06040E'] as const,
     };
   }
@@ -108,6 +127,9 @@ function sportsFixedPalette(isDark: boolean) {
     info: COLORS.info,
     secondary: COLORS.secondary,
     errorLight: COLORS.errorLight,
+    /** Same as dark — light theme previously used a white endpoint here and broke the card. */
+    tickerGradient: ['#0A1A12', '#145A32', '#1A1A2E'] as const,
+    tickerSheen: 'rgba(50, 215, 75, 0.22)',
     ufcGradient: ['#1A0808', '#1C0A18', '#0F0A1E'] as const,
   };
 }
@@ -336,8 +358,6 @@ const LiveTickerCard = React.memo(({
   onPress: () => void; 
   index: number;
 }) => {
-  const { isDark } = useTheme();
-  const sf = sportsFixedPalette(isDark);
   const handlePress = useCallback(async () => {
     if (Platform.OS !== 'web') {
       await Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
@@ -345,120 +365,80 @@ const LiveTickerCard = React.memo(({
     onPress();
   }, [onPress]);
 
-  const homeWinning = (match.homeScore ?? 0) > (match.awayScore ?? 0);
-  const awayWinning = (match.awayScore ?? 0) > (match.homeScore ?? 0);
-
   return (
     <View style={styles.tickerCardWrapper}>
-      <TouchableOpacity onPress={handlePress} activeOpacity={0.95}>
-        <View style={styles.tickerMatchCard}>
-          <View style={[
-            styles.tickerCardInner,
-            { backgroundColor: sf.card, borderColor: sf.border },
-            styles.tickerLiveCardBorder,
-          ]}>
-            <LinearGradient
-              colors={[`${sf.live}10`, 'transparent']}
-              start={{ x: 0, y: 0 }}
-              end={{ x: 0, y: 1 }}
-              style={styles.cardGlow}
-              pointerEvents="none"
-            />
-            <View style={styles.tickerMatchHeader}>
-              <View style={styles.leagueInfo}>
-                {match.leagueLogo ? (
-                  <Image source={{ uri: match.leagueLogo }} style={styles.leagueLogo} resizeMode="contain" />
-                ) : (
-                  <View style={[styles.leagueIconFallback, { backgroundColor: sf.surfaceSecondary }]}>
-                    <Trophy size={11} color={sf.textMuted} />
-                  </View>
-                )}
-                <Text style={[styles.leagueName, { color: sf.textMuted }]} numberOfLines={1}>
-                  {match.league}
-                </Text>
-              </View>
-              <View style={styles.liveIndicator}>
-                <LivePulse color={sf.live} size={6} />
-                <Text style={[styles.liveText, { color: sf.live }]}>LIVE</Text>
-                {match.elapsed ? (
-                  <Text style={[styles.elapsedText, { color: sf.live }]}>{match.elapsed}&apos;</Text>
-                ) : null}
-              </View>
+      <TouchableOpacity onPress={handlePress} activeOpacity={0.92}>
+        <LinearGradient
+          colors={[...LIVE_TICKER_GRADIENT]}
+          start={{ x: 0, y: 0 }}
+          end={{ x: 1, y: 1 }}
+          style={styles.tickerCard}
+        >
+          <LinearGradient
+            colors={[LIVE_TICKER_SHEEN, 'transparent']}
+            start={{ x: 0, y: 0 }}
+            end={{ x: 1, y: 1 }}
+            style={styles.tickerSheen}
+            pointerEvents="none"
+          />
+          <View style={styles.tickerTopRow}>
+            <View style={styles.tickerLiveBadge}>
+              <LivePulse color={LIVE_TICKER_TEXT.live} size={6} />
+              <Text style={styles.tickerLiveText}>LIVE</Text>
             </View>
+            {match.elapsed ? (
+              <View style={[styles.tickerElapsedPill, { backgroundColor: LIVE_TICKER_TEXT.elapsedBg }]}>
+                <Text style={[styles.tickerElapsed, { color: LIVE_TICKER_TEXT.elapsedText }]}>
+                  {match.elapsed}&apos;
+                </Text>
+              </View>
+            ) : null}
+          </View>
 
-            <View style={styles.tickerMatchBody}>
-              <View style={styles.teamRowLeft}>
+          <View style={styles.tickerTeams}>
+            <View style={styles.tickerTeamRow}>
+              <View style={styles.tickerLogoWrap}>
                 {match.homeTeamLogo ? (
-                  <Image source={{ uri: match.homeTeamLogo }} style={styles.tickerTeamLogo} />
+                  <Image source={{ uri: match.homeTeamLogo }} style={styles.tickerLogo} />
                 ) : (
-                  <Shield size={18} color={sf.textMuted} />
+                  <Shield size={14} color="rgba(255,255,255,0.45)" />
                 )}
-                <Text
-                  style={[
-                    styles.tickerTeamNameH,
-                    { color: sf.text },
-                    homeWinning && !awayWinning && { color: sf.success, fontWeight: '700' as const },
-                    awayWinning && !homeWinning && { opacity: 0.5 },
-                  ]}
-                  numberOfLines={2}
-                >
-                  {match.homeTeam}
-                </Text>
               </View>
-
-              <View style={styles.tickerScoreCenter}>
-                <View
-                  style={[
-                    styles.tickerScoreBlock,
-                    { backgroundColor: sf.surfaceSecondary, borderColor: `${sf.border}` },
-                    styles.scoreBlockLive,
-                  ]}
-                >
-                  <Text
-                    style={[
-                      styles.tickerScoreNum,
-                      { color: sf.text },
-                      { color: sf.live },
-                      homeWinning && !awayWinning && { color: sf.success },
-                    ]}
-                  >
-                    {match.homeScore ?? 0}
-                  </Text>
-                  <Text style={[styles.tickerScoreDash, { color: sf.border }]}>:</Text>
-                  <Text
-                    style={[
-                      styles.tickerScoreNum,
-                      { color: sf.text },
-                      { color: sf.live },
-                      awayWinning && !homeWinning && { color: sf.success },
-                    ]}
-                  >
-                    {match.awayScore ?? 0}
-                  </Text>
-                </View>
-              </View>
-
-              <View style={styles.teamRowRight}>
-                <Text
-                  style={[
-                    styles.tickerTeamNameH,
-                    { color: sf.text, textAlign: 'right' as const },
-                    awayWinning && !homeWinning && { color: sf.success, fontWeight: '700' as const },
-                    homeWinning && !awayWinning && { opacity: 0.5 },
-                  ]}
-                  numberOfLines={2}
-                >
-                  {match.awayTeam}
-                </Text>
+              <Text style={[styles.tickerTeamName, { color: LIVE_TICKER_TEXT.team }]} numberOfLines={1}>
+                {match.homeTeam}
+              </Text>
+              <Text style={[styles.tickerScore, { color: LIVE_TICKER_TEXT.score }]}>
+                {match.homeScore ?? 0}
+              </Text>
+            </View>
+            <View style={styles.tickerTeamRow}>
+              <View style={styles.tickerLogoWrap}>
                 {match.awayTeamLogo ? (
-                  <Image source={{ uri: match.awayTeamLogo }} style={styles.tickerTeamLogo} />
+                  <Image source={{ uri: match.awayTeamLogo }} style={styles.tickerLogo} />
                 ) : (
-                  <Shield size={18} color={sf.textMuted} />
+                  <Shield size={14} color="rgba(255,255,255,0.45)" />
                 )}
               </View>
+              <Text style={[styles.tickerTeamName, { color: LIVE_TICKER_TEXT.team }]} numberOfLines={1}>
+                {match.awayTeam}
+              </Text>
+              <Text style={[styles.tickerScore, { color: LIVE_TICKER_TEXT.score }]}>
+                {match.awayScore ?? 0}
+              </Text>
             </View>
           </View>
-        </View>
+
+          <View style={styles.tickerLeague}>
+            {match.leagueLogo ? (
+              <Image source={{ uri: match.leagueLogo }} style={styles.tickerLeagueLogo} resizeMode="contain" />
+            ) : (
+              <Trophy size={10} color="rgba(255,255,255,0.45)" />
+            )}
+            <Text style={[styles.tickerLeagueName, { color: LIVE_TICKER_TEXT.league }]} numberOfLines={1}>
+              {match.league}
+            </Text>
+          </View>
+        </LinearGradient>
       </TouchableOpacity>
     </View>
   );
@@ -763,7 +743,7 @@ const TabPill = React.memo(({
           backgroundColor: sf.surfaceSecondary,
           borderWidth: 1,
           borderColor: sf.border,
-        }
+        },
       ]}
     >
       <Animated.View 
@@ -2673,76 +2653,117 @@ const styles = StyleSheet.create({
   tickerCardWrapper: {
     width: SCREEN_WIDTH * 0.66,
   },
-  /** Aligns with PremiumMatchCard: surface card, not full-bleed gradient */
-  tickerMatchCard: {
-    borderRadius: 20,
-    overflow: 'hidden',
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.07,
-    shadowRadius: 16,
-    elevation: 3,
-  },
-  tickerCardInner: {
-    borderRadius: 20,
-    paddingHorizontal: 14,
-    paddingVertical: 13,
+  tickerCard: {
+    borderRadius: 22,
+    padding: 18,
     borderWidth: 1,
+    borderColor: 'rgba(46, 204, 113, 0.25)',
+    shadowColor: '#2ECC71',
+    shadowOpacity: 0.18,
+    shadowRadius: 20,
+    shadowOffset: { width: 0, height: 8 },
+    elevation: 6,
     overflow: 'hidden' as const,
-    position: 'relative' as const,
   },
-  tickerLiveCardBorder: {
-    borderColor: 'rgba(255, 59, 48, 0.18)',
+  tickerSheen: {
+    position: 'absolute' as const,
+    top: 0,
+    left: 0,
+    right: 0,
+    height: 80,
   },
-  tickerMatchHeader: {
+  tickerTopRow: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-    marginBottom: 8,
-    gap: 8,
+    marginBottom: 16,
   },
-  tickerMatchBody: {
+  tickerLiveBadge: {
     flexDirection: 'row',
     alignItems: 'center',
-    paddingVertical: 2,
-    minHeight: 52,
+    gap: 5,
+    backgroundColor: 'rgba(255, 71, 87, 0.12)',
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: 'rgba(255, 71, 87, 0.25)',
   },
-  tickerTeamLogo: {
-    width: 28,
-    height: 28,
+  tickerElapsedPill: {
+    backgroundColor: 'rgba(255,255,255,0.08)',
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+    borderRadius: 8,
+  },
+  tickerLiveText: {
+    fontSize: 10,
+    fontWeight: '800' as const,
+    color: '#FF4757',
+    letterSpacing: 0.8,
+  },
+  tickerElapsed: {
+    fontSize: 10,
+    fontWeight: '800' as const,
+    color: '#F5F5FA',
+    letterSpacing: 0.3,
+  },
+  tickerTeams: {
+    gap: 10,
+    marginBottom: 14,
+  },
+  tickerTeamRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+  },
+  tickerLogoWrap: {
+    width: 26,
+    height: 26,
+    borderRadius: 13,
+    backgroundColor: 'rgba(255,255,255,0.08)',
+    justifyContent: 'center',
+    alignItems: 'center',
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.08)',
+  },
+  tickerLogo: {
+    width: 18,
+    height: 18,
     resizeMode: 'contain',
   },
-  tickerTeamNameH: {
-    fontSize: 12,
+  tickerTeamName: {
+    flex: 1,
+    fontSize: 14,
     fontWeight: '600' as const,
-    lineHeight: 15,
-    flexShrink: 1,
-    flexGrow: 1,
+    color: '#C8C8D8',
+    letterSpacing: -0.1,
   },
-  tickerScoreCenter: {
-    paddingHorizontal: 6,
-    flexShrink: 0,
+  tickerScore: {
+    fontSize: 20,
+    fontWeight: '800' as const,
+    color: '#E4E4ED',
+    minWidth: 24,
+    textAlign: 'right' as const,
+    letterSpacing: -0.5,
   },
-  tickerScoreBlock: {
+  tickerLeague: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 4,
-    paddingHorizontal: 10,
-    paddingVertical: 6,
-    borderRadius: 12,
-    borderWidth: 1,
+    gap: 6,
+    borderTopWidth: 1,
+    borderTopColor: 'rgba(255,255,255,0.06)',
+    paddingTop: 10,
   },
-  tickerScoreNum: {
-    fontSize: 18,
-    fontWeight: '800' as const,
-    letterSpacing: -0.6,
-    minWidth: 14,
-    textAlign: 'center' as const,
+  tickerLeagueLogo: {
+    width: 14,
+    height: 14,
   },
-  tickerScoreDash: {
-    fontSize: 14,
-    fontWeight: '400' as const,
-    marginHorizontal: 0,
+  tickerLeagueName: {
+    fontSize: 10,
+    fontWeight: '600' as const,
+    color: '#6B6B85',
+    textTransform: 'uppercase' as const,
+    letterSpacing: 0.3,
   },
   tabWrapper: {
     paddingHorizontal: 20,

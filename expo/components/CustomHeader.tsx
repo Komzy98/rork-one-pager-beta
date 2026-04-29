@@ -15,6 +15,8 @@ interface CustomHeaderProps {
   onMenuPress?: () => void;
   rightComponent?: React.ReactNode;
   showBorder?: boolean;
+  /** When true, shows the gradient icon beside the title. Profile tab leaves this off. */
+  showTitleIcon?: boolean;
   icon?: React.ReactNode;
   iconGradientColors?: [string, string];
 }
@@ -28,6 +30,7 @@ export default function CustomHeader({
   onMenuPress,
   rightComponent,
   showBorder = false,
+  showTitleIcon = false,
   icon,
   iconGradientColors = ['#3B82F6', '#8B5CF6'],
 }: CustomHeaderProps) {
@@ -65,16 +68,18 @@ export default function CustomHeader({
         <View style={styles.content}>
           <View style={styles.headerTopRow}>
             <View style={styles.titleRow}>
-              <View style={[styles.headerIconContainer, { shadowColor: iconGradientColors[0] }]}>
-                <LinearGradient
-                  colors={iconGradientColors}
-                  start={{ x: 0, y: 0 }}
-                  end={{ x: 1, y: 1 }}
-                  style={styles.headerIconGradient}
-                >
-                  {icon || <User size={20} color="#FFFFFF" strokeWidth={2.5} />}
-                </LinearGradient>
-              </View>
+              {showTitleIcon ? (
+                <View style={[styles.headerIconContainer, { shadowColor: iconGradientColors[0] }]}>
+                  <LinearGradient
+                    colors={iconGradientColors}
+                    start={{ x: 0, y: 0 }}
+                    end={{ x: 1, y: 1 }}
+                    style={styles.headerIconGradient}
+                  >
+                    {icon || <User size={20} color="#FFFFFF" strokeWidth={2.5} />}
+                  </LinearGradient>
+                </View>
+              ) : null}
               <View style={styles.headerTitleGroup}>
                 <Text style={[styles.title, { color: colors.text }]}>{title}</Text>
                 {subtitle && (
