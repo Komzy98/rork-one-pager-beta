@@ -43,6 +43,7 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import { LinearGradient } from 'expo-linear-gradient';
 import { useUserProfile } from '@/hooks/useUserProfile';
 import { useTheme } from '@/hooks/useTheme';
+import { COLORS } from '@/constants/colors';
 import { trpc } from '@/lib/trpc';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import CompetitionFilter from '@/components/CompetitionFilter';
@@ -56,6 +57,85 @@ import NBASection from '@/components/NBASection';
 const { width: SCREEN_WIDTH } = Dimensions.get('window');
 
 type SportMode = 'football' | 'ufc' | 'f1' | 'nba';
+
+/** Fixed iOS-style sports chrome — ignores Profile → Appearance (match cards, headers, UFC cards). */
+function sportsFixedPalette(isDark: boolean) {
+  if (isDark) {
+    return {
+      card: '#111125',
+      text: '#F0F0FA',
+      textSecondary: '#A1A1B5',
+      textMuted: '#6B6B85',
+      textTertiary: '#5A5A7A',
+      textInverse: '#FFFFFF',
+      border: '#2A2A44',
+      surfaceSecondary: '#1A1A2E',
+      backgroundSecondary: '#151528',
+      backgroundTertiary: '#1A1A32',
+      live: '#FF453A',
+      success: '#32D74B',
+      primary: '#0A84FF',
+      warning: '#FFD60A',
+      error: '#FF453A',
+      warningLight: '#FFD60A',
+      successLight: '#32D74B',
+      shadow: '#000000',
+      info: '#5E5CE6',
+      secondary: '#BF5AF2',
+      errorLight: '#3A1A1A',
+      ufcGradient: ['#0A0606', '#0E0814', '#06040E'] as const,
+    };
+  }
+  return {
+    card: COLORS.card,
+    text: COLORS.text,
+    textSecondary: COLORS.textSecondary,
+    textMuted: COLORS.textMuted,
+    textTertiary: COLORS.textTertiary,
+    textInverse: COLORS.textInverse,
+    border: COLORS.border,
+    surfaceSecondary: COLORS.surfaceSecondary,
+    backgroundSecondary: COLORS.backgroundSecondary,
+    backgroundTertiary: COLORS.backgroundTertiary,
+    live: COLORS.live,
+    success: COLORS.success,
+    primary: COLORS.primary,
+    warning: COLORS.warning,
+    error: COLORS.error,
+    warningLight: COLORS.warningLight,
+    successLight: COLORS.successLight,
+    shadow: COLORS.shadow,
+    info: COLORS.info,
+    secondary: COLORS.secondary,
+    errorLight: COLORS.errorLight,
+    ufcGradient: ['#1A0808', '#1C0A18', '#0F0A1E'] as const,
+  };
+}
+
+function getSportsMainHeaderGradient(sportMode: SportMode, isDark: boolean): [string, string, string] {
+  if (isDark) {
+    switch (sportMode) {
+      case 'football':
+        return ['#0A1A0F', '#0D1A14', '#0D0D1A'];
+      case 'f1':
+        return ['#1A0505', '#180A0A', '#0D0D1A'];
+      case 'nba':
+        return ['#0A0A1E', '#0D1225', '#0D0D1A'];
+      default:
+        return ['#1A0A08', '#1A0D10', '#0D0D1A'];
+    }
+  }
+  switch (sportMode) {
+    case 'football':
+      return ['#E8F5EC', '#F0F5F2', '#F2F2F7'];
+    case 'f1':
+      return ['#F5E8E8', '#F5F0F0', '#F2F2F7'];
+    case 'nba':
+      return ['#E8EEF5', '#F0F2F5', '#F2F2F7'];
+    default:
+      return ['#F5EDE8', '#F5F0EC', '#F2F2F7'];
+  }
+}
 
 interface UFCFight {
   id: number;
@@ -256,7 +336,8 @@ const LiveTickerCard = React.memo(({
   onPress: () => void; 
   index: number;
 }) => {
-  const { colors } = useTheme();
+  const { isDark } = useTheme();
+  const sf = sportsFixedPalette(isDark);
   const handlePress = useCallback(async () => {
     if (Platform.OS !== 'web') {
       await Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
@@ -269,70 +350,115 @@ const LiveTickerCard = React.memo(({
 
   return (
     <View style={styles.tickerCardWrapper}>
-      <TouchableOpacity onPress={handlePress} activeOpacity={0.92}>
-        <LinearGradient
-          colors={[colors.gradientStart, colors.gradientMiddle, colors.backgroundSecondary]}
-          start={{ x: 0, y: 0 }}
-          end={{ x: 1, y: 1 }}
-          style={styles.tickerCard}
-        >
-          <LinearGradient
-            colors={[`${colors.success}38`, 'transparent']}
-            start={{ x: 0, y: 0 }}
-            end={{ x: 1, y: 1 }}
-            style={styles.tickerSheen}
-            pointerEvents="none"
-          />
-          <View style={styles.tickerTopRow}>
-            <View style={styles.tickerLiveBadge}>
-              <LivePulse color={colors.live} size={6} />
-              <Text style={[styles.tickerLiveText, { color: colors.textInverse }]}>LIVE</Text>
-            </View>
-            {match.elapsed ? (
-              <View style={styles.tickerElapsedPill}>
-                <Text style={styles.tickerElapsed}>{match.elapsed}&apos;</Text>
+      <TouchableOpacity onPress={handlePress} activeOpacity={0.95}>
+        <View style={styles.tickerMatchCard}>
+          <View style={[
+            styles.tickerCardInner,
+            { backgroundColor: sf.card, borderColor: sf.border },
+            styles.tickerLiveCardBorder,
+          ]}>
+            <LinearGradient
+              colors={[`${sf.live}10`, 'transparent']}
+              start={{ x: 0, y: 0 }}
+              end={{ x: 0, y: 1 }}
+              style={styles.cardGlow}
+              pointerEvents="none"
+            />
+            <View style={styles.tickerMatchHeader}>
+              <View style={styles.leagueInfo}>
+                {match.leagueLogo ? (
+                  <Image source={{ uri: match.leagueLogo }} style={styles.leagueLogo} resizeMode="contain" />
+                ) : (
+                  <View style={[styles.leagueIconFallback, { backgroundColor: sf.surfaceSecondary }]}>
+                    <Trophy size={11} color={sf.textMuted} />
+                  </View>
+                )}
+                <Text style={[styles.leagueName, { color: sf.textMuted }]} numberOfLines={1}>
+                  {match.league}
+                </Text>
               </View>
-            ) : null}
-          </View>
-          
-          <View style={styles.tickerTeams}>
-            <View style={styles.tickerTeamRow}>
-              <View style={styles.tickerLogoWrap}>
+              <View style={styles.liveIndicator}>
+                <LivePulse color={sf.live} size={6} />
+                <Text style={[styles.liveText, { color: sf.live }]}>LIVE</Text>
+                {match.elapsed ? (
+                  <Text style={[styles.elapsedText, { color: sf.live }]}>{match.elapsed}&apos;</Text>
+                ) : null}
+              </View>
+            </View>
+
+            <View style={styles.tickerMatchBody}>
+              <View style={styles.teamRowLeft}>
                 {match.homeTeamLogo ? (
-                  <Image source={{ uri: match.homeTeamLogo }} style={styles.tickerLogo} />
+                  <Image source={{ uri: match.homeTeamLogo }} style={styles.tickerTeamLogo} />
                 ) : (
-                  <Shield size={14} color={colors.textMuted} />
+                  <Shield size={18} color={sf.textMuted} />
                 )}
+                <Text
+                  style={[
+                    styles.tickerTeamNameH,
+                    { color: sf.text },
+                    homeWinning && !awayWinning && { color: sf.success, fontWeight: '700' as const },
+                    awayWinning && !homeWinning && { opacity: 0.5 },
+                  ]}
+                  numberOfLines={2}
+                >
+                  {match.homeTeam}
+                </Text>
               </View>
-              <Text style={[styles.tickerTeamName, { color: colors.text }, homeWinning && { color: colors.success }]} numberOfLines={1}>{match.homeTeam}</Text>
-              <Text style={[styles.tickerScore, { color: colors.text }, homeWinning && { color: colors.success }]}>
-                {match.homeScore ?? 0}
-              </Text>
-            </View>
-            <View style={styles.tickerTeamRow}>
-              <View style={styles.tickerLogoWrap}>
+
+              <View style={styles.tickerScoreCenter}>
+                <View
+                  style={[
+                    styles.tickerScoreBlock,
+                    { backgroundColor: sf.surfaceSecondary, borderColor: `${sf.border}` },
+                    styles.scoreBlockLive,
+                  ]}
+                >
+                  <Text
+                    style={[
+                      styles.tickerScoreNum,
+                      { color: sf.text },
+                      { color: sf.live },
+                      homeWinning && !awayWinning && { color: sf.success },
+                    ]}
+                  >
+                    {match.homeScore ?? 0}
+                  </Text>
+                  <Text style={[styles.tickerScoreDash, { color: sf.border }]}>:</Text>
+                  <Text
+                    style={[
+                      styles.tickerScoreNum,
+                      { color: sf.text },
+                      { color: sf.live },
+                      awayWinning && !homeWinning && { color: sf.success },
+                    ]}
+                  >
+                    {match.awayScore ?? 0}
+                  </Text>
+                </View>
+              </View>
+
+              <View style={styles.teamRowRight}>
+                <Text
+                  style={[
+                    styles.tickerTeamNameH,
+                    { color: sf.text, textAlign: 'right' as const },
+                    awayWinning && !homeWinning && { color: sf.success, fontWeight: '700' as const },
+                    homeWinning && !awayWinning && { opacity: 0.5 },
+                  ]}
+                  numberOfLines={2}
+                >
+                  {match.awayTeam}
+                </Text>
                 {match.awayTeamLogo ? (
-                  <Image source={{ uri: match.awayTeamLogo }} style={styles.tickerLogo} />
+                  <Image source={{ uri: match.awayTeamLogo }} style={styles.tickerTeamLogo} />
                 ) : (
-                  <Shield size={14} color={colors.textMuted} />
+                  <Shield size={18} color={sf.textMuted} />
                 )}
               </View>
-              <Text style={[styles.tickerTeamName, { color: colors.text }, awayWinning && { color: colors.success }]} numberOfLines={1}>{match.awayTeam}</Text>
-              <Text style={[styles.tickerScore, { color: colors.text }, awayWinning && { color: colors.success }]}>
-                {match.awayScore ?? 0}
-              </Text>
             </View>
           </View>
-          
-          <View style={styles.tickerLeague}>
-            {match.leagueLogo ? (
-              <Image source={{ uri: match.leagueLogo }} style={styles.tickerLeagueLogo} resizeMode="contain" />
-            ) : (
-              <Trophy size={10} color={colors.textMuted} />
-            )}
-            <Text style={[styles.tickerLeagueName, { color: colors.textSecondary }]} numberOfLines={1}>{match.league}</Text>
-          </View>
-        </LinearGradient>
+        </View>
       </TouchableOpacity>
     </View>
   );
@@ -349,12 +475,12 @@ const PremiumMatchCard = React.memo(({
   match: Match; 
   isFavoriteTeam: (name: string) => boolean; 
   onPress?: () => void;
-  index: number;
   isNotified?: boolean;
   onToggleNotification?: (matchId: string) => void;
   isPinned?: boolean;
 }) => {
-  const { colors } = useTheme();
+  const { isDark } = useTheme();
+  const sf = sportsFixedPalette(isDark);
   const isLive = match.status === 'Live';
   const isCompleted = match.status === 'Completed';
   const hasScore = match.homeScore !== null && match.awayScore !== null;
@@ -410,13 +536,13 @@ const PremiumMatchCard = React.memo(({
       >
         <View style={[
           styles.cardInner,
-          { backgroundColor: colors.card, borderColor: colors.border },
+          { backgroundColor: sf.card, borderColor: sf.border },
           isLive && styles.liveCardBorder,
-          isPinned && !isLive && { borderColor: `${colors.warning}55` },
+          isPinned && !isLive && { borderColor: `${sf.warning}55` },
         ]}>
           {isLive ? (
             <LinearGradient
-              colors={[`${colors.live}14`, 'transparent']}
+              colors={[`${sf.live}14`, 'transparent']}
               start={{ x: 0, y: 0 }}
               end={{ x: 0, y: 1 }}
               style={styles.cardGlow}
@@ -424,7 +550,7 @@ const PremiumMatchCard = React.memo(({
             />
           ) : isPinned ? (
             <LinearGradient
-              colors={[`${colors.warning}12`, 'transparent']}
+              colors={[`${sf.warning}12`, 'transparent']}
               start={{ x: 0, y: 0 }}
               end={{ x: 0, y: 1 }}
               style={styles.cardGlow}
@@ -436,37 +562,37 @@ const PremiumMatchCard = React.memo(({
               {match.leagueLogo ? (
                 <Image source={{ uri: match.leagueLogo }} style={styles.leagueLogo} resizeMode="contain" />
               ) : (
-                <View style={[styles.leagueIconFallback, { backgroundColor: colors.surfaceSecondary }]}>
-                  <Trophy size={11} color={colors.textMuted} />
+                <View style={[styles.leagueIconFallback, { backgroundColor: sf.surfaceSecondary }]}>
+                  <Trophy size={11} color={sf.textMuted} />
                 </View>
               )}
-              <Text style={[styles.leagueName, { color: colors.textMuted }]} numberOfLines={1}>
+              <Text style={[styles.leagueName, { color: sf.textMuted }]} numberOfLines={1}>
                 {match.league}
               </Text>
               {(homeIsFavorite || awayIsFavorite) && (
-                <View style={[styles.favStarHeader, { backgroundColor: `${colors.warning}28` }]}>
-                  <Star size={9} color={colors.warning} fill={colors.warning} />
+                <View style={[styles.favStarHeader, { backgroundColor: `${sf.warning}28` }]}>
+                  <Star size={9} color={sf.warning} fill={sf.warning} />
                 </View>
               )}
             </View>
             
             {isLive ? (
               <View style={styles.liveIndicator}>
-                <LivePulse color={colors.live} size={6} />
-                <Text style={[styles.liveText, { color: colors.live }]}>LIVE</Text>
+                <LivePulse color={sf.live} size={6} />
+                <Text style={[styles.liveText, { color: sf.live }]}>LIVE</Text>
                 {match.elapsed ? (
-                  <Text style={[styles.elapsedText, { color: colors.live }]}>{match.elapsed}&apos;</Text>
+                  <Text style={[styles.elapsedText, { color: sf.live }]}>{match.elapsed}&apos;</Text>
                 ) : null}
               </View>
             ) : isCompleted ? (
-              <View style={[styles.statusBadge, { backgroundColor: `${colors.success}22` }]}>
-                <CheckCircle2 size={11} color={colors.success} />
-                <Text style={[styles.statusBadgeText, { color: colors.success }]}>FT</Text>
+              <View style={[styles.statusBadge, { backgroundColor: `${sf.success}22` }]}>
+                <CheckCircle2 size={11} color={sf.success} />
+                <Text style={[styles.statusBadgeText, { color: sf.success }]}>FT</Text>
               </View>
             ) : (
-              <View style={[styles.statusBadge, { backgroundColor: `${colors.primary}18` }]}>
-                <Clock size={11} color={colors.primary} />
-                <Text style={[styles.statusBadgeText, { color: colors.primary }]}>{getMatchTime()}</Text>
+              <View style={[styles.statusBadge, { backgroundColor: `${sf.primary}18` }]}>
+                <Clock size={11} color={sf.primary} />
+                <Text style={[styles.statusBadgeText, { color: sf.primary }]}>{getMatchTime()}</Text>
               </View>
             )}
           </View>
@@ -476,11 +602,11 @@ const PremiumMatchCard = React.memo(({
                 {match.homeTeamLogo ? (
                   <Image source={{ uri: match.homeTeamLogo }} style={styles.teamLogo} />
                 ) : (
-                  <Shield size={22} color={colors.textMuted} />
+                  <Shield size={22} color={sf.textMuted} />
                 )}
               <Text style={[
                 styles.teamNameHorizontal,
-                { color: colors.text },
+                { color: sf.text },
                 resultStyle?.home === 'loser' && { opacity: 0.5 },
               ]} numberOfLines={2}>
                 {match.homeTeam}
@@ -492,32 +618,32 @@ const PremiumMatchCard = React.memo(({
                 <View style={[
                   styles.scoreBlock,
                   isLive && styles.scoreBlockLive,
-                  { backgroundColor: colors.surfaceSecondary },
+                  { backgroundColor: sf.surfaceSecondary },
                 ]}>
                   <Text style={[
                     styles.scoreNum,
-                    { color: colors.text },
-                    isLive && { color: colors.live },
-                    resultStyle?.home === 'winner' && { color: colors.success },
+                    { color: sf.text },
+                    isLive && { color: sf.live },
+                    resultStyle?.home === 'winner' && { color: sf.success },
                   ]}>
                     {match.homeScore}
                   </Text>
                   <Text style={[
                     styles.scoreDash,
-                    { color: colors.border },
+                    { color: sf.border },
                   ]}>:</Text>
                   <Text style={[
                     styles.scoreNum,
-                    { color: colors.text },
-                    isLive && { color: colors.live },
-                    resultStyle?.away === 'winner' && { color: colors.success },
+                    { color: sf.text },
+                    isLive && { color: sf.live },
+                    resultStyle?.away === 'winner' && { color: sf.success },
                   ]}>
                     {match.awayScore}
                   </Text>
                 </View>
               ) : (
-                <View style={[styles.vsBlock, { backgroundColor: colors.surfaceSecondary }]}>
-                  <Text style={[styles.vsLabel, { color: colors.textMuted }]}>VS</Text>
+                <View style={[styles.vsBlock, { backgroundColor: sf.surfaceSecondary }]}>
+                  <Text style={[styles.vsLabel, { color: sf.textMuted }]}>VS</Text>
                 </View>
               )}
             </View>
@@ -525,7 +651,7 @@ const PremiumMatchCard = React.memo(({
             <View style={styles.teamRowRight}>
               <Text style={[
                 styles.teamNameHorizontal,
-                { color: colors.text, textAlign: 'right' as const },
+                { color: sf.text, textAlign: 'right' as const },
                 resultStyle?.away === 'loser' && { opacity: 0.5 },
               ]} numberOfLines={2}>
                 {match.awayTeam}
@@ -533,23 +659,23 @@ const PremiumMatchCard = React.memo(({
                 {match.awayTeamLogo ? (
                   <Image source={{ uri: match.awayTeamLogo }} style={styles.teamLogo} />
                 ) : (
-                  <Shield size={22} color={colors.textMuted} />
+                  <Shield size={22} color={sf.textMuted} />
                 )}
             </View>
           </View>
 
-          <View style={[styles.matchFooter, { borderTopColor: colors.border }]}>
+          <View style={[styles.matchFooter, { borderTopColor: sf.border }]}>
             <View style={styles.footerLeft}>
               {isPinned && (
                 <View style={styles.pinnedBadge}>
-                  <Pin size={10} color={colors.warning} />
-                  <Text style={[styles.pinnedText, { color: colors.warning }]}>Pinned</Text>
+                  <Pin size={10} color={sf.warning} />
+                  <Text style={[styles.pinnedText, { color: sf.warning }]}>Pinned</Text>
                 </View>
               )}
               {match.venue ? (
                 <View style={styles.venueRow}>
-                  <MapPin size={10} color={colors.textMuted} />
-                  <Text style={[styles.venueText, { color: colors.textMuted }]} numberOfLines={1}>
+                  <MapPin size={10} color={sf.textMuted} />
+                  <Text style={[styles.venueText, { color: sf.textMuted }]} numberOfLines={1}>
                     {match.venue}{match.venueCity ? `, ${match.venueCity}` : ''}
                   </Text>
                 </View>
@@ -559,7 +685,7 @@ const PremiumMatchCard = React.memo(({
               <TouchableOpacity
                 style={[
                   styles.bellBtn,
-                  { backgroundColor: isNotified ? `${colors.primary}22` : colors.surfaceSecondary },
+                  { backgroundColor: isNotified ? `${sf.primary}22` : sf.surfaceSecondary },
                 ]}
                 onPress={(e) => {
                   e.stopPropagation?.();
@@ -569,9 +695,9 @@ const PremiumMatchCard = React.memo(({
                 hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
               >
                 {isNotified ? (
-                  <Bell size={14} color={colors.primary} fill={colors.primary} />
+                  <Bell size={14} color={sf.primary} fill={sf.primary} />
                 ) : (
-                  <BellOff size={14} color={colors.textMuted} />
+                  <BellOff size={14} color={sf.textMuted} />
                 )}
               </TouchableOpacity>
             )}
@@ -603,7 +729,8 @@ const TabPill = React.memo(({
   onTabChange: (tab: string) => void;
   counts: Record<string, number>;
 }) => {
-  const { colors, isDark } = useTheme();
+  const { isDark } = useTheme();
+  const sf = sportsFixedPalette(isDark);
   const indicatorAnim = useRef(new Animated.Value(0)).current;
   const [containerWidth, setContainerWidth] = useState<number>(SCREEN_WIDTH - 40);
   const activeIndex = tabs.findIndex(t => t.key === activeTab);
@@ -625,7 +752,7 @@ const TabPill = React.memo(({
     onTabChange(tab);
   }, [onTabChange]);
   
-  const activeColor = tabs[activeIndex]?.color || colors.primary;
+  const activeColor = tabs[activeIndex]?.color || sf.primary;
   
   return (
     <View 
@@ -633,9 +760,9 @@ const TabPill = React.memo(({
       style={[
         styles.pillContainer, 
         { 
-          backgroundColor: colors.surfaceSecondary,
+          backgroundColor: sf.surfaceSecondary,
           borderWidth: 1,
-          borderColor: colors.border,
+          borderColor: sf.border,
         }
       ]}
     >
@@ -687,13 +814,13 @@ const TabPill = React.memo(({
             ]}>
               <Icon 
                 size={14} 
-                color={isActive ? tab.color : colors.textMuted} 
+                color={isActive ? tab.color : sf.textMuted} 
                 strokeWidth={isActive ? 2.8 : 2}
               />
             </View>
             <Text style={[
               styles.pillLabel, 
-              { color: isActive ? colors.text : colors.textMuted },
+              { color: isActive ? sf.text : sf.textMuted },
               isActive && { fontWeight: '700' as const, letterSpacing: -0.2 }
             ]}>
               {tab.label}
@@ -703,11 +830,11 @@ const TabPill = React.memo(({
                 styles.pillBadge,
                 isActive 
                   ? { backgroundColor: tab.color } 
-                  : { backgroundColor: colors.surfaceSecondary }
+                  : { backgroundColor: sf.surfaceSecondary }
               ]}>
                 <Text style={[
                   styles.pillBadgeText,
-                  { color: isActive ? colors.textInverse : colors.textMuted }
+                  { color: isActive ? sf.textInverse : sf.textMuted }
                 ]}>
                   {count}
                 </Text>
@@ -721,7 +848,8 @@ const TabPill = React.memo(({
 });
 
 const DateHeader = React.memo(({ date }: { date: string }) => {
-  const { colors } = useTheme();
+  const { isDark } = useTheme();
+  const sf = sportsFixedPalette(isDark);
   const formatDate = (dateStr: string) => {
     let d: Date;
     if (dateStr.includes('T')) {
@@ -744,11 +872,11 @@ const DateHeader = React.memo(({ date }: { date: string }) => {
   
   return (
     <View style={styles.dateHeader}>
-      <View style={[styles.dateLine, { backgroundColor: colors.border }]} />
-      <Text style={[styles.dateText, { color: colors.textMuted }]}>
+      <View style={[styles.dateLine, { backgroundColor: sf.border }]} />
+      <Text style={[styles.dateText, { color: sf.textMuted }]}>
         {formatDate(date)}
       </Text>
-      <View style={[styles.dateLine, { backgroundColor: colors.border }]} />
+      <View style={[styles.dateLine, { backgroundColor: sf.border }]} />
     </View>
   );
 });
@@ -764,7 +892,9 @@ const UFC_EMPTY_CONFIG = {
   results: { icon: Trophy, color: '#34C759', bg: ['#34C759', '#6FE08A'] as [string, string], title: 'No Recent Results', sub: 'No recent MMA results found. Pull down to refresh or check back later.' },
 };
 
-const UFCCountdown = React.memo(({ fight, isDark }: { fight: UFCFight; isDark: boolean }) => {
+const UFCCountdown = React.memo(({ fight }: { fight: UFCFight }) => {
+  const { isDark } = useTheme();
+  const sf = sportsFixedPalette(isDark);
   const [timeLeft, setTimeLeft] = useState({ days: 0, hours: 0, mins: 0 });
   const pulseAnim = useRef(new Animated.Value(1)).current;
 
@@ -798,7 +928,7 @@ const UFCCountdown = React.memo(({ fight, isDark }: { fight: UFCFight; isDark: b
   return (
     <Animated.View style={[ufcStyles.countdownCard, { transform: [{ scale: pulseAnim }] }]}>
       <LinearGradient
-        colors={['#1A0808', '#1C0A18', '#0F0A1E']}
+        colors={[...sf.ufcGradient]}
         start={{ x: 0, y: 0 }}
         end={{ x: 1, y: 1 }}
         style={ufcStyles.countdownGradient}
@@ -808,7 +938,7 @@ const UFCCountdown = React.memo(({ fight, isDark }: { fight: UFCFight; isDark: b
         <Text style={ufcStyles.countdownEvent} numberOfLines={1}>{fight.event}</Text>
         <View style={ufcStyles.countdownFighters}>
           <View style={ufcStyles.countdownFighterWrap}>
-            <View style={[ufcStyles.countdownAvatar, { backgroundColor: isDark ? '#1E1E3A' : '#2A2A4A' }]}>
+            <View style={[ufcStyles.countdownAvatar, { backgroundColor: sf.surfaceSecondary }]}>
               {fight.fighter1.photo ? (
                 <Image source={{ uri: fight.fighter1.photo }} style={ufcStyles.countdownAvatarImg} />
               ) : (
@@ -826,7 +956,7 @@ const UFCCountdown = React.memo(({ fight, isDark }: { fight: UFCFight; isDark: b
             </LinearGradient>
           </View>
           <View style={ufcStyles.countdownFighterWrap}>
-            <View style={[ufcStyles.countdownAvatar, { backgroundColor: isDark ? '#1E1E3A' : '#2A2A4A' }]}>
+            <View style={[ufcStyles.countdownAvatar, { backgroundColor: sf.surfaceSecondary }]}>
               {fight.fighter2.photo ? (
                 <Image source={{ uri: fight.fighter2.photo }} style={ufcStyles.countdownAvatarImg} />
               ) : (
@@ -867,7 +997,9 @@ const UFCCountdown = React.memo(({ fight, isDark }: { fight: UFCFight; isDark: b
   );
 });
 
-const UFCEventBanner = React.memo(({ eventName, fightCount, eventDate, isDark }: { eventName: string; fightCount: number; eventDate?: string; isDark: boolean }) => {
+const UFCEventBanner = React.memo(({ eventName, fightCount, eventDate }: { eventName: string; fightCount: number; eventDate?: string }) => {
+  const { isDark } = useTheme();
+  const sf = sportsFixedPalette(isDark);
   const slideAnim = useRef(new Animated.Value(-10)).current;
   const fadeAnim = useRef(new Animated.Value(0)).current;
 
@@ -892,7 +1024,7 @@ const UFCEventBanner = React.memo(({ eventName, fightCount, eventDate, isDark }:
   return (
     <Animated.View style={[ufcStyles.eventBanner, { opacity: fadeAnim, transform: [{ translateX: slideAnim }] }]}>
       <LinearGradient
-        colors={isDark ? ['#1A0A0A', '#1A1020', '#0D0D1A'] : ['#1A0505', '#2A1020', '#1A0A2A']}
+        colors={[...sf.ufcGradient]}
         start={{ x: 0, y: 0 }}
         end={{ x: 1, y: 1 }}
         style={ufcStyles.eventBannerGradient}
@@ -932,7 +1064,9 @@ const UFCEventBanner = React.memo(({ eventName, fightCount, eventDate, isDark }:
   );
 });
 
-const UFCFightCard = React.memo(({ fight, isDark, isFirst, isLast, onPress }: { fight: UFCFight; isDark: boolean; isFirst?: boolean; isLast?: boolean; onPress?: () => void }) => {
+const UFCFightCard = React.memo(({ fight, isFirst, isLast, onPress }: { fight: UFCFight; isFirst?: boolean; isLast?: boolean; onPress?: () => void }) => {
+  const { isDark } = useTheme();
+  const sf = sportsFixedPalette(isDark);
   const isCompleted = fight.status === 'Completed';
   const isLive = fight.status === 'Live';
   const scaleAnim = useRef(new Animated.Value(0.95)).current;
@@ -1014,14 +1148,14 @@ const UFCFightCard = React.memo(({ fight, isDark, isFirst, isLast, onPress }: { 
       <TouchableOpacity onPress={handlePress} activeOpacity={0.92}>
       <View style={[
         ufcStyles.fightCard,
-        { backgroundColor: isDark ? '#111125' : '#FFFFFF' },
-        isDark && { borderColor: 'rgba(212, 175, 55, 0.08)' },
-        isLive && { borderColor: 'rgba(255, 59, 48, 0.35)', borderWidth: 1.5 },
-        isLive && { shadowColor: '#FF3B30', shadowOpacity: 0.15, shadowRadius: 20 },
+        { backgroundColor: sf.card, borderWidth: 1 },
+        isLive
+          ? { borderColor: `${sf.live}55`, shadowColor: sf.live, shadowOpacity: 0.15, shadowRadius: 20 }
+          : { borderColor: `${sf.warning}22` },
       ]}>
         {isLive && (
           <LinearGradient
-            colors={['rgba(255, 59, 48, 0.08)', 'transparent']}
+            colors={[`${sf.live}14`, 'transparent']}
             start={{ x: 0, y: 0 }}
             end={{ x: 0, y: 1 }}
             style={ufcStyles.liveGlow}
@@ -1031,32 +1165,32 @@ const UFCFightCard = React.memo(({ fight, isDark, isFirst, isLast, onPress }: { 
         <View style={ufcStyles.fightHeader}>
           <View style={ufcStyles.fightEventRow}>
             {fight.category !== 'TBD' && (
-              <View style={[ufcStyles.weightBadge, { backgroundColor: isDark ? 'rgba(212, 175, 55, 0.12)' : 'rgba(184, 134, 11, 0.08)' }]}>
-                <Text style={[ufcStyles.weightBadgeText, { color: isDark ? '#D4AF37' : '#B8860B' }]}>
+              <View style={[ufcStyles.weightBadge, { backgroundColor: `${sf.warning}20` }]}>
+                <Text style={[ufcStyles.weightBadgeText, { color: sf.warning }]}>
                   {fight.category}
                 </Text>
               </View>
             )}
             {fight.event && (
-              <Text style={[ufcStyles.fightEventName, { color: isDark ? '#4A4A6A' : '#AEAEB2' }]} numberOfLines={1}>
+              <Text style={[ufcStyles.fightEventName, { color: sf.textMuted }]} numberOfLines={1}>
                 {fight.event}
               </Text>
             )}
           </View>
           {isLive ? (
             <View style={ufcStyles.fightLiveBadge}>
-              <LivePulse color="#FF3B30" size={6} />
-              <Text style={ufcStyles.fightLiveText}>LIVE</Text>
+              <LivePulse color={sf.live} size={6} />
+              <Text style={[ufcStyles.fightLiveText, { color: sf.live }]}>LIVE</Text>
             </View>
           ) : isCompleted ? (
-            <View style={[ufcStyles.fightStatusBadge, { backgroundColor: isDark ? '#0D2818' : '#ECFDF5' }]}>
-              <CheckCircle2 size={11} color="#10B981" />
-              <Text style={[ufcStyles.fightStatusText, { color: '#10B981' }]}>Final</Text>
+            <View style={[ufcStyles.fightStatusBadge, { backgroundColor: `${sf.success}18` }]}>
+              <CheckCircle2 size={11} color={sf.success} />
+              <Text style={[ufcStyles.fightStatusText, { color: sf.success }]}>Final</Text>
             </View>
           ) : (
-            <View style={[ufcStyles.fightStatusBadge, { backgroundColor: isDark ? '#1F1C0E' : '#FFFBEB' }]}>
-              <Clock size={11} color="#D4AF37" />
-              <Text style={[ufcStyles.fightStatusText, { color: '#D4AF37' }]}>{getFightTime()}</Text>
+            <View style={[ufcStyles.fightStatusBadge, { backgroundColor: `${sf.warning}14` }]}>
+              <Clock size={11} color={sf.warning} />
+              <Text style={[ufcStyles.fightStatusText, { color: sf.warning }]}>{getFightTime()}</Text>
             </View>
           )}
         </View>
@@ -1068,15 +1202,15 @@ const UFCFightCard = React.memo(({ fight, isDark, isFirst, isLast, onPress }: { 
               isCompleted && fight.fighter1.winner && { borderColor: '#10B981', borderWidth: 2 },
               isCompleted && !fight.fighter1.winner && fight.fighter2.winner && { opacity: 0.6 },
             ]}>
-              <View style={[ufcStyles.fighterAvatar, { backgroundColor: isDark ? '#1A1A35' : '#F0F0F5' }]}>
+              <View style={[ufcStyles.fighterAvatar, { backgroundColor: sf.surfaceSecondary }]}>
                 {fight.fighter1.photo ? (
                   <Image source={{ uri: fight.fighter1.photo }} style={ufcStyles.fighterPhoto} />
                 ) : (
                   <LinearGradient
-                    colors={isDark ? ['#1E1E3A', '#2A2A50'] : ['#E8E8F0', '#D8D8E0']}
+                    colors={[sf.surfaceSecondary, sf.backgroundTertiary]}
                     style={ufcStyles.fighterAvatarFallback}
                   >
-                    <Text style={[ufcStyles.fighterInitials, { color: isDark ? '#6B6B90' : '#8E8E93' }]}>
+                    <Text style={[ufcStyles.fighterInitials, { color: sf.textMuted }]}>
                       {getFighterInitial(fight.fighter1.name)}
                     </Text>
                   </LinearGradient>
@@ -1086,10 +1220,10 @@ const UFCFightCard = React.memo(({ fight, isDark, isFirst, isLast, onPress }: { 
             <Text
               style={[
                 ufcStyles.fighterName,
-                { color: isDark ? '#F0F0FA' : '#1C1C1E' },
-                isCompleted && fight.fighter1.winner && { color: '#10B981' },
+                { color: sf.text },
+                isCompleted && fight.fighter1.winner && { color: sf.success },
                 isCompleted && !fight.fighter1.winner && fight.fighter2.winner && { opacity: 0.5 },
-                fight.fighter1.name === 'TBA' && { color: isDark ? '#4A4A6A' : '#BEBEC4', fontStyle: 'italic' as const },
+                fight.fighter1.name === 'TBA' && { color: sf.textTertiary, fontStyle: 'italic' as const },
               ]}
               numberOfLines={2}
             >
@@ -1107,7 +1241,7 @@ const UFCFightCard = React.memo(({ fight, isDark, isFirst, isLast, onPress }: { 
             )}
             {isCompleted && !fight.fighter1.winner && fight.fighter2.winner && (
               <View style={ufcStyles.loserBadge}>
-                <Text style={[ufcStyles.loserBadgeText, { color: isDark ? '#5A5A7A' : '#AEAEB2' }]}>LOSS</Text>
+                <Text style={[ufcStyles.loserBadgeText, { color: sf.textSecondary }]}>LOSS</Text>
               </View>
             )}
           </View>
@@ -1115,14 +1249,14 @@ const UFCFightCard = React.memo(({ fight, isDark, isFirst, isLast, onPress }: { 
           <View style={ufcStyles.vsCenter}>
             <View style={ufcStyles.vsLine} />
             <LinearGradient
-              colors={isLive ? ['#FF3B30', '#CC2D26'] : isDark ? ['#1E1E3A', '#2A2A4A'] : ['#EAEAF0', '#E0E0E8']}
+              colors={isLive ? [sf.live, sf.error] : [sf.surfaceSecondary, sf.backgroundTertiary]}
               start={{ x: 0, y: 0 }}
               end={{ x: 1, y: 1 }}
               style={ufcStyles.vsCircle}
             >
               <Text style={[
                 ufcStyles.vsText,
-                { color: isLive ? '#FFF' : (isDark ? '#6B6B85' : '#AEAEB2') },
+                { color: isLive ? sf.textInverse : sf.textMuted },
               ]}>VS</Text>
             </LinearGradient>
             <View style={ufcStyles.vsLine} />
@@ -1134,15 +1268,15 @@ const UFCFightCard = React.memo(({ fight, isDark, isFirst, isLast, onPress }: { 
               isCompleted && fight.fighter2.winner && { borderColor: '#10B981', borderWidth: 2 },
               isCompleted && !fight.fighter2.winner && fight.fighter1.winner && { opacity: 0.6 },
             ]}>
-              <View style={[ufcStyles.fighterAvatar, { backgroundColor: isDark ? '#1A1A35' : '#F0F0F5' }]}>
+              <View style={[ufcStyles.fighterAvatar, { backgroundColor: sf.surfaceSecondary }]}>
                 {fight.fighter2.photo ? (
                   <Image source={{ uri: fight.fighter2.photo }} style={ufcStyles.fighterPhoto} />
                 ) : (
                   <LinearGradient
-                    colors={isDark ? ['#1E1E3A', '#2A2A50'] : ['#E8E8F0', '#D8D8E0']}
+                    colors={[sf.surfaceSecondary, sf.backgroundTertiary]}
                     style={ufcStyles.fighterAvatarFallback}
                   >
-                    <Text style={[ufcStyles.fighterInitials, { color: isDark ? '#6B6B90' : '#8E8E93' }]}>
+                    <Text style={[ufcStyles.fighterInitials, { color: sf.textMuted }]}>
                       {getFighterInitial(fight.fighter2.name)}
                     </Text>
                   </LinearGradient>
@@ -1152,10 +1286,10 @@ const UFCFightCard = React.memo(({ fight, isDark, isFirst, isLast, onPress }: { 
             <Text
               style={[
                 ufcStyles.fighterName,
-                { color: isDark ? '#F0F0FA' : '#1C1C1E' },
-                isCompleted && fight.fighter2.winner && { color: '#10B981' },
+                { color: sf.text },
+                isCompleted && fight.fighter2.winner && { color: sf.success },
                 isCompleted && !fight.fighter2.winner && fight.fighter1.winner && { opacity: 0.5 },
-                fight.fighter2.name === 'TBA' && { color: isDark ? '#4A4A6A' : '#BEBEC4', fontStyle: 'italic' as const },
+                fight.fighter2.name === 'TBA' && { color: sf.textTertiary, fontStyle: 'italic' as const },
               ]}
               numberOfLines={2}
             >
@@ -1173,28 +1307,28 @@ const UFCFightCard = React.memo(({ fight, isDark, isFirst, isLast, onPress }: { 
             )}
             {isCompleted && !fight.fighter2.winner && fight.fighter1.winner && (
               <View style={ufcStyles.loserBadge}>
-                <Text style={[ufcStyles.loserBadgeText, { color: isDark ? '#5A5A7A' : '#AEAEB2' }]}>LOSS</Text>
+                <Text style={[ufcStyles.loserBadgeText, { color: sf.textSecondary }]}>LOSS</Text>
               </View>
             )}
           </View>
         </View>
 
         {isCompleted && fight.result?.method && (
-          <View style={[ufcStyles.resultRow, { borderTopColor: isDark ? '#1A1A32' : '#F0F0F5' }]}>
-            <View style={[ufcStyles.resultMethodContainer, { backgroundColor: isDark ? 'rgba(212,175,55,0.06)' : 'rgba(184,134,11,0.04)' }]}>
+          <View style={[ufcStyles.resultRow, { borderTopColor: sf.border }]}>
+            <View style={[ufcStyles.resultMethodContainer, { backgroundColor: `${sf.warning}10` }]}>
               <Text style={[ufcStyles.resultMethodEmoji, { color: getMethodColor(fight.result.method) }]}>{getMethodIcon(fight.result.method)}</Text>
               <Text style={[ufcStyles.resultMethod, { color: getMethodColor(fight.result.method) }]}>
                 {fight.result.method}
               </Text>
               {fight.result.round ? (
-                <View style={[ufcStyles.resultDetailChip, { backgroundColor: isDark ? '#1A1A32' : '#F0F0F5' }]}>
-                  <Text style={[ufcStyles.resultDetailText, { color: isDark ? '#8B8BA7' : '#6B7A99' }]}>R{fight.result.round}</Text>
+                <View style={[ufcStyles.resultDetailChip, { backgroundColor: sf.surfaceSecondary }]}>
+                  <Text style={[ufcStyles.resultDetailText, { color: sf.textSecondary }]}>R{fight.result.round}</Text>
                 </View>
               ) : null}
               {fight.result.time ? (
-                <View style={[ufcStyles.resultDetailChip, { backgroundColor: isDark ? '#1A1A32' : '#F0F0F5' }]}>
-                  <Clock size={9} color={isDark ? '#6B6B85' : '#8E8E93'} />
-                  <Text style={[ufcStyles.resultDetailText, { color: isDark ? '#8B8BA7' : '#6B7A99' }]}>{fight.result.time}</Text>
+                <View style={[ufcStyles.resultDetailChip, { backgroundColor: sf.surfaceSecondary }]}>
+                  <Clock size={9} color={sf.textMuted} />
+                  <Text style={[ufcStyles.resultDetailText, { color: sf.textSecondary }]}>{fight.result.time}</Text>
                 </View>
               ) : null}
             </View>
@@ -1202,32 +1336,32 @@ const UFCFightCard = React.memo(({ fight, isDark, isFirst, isLast, onPress }: { 
         )}
 
         {!isCompleted && !isLive && (
-          <View style={[ufcStyles.upcomingFooter, { borderTopColor: isDark ? '#1A1A32' : '#F0F0F5' }]}>
+          <View style={[ufcStyles.upcomingFooter, { borderTopColor: sf.border }]}>
             <View style={ufcStyles.upcomingFooterRow}>
-              <Calendar size={11} color={isDark ? '#5A5A7A' : '#AEAEB2'} />
-              <Text style={[ufcStyles.upcomingFooterText, { color: isDark ? '#5A5A7A' : '#AEAEB2' }]}>
+              <Calendar size={11} color={sf.textMuted} />
+              <Text style={[ufcStyles.upcomingFooterText, { color: sf.textMuted }]}>
                 {new Date(fight.date).toLocaleDateString('en-GB', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' })}
               </Text>
             </View>
             <View style={ufcStyles.upcomingFooterRight}>
               {fight.time ? (
                 <View style={ufcStyles.upcomingFooterRow}>
-                  <Clock size={11} color={isDark ? '#5A5A7A' : '#AEAEB2'} />
-                  <Text style={[ufcStyles.upcomingFooterText, { color: isDark ? '#5A5A7A' : '#AEAEB2' }]}>
+                  <Clock size={11} color={sf.textMuted} />
+                  <Text style={[ufcStyles.upcomingFooterText, { color: sf.textMuted }]}>
                     {fight.time}
                   </Text>
                 </View>
               ) : null}
-              <View style={[ufcStyles.daysAwayBadge, { backgroundColor: isDark ? 'rgba(212,175,55,0.1)' : 'rgba(184,134,11,0.06)' }]}>
-                <Text style={[ufcStyles.daysAwayText, { color: '#D4AF37' }]}>{getDaysUntil()}</Text>
+              <View style={[ufcStyles.daysAwayBadge, { backgroundColor: `${sf.warning}18` }]}>
+                <Text style={[ufcStyles.daysAwayText, { color: sf.warning }]}>{getDaysUntil()}</Text>
               </View>
             </View>
           </View>
         )}
 
         <View style={ufcStyles.tapHintRow}>
-          <ChevronRight size={12} color={isDark ? '#3A3A5A' : '#C0C0CC'} />
-          <Text style={[ufcStyles.tapHintText, { color: isDark ? '#3A3A5A' : '#C0C0CC' }]}>Tap for details</Text>
+          <ChevronRight size={12} color={sf.textMuted} />
+          <Text style={[ufcStyles.tapHintText, { color: sf.textMuted }]}>Tap for details</Text>
         </View>
       </View>
       </TouchableOpacity>
@@ -1235,16 +1369,17 @@ const UFCFightCard = React.memo(({ fight, isDark, isFirst, isLast, onPress }: { 
   );
 });
 
-const EmptyState = React.memo(({ type, isDark }: { type: 'live' | 'upcoming' | 'results'; isDark: boolean }) => {
+const EmptyState = React.memo(({ type }: { type: 'live' | 'upcoming' | 'results' }) => {
+  const { colors } = useTheme();
   const { icon: Icon, bg, title, sub } = EMPTY_CONFIG[type];
   
   return (
     <View style={styles.emptyState}>
       <LinearGradient colors={bg} start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }} style={styles.emptyIconCircle}>
-        <Icon size={28} color="#FFFFFF" strokeWidth={2} />
+        <Icon size={28} color={colors.textInverse} strokeWidth={2} />
       </LinearGradient>
-      <Text style={[styles.emptyTitle, { color: isDark ? '#E4E4ED' : '#1C1C1E' }]}>{title}</Text>
-      <Text style={[styles.emptySub, { color: isDark ? '#6B6B85' : '#8E8E93' }]}>{sub}</Text>
+      <Text style={[styles.emptyTitle, { color: colors.text }]}>{title}</Text>
+      <Text style={[styles.emptySub, { color: colors.textSecondary }]}>{sub}</Text>
     </View>
   );
 });
@@ -1252,7 +1387,8 @@ const EmptyState = React.memo(({ type, isDark }: { type: 'live' | 'upcoming' | '
 export default function SportsScreen() {
   const insets = useSafeAreaInsets();
   const { isFavoriteTeam, profile } = useUserProfile();
-  const { colors: _colors, isDark } = useTheme();
+  const { colors, isDark } = useTheme();
+  const sf = sportsFixedPalette(isDark);
   const [refreshing, setRefreshing] = useState(false);
   const [sportMode, setSportMode] = useState<SportMode>('football');
   const [activeTab, setActiveTab] = useState<'live' | 'upcoming' | 'results'>('upcoming');
@@ -1554,22 +1690,20 @@ export default function SportsScreen() {
 
   const renderFlatListItem = useCallback(({ item }: { item: FlatListItem }) => {
     if (item.type === 'date') {
-      return <DateHeader date={item.date} isDark={isDark} />;
+      return <DateHeader date={item.date} />;
     }
     const match = item.match;
     return (
       <PremiumMatchCard
         match={match}
         isFavoriteTeam={isFavoriteTeam}
-        index={0}
-        isDark={isDark}
         isNotified={notifiedMatches.has(match.id)}
         onToggleNotification={toggleMatchNotification}
         isPinned={isFavoriteTeam(match.homeTeam) || isFavoriteTeam(match.awayTeam)}
         onPress={() => handleMatchCardPress(match)}
       />
     );
-  }, [isDark, isFavoriteTeam, notifiedMatches, toggleMatchNotification, handleMatchCardPress]);
+  }, [isFavoriteTeam, notifiedMatches, toggleMatchNotification, handleMatchCardPress]);
 
   const flatListKeyExtractor = useCallback((item: FlatListItem) => item.key, []);
 
@@ -1666,15 +1800,15 @@ export default function SportsScreen() {
     if (item.type === 'countdown') {
       return (
         <TouchableOpacity activeOpacity={0.92} onPress={() => handleFightCardPress(item.fight)}>
-          <UFCCountdown fight={item.fight} isDark={isDark} />
+          <UFCCountdown fight={item.fight} />
         </TouchableOpacity>
       );
     }
     if (item.type === 'event') {
-      return <UFCEventBanner eventName={item.event} fightCount={item.fightCount} eventDate={item.eventDate} isDark={isDark} />;
+      return <UFCEventBanner eventName={item.event} fightCount={item.fightCount} eventDate={item.eventDate} />;
     }
-    return <UFCFightCard fight={item.fight} isDark={isDark} isFirst={item.isFirst} isLast={item.isLast} onPress={() => handleFightCardPress(item.fight)} />;
-  }, [isDark, handleFightCardPress]);
+    return <UFCFightCard fight={item.fight} isFirst={item.isFirst} isLast={item.isLast} onPress={() => handleFightCardPress(item.fight)} />;
+  }, [handleFightCardPress]);
 
   const ufcFlatListKeyExtractor = useCallback((item: UFCFlatListItem) => item.key, []);
 
@@ -1750,11 +1884,14 @@ export default function SportsScreen() {
     return candidate ? String(candidate).slice(0, 220) : null;
   }, [footballBundleQuery.error?.message, footballBundleQuery.data?.live?.errors, footballBundleQuery.data?.upcoming?.errors]);
 
-  const tabs = [
-    { key: 'live', label: 'Live', icon: Flame, color: '#FF3B30' },
-    { key: 'upcoming', label: 'Upcoming', icon: Calendar, color: '#007AFF' },
-    { key: 'results', label: 'Results', icon: Trophy, color: '#34C759' },
-  ];
+  const tabs = useMemo(
+    () => [
+      { key: 'live', label: 'Live', icon: Flame, color: '#FF3B30' },
+      { key: 'upcoming', label: 'Upcoming', icon: Calendar, color: '#007AFF' },
+      { key: 'results', label: 'Results', icon: Trophy, color: '#34C759' },
+    ],
+    [],
+  );
 
   const counts: Record<string, number> = {
     live: filteredLiveMatches.length,
@@ -1765,10 +1902,13 @@ export default function SportsScreen() {
 
   const hasTeams = teamApiIds.length > 0 || nationalTeamApiIds.length > 0;
 
-  const ufcTabs = [
-    { key: 'upcoming', label: 'Upcoming', icon: Calendar, color: '#D4AF37' },
-    { key: 'results', label: 'Results', icon: Trophy, color: '#34C759' },
-  ];
+  const ufcTabs = useMemo(
+    () => [
+      { key: 'upcoming', label: 'Upcoming', icon: Calendar, color: '#D4AF37' },
+      { key: 'results', label: 'Results', icon: Trophy, color: '#34C759' },
+    ],
+    [],
+  );
 
   const ufcCounts: Record<string, number> = {
     upcoming: ufcUpcomingFights.length,
@@ -1789,9 +1929,9 @@ export default function SportsScreen() {
               >
                 <LivePulse color="#FFFFFF" size={7} />
               </LinearGradient>
-              <Text style={[styles.tickerTitle, { color: isDark ? '#FFFFFF' : '#1C1C1E' }]}>Live Now</Text>
-              <View style={[styles.tickerCountBadge, { backgroundColor: isDark ? 'rgba(255,59,48,0.14)' : 'rgba(255,59,48,0.08)' }]}>
-                <Text style={styles.tickerCountText}>{filteredLiveMatches.length}</Text>
+              <Text style={[styles.tickerTitle, { color: sf.text }]}>Live Now</Text>
+              <View style={[styles.tickerCountBadge, { backgroundColor: 'rgba(255,59,48,0.12)' }]}>
+                <Text style={[styles.tickerCountText, { color: sf.live }]}>{filteredLiveMatches.length}</Text>
               </View>
             </View>
             <TouchableOpacity
@@ -1799,8 +1939,8 @@ export default function SportsScreen() {
               activeOpacity={0.7}
               style={styles.tickerSeeAllBtn}
             >
-              <Text style={styles.tickerSeeAll}>See All</Text>
-              <ChevronRight size={14} color="#007AFF" />
+              <Text style={[styles.tickerSeeAll, { color: sf.primary }]}>See All</Text>
+              <ChevronRight size={14} color={sf.primary} />
             </TouchableOpacity>
           </View>
           <FlatList
@@ -1828,7 +1968,6 @@ export default function SportsScreen() {
           activeTab={activeTab}
           onTabChange={(tab) => setActiveTab(tab as 'live' | 'upcoming' | 'results')}
           counts={counts}
-          isDark={isDark}
         />
       </View>
       <View style={styles.filterArea}>
@@ -1847,7 +1986,7 @@ export default function SportsScreen() {
           <TouchableOpacity
             style={[
               styles.standingsBtn,
-              { backgroundColor: isDark ? 'rgba(52, 199, 89, 0.12)' : 'rgba(52, 199, 89, 0.08)' },
+              { backgroundColor: 'rgba(52, 199, 89, 0.12)' },
               availableLeaguesForStandings.length === 0 && { opacity: 0.3 },
             ]}
             onPress={handleLeagueTablesPress}
@@ -1863,7 +2002,7 @@ export default function SportsScreen() {
   );
 
   return (
-    <View style={[styles.container, { backgroundColor: isDark ? '#0D0D1A' : '#F2F2F7' }]}>
+    <View style={[styles.container, { backgroundColor: colors.background }]}>
       <TabWalkthrough tabName="sports" />
       <StatusBar barStyle={isDark ? "light-content" : "dark-content"} />
 
@@ -1878,21 +2017,7 @@ export default function SportsScreen() {
         }
       ]}>
         <LinearGradient
-          colors={isDark 
-            ? (sportMode === 'football' 
-              ? ['#0A1A0F', '#0D1A14', '#0D0D1A'] 
-              : sportMode === 'f1'
-                ? ['#1A0505', '#180A0A', '#0D0D1A']
-                : sportMode === 'nba'
-                  ? ['#0A0A1E', '#0D1225', '#0D0D1A']
-                  : ['#1A0A08', '#1A0D10', '#0D0D1A'])
-            : (sportMode === 'football'
-              ? ['#E8F5EC', '#F0F5F2', '#F2F2F7']
-              : sportMode === 'f1'
-                ? ['#F5E8E8', '#F5F0F0', '#F2F2F7']
-                : sportMode === 'nba'
-                  ? ['#E8EEF5', '#F0F2F5', '#F2F2F7']
-                  : ['#F5EDE8', '#F5F0EC', '#F2F2F7'])}
+          colors={getSportsMainHeaderGradient(sportMode, isDark)}
           start={{ x: 0, y: 0 }}
           end={{ x: 1, y: 1 }}
           style={styles.headerGradient}
@@ -1902,7 +2027,7 @@ export default function SportsScreen() {
               <Text style={[styles.headerTitle, { color: isDark ? '#FFFFFF' : '#1C1C1E' }]}>
                 {sportMode === 'football' ? 'Football' : sportMode === 'f1' ? 'Formula 1' : sportMode === 'nba' ? 'NBA' : 'UFC'}
               </Text>
-              <Text style={[styles.headerSubtitle, { color: isDark ? '#6B6B85' : '#8E8E93' }]}>
+              <Text style={[styles.headerSubtitle, { color: isDark ? '#8E8E93' : '#6B6B85' }]}>
                 {sportMode === 'football'
                   ? (filteredLiveMatches.length > 0 
                       ? `${filteredLiveMatches.length} live now`
@@ -1922,7 +2047,7 @@ export default function SportsScreen() {
               onPress={onRefresh}
               activeOpacity={0.7}
             >
-              <RefreshCw size={16} color={isDark ? '#7B7B95' : '#8E8E93'} />
+              <RefreshCw size={16} color={isDark ? '#8E8E93' : '#8E8E93'} />
             </TouchableOpacity>
           </View>
 
@@ -1930,7 +2055,7 @@ export default function SportsScreen() {
           <View style={sportToggleStyles.container}>
             <View style={[
               sportToggleStyles.track,
-              { backgroundColor: isDark ? 'rgba(255,255,255,0.04)' : 'rgba(0,0,0,0.04)' },
+              { backgroundColor: sf.surfaceSecondary, borderWidth: 1, borderColor: sf.border },
             ]}>
               {enabledSports.includes('football') && (
               <TouchableOpacity
@@ -1938,9 +2063,9 @@ export default function SportsScreen() {
                   sportToggleStyles.option,
                   sportMode === 'football' && sportToggleStyles.optionActive,
                   sportMode === 'football' && {
-                    backgroundColor: isDark ? 'rgba(46, 204, 113, 0.12)' : '#FFFFFF',
-                    shadowColor: isDark ? '#2ECC71' : '#000',
-                    shadowOpacity: isDark ? 0.2 : 0.06,
+                    backgroundColor: 'rgba(46, 204, 113, 0.18)',
+                    shadowColor: sf.shadow,
+                    shadowOpacity: isDark ? 0.22 : 0.1,
                     shadowRadius: 8,
                     shadowOffset: { width: 0, height: 2 },
                     elevation: 3,
@@ -1949,13 +2074,10 @@ export default function SportsScreen() {
                 onPress={() => handleSportModeChange('football')}
                 activeOpacity={0.7}
               >
-                <Trophy size={15} color={sportMode === 'football' ? (isDark ? '#2ECC71' : '#1B6B34') : (isDark ? '#555570' : '#AEAEB2')} />
+                <Trophy size={15} color={sportMode === 'football' ? (isDark ? '#32D74B' : '#1B6B34') : (isDark ? '#8E8E93' : '#AEAEB2')} />
                 <Text style={[
                   sportToggleStyles.optionLabel,
-                  { color: sportMode === 'football'
-                    ? (isDark ? '#2ECC71' : '#1B6B34')
-                    : (isDark ? '#555570' : '#AEAEB2')
-                  },
+                  { color: sportMode === 'football' ? (isDark ? '#32D74B' : '#1B6B34') : (isDark ? '#8E8E93' : '#AEAEB2') },
                   sportMode === 'football' && { fontWeight: '700' as const },
                 ]}>Football</Text>
               </TouchableOpacity>
@@ -1966,9 +2088,9 @@ export default function SportsScreen() {
                   sportToggleStyles.option,
                   sportMode === 'ufc' && sportToggleStyles.optionActive,
                   sportMode === 'ufc' && {
-                    backgroundColor: isDark ? 'rgba(212, 175, 55, 0.12)' : '#FFFFFF',
-                    shadowColor: isDark ? '#D4AF37' : '#000',
-                    shadowOpacity: isDark ? 0.2 : 0.06,
+                    backgroundColor: 'rgba(212, 175, 55, 0.18)',
+                    shadowColor: sf.shadow,
+                    shadowOpacity: isDark ? 0.22 : 0.1,
                     shadowRadius: 8,
                     shadowOffset: { width: 0, height: 2 },
                     elevation: 3,
@@ -1977,13 +2099,10 @@ export default function SportsScreen() {
                 onPress={() => handleSportModeChange('ufc')}
                 activeOpacity={0.7}
               >
-                <Swords size={15} color={sportMode === 'ufc' ? (isDark ? '#D4AF37' : '#8B0000') : (isDark ? '#555570' : '#AEAEB2')} />
+                <Swords size={15} color={sportMode === 'ufc' ? (isDark ? '#FFD60A' : '#8B0000') : (isDark ? '#8E8E93' : '#AEAEB2')} />
                 <Text style={[
                   sportToggleStyles.optionLabel,
-                  { color: sportMode === 'ufc'
-                    ? (isDark ? '#D4AF37' : '#8B0000')
-                    : (isDark ? '#555570' : '#AEAEB2')
-                  },
+                  { color: sportMode === 'ufc' ? (isDark ? '#FFD60A' : '#8B0000') : (isDark ? '#8E8E93' : '#AEAEB2') },
                   sportMode === 'ufc' && { fontWeight: '700' as const },
                 ]}>UFC</Text>
               </TouchableOpacity>
@@ -1994,9 +2113,9 @@ export default function SportsScreen() {
                   sportToggleStyles.option,
                   sportMode === 'f1' && sportToggleStyles.optionActive,
                   sportMode === 'f1' && {
-                    backgroundColor: isDark ? 'rgba(225, 6, 0, 0.12)' : '#FFFFFF',
-                    shadowColor: isDark ? '#E10600' : '#000',
-                    shadowOpacity: isDark ? 0.2 : 0.06,
+                    backgroundColor: 'rgba(225, 6, 0, 0.18)',
+                    shadowColor: sf.shadow,
+                    shadowOpacity: isDark ? 0.22 : 0.1,
                     shadowRadius: 8,
                     shadowOffset: { width: 0, height: 2 },
                     elevation: 3,
@@ -2005,13 +2124,10 @@ export default function SportsScreen() {
                 onPress={() => handleSportModeChange('f1')}
                 activeOpacity={0.7}
               >
-                <Flag size={15} color={sportMode === 'f1' ? (isDark ? '#E10600' : '#B80000') : (isDark ? '#555570' : '#AEAEB2')} />
+                <Flag size={15} color={sportMode === 'f1' ? (isDark ? '#FF453A' : '#B80000') : (isDark ? '#8E8E93' : '#AEAEB2')} />
                 <Text style={[
                   sportToggleStyles.optionLabel,
-                  { color: sportMode === 'f1'
-                    ? (isDark ? '#E10600' : '#B80000')
-                    : (isDark ? '#555570' : '#AEAEB2')
-                  },
+                  { color: sportMode === 'f1' ? (isDark ? '#FF453A' : '#B80000') : (isDark ? '#8E8E93' : '#AEAEB2') },
                   sportMode === 'f1' && { fontWeight: '700' as const },
                 ]}>F1</Text>
               </TouchableOpacity>
@@ -2022,9 +2138,9 @@ export default function SportsScreen() {
                   sportToggleStyles.option,
                   sportMode === 'nba' && sportToggleStyles.optionActive,
                   sportMode === 'nba' && {
-                    backgroundColor: isDark ? 'rgba(29, 66, 138, 0.12)' : '#FFFFFF',
-                    shadowColor: isDark ? '#1D428A' : '#000',
-                    shadowOpacity: isDark ? 0.2 : 0.06,
+                    backgroundColor: 'rgba(0, 122, 255, 0.18)',
+                    shadowColor: sf.shadow,
+                    shadowOpacity: isDark ? 0.22 : 0.1,
                     shadowRadius: 8,
                     shadowOffset: { width: 0, height: 2 },
                     elevation: 3,
@@ -2033,13 +2149,10 @@ export default function SportsScreen() {
                 onPress={() => handleSportModeChange('nba')}
                 activeOpacity={0.7}
               >
-                <Trophy size={15} color={sportMode === 'nba' ? (isDark ? '#F26522' : '#1D428A') : (isDark ? '#555570' : '#AEAEB2')} />
+                <Trophy size={15} color={sportMode === 'nba' ? (isDark ? '#0A84FF' : '#1D428A') : (isDark ? '#8E8E93' : '#AEAEB2')} />
                 <Text style={[
                   sportToggleStyles.optionLabel,
-                  { color: sportMode === 'nba'
-                    ? (isDark ? '#F26522' : '#1D428A')
-                    : (isDark ? '#555570' : '#AEAEB2')
-                  },
+                  { color: sportMode === 'nba' ? (isDark ? '#0A84FF' : '#1D428A') : (isDark ? '#8E8E93' : '#AEAEB2') },
                   sportMode === 'nba' && { fontWeight: '700' as const },
                 ]}>NBA</Text>
               </TouchableOpacity>
@@ -2058,7 +2171,6 @@ export default function SportsScreen() {
             activeTab={ufcTab}
             onTabChange={(tab) => setUfcTab(tab as 'upcoming' | 'results')}
             counts={ufcCounts}
-            isDark={isDark}
           />
         </View>
       )}
@@ -2074,21 +2186,21 @@ export default function SportsScreen() {
           contentContainerStyle={[styles.scrollContent, { paddingBottom: insets.bottom + 100 }]}
           showsVerticalScrollIndicator={false}
           refreshControl={
-            <RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor="#007AFF" colors={['#007AFF']} />
+            <RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={colors.primary} colors={[colors.primary]} />
           }
         >
           {footballHeader}
           <View style={styles.setupPrompt}>
             <LinearGradient
-              colors={['#1B6B34', '#2ECC71']}
+              colors={[colors.success, colors.successLight]}
               start={{ x: 0, y: 0 }}
               end={{ x: 1, y: 1 }}
               style={styles.setupIconCircle}
             >
-              <Shield size={32} color="#FFFFFF" />
+              <Shield size={32} color={colors.textInverse} />
             </LinearGradient>
-            <Text style={[styles.setupTitle, { color: isDark ? '#FFFFFF' : '#1C1C1E' }]}>Follow Your Teams</Text>
-            <Text style={[styles.setupSub, { color: isDark ? '#6B6B85' : '#8E8E93' }]}>
+            <Text style={[styles.setupTitle, { color: colors.text }]}>Follow Your Teams</Text>
+            <Text style={[styles.setupSub, { color: colors.textSecondary }]}>
               Add your favourite clubs and national teams to see live scores, upcoming fixtures, and results
             </Text>
             <TouchableOpacity
@@ -2097,12 +2209,12 @@ export default function SportsScreen() {
               activeOpacity={0.85}
             >
               <LinearGradient
-                colors={['#1B6B34', '#2ECC71']}
+                colors={[colors.success, colors.successLight]}
                 start={{ x: 0, y: 0 }}
                 end={{ x: 1, y: 0 }}
                 style={styles.setupBtnGradient}
               >
-                <Heart size={16} color="#FFFFFF" />
+                <Heart size={16} color={colors.textInverse} />
                 <Text style={styles.setupBtnText}>Set Up Teams</Text>
               </LinearGradient>
             </TouchableOpacity>
@@ -2111,37 +2223,37 @@ export default function SportsScreen() {
       ) : isLoading ? (
         <View style={styles.loadingContainer}>
           <View style={styles.loadingPulse}>
-            <ActivityIndicator size="large" color="#007AFF" />
+            <ActivityIndicator size="large" color={colors.primary} />
           </View>
-          <Text style={[styles.loadingText, { color: isDark ? '#6B6B85' : '#8E8E93' }]}>Loading matches...</Text>
+          <Text style={[styles.loadingText, { color: colors.textSecondary }]}>Loading matches...</Text>
         </View>
       ) : hasConfigError ? (
         <View style={styles.errorContainer}>
-          <View style={[styles.errorIcon, { backgroundColor: isDark ? '#2A1A1A' : '#FFF5F5' }]}>
-            <AlertCircle size={28} color="#FF9500" strokeWidth={2} />
+          <View style={[styles.errorIcon, { backgroundColor: colors.errorLight }]}>
+            <AlertCircle size={28} color={colors.warning} strokeWidth={2} />
           </View>
-          <Text style={[styles.errorTitle, { color: isDark ? '#FFFFFF' : '#1C1C1E' }]}>API Configuration Required</Text>
-          <Text style={[styles.errorSub, { color: isDark ? '#6B6B85' : '#8E8E93' }]}>
+          <Text style={[styles.errorTitle, { color: colors.text }]}>API Configuration Required</Text>
+          <Text style={[styles.errorSub, { color: colors.textSecondary }]}>
             Football API key is not configured on the server
           </Text>
         </View>
       ) : hasError ? (
         <View style={styles.errorContainer}>
-          <View style={[styles.errorIcon, { backgroundColor: isDark ? '#2A1A1A' : '#FFF5F5' }]}>
-            <AlertCircle size={28} color="#FF3B30" strokeWidth={2} />
+          <View style={[styles.errorIcon, { backgroundColor: colors.errorLight }]}>
+            <AlertCircle size={28} color={colors.error} strokeWidth={2} />
           </View>
-          <Text style={[styles.errorTitle, { color: isDark ? '#FFFFFF' : '#1C1C1E' }]}>Unable to Load</Text>
-          <Text style={[styles.errorSub, { color: isDark ? '#6B6B85' : '#8E8E93' }]}>
+          <Text style={[styles.errorTitle, { color: colors.text }]}>Unable to Load</Text>
+          <Text style={[styles.errorSub, { color: colors.textSecondary }]}>
             Please check your connection and try again
           </Text>
           {sportMode === 'football' && footballErrorDetail ? (
-            <Text style={[styles.errorDetail, { color: isDark ? '#9CA3AF' : '#6B7280' }]}>
+            <Text style={[styles.errorDetail, { color: colors.textTertiary }]}>
               {footballErrorDetail}
             </Text>
           ) : null}
           <TouchableOpacity style={styles.retryBtn} onPress={onRefresh} activeOpacity={0.85}>
-            <RefreshCw size={16} color="#007AFF" />
-            <Text style={styles.retryBtnText}>Try Again</Text>
+            <RefreshCw size={16} color={colors.primary} />
+            <Text style={[styles.retryBtnText, { color: colors.primary }]}>Try Again</Text>
           </TouchableOpacity>
         </View>
       ) : sportMode === 'football' && displayMatches.length === 0 && !isLoading ? (
@@ -2150,11 +2262,11 @@ export default function SportsScreen() {
           contentContainerStyle={[styles.scrollContent, { paddingBottom: insets.bottom + 100 }]}
           showsVerticalScrollIndicator={false}
           refreshControl={
-            <RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor="#007AFF" colors={['#007AFF']} />
+            <RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={colors.primary} colors={[colors.primary]} />
           }
         >
           {footballHeader}
-          <EmptyState type={activeTab} isDark={isDark} />
+          <EmptyState type={activeTab} />
         </ScrollView>
       ) : sportMode === 'football' && !isLoading ? (
         <FlatList
@@ -2170,38 +2282,38 @@ export default function SportsScreen() {
           windowSize={5}
           removeClippedSubviews={Platform.OS !== 'web'}
           refreshControl={
-            <RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor="#007AFF" colors={['#007AFF']} />
+            <RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={colors.primary} colors={[colors.primary]} />
           }
         />
       ) : sportMode === 'ufc' && isLoading ? (
         <View style={styles.loadingContainer}>
           <View style={styles.loadingPulse}>
-            <ActivityIndicator size="large" color="#D4AF37" />
+            <ActivityIndicator size="large" color={colors.warning} />
           </View>
-          <Text style={[styles.loadingText, { color: isDark ? '#6B6B85' : '#8E8E93' }]}>Loading fights...</Text>
+          <Text style={[styles.loadingText, { color: colors.textSecondary }]}>Loading fights...</Text>
         </View>
       ) : sportMode === 'ufc' && hasConfigError ? (
         <View style={styles.errorContainer}>
-          <View style={[styles.errorIcon, { backgroundColor: isDark ? '#2A1A1A' : '#FFF5F5' }]}>
-            <AlertCircle size={28} color="#FF9500" strokeWidth={2} />
+          <View style={[styles.errorIcon, { backgroundColor: colors.errorLight }]}>
+            <AlertCircle size={28} color={colors.warning} strokeWidth={2} />
           </View>
-          <Text style={[styles.errorTitle, { color: isDark ? '#FFFFFF' : '#1C1C1E' }]}>API Configuration Required</Text>
-          <Text style={[styles.errorSub, { color: isDark ? '#6B6B85' : '#8E8E93' }]}>
+          <Text style={[styles.errorTitle, { color: colors.text }]}>API Configuration Required</Text>
+          <Text style={[styles.errorSub, { color: colors.textSecondary }]}>
             MMA API key is not configured on the server
           </Text>
         </View>
       ) : sportMode === 'ufc' && hasError ? (
         <View style={styles.errorContainer}>
-          <View style={[styles.errorIcon, { backgroundColor: isDark ? '#2A1A1A' : '#FFF5F5' }]}>
-            <AlertCircle size={28} color="#FF3B30" strokeWidth={2} />
+          <View style={[styles.errorIcon, { backgroundColor: colors.errorLight }]}>
+            <AlertCircle size={28} color={colors.error} strokeWidth={2} />
           </View>
-          <Text style={[styles.errorTitle, { color: isDark ? '#FFFFFF' : '#1C1C1E' }]}>Unable to Load</Text>
-          <Text style={[styles.errorSub, { color: isDark ? '#6B6B85' : '#8E8E93' }]}>
+          <Text style={[styles.errorTitle, { color: colors.text }]}>Unable to Load</Text>
+          <Text style={[styles.errorSub, { color: colors.textSecondary }]}>
             Please check your connection and try again
           </Text>
           <TouchableOpacity style={styles.retryBtn} onPress={onRefresh} activeOpacity={0.85}>
-            <RefreshCw size={16} color="#D4AF37" />
-            <Text style={[styles.retryBtnText, { color: '#D4AF37' }]}>Try Again</Text>
+            <RefreshCw size={16} color={colors.warning} />
+            <Text style={[styles.retryBtnText, { color: colors.warning }]}>Try Again</Text>
           </TouchableOpacity>
         </View>
       ) : sportMode === 'ufc' && ufcDisplayFights.length === 0 ? (
@@ -2215,48 +2327,48 @@ export default function SportsScreen() {
         >
           <View style={ufcStyles.emptyHero}>
             <LinearGradient
-              colors={['#1A0808', '#1C0A18', '#0F0A1E']}
+              colors={[...sf.ufcGradient]}
               start={{ x: 0, y: 0 }}
               end={{ x: 1, y: 1 }}
               style={ufcStyles.emptyHeroGradient}
             >
-              <View style={ufcStyles.emptyHeroGoldAccent} />
+              <View style={[ufcStyles.emptyHeroGoldAccent, { backgroundColor: '#D4AF37' }]} />
               <LinearGradient
                 colors={['#D4AF37', '#B8860B']}
                 style={ufcStyles.emptyHeroIconCircle}
               >
                 <Swords size={32} color="#FFFFFF" strokeWidth={2} />
               </LinearGradient>
-              <Text style={ufcStyles.emptyHeroTitle}>
+              <Text style={[ufcStyles.emptyHeroTitle, { color: sf.text }]}>
                 {UFC_EMPTY_CONFIG[ufcTab].title}
               </Text>
-              <Text style={ufcStyles.emptyHeroSub}>
+              <Text style={[ufcStyles.emptyHeroSub, { color: sf.textSecondary }]}>
                 {hasConfigError
                   ? 'The MMA API requires a separate subscription on api-sports.io (free plan available). Your football API key works for football but MMA needs its own activation.'
                   : UFC_EMPTY_CONFIG[ufcTab].sub}
               </Text>
               {hasConfigError ? (
                 <>
-                  <View style={ufcStyles.emptyHeroDivider} />
+                  <View style={[ufcStyles.emptyHeroDivider, { backgroundColor: 'rgba(212, 175, 55, 0.27)' }]} />
                   <View style={ufcStyles.emptyHeroInfoRow}>
                     <AlertCircle size={14} color="#D4AF37" />
-                    <Text style={ufcStyles.emptyHeroInfoText}>
+                    <Text style={[ufcStyles.emptyHeroInfoText, { color: sf.textMuted }]}>
                       Visit api-sports.io, log in with your account, and subscribe to the MMA API (free plan with 100 requests/day).
                     </Text>
                   </View>
                   <View style={[ufcStyles.emptyHeroInfoRow, { marginTop: 8 }]}>
-                    <RefreshCw size={14} color="#6B6B85" />
-                    <Text style={ufcStyles.emptyHeroInfoText}>
+                    <RefreshCw size={14} color={sf.textMuted} />
+                    <Text style={[ufcStyles.emptyHeroInfoText, { color: sf.textMuted }]}>
                       After subscribing, pull down to refresh.
                     </Text>
                   </View>
                 </>
               ) : (
                 <>
-                  <View style={ufcStyles.emptyHeroDivider} />
+                  <View style={[ufcStyles.emptyHeroDivider, { backgroundColor: 'rgba(212, 175, 55, 0.27)' }]} />
                   <View style={ufcStyles.emptyHeroInfoRow}>
-                    <RefreshCw size={14} color="#6B6B85" />
-                    <Text style={ufcStyles.emptyHeroInfoText}>
+                    <RefreshCw size={14} color={sf.textMuted} />
+                    <Text style={[ufcStyles.emptyHeroInfoText, { color: sf.textMuted }]}>
                       Pull down to refresh and try again.
                     </Text>
                   </View>
@@ -2268,45 +2380,45 @@ export default function SportsScreen() {
       ) : sportMode === 'ufc' ? (
         <View style={{ flex: 1 }}>
           <View style={ufcStyles.ufcStatsBar}>
-            <View style={[ufcStyles.ufcStatItem, { backgroundColor: isDark ? '#111125' : '#F5F5FA' }]}>
-              <Text style={[ufcStyles.ufcStatValue, { color: isDark ? '#D4AF37' : '#B8860B' }]}>
+            <View style={[ufcStyles.ufcStatItem, { backgroundColor: sf.card }]}>
+              <Text style={[ufcStyles.ufcStatValue, { color: '#D4AF37' }]}>
                 {ufcTab === 'upcoming' ? ufcUpcomingFights.length : ufcResultsFights.length}
               </Text>
-              <Text style={[ufcStyles.ufcStatLabel, { color: isDark ? '#6B6B85' : '#8E8E93' }]}>
+              <Text style={[ufcStyles.ufcStatLabel, { color: sf.textSecondary }]}>
                 {ufcTab === 'upcoming' ? 'FIGHTS' : 'RESULTS'}
               </Text>
             </View>
-            <View style={[ufcStyles.ufcStatItem, { backgroundColor: isDark ? '#111125' : '#F5F5FA' }]}>
-              <Text style={[ufcStyles.ufcStatValue, { color: isDark ? '#D4AF37' : '#B8860B' }]}>
+            <View style={[ufcStyles.ufcStatItem, { backgroundColor: sf.card }]}>
+              <Text style={[ufcStyles.ufcStatValue, { color: '#D4AF37' }]}>
                 {ufcGroupedByEvent.length}
               </Text>
-              <Text style={[ufcStyles.ufcStatLabel, { color: isDark ? '#6B6B85' : '#8E8E93' }]}>
+              <Text style={[ufcStyles.ufcStatLabel, { color: sf.textSecondary }]}>
                 EVENTS
               </Text>
             </View>
             {ufcTab === 'results' && (
-              <View style={[ufcStyles.ufcStatItem, { backgroundColor: isDark ? '#111125' : '#F5F5FA' }]}>
-                <Text style={[ufcStyles.ufcStatValue, { color: isDark ? '#FF6B6B' : '#DC2626' }]}>
+              <View style={[ufcStyles.ufcStatItem, { backgroundColor: sf.card }]}>
+                <Text style={[ufcStyles.ufcStatValue, { color: '#FF6B6B' }]}>
                   {ufcResultsFights.filter(f => f.result?.method?.toLowerCase().includes('ko') || f.result?.method?.toLowerCase().includes('tko')).length}
                 </Text>
-                <Text style={[ufcStyles.ufcStatLabel, { color: isDark ? '#6B6B85' : '#8E8E93' }]}>
+                <Text style={[ufcStyles.ufcStatLabel, { color: sf.textSecondary }]}>
                   KO/TKO
                 </Text>
               </View>
             )}
             {ufcTab === 'results' && (
-              <View style={[ufcStyles.ufcStatItem, { backgroundColor: isDark ? '#111125' : '#F5F5FA' }]}>
-                <Text style={[ufcStyles.ufcStatValue, { color: isDark ? '#7C3AED' : '#6D28D9' }]}>
+              <View style={[ufcStyles.ufcStatItem, { backgroundColor: sf.card }]}>
+                <Text style={[ufcStyles.ufcStatValue, { color: '#7C3AED' }]}>
                   {ufcResultsFights.filter(f => f.result?.method?.toLowerCase().includes('sub')).length}
                 </Text>
-                <Text style={[ufcStyles.ufcStatLabel, { color: isDark ? '#6B6B85' : '#8E8E93' }]}>
+                <Text style={[ufcStyles.ufcStatLabel, { color: sf.textSecondary }]}>
                   SUB
                 </Text>
               </View>
             )}
             {ufcTab === 'upcoming' && ufcUpcomingFights.length > 0 && (
-              <View style={[ufcStyles.ufcStatItem, { backgroundColor: isDark ? '#111125' : '#F5F5FA' }]}>
-                <Text style={[ufcStyles.ufcStatValue, { color: isDark ? '#3B82F6' : '#2563EB' }]}>
+              <View style={[ufcStyles.ufcStatItem, { backgroundColor: sf.card }]}>
+                <Text style={[ufcStyles.ufcStatValue, { color: '#2563EB' }]}>
                   {(() => {
                     const next = ufcUpcomingFights[0];
                     const d = new Date(next.date);
@@ -2315,17 +2427,17 @@ export default function SportsScreen() {
                     return diff > 0 ? `${diff}d` : 'Today';
                   })()}
                 </Text>
-                <Text style={[ufcStyles.ufcStatLabel, { color: isDark ? '#6B6B85' : '#8E8E93' }]}>
+                <Text style={[ufcStyles.ufcStatLabel, { color: sf.textSecondary }]}>
                   NEXT
                 </Text>
               </View>
             )}
             {ufcTab === 'upcoming' && ufcGroupedByEvent.length > 0 && (
-              <View style={[ufcStyles.ufcStatItem, { backgroundColor: isDark ? '#111125' : '#F5F5FA' }]}>
-                <Text style={[ufcStyles.ufcStatValue, { color: isDark ? '#10B981' : '#059669' }]}>
+              <View style={[ufcStyles.ufcStatItem, { backgroundColor: sf.card }]}>
+                <Text style={[ufcStyles.ufcStatValue, { color: '#34C759' }]}>
                   {ufcUpcomingFights.filter(f => f.fighter1.name !== 'TBA' && f.fighter2.name !== 'TBA').length}
                 </Text>
-                <Text style={[ufcStyles.ufcStatLabel, { color: isDark ? '#6B6B85' : '#8E8E93' }]}>
+                <Text style={[ufcStyles.ufcStatLabel, { color: sf.textSecondary }]}>
                   CONFIRMED
                 </Text>
               </View>
@@ -2386,7 +2498,6 @@ export default function SportsScreen() {
           visible={showFightModal}
           onClose={() => { setShowFightModal(false); setSelectedFight(null); }}
           fight={selectedFight}
-          isDark={isDark}
         />
       )}
 
@@ -2398,36 +2509,36 @@ export default function SportsScreen() {
       >
         <View style={styles.pickerOverlay}>
           <TouchableOpacity style={StyleSheet.absoluteFill} activeOpacity={1} onPress={() => setShowLeaguePicker(false)} />
-          <View style={[styles.pickerContainer, { backgroundColor: isDark ? '#1C1C2E' : '#FFFFFF' }]}>
+          <View style={[styles.pickerContainer, { backgroundColor: colors.surface }]}>
             <View style={styles.pickerHandle} />
-            <View style={[styles.pickerHeader, { borderBottomColor: isDark ? '#2A2A44' : '#F2F2F7' }]}>
-              <Text style={[styles.pickerTitle, { color: isDark ? '#FFFFFF' : '#1C1C1E' }]}>League Tables</Text>
+            <View style={[styles.pickerHeader, { borderBottomColor: colors.border }]}>
+              <Text style={[styles.pickerTitle, { color: colors.text }]}>League Tables</Text>
               <TouchableOpacity onPress={() => setShowLeaguePicker(false)} style={styles.pickerClose}>
-                <X size={20} color={isDark ? '#7B7B95' : '#8E8E93'} />
+                <X size={20} color={colors.textSecondary} />
               </TouchableOpacity>
             </View>
             <ScrollView style={styles.pickerScroll} showsVerticalScrollIndicator={false}>
               {availableLeaguesForStandings.map((league) => (
                 <TouchableOpacity
                   key={league.id}
-                  style={[styles.pickerItem, { borderBottomColor: isDark ? '#2A2A44' : '#F2F2F7' }]}
+                  style={[styles.pickerItem, { borderBottomColor: colors.border }]}
                   onPress={() => handleSelectLeagueForStandings(league)}
                   activeOpacity={0.7}
                 >
                   {league.logo ? (
                     <Image source={{ uri: league.logo }} style={styles.pickerLogo} resizeMode="contain" />
                   ) : (
-                    <View style={[styles.pickerLogoFallback, { backgroundColor: isDark ? '#252540' : '#F5F5F7' }]}>
-                      <Trophy size={16} color={isDark ? '#6B6B85' : '#AEAEB2'} />
+                    <View style={[styles.pickerLogoFallback, { backgroundColor: colors.surfaceSecondary }]}>
+                      <Trophy size={16} color={colors.textMuted} />
                     </View>
                   )}
                   <View style={styles.pickerInfo}>
-                    <Text style={[styles.pickerName, { color: isDark ? '#FFFFFF' : '#1C1C1E' }]}>{league.name}</Text>
+                    <Text style={[styles.pickerName, { color: colors.text }]}>{league.name}</Text>
                     {league.country ? (
-                      <Text style={[styles.pickerCountry, { color: isDark ? '#6B6B85' : '#AEAEB2' }]}>{league.country}</Text>
+                      <Text style={[styles.pickerCountry, { color: colors.textSecondary }]}>{league.country}</Text>
                     ) : null}
                   </View>
-                  <ChevronRight size={18} color={isDark ? '#3A3A5A' : '#D1D5DB'} />
+                  <ChevronRight size={18} color={colors.textMuted} />
                 </TouchableOpacity>
               ))}
             </ScrollView>
@@ -2562,124 +2673,76 @@ const styles = StyleSheet.create({
   tickerCardWrapper: {
     width: SCREEN_WIDTH * 0.66,
   },
-  tickerCard: {
-    borderRadius: 22,
-    padding: 18,
+  /** Aligns with PremiumMatchCard: surface card, not full-bleed gradient */
+  tickerMatchCard: {
+    borderRadius: 20,
+    overflow: 'hidden',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.07,
+    shadowRadius: 16,
+    elevation: 3,
+  },
+  tickerCardInner: {
+    borderRadius: 20,
+    paddingHorizontal: 14,
+    paddingVertical: 13,
     borderWidth: 1,
-    borderColor: 'rgba(46, 204, 113, 0.25)',
-    shadowColor: '#2ECC71',
-    shadowOpacity: 0.18,
-    shadowRadius: 20,
-    shadowOffset: { width: 0, height: 8 },
-    elevation: 6,
     overflow: 'hidden' as const,
+    position: 'relative' as const,
   },
-  tickerSheen: {
-    position: 'absolute' as const,
-    top: 0,
-    left: 0,
-    right: 0,
-    height: 80,
+  tickerLiveCardBorder: {
+    borderColor: 'rgba(255, 59, 48, 0.18)',
   },
-  tickerTopRow: {
+  tickerMatchHeader: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-    marginBottom: 16,
+    marginBottom: 8,
+    gap: 8,
   },
-  tickerLiveBadge: {
+  tickerMatchBody: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 5,
-    backgroundColor: 'rgba(255, 71, 87, 0.12)',
-    paddingHorizontal: 8,
-    paddingVertical: 4,
-    borderRadius: 8,
-    borderWidth: 1,
-    borderColor: 'rgba(255, 71, 87, 0.25)',
+    paddingVertical: 2,
+    minHeight: 52,
   },
-  tickerElapsedPill: {
-    backgroundColor: 'rgba(255,255,255,0.08)',
-    paddingHorizontal: 8,
-    paddingVertical: 3,
-    borderRadius: 8,
-  },
-  tickerLiveText: {
-    fontSize: 10,
-    fontWeight: '800' as const,
-    color: '#FF4757',
-    letterSpacing: 0.8,
-  },
-  tickerElapsed: {
-    fontSize: 10,
-    fontWeight: '800' as const,
-    color: '#F5F5FA',
-    letterSpacing: 0.3,
-  },
-  tickerTeams: {
-    gap: 10,
-    marginBottom: 14,
-  },
-  tickerTeamRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 10,
-  },
-  tickerLogoWrap: {
-    width: 26,
-    height: 26,
-    borderRadius: 13,
-    backgroundColor: 'rgba(255,255,255,0.08)',
-    justifyContent: 'center',
-    alignItems: 'center',
-    borderWidth: 1,
-    borderColor: 'rgba(255,255,255,0.08)',
-  },
-  tickerLogo: {
-    width: 18,
-    height: 18,
+  tickerTeamLogo: {
+    width: 28,
+    height: 28,
     resizeMode: 'contain',
   },
-  tickerTeamName: {
-    flex: 1,
-    fontSize: 14,
+  tickerTeamNameH: {
+    fontSize: 12,
     fontWeight: '600' as const,
-    color: '#C8C8D8',
-    letterSpacing: -0.1,
+    lineHeight: 15,
+    flexShrink: 1,
+    flexGrow: 1,
   },
-  tickerTeamNameWinning: {
-    color: '#FFFFFF',
-    fontWeight: '700' as const,
+  tickerScoreCenter: {
+    paddingHorizontal: 6,
+    flexShrink: 0,
   },
-  tickerScore: {
-    fontSize: 20,
-    fontWeight: '800' as const,
-    color: '#E4E4ED',
-    minWidth: 24,
-    textAlign: 'right' as const,
-    letterSpacing: -0.5,
-  },
-  tickerScoreWinning: {
-    color: '#2ECC71',
-  },
-  tickerLeague: {
+  tickerScoreBlock: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 6,
-    borderTopWidth: 1,
-    borderTopColor: 'rgba(255,255,255,0.06)',
-    paddingTop: 10,
+    gap: 4,
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    borderRadius: 12,
+    borderWidth: 1,
   },
-  tickerLeagueLogo: {
-    width: 14,
-    height: 14,
+  tickerScoreNum: {
+    fontSize: 18,
+    fontWeight: '800' as const,
+    letterSpacing: -0.6,
+    minWidth: 14,
+    textAlign: 'center' as const,
   },
-  tickerLeagueName: {
-    fontSize: 10,
-    fontWeight: '600' as const,
-    color: '#6B6B85',
-    textTransform: 'uppercase' as const,
-    letterSpacing: 0.3,
+  tickerScoreDash: {
+    fontSize: 14,
+    fontWeight: '400' as const,
+    marginHorizontal: 0,
   },
   tabWrapper: {
     paddingHorizontal: 20,

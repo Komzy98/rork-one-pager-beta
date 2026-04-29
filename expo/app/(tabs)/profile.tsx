@@ -83,6 +83,7 @@ import { ALL_NBA_TEAMS, searchNBATeams, NBATeamInfo } from '@/constants/nbaData'
 import TabWalkthrough from '@/components/TabWalkthrough';
 import { useWalkthrough } from '@/hooks/useWalkthrough';
 import { ALL_NATIONS, Nation } from '@/constants/nations';
+import { NationFlag } from '@/components/NationFlag';
 
 type Nationality = Nation;
 
@@ -710,7 +711,7 @@ export default function ProfileScreen() {
                     <View style={styles.favChipsList}>
                       {profile.nationalities?.map(nation => (
                         <View key={nation.id} style={[styles.favChip, { backgroundColor: colors.card, borderColor: colors.border }]}>
-                          <Text style={styles.favChipFlag}>{nation.flag}</Text>
+                          <NationFlag code={nation.code} width={22} borderRadius={4} />
                           <Text style={[styles.favChipText, { color: colors.text }]} numberOfLines={1}>{nation.name}</Text>
                           <TouchableOpacity onPress={() => handleRemoveNationality(nation.id)} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
                             <X size={12} color={colors.textTertiary} />
@@ -735,7 +736,7 @@ export default function ProfileScreen() {
                     <View style={styles.favChipsList}>
                       {profile.favoriteCountries.map(country => (
                         <View key={country.id} style={[styles.favChip, { backgroundColor: colors.card, borderColor: colors.border }]}>
-                          <Text style={styles.favChipFlag}>{country.flag}</Text>
+                          <NationFlag code={country.code} width={22} borderRadius={4} />
                           <Text style={[styles.favChipText, { color: colors.text }]} numberOfLines={1}>{country.name}</Text>
                           <TouchableOpacity onPress={() => handleRemoveCountry(country.id)} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
                             <X size={12} color={colors.textTertiary} />
@@ -1344,9 +1345,7 @@ export default function ProfileScreen() {
                     onPress={() => handleAddCountry(country)}
                     disabled={isAdded}
                   >
-                    <View style={[styles.modalOptionIcon, { backgroundColor: colors.surfaceSecondary }]}>
-                      <Text style={styles.modalFlag}>{country.flag}</Text>
-                    </View>
+                    <NationFlag code={country.code} width={36} borderRadius={6} style={{ marginRight: 12 }} />
                     <View style={styles.modalOptionInfo}>
                       <Text style={[styles.modalOptionName, { color: isAdded ? colors.textTertiary : colors.text }]}>{country.name}</Text>
                       <Text style={[styles.modalOptionSub, { color: colors.textTertiary }]}>{country.leagues.join(', ')}</Text>
@@ -1389,9 +1388,7 @@ export default function ProfileScreen() {
                     onPress={() => handleAddNationality(nation)}
                     disabled={isAdded}
                   >
-                    <View style={[styles.modalOptionIcon, { backgroundColor: colors.surfaceSecondary }]}>
-                      <Text style={styles.modalFlag}>{nation.flag}</Text>
-                    </View>
+                    <NationFlag code={nation.code} width={36} borderRadius={6} style={{ marginRight: 12 }} />
                     <View style={styles.modalOptionInfo}>
                       <Text style={[styles.modalOptionName, { color: isAdded ? colors.textTertiary : colors.text }]}>{nation.name}</Text>
                       <Text style={[styles.modalOptionSub, { color: colors.textTertiary }]}>National Team • AFCON • World Cup</Text>
@@ -1896,9 +1893,6 @@ const styles = StyleSheet.create({
     borderRadius: 8,
     borderWidth: 1,
     gap: 6,
-  },
-  favChipFlag: {
-    fontSize: 14,
   },
   favChipText: {
     fontSize: 13,

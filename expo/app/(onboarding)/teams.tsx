@@ -14,6 +14,7 @@ import { Trophy, ArrowRight, ArrowLeft, Search, Star, Check } from 'lucide-react
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import * as Haptics from 'expo-haptics';
 import { useUserProfile } from '@/hooks/useUserProfile';
+import { useOnboardingStepMeta } from '@/hooks/useOnboardingStepMeta';
 import { UserTeam } from '@/types/habit';
 import { getPopularTeams, searchTeams, getFootballTeamLogoUrl } from '@/constants/footballData';
 import OnboardingProgress from '@/components/OnboardingProgress';
@@ -49,6 +50,7 @@ export default function TeamsScreen() {
   const router = useRouter();
   const insets = useSafeAreaInsets();
   const { updateProfile, profile } = useUserProfile();
+  const { totalSteps, stepSportsPick } = useOnboardingStepMeta();
   const [selectedTeams, setSelectedTeams] = useState<UserTeam[]>([]);
   const [searchQuery, setSearchQuery] = useState<string>('');
 
@@ -134,7 +136,7 @@ export default function TeamsScreen() {
           <ArrowLeft size={20} color={COLORS.textMuted} />
         </TouchableOpacity>
         <View style={styles.progressWrap}>
-          <OnboardingProgress currentStep={5} totalSteps={6} />
+          <OnboardingProgress currentStep={stepSportsPick} totalSteps={totalSteps} />
         </View>
         <TouchableOpacity onPress={handleSkip} activeOpacity={0.7}>
           <Text style={styles.skipText}>Skip</Text>
@@ -142,7 +144,7 @@ export default function TeamsScreen() {
       </View>
 
       <Animated.View style={[styles.titleWrap, { opacity: fadeAnim, transform: [{ translateY: titleSlide }] }]}>
-        <Text style={styles.stepLabel}>STEP 5 · CLUBS</Text>
+        <Text style={styles.stepLabel}>STEP {stepSportsPick} · CLUBS</Text>
         <Text style={styles.title}>Follow Your Teams</Text>
         <Text style={styles.subtitle}>Get live scores and updates for your favourite clubs</Text>
       </Animated.View>

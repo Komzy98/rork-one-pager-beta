@@ -12,6 +12,7 @@ import { ArrowRight, ArrowLeft, Check, Clock, Sunrise, Moon, Sun } from 'lucide-
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import * as Haptics from 'expo-haptics';
 import { useUserProfile } from '@/hooks/useUserProfile';
+import { useOnboardingStepMeta } from '@/hooks/useOnboardingStepMeta';
 import OnboardingProgress from '@/components/OnboardingProgress';
 import { CHRONOTYPES, getChronotypePeakLabel } from '@/constants/chronotypes';
 import { COLORS } from '@/constants/colors';
@@ -21,6 +22,7 @@ export default function ChronotypeScreen() {
   const router = useRouter();
   const insets = useSafeAreaInsets();
   const { updateProfile, profile } = useUserProfile();
+  const { totalSteps, stepChronotype } = useOnboardingStepMeta();
   const [selected, setSelected] = useState<Chronotype | null>(null);
   const [expandedId, setExpandedId] = useState<Chronotype | null>(null);
 
@@ -212,7 +214,7 @@ export default function ChronotypeScreen() {
       </View>
 
       <Animated.View style={[styles.titleWrap, { opacity: fadeAnim, transform: [{ translateY: titleSlide }] }]}>
-        <Text style={styles.stepLabel}>STEP 3 · ENERGY</Text>
+        <Text style={styles.stepLabel}>STEP {stepChronotype} · ENERGY</Text>
         <Text style={styles.title}>When are you{'\n'}most productive?</Text>
         <Text style={styles.subtitle}>
           Your chronotype helps us optimise your schedule

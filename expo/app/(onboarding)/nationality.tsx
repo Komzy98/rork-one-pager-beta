@@ -13,14 +13,17 @@ import { ArrowRight, ArrowLeft, Search, Check } from 'lucide-react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import * as Haptics from 'expo-haptics';
 import { useUserProfile } from '@/hooks/useUserProfile';
+import { useOnboardingStepMeta } from '@/hooks/useOnboardingStepMeta';
 import OnboardingProgress from '@/components/OnboardingProgress';
 import { ALL_NATIONS, REGION_LABELS, REGION_ORDER, Nation } from '@/constants/nations';
 import { COLORS } from '@/constants/colors';
+import { NationFlag } from '@/components/NationFlag';
 
 export default function NationalityScreen() {
   const router = useRouter();
   const insets = useSafeAreaInsets();
   const { updateProfile, profile } = useUserProfile();
+  const { totalSteps, stepNationality } = useOnboardingStepMeta();
   const [selectedNationalities, setSelectedNationalities] = useState<Nation[]>([]);
   const [activeRegion, setActiveRegion] = useState<Nation['region'] | 'all'>('all');
   const [searchQuery, setSearchQuery] = useState<string>('');
@@ -108,7 +111,7 @@ export default function NationalityScreen() {
           <ArrowLeft size={20} color={COLORS.textMuted} />
         </TouchableOpacity>
         <View style={styles.progressWrap}>
-          <OnboardingProgress currentStep={4} totalSteps={6} />
+          <OnboardingProgress currentStep={stepNationality} totalSteps={totalSteps} />
         </View>
         <TouchableOpacity onPress={handleSkip} activeOpacity={0.7}>
           <Text style={styles.skipText}>Skip</Text>
@@ -116,7 +119,7 @@ export default function NationalityScreen() {
       </View>
 
       <Animated.View style={[styles.titleWrap, { opacity: fadeAnim, transform: [{ translateY: titleSlide }] }]}>
-        <Text style={styles.stepLabel}>STEP 4 · REGION</Text>
+        <Text style={styles.stepLabel}>STEP {stepNationality} · REGION</Text>
         <Text style={styles.title}>Your Nationality</Text>
         <Text style={styles.subtitle}>Follow your national team in World Cup, AFCON & more</Text>
       </Animated.View>
@@ -170,9 +173,7 @@ export default function NationalityScreen() {
                 activeOpacity={0.7}
               >
                 {isSelected && <View style={styles.nationSelectedOverlay} />}
-                <View style={[styles.flagCircle, isSelected && styles.flagCircleSelected]}>
-                  <Text style={styles.flagEmoji}>{nation.flag}</Text>
-                </View>
+                <NationFlag code={nation.code} width={44} style={styles.listFlag} />
                 <View style={styles.nationInfo}>
                   <Text style={[styles.nationName, isSelected && styles.nationNameSelected]}>
                     {nation.name}
@@ -194,7 +195,7 @@ export default function NationalityScreen() {
         {selectedNationalities.length > 0 && (
           <View style={styles.selectedRow}>
             {selectedNationalities.slice(0, 6).map((n) => (
-              <Text key={n.id} style={styles.selectedFlag}>{n.flag}</Text>
+              <NationFlag key={n.id} code={n.code} width={30} borderRadius={5} />
             ))}
             {selectedNationalities.length > 6 && (
               <Text style={styles.moreText}>+{selectedNationalities.length - 6}</Text>
@@ -340,20 +341,8 @@ const styles = StyleSheet.create({
     backgroundColor: `${COLORS.primary}0D`,
     borderRadius: 16,
   },
-  flagCircle: {
-    width: 44,
-    height: 44,
-    borderRadius: 14,
-    backgroundColor: COLORS.surfaceSecondary,
-    justifyContent: 'center',
-    alignItems: 'center',
+  listFlag: {
     marginRight: 12,
-  },
-  flagCircleSelected: {
-    backgroundColor: `${COLORS.primary}14`,
-  },
-  flagEmoji: {
-    fontSize: 20,
   },
   nationInfo: {
     flex: 1,
@@ -390,10 +379,7 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     marginBottom: 12,
-    gap: 6,
-  },
-  selectedFlag: {
-    fontSize: 20,
+    gap: 8,
   },
   moreText: {
     fontSize: 12,

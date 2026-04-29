@@ -14,6 +14,7 @@ import { ArrowRight, ArrowLeft, Search, Check } from 'lucide-react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import * as Haptics from 'expo-haptics';
 import { useUserProfile } from '@/hooks/useUserProfile';
+import { useOnboardingStepMeta } from '@/hooks/useOnboardingStepMeta';
 import { NBAFavoriteTeam } from '@/types/habit';
 import { ALL_NBA_TEAMS, searchNBATeams, NBATeamInfo, getTeamColor } from '@/constants/nbaData';
 import OnboardingProgress from '@/components/OnboardingProgress';
@@ -25,6 +26,7 @@ export default function NBATeamsScreen() {
   const router = useRouter();
   const insets = useSafeAreaInsets();
   const { updateProfile, profile } = useUserProfile();
+  const { totalSteps, stepSportsPick } = useOnboardingStepMeta();
   const [selectedTeams, setSelectedTeams] = useState<NBAFavoriteTeam[]>([]);
   const [searchQuery, setSearchQuery] = useState<string>('');
   const [conferenceFilter, setConferenceFilter] = useState<ConferenceFilter>('all');
@@ -111,7 +113,7 @@ export default function NBATeamsScreen() {
       </View>
 
       <Animated.View style={[styles.titleWrap, { opacity: fadeAnim, transform: [{ translateY: titleSlide }] }]}>
-        <Text style={styles.stepKicker}>STEP 5 · NBA</Text>
+        <Text style={styles.stepKicker}>STEP {stepSportsPick} · NBA</Text>
         <View style={styles.nbaEmojiRow}>
           <Text style={styles.nbaEmoji}>🏀</Text>
         </View>

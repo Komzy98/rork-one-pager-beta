@@ -13,6 +13,7 @@ import { ArrowRight, ArrowLeft, Search, Check } from 'lucide-react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import * as Haptics from 'expo-haptics';
 import { useUserProfile } from '@/hooks/useUserProfile';
+import { useOnboardingStepMeta } from '@/hooks/useOnboardingStepMeta';
 import { UserCountry } from '@/types/habit';
 import { FOOTBALL_COUNTRIES } from '@/constants/footballData';
 import OnboardingProgress from '@/components/OnboardingProgress';
@@ -22,6 +23,7 @@ export default function CountriesScreen() {
   const router = useRouter();
   const insets = useSafeAreaInsets();
   const { updateProfile, profile } = useUserProfile();
+  const { totalSteps, stepSportsPick } = useOnboardingStepMeta();
   const [selectedCountries, setSelectedCountries] = useState<UserCountry[]>([]);
   const [searchQuery, setSearchQuery] = useState<string>('');
 
@@ -87,7 +89,7 @@ export default function CountriesScreen() {
           <ArrowLeft size={20} color={COLORS.textMuted} />
         </TouchableOpacity>
         <View style={styles.progressWrap}>
-          <OnboardingProgress currentStep={5} totalSteps={6} />
+          <OnboardingProgress currentStep={stepSportsPick} totalSteps={totalSteps} />
         </View>
         <TouchableOpacity onPress={handleSkip} activeOpacity={0.7}>
           <Text style={styles.skipText}>Skip</Text>
@@ -95,7 +97,7 @@ export default function CountriesScreen() {
       </View>
 
       <Animated.View style={[styles.titleWrap, { opacity: fadeAnim, transform: [{ translateY: titleSlide }] }]}>
-        <Text style={styles.stepLabel}>STEP 5 · LEAGUES</Text>
+        <Text style={styles.stepLabel}>STEP {stepSportsPick} · LEAGUES</Text>
         <Text style={styles.title}>Choose Leagues</Text>
         <Text style={styles.subtitle}>Select countries to follow their football leagues</Text>
       </Animated.View>

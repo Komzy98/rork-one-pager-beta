@@ -138,3 +138,9 @@ export const REGION_LABELS: Record<Nation['region'], string> = {
 };
 
 export const REGION_ORDER: Nation['region'][] = ['europe', 'africa', 'south-america', 'north-america', 'asia', 'oceania'];
+
+/** PNG from flagcdn.com. `code` is `Nation.code` (e.g. `gb-eng`, `fr`, `us`). */
+export function getNationFlagUrl(code: string, size: 'w20' | 'w40' | 'w80' | 'h20' | 'h24' = 'w80'): string {
+  const slug = code.toLowerCase();
+  return `https://flagcdn.com/${size}/${slug}.png`;
+}

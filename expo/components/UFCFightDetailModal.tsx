@@ -21,6 +21,7 @@ import {
 } from 'lucide-react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import * as Haptics from 'expo-haptics';
+import { useTheme } from '@/hooks/useTheme';
 
 
 interface UFCFight {
@@ -54,7 +55,6 @@ interface UFCFightDetailModalProps {
   visible: boolean;
   onClose: () => void;
   fight: UFCFight;
-  isDark: boolean;
 }
 
 const LivePulse = ({ color = '#FF3B30', size = 8 }: { color?: string; size?: number }) => {
@@ -96,7 +96,8 @@ const LivePulse = ({ color = '#FF3B30', size = 8 }: { color?: string; size?: num
   );
 };
 
-export default function UFCFightDetailModal({ visible, onClose, fight, isDark }: UFCFightDetailModalProps) {
+export default function UFCFightDetailModal({ visible, onClose, fight }: UFCFightDetailModalProps) {
+  const { colors } = useTheme();
   const slideAnim = useRef(new Animated.Value(0)).current;
   const fadeAnim = useRef(new Animated.Value(0)).current;
   const fighter1Anim = useRef(new Animated.Value(-50)).current;
