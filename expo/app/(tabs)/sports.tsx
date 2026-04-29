@@ -744,11 +744,11 @@ const DateHeader = React.memo(({ date }: { date: string }) => {
   
   return (
     <View style={styles.dateHeader}>
-      <View style={[styles.dateLine, { backgroundColor: isDark ? '#2A2A44' : '#E5E5EA' }]} />
-      <Text style={[styles.dateText, { color: isDark ? '#7B7B95' : '#8E8E93' }]}>
+      <View style={[styles.dateLine, { backgroundColor: colors.border }]} />
+      <Text style={[styles.dateText, { color: colors.textMuted }]}>
         {formatDate(date)}
       </Text>
-      <View style={[styles.dateLine, { backgroundColor: isDark ? '#2A2A44' : '#E5E5EA' }]} />
+      <View style={[styles.dateLine, { backgroundColor: colors.border }]} />
     </View>
   );
 });
