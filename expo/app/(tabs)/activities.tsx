@@ -2133,7 +2133,11 @@ export default function ActivitiesScreen() {
                               style={styles.cwPosterGradient}
                             />
                             <View style={styles.cwCardBottom}>
-                              <Text style={styles.cwCardEpisode} numberOfLines={1}>{episodeLabel}</Text>
+                              <Text style={styles.cwCardTitle} numberOfLines={2}>{show.title}</Text>
+                              <View style={styles.cwCardMeta}>
+                                <Text style={styles.cwCardEpisode} numberOfLines={1}>{episodeLabel}</Text>
+                                <Text style={styles.cwCardPlatform} numberOfLines={1}>{show.platform}</Text>
+                              </View>
                               <View style={styles.cwProgressTrack}>
                                 <View style={[styles.cwProgressFill, { width: `${progress}%` }]} />
                               </View>
@@ -2186,7 +2190,15 @@ export default function ActivitiesScreen() {
                             style={styles.cwPosterGradient}
                           />
                           <View style={styles.cwCardBottom}>
-                            <Text style={styles.cwCardEpisode} numberOfLines={1}>{continueEpisodeLabel}</Text>
+                            <Text style={styles.cwCardTitle} numberOfLines={2}>
+                              {item.showTitle || row.title || 'Continue watching'}
+                            </Text>
+                            <View style={styles.cwCardMeta}>
+                              <Text style={styles.cwCardEpisode} numberOfLines={1}>{continueEpisodeLabel}</Text>
+                              <Text style={styles.cwCardPlatform} numberOfLines={1}>
+                                {svc?.displayName || svc?.name || row.sourceService || 'Streaming'}
+                              </Text>
+                            </View>
                             {yProgress > 0 ? (
                               <View style={styles.cwProgressTrack}>
                                 <View style={[styles.cwProgressFill, { width: `${yProgress}%` }]} />

@@ -28,7 +28,9 @@ import { COLORS } from '@/constants/colors';
 import { useTasks } from '@/hooks/useTasksStore';
 import { useApp } from '@/hooks/useHabitsStore';
 import { useBusyModeSafe } from '@/hooks/useBusyMode';
+import { useTheme } from '@/hooks/useTheme';
 import { Task } from '@/types/task';
+import type { ThemeColors } from '@/types/theme';
 import {
   generateMinimalHabits,
   generateHabitInsights,
@@ -51,9 +53,11 @@ interface QuickWinItemProps {
     isAtRisk: boolean;
   };
   onComplete: (id: string) => void;
+  colors: ThemeColors;
+  isDark: boolean;
 }
 
-const QuickWinItem = memo(function QuickWinItem({ item, onComplete }: QuickWinItemProps) {
+const QuickWinItem = memo(function QuickWinItem({ item, onComplete, colors, isDark }: QuickWinItemProps) {
   const [expanded, setExpanded] = useState(false);
   const rotateAnim = useRef(new Animated.Value(0)).current;
 
@@ -84,22 +88,22 @@ const QuickWinItem = memo(function QuickWinItem({ item, onComplete }: QuickWinIt
         <View style={[styles.quickDot, { backgroundColor: item.color }]} />
         <View style={styles.quickItemInfo}>
           <View style={styles.quickItemRow}>
-            <Text style={styles.quickItemName} numberOfLines={expanded ? undefined : 1}>{item.title}</Text>
+            <Text style={[styles.quickItemName, { color: colors.text }]} numberOfLines={expanded ? undefined : 1}>{item.title}</Text>
             {item.isAtRisk && (
               <View style={styles.riskBadge}>
                 <Shield size={9} color="#DC2626" strokeWidth={2.5} />
               </View>
             )}
           </View>
-          <Text style={styles.quickItemMinimal} numberOfLines={expanded ? undefined : 1}>{item.minimalVersion}</Text>
+          <Text style={[styles.quickItemMinimal, { color: colors.textSecondary }]} numberOfLines={expanded ? undefined : 1}>{item.minimalVersion}</Text>
         </View>
         <View style={styles.quickItemRight}>
-          <View style={styles.durationBadge}>
-            <Clock size={10} color="#64748B" strokeWidth={2} />
-            <Text style={styles.durationText}>{item.minimalDuration}m</Text>
+          <View style={[styles.durationBadge, { backgroundColor: isDark ? colors.backgroundTertiary : 'rgba(100, 116, 139, 0.08)' }]}>
+            <Clock size={10} color={colors.textSecondary} strokeWidth={2} />
+            <Text style={[styles.durationText, { color: colors.textSecondary }]}>{item.minimalDuration}m</Text>
           </View>
           <Animated.View style={{ transform: [{ rotate: chevronRotation }] }}>
-            <ChevronDown size={16} color="#94A3B8" strokeWidth={2} />
+            <ChevronDown size={16} color={colors.textMuted} strokeWidth={2} />
           </Animated.View>
         </View>
       </TouchableOpacity>
@@ -118,6 +122,7 @@ const QuickWinItem = memo(function QuickWinItem({ item, onComplete }: QuickWinIt
 });
 
 export default function HabitFormationCoach({ onComplete }: HabitFormationCoachProps) {
+  const { colors, isDark } = useTheme();
   const tasksContext = useTasks();
   useApp();
   useBusyModeSafe();
@@ -316,6 +321,11 @@ Rules:
       style={[
         styles.container,
         {
+          backgroundColor: colors.card,
+          borderColor: colors.border,
+          shadowColor: colors.shadow,
+        },
+        {
           opacity: fadeAnim,
           transform: [{ translateY: slideAnim }],
         },
@@ -333,8 +343,8 @@ Rules:
             </View>
           </Animated.View>
           <View>
-            <Text style={styles.headerTitle}>Habit Coach</Text>
-            <Text style={styles.headerSubtitle}>
+            <Text style={[styles.headerTitle, { color: colors.text }]}>Habit Coach</Text>
+            <Text style={[styles.headerSubtitle, { color: colors.textSecondary }]}>
               {allDone ? 'All done today!' : `${habitStats.completedToday}/${habitStats.total} completed`}
             </Text>
           </View>
@@ -356,10 +366,10 @@ Rules:
       </View>
 
       <View style={styles.coachSection}>
-        <View style={styles.coachBubble}>
+        <View style={[styles.coachBubble, { backgroundColor: colors.surfaceSecondary, borderColor: colors.border }]}>
           <View style={styles.coachBubbleHeader}>
-            <MessageCircle size={13} color="#0F172A" strokeWidth={2.5} />
-            <Text style={styles.coachBubbleLabel}>Coach says</Text>
+            <MessageCircle size={13} color={colors.text} strokeWidth={2.5} />
+            <Text style={[styles.coachBubbleLabel, { color: colors.textSecondary }]}>Coach says</Text>
             <TouchableOpacity
               onPress={() => {
                 Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
@@ -369,13 +379,13 @@ Rules:
               style={styles.refreshBtn}
             >
               {isLoadingCoach ? (
-                <ActivityIndicator size="small" color="#94A3B8" />
+                <ActivityIndicator size="small" color={colors.textMuted} />
               ) : (
-                <RefreshCw size={13} color="#94A3B8" strokeWidth={2} />
+                <RefreshCw size={13} color={colors.textMuted} strokeWidth={2} />
               )}
             </TouchableOpacity>
           </View>
-          <Text style={styles.coachText}>
+          <Text style={[styles.coachText, { color: colors.text }]}>
             {isLoadingCoach && !coachMessage
               ? 'Analyzing your habits...'
               : coachMessage || getFallbackMessage()}
@@ -418,14 +428,16 @@ Rules:
               <Text style={styles.quickSubtitle}>Simplified versions to keep your streak</Text>
             </View>
           </View>
-          <View style={styles.quickList}>
+          <View style={[styles.quickList, { backgroundColor: colors.surfaceSecondary, borderColor: colors.border }]}>
             {quickRoutine.map((item, index) => (
               <React.Fragment key={item.id}>
                 <QuickWinItem
                   item={item}
                   onComplete={handleQuickComplete}
+                  colors={colors}
+                  isDark={isDark}
                 />
-                {index < quickRoutine.length - 1 && <View style={styles.quickDivider} />}
+                {index < quickRoutine.length - 1 && <View style={[styles.quickDivider, { backgroundColor: colors.border }]} />}
               </React.Fragment>
             ))}
           </View>

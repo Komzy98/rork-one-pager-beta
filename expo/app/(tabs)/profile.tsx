@@ -177,6 +177,8 @@ export default function ProfileScreen() {
     syncToCloud,
     enableCloudSync,
     error: syncError,
+    latestSnapshotTime,
+    restoreLatestSnapshot,
   } = useCloudSync();
 
   const [showTeamModal, setShowTeamModal] = useState<boolean>(false);
@@ -1223,6 +1225,14 @@ export default function ProfileScreen() {
                   </Text>
                 </View>
               )}
+              {latestSnapshotTime && (
+                <View style={[styles.syncDetailRow, { borderTopColor: colors.border }]}>
+                  <Text style={[styles.syncDetailLabel, { color: colors.textTertiary }]}>Recovery snapshot</Text>
+                  <Text style={[styles.syncDetailValue, { color: colors.text }]}>
+                    {new Date(latestSnapshotTime).toLocaleString([], { dateStyle: 'medium', timeStyle: 'short' })}
+                  </Text>
+                </View>
+              )}
 
               <TouchableOpacity
                 style={[
@@ -1301,6 +1311,47 @@ export default function ProfileScreen() {
                   )}
                   <Text style={[styles.syncBackupBtnText, { color: colors.text }]}>
                     {isImportingLocal ? 'Importing...' : 'Import Old Local Data'}
+                  </Text>
+                </TouchableOpacity>
+              )}
+
+              {!isGuest && (
+                <TouchableOpacity
+                  style={[
+                    styles.syncBackupBtn,
+                    { backgroundColor: colors.surfaceSecondary, marginTop: 8 },
+                  ]}
+                  onPress={async () => {
+                    void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+                    Alert.alert(
+                      'Restore latest backup snapshot?',
+                      'This will restore the latest local recovery snapshot for your account on this device. Restart the app afterward to fully reload all tabs.',
+                      [
+                        { text: 'Cancel', style: 'cancel' },
+                        {
+                          text: 'Restore',
+                          style: 'destructive',
+                          onPress: async () => {
+                            const result = await restoreLatestSnapshot();
+                            if (!result.success) {
+                              Alert.alert('Restore failed', result.error || 'No backup snapshot available yet.');
+                              return;
+                            }
+                            void Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+                            Alert.alert(
+                              'Snapshot restored',
+                              'Latest backup snapshot restored locally. Please restart the app to reload synced data everywhere.'
+                            );
+                          },
+                        },
+                      ]
+                    );
+                  }}
+                  activeOpacity={0.8}
+                >
+                  <Download size={16} color={colors.text} />
+                  <Text style={[styles.syncBackupBtnText, { color: colors.text }]}>
+                    Restore Latest Snapshot
                   </Text>
                 </TouchableOpacity>
               )}

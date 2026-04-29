@@ -1146,7 +1146,7 @@ export default function TodaysRoutine({
             onPress={() => router.push('/tasks' as any)}
             activeOpacity={0.7}
           >
-            <Text style={styles.addTaskBtnText}>Add a task</Text>
+            <Text style={[styles.addTaskBtnText, { color: colors.textInverse }]}>Add a task</Text>
           </TouchableOpacity>
         </View>
       )}

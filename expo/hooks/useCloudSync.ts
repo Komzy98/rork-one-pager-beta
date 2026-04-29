@@ -5,6 +5,7 @@ import { useAppSafe } from '@/hooks/useHabitsStore';
 import { useTasksSafe } from '@/hooks/useTasksStore';
 import { useUserProfile } from '@/hooks/useUserProfile';
 import { useAuth } from '@/hooks/useAuth';
+import { useSupabaseSync } from '@/utils/supabaseUserSync';
 
 import { initializeCloudSync, syncAllDataToCloud, syncAllDataFromCloud } from '@/utils/supabaseSync';
 import AsyncStorage from '@react-native-async-storage/async-storage';
@@ -30,8 +31,10 @@ export const [CloudSyncProvider, useCloudSync] = createContextHook(() => {
   const [cloudStorage, setCloudStorage] = useState<any>(null);
   const [useSupabase, setUseSupabase] = useState<boolean>(false);
   const [isInitialized, setIsInitialized] = useState<boolean>(false);
+  const [latestSnapshotTime, setLatestSnapshotTime] = useState<string | null>(null);
 
   const { isAuthenticated, user } = useAuth();
+  const supabaseUserSync = useSupabaseSync(user?.id);
   const { profile } = useUserProfile();
   
   // Always call hooks unconditionally
@@ -53,6 +56,19 @@ export const [CloudSyncProvider, useCloudSync] = createContextHook(() => {
   
   // Check if contexts are properly initialized
   const contextsReady = useMemo(() => isInitialized && appContext && tasksContext, [isInitialized, appContext, tasksContext]);
+
+  const refreshSnapshotMeta = useCallback(async () => {
+    if (!user?.id) {
+      setLatestSnapshotTime(null);
+      return;
+    }
+    try {
+      const snapshots = await supabaseUserSync.listSnapshots();
+      setLatestSnapshotTime(snapshots[0]?.createdAt || null);
+    } catch {
+      setLatestSnapshotTime(null);
+    }
+  }, [user?.id, supabaseUserSync]);
 
   const loadSyncStatus = useCallback(async () => {
     try {
@@ -150,6 +166,7 @@ export const [CloudSyncProvider, useCloudSync] = createContextHook(() => {
       if (useSupabase) {
         const ok = await syncAllDataToCloud(dataToSync);
         if (!ok) throw new Error('Supabase returned no confirmation');
+        await refreshSnapshotMeta();
       } else {
         const storageToUse = storage || cloudStorage;
         if (!storageToUse) {
@@ -175,7 +192,7 @@ export const [CloudSyncProvider, useCloudSync] = createContextHook(() => {
       console.warn('Sync to cloud failed:', msg, err);
       return false;
     }
-  }, [isAuthenticated, user, useSupabase, cloudStorage, isCloudEnabled, habits, activities, shows, sports, allTasks, projects, timeEntries, profile, contextsReady]);
+  }, [isAuthenticated, user, useSupabase, cloudStorage, isCloudEnabled, habits, activities, shows, sports, allTasks, projects, timeEntries, profile, contextsReady, refreshSnapshotMeta]);
 
   const syncFromCloud = useCallback(async (storage?: any) => {
     if (!isAuthenticated || !user) {
@@ -276,8 +293,21 @@ export const [CloudSyncProvider, useCloudSync] = createContextHook(() => {
         try {
           const initialized = await initializeSync(true);
           if (initialized) {
-            console.log('[useCloudSync] Initial push to Supabase after sign-in');
-            await syncToCloud();
+            const hasAnyLocalData =
+              habits.length > 0 ||
+              activities.length > 0 ||
+              shows.length > 0 ||
+              sports.length > 0 ||
+              allTasks.length > 0 ||
+              projects.length > 0 ||
+              timeEntries.length > 0;
+
+            if (hasAnyLocalData) {
+              console.log('[useCloudSync] Initial push to Supabase after sign-in');
+              await syncToCloud();
+            } else {
+              console.log('[useCloudSync] Skipping initial push because local datasets are empty (prevents cloud overwrite).');
+            }
           } else {
             console.log('Cloud sync not available, using local storage');
           }
@@ -288,7 +318,22 @@ export const [CloudSyncProvider, useCloudSync] = createContextHook(() => {
     };
     
     void autoInitializeSupabaseSync();
-  }, [isAuthenticated, user, isCloudEnabled, contextsReady, supabaseInitAttempted, initializeSync, syncToCloud]);
+  }, [
+    isAuthenticated,
+    user,
+    isCloudEnabled,
+    contextsReady,
+    supabaseInitAttempted,
+    initializeSync,
+    syncToCloud,
+    habits.length,
+    activities.length,
+    shows.length,
+    sports.length,
+    allTasks.length,
+    projects.length,
+    timeEntries.length,
+  ]);
 
   // Load sync status from storage
   useEffect(() => {
@@ -332,6 +377,19 @@ export const [CloudSyncProvider, useCloudSync] = createContextHook(() => {
   const syncToCloudWrapper = useCallback(() => syncToCloud(), [syncToCloud]);
   const syncFromCloudWrapper = useCallback(() => syncFromCloud(), [syncFromCloud]);
 
+  const restoreLatestSnapshot = useCallback(async () => {
+    if (!user?.id) return { success: false, error: 'No signed-in user' };
+    const result = await supabaseUserSync.restoreSnapshot();
+    if (result.success) {
+      await refreshSnapshotMeta();
+    }
+    return result;
+  }, [user?.id, supabaseUserSync, refreshSnapshotMeta]);
+
+  useEffect(() => {
+    void refreshSnapshotMeta();
+  }, [refreshSnapshotMeta]);
+
   return useMemo(() => ({
     // Status
     syncStatus,
@@ -353,8 +411,10 @@ export const [CloudSyncProvider, useCloudSync] = createContextHook(() => {
     
     // Helpers
     isOnline: isCloudEnabled && syncStatus !== 'error',
+    latestSnapshotTime,
+    restoreLatestSnapshot,
     
     // Auto-sync status
     isAutoSyncActive: isCloudEnabled && (useSupabase || !!cloudStorage),
-  }), [syncStatus, lastSyncTime, isCloudEnabled, error, enableCloudSync, disableCloudSync, syncToCloudWrapper, syncFromCloudWrapper, forceSync, useSupabase, cloudStorage]);
+  }), [syncStatus, lastSyncTime, isCloudEnabled, error, enableCloudSync, disableCloudSync, syncToCloudWrapper, syncFromCloudWrapper, forceSync, useSupabase, cloudStorage, latestSnapshotTime, restoreLatestSnapshot]);
 });

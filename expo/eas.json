@@ -24,12 +24,17 @@
     "production": {
       "node": "20.19.4",
       "environment": "production",
+      "autoIncrement": true,
       "env": {
         "APP_ENV": "production"
       }
     }
   },
   "submit": {
-    "production": {}
+    "production": {
+      "ios": {
+        "ascAppId": "6761662079"
+      }
+    }
   }
 }

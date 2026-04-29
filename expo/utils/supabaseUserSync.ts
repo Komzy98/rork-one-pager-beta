@@ -33,6 +33,39 @@ export interface UserData {
 }
 
 const TABLE = 'user_data';
+const MAX_SNAPSHOTS = 8;
+
+type SnapshotReason = 'cloud_pull' | 'cloud_push' | 'manual_backup';
+
+type SnapshotMeta = {
+  key: string;
+  createdAt: string;
+  reason: SnapshotReason;
+};
+
+const SNAPSHOT_MANIFEST_KEY = (userId: string) => `sync_snapshot_manifest_${userId}`;
+const SNAPSHOT_KEY = (userId: string, createdAt: string) => `sync_snapshot_${userId}_${createdAt}`;
+
+const ARRAY_MERGE_KEYS: (keyof UserData)[] = [
+  'habits',
+  'activities',
+  'shows',
+  'sports',
+  'tasks',
+  'taskProjects',
+  'taskTimeEntries',
+];
+
+const USER_SCOPED_STORAGE_KEYS = {
+  habits: (userId: string) => `habits_${userId}`,
+  activities: (userId: string) => `activities_${userId}`,
+  shows: (userId: string) => `shows_${userId}`,
+  sports: (userId: string) => `sports_${userId}`,
+  tasks: (userId: string) => `tasks_${userId}`,
+  taskProjects: (userId: string) => `task_projects_${userId}`,
+  taskTimeEntries: (userId: string) => `task_time_entries_${userId}`,
+  userProfile: (userId: string) => `@user_profile_${userId}`,
+};
 
 export class SupabaseUserSync {
   private userId: string;
@@ -72,6 +105,155 @@ export class SupabaseUserSync {
     ]);
   }
 
+  private parseIsoTime(value: unknown): number {
+    if (!value || typeof value !== 'string') return 0;
+    const t = Date.parse(value);
+    return Number.isFinite(t) ? t : 0;
+  }
+
+  private mergeArrayById(localItems: any[], cloudItems: any[]): any[] {
+    const byId = new Map<string, any>();
+    const localWithoutId: any[] = [];
+    const cloudWithoutId: any[] = [];
+
+    for (const item of cloudItems) {
+      const id = item?.id;
+      if (!id) {
+        cloudWithoutId.push(item);
+        continue;
+      }
+      byId.set(String(id), item);
+    }
+
+    for (const item of localItems) {
+      const id = item?.id;
+      if (!id) {
+        localWithoutId.push(item);
+        continue;
+      }
+      const key = String(id);
+      const existing = byId.get(key);
+      if (!existing) {
+        byId.set(key, item);
+        continue;
+      }
+      const localTs = this.parseIsoTime(item?.updatedAt) || this.parseIsoTime(item?.createdAt);
+      const cloudTs = this.parseIsoTime(existing?.updatedAt) || this.parseIsoTime(existing?.createdAt);
+      if (localTs >= cloudTs) {
+        byId.set(key, item);
+      }
+    }
+
+    return [...byId.values(), ...cloudWithoutId, ...localWithoutId];
+  }
+
+  private mergePayload(existing: Partial<UserData> | null, incoming: Partial<UserData>): Partial<UserData> {
+    const base = removeUndefined({ ...(existing || {}) }) as Partial<UserData>;
+    const next = removeUndefined({ ...incoming }) as Partial<UserData>;
+    const merged: Partial<UserData> = { ...base, ...next };
+
+    for (const key of ARRAY_MERGE_KEYS) {
+      const incomingArr = Array.isArray(next[key]) ? (next[key] as any[]) : undefined;
+      const baseArr = Array.isArray(base[key]) ? (base[key] as any[]) : undefined;
+      if (incomingArr && baseArr) {
+        merged[key] = this.mergeArrayById(incomingArr, baseArr) as any;
+      }
+    }
+
+    if (base.userProfile && next.userProfile && typeof base.userProfile === 'object' && typeof next.userProfile === 'object') {
+      merged.userProfile = { ...base.userProfile, ...next.userProfile } as any;
+    }
+
+    return merged;
+  }
+
+  private async saveSnapshot(data: Partial<UserData>, reason: SnapshotReason): Promise<void> {
+    try {
+      const createdAt = new Date().toISOString();
+      const key = SNAPSHOT_KEY(this.userId, createdAt);
+      const snapshotPayload = removeUndefined({
+        createdAt,
+        reason,
+        data,
+      });
+      await unifiedStorage.setItem(key, JSON.stringify(snapshotPayload));
+
+      const manifestRaw = await unifiedStorage.getItem(SNAPSHOT_MANIFEST_KEY(this.userId));
+      const manifest: SnapshotMeta[] = manifestRaw ? JSON.parse(manifestRaw) : [];
+      const nextManifest = [{ key, createdAt, reason }, ...manifest].slice(0, MAX_SNAPSHOTS);
+
+      if (manifest.length >= MAX_SNAPSHOTS) {
+        const toDelete = manifest.slice(MAX_SNAPSHOTS - 1);
+        for (const entry of toDelete) {
+          await unifiedStorage.removeItem(entry.key);
+        }
+      }
+
+      await unifiedStorage.setItem(SNAPSHOT_MANIFEST_KEY(this.userId), JSON.stringify(nextManifest));
+      await unifiedStorage.setItem(`sync_last_snapshot_time_${this.userId}`, createdAt);
+    } catch (error) {
+      console.warn('Failed to save sync snapshot:', error);
+    }
+  }
+
+  async listSnapshots(): Promise<SnapshotMeta[]> {
+    try {
+      const raw = await unifiedStorage.getItem(SNAPSHOT_MANIFEST_KEY(this.userId));
+      if (!raw) return [];
+      const parsed = JSON.parse(raw);
+      return Array.isArray(parsed) ? parsed : [];
+    } catch {
+      return [];
+    }
+  }
+
+  async restoreSnapshot(snapshotKey?: string): Promise<{ success: boolean; restoredAt?: string; error?: string }> {
+    try {
+      const manifest = await this.listSnapshots();
+      if (manifest.length === 0) {
+        return { success: false, error: 'No snapshots available' };
+      }
+      const target = snapshotKey ? manifest.find((entry) => entry.key === snapshotKey) : manifest[0];
+      if (!target) return { success: false, error: 'Snapshot not found' };
+
+      const raw = await unifiedStorage.getItem(target.key);
+      if (!raw) return { success: false, error: 'Snapshot data missing' };
+      const parsed = JSON.parse(raw) as { data?: Partial<UserData> };
+      const snapshot = parsed?.data;
+      if (!snapshot) return { success: false, error: 'Snapshot payload invalid' };
+
+      if (Array.isArray(snapshot.habits)) {
+        await unifiedStorage.setItem(USER_SCOPED_STORAGE_KEYS.habits(this.userId), JSON.stringify(snapshot.habits));
+      }
+      if (Array.isArray(snapshot.activities)) {
+        await unifiedStorage.setItem(USER_SCOPED_STORAGE_KEYS.activities(this.userId), JSON.stringify(snapshot.activities));
+      }
+      if (Array.isArray(snapshot.shows)) {
+        await unifiedStorage.setItem(USER_SCOPED_STORAGE_KEYS.shows(this.userId), JSON.stringify(snapshot.shows));
+      }
+      if (Array.isArray(snapshot.sports)) {
+        await unifiedStorage.setItem(USER_SCOPED_STORAGE_KEYS.sports(this.userId), JSON.stringify(snapshot.sports));
+      }
+      if (Array.isArray(snapshot.tasks)) {
+        await unifiedStorage.setItem(USER_SCOPED_STORAGE_KEYS.tasks(this.userId), JSON.stringify(snapshot.tasks));
+      }
+      if (Array.isArray(snapshot.taskProjects)) {
+        await unifiedStorage.setItem(USER_SCOPED_STORAGE_KEYS.taskProjects(this.userId), JSON.stringify(snapshot.taskProjects));
+      }
+      if (Array.isArray(snapshot.taskTimeEntries)) {
+        await unifiedStorage.setItem(USER_SCOPED_STORAGE_KEYS.taskTimeEntries(this.userId), JSON.stringify(snapshot.taskTimeEntries));
+      }
+      if (snapshot.userProfile && typeof snapshot.userProfile === 'object') {
+        await unifiedStorage.setItem(USER_SCOPED_STORAGE_KEYS.userProfile(this.userId), JSON.stringify(snapshot.userProfile));
+      }
+
+      await unifiedStorage.setItem(`sync_last_restore_time_${this.userId}`, new Date().toISOString());
+      return { success: true, restoredAt: target.createdAt };
+    } catch (error: any) {
+      return { success: false, error: error?.message || 'Failed to restore snapshot' };
+    }
+  }
+
   async saveToCloud(data: Partial<UserData>): Promise<void> {
     if (this.disabled) {
       await this.saveToLocalFallback(data);
@@ -80,8 +262,7 @@ export class SupabaseUserSync {
     try {
       const existing = await this.loadFromCloud();
       const merged = removeUndefined({
-        ...(existing || {}),
-        ...data,
+        ...this.mergePayload(existing, data),
         userId: this.userId,
         lastSynced: new Date().toISOString(),
       });
@@ -101,6 +282,7 @@ export class SupabaseUserSync {
 
       if (error) throw error;
       this.failureCount = 0;
+      await this.saveSnapshot(merged, 'cloud_push');
       console.log('Data saved to Supabase for user:', this.userId);
     } catch (error: any) {
       console.warn('Supabase save failed, using local fallback:', error?.message || String(error));
@@ -165,7 +347,9 @@ export class SupabaseUserSync {
       if (error) throw error;
       this.failureCount = 0;
       if (data?.data) {
-        return data.data as UserData;
+        const payload = data.data as UserData;
+        await this.saveSnapshot(payload, 'cloud_pull');
+        return payload;
       }
       return null;
     } catch (error: any) {
@@ -239,6 +423,8 @@ export const useSupabaseSync = (userId: string | undefined) => {
       loadFromCloud: sync ? sync.loadFromCloud.bind(sync) : async () => null,
       setupRealtimeSync: sync ? sync.setupRealtimeSync.bind(sync) : () => () => {},
       cleanup: sync ? sync.cleanup.bind(sync) : () => {},
+      listSnapshots: sync ? sync.listSnapshots.bind(sync) : async () => [],
+      restoreSnapshot: sync ? sync.restoreSnapshot.bind(sync) : async () => ({ success: false, error: 'No sync context' }),
     }),
     [sync]
   );

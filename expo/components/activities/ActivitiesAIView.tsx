@@ -67,6 +67,7 @@ export default function ActivitiesAIView({ onRequestPeakScheduler }: Props) {
   const intelligence = useActivityIntelligence();
 
   const useBentoInsights = windowW >= 390;
+  const useTwoColumnInsights = windowW >= 430;
 
   const stats = useMemo(() => {
     const today = new Date().getDay();
@@ -424,31 +425,33 @@ export default function ActivitiesAIView({ onRequestPeakScheduler }: Props) {
               </View>
             </View>
           </View>
-          <View style={[styles.insightGrid, useBentoInsights && styles.insightGridWide]}>
+          <View style={[styles.insightGrid, useTwoColumnInsights && styles.insightGridWide]}>
             {intelligence.crossInsights.slice(0, 4).map((insight, index) => (
               <View
                 key={insight.id || `ins-${index}`}
                 style={[
                   styles.insightCard,
                   { backgroundColor: surface, borderColor: outline },
-                  useBentoInsights && styles.insightGridItem,
+                  useTwoColumnInsights && styles.insightGridItem,
                 ]}
                 accessibilityLabel={`${insight.title}. ${insight.description}`}
               >
                 <View style={[styles.insightAccent, { backgroundColor: ACCENT[index % 3] }]} />
                 <View style={styles.insightInner}>
-                  <View style={[styles.insightIcon, { backgroundColor: ACCENT_SOFT[index % 3] }]}>
-                    <Sparkles size={16} color={ACCENT[index % 3]} />
+                  <View style={styles.insightTopRow}>
+                    <View style={[styles.insightIcon, { backgroundColor: ACCENT_SOFT[index % 3] }]}>
+                      <Sparkles size={16} color={ACCENT[index % 3]} />
+                    </View>
+                    <View style={[styles.confidencePill, { borderColor: outline }]}>
+                      <Text style={[styles.confidenceText, { color: ACCENT[index % 3] }]}>
+                        {Math.round(insight.confidence * 100)}%
+                      </Text>
+                    </View>
                   </View>
                   <View style={styles.insightCopy}>
                     <Text style={[styles.insightTitle, { color: colors.text }]}>{insight.title}</Text>
                     <Text style={[styles.insightDesc, { color: colors.textSecondary }]} numberOfLines={3}>
                       {insight.description}
-                    </Text>
-                  </View>
-                  <View style={[styles.confidencePill, { borderColor: outline }]}>
-                    <Text style={[styles.confidenceText, { color: ACCENT[index % 3] }]}>
-                      {Math.round(insight.confidence * 100)}%
                     </Text>
                   </View>
                 </View>
@@ -885,10 +888,16 @@ const styles = StyleSheet.create({
     width: '100%',
   },
   insightInner: {
+    flexDirection: 'column',
+    alignItems: 'stretch',
+    padding: SPACE.lg,
+    gap: SPACE.sm,
+  },
+  insightTopRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    padding: SPACE.lg,
-    gap: SPACE.md,
+    justifyContent: 'space-between',
+    marginBottom: SPACE.sm,
   },
   insightIcon: {
     width: 44,
@@ -912,6 +921,7 @@ const styles = StyleSheet.create({
     lineHeight: 20,
   },
   confidencePill: {
+    alignSelf: 'flex-start',
     borderWidth: 1,
     borderRadius: RADIUS.pill,
     paddingHorizontal: 10,
