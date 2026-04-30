@@ -19,6 +19,7 @@ import * as Crypto from 'expo-crypto';
 import * as Haptics from 'expo-haptics';
 import { Mail, Lock, User, Eye, EyeOff, UserPlus } from 'lucide-react-native';
 import { useAuth } from '@/hooks/useAuth';
+import { supabaseConfigured } from '@/utils/supabaseClient';
 import { COLORS } from '@/constants/colors';
 import { SignupCredentials } from '@/types/habit';
 import { checkAuthRateLimit, recordAuthAttempt, formatRetryMessage } from '@/utils/authRateLimiter';
@@ -46,7 +47,12 @@ export default function SignupScreen() {
 
   const handleGoogleSignUp = async () => {
     if (!googleAuthConfig.isConfigured) {
-      Alert.alert('Not Configured', 'Google Sign-In is not configured. Please set EXPO_PUBLIC_GOOGLE_CLIENT_ID in your environment variables.');
+      Alert.alert(
+        'Google sign-up unavailable',
+        supabaseConfigured
+          ? 'Turn on the Google provider in Supabase (Authentication → Providers) and add redirect URL onepager://auth. Or set EXPO_PUBLIC_GOOGLE_CLIENT_ID for standalone OAuth.'
+          : 'Add Supabase env vars or EXPO_PUBLIC_GOOGLE_CLIENT_ID.',
+      );
       return;
     }
 

@@ -21,6 +21,7 @@ import { Mail, Lock, Eye, EyeOff, Settings, Trash2, UserPlus, AlertCircle, Check
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import * as Haptics from 'expo-haptics';
 import { useAuth } from '@/hooks/useAuth';
+import { supabaseConfigured } from '@/utils/supabaseClient';
 import { COLORS } from '@/constants/colors';
 import { LoginCredentials } from '@/types/habit';
 import { checkAuthRateLimit, recordAuthAttempt, formatRetryMessage } from '@/utils/authRateLimiter';
@@ -116,7 +117,12 @@ export default function LoginScreen() {
 
   const handleGoogleSignIn = async () => {
     if (!googleAuthConfig.isConfigured) {
-      Alert.alert('Not Configured', 'Google Sign-In is not configured. Please set EXPO_PUBLIC_GOOGLE_CLIENT_ID in your environment variables.');
+      Alert.alert(
+        'Google sign-in unavailable',
+        supabaseConfigured
+          ? 'Turn on the Google provider in Supabase (Authentication → Providers) and add this redirect URL to Google Cloud OAuth credentials and Supabase redirect URLs: use scheme onepager with path auth (e.g. onepager://auth). Or set EXPO_PUBLIC_GOOGLE_CLIENT_ID for standalone OAuth without Supabase.'
+          : 'Add EXPO_PUBLIC_SUPABASE_URL and EXPO_PUBLIC_SUPABASE_ANON_KEY for Google via Supabase, or set EXPO_PUBLIC_GOOGLE_CLIENT_ID for direct Google OAuth.',
+      );
       return;
     }
 
