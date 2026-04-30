@@ -2033,6 +2033,11 @@ export default function SportsScreen() {
                           : 'Fights & results')
                 }
               </Text>
+              {sportMode === 'football' ? (
+                <Text style={[styles.headerInfoLabel, { color: isDark ? 'rgba(142,142,147,0.9)' : 'rgba(107,107,133,0.9)' }]}>
+                  Top 5 leagues + competitions
+                </Text>
+              ) : null}
             </View>
             <TouchableOpacity 
               style={[styles.refreshBtn, { backgroundColor: isDark ? 'rgba(255,255,255,0.06)' : 'rgba(0,0,0,0.04)' }]}
@@ -2572,6 +2577,13 @@ const styles = StyleSheet.create({
     fontWeight: '500' as const,
     marginTop: 2,
     letterSpacing: -0.1,
+  },
+  headerInfoLabel: {
+    fontSize: 11,
+    fontWeight: '600' as const,
+    marginTop: 4,
+    letterSpacing: 0.2,
+    textTransform: 'uppercase' as const,
   },
   refreshBtn: {
     width: 38,

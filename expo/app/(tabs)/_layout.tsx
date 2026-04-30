@@ -117,7 +117,7 @@ const AnimatedTabItem = React.memo(({
   const label = getTabTitle(route.name);
 
   const activeColor = isShowsTabActive ? '#FF4444' : colors.primary;
-  const inactiveColor = 'rgba(255, 255, 255, 0.5)';
+  const inactiveColor = isFocused ? activeColor : colors.textSecondary;
 
   return (
     <View style={styles.tabButton}>
@@ -133,6 +133,11 @@ const AnimatedTabItem = React.memo(({
       >
       <Animated.View style={[
         styles.tabItemContainer,
+        isFocused && styles.tabItemContainerFocused,
+        isFocused && {
+          backgroundColor: 'rgba(255, 255, 255, 0.18)',
+          borderColor: 'rgba(255, 255, 255, 0.3)',
+        },
         { transform: [{ scale: scaleAnim }] },
       ]}>
         <Animated.View style={[{ transform: [{ scale: iconScale }] }]}>
@@ -205,8 +210,9 @@ function CustomTabBar({ state, descriptors, navigation }: BottomTabBarProps) {
       shadowColor: colors.shadow,
       opacity: containerOpacity,
     }]}>
-      <BlurView intensity={isShowsTabActive ? 120 : 95} tint="dark" style={[styles.blurContainer, {
-        backgroundColor: isShowsTabActive ? 'rgba(0, 0, 0, 0.9)' : (isDark ? 'rgba(0, 0, 0, 0.75)' : 'rgba(255, 255, 255, 0.75)'),
+      <BlurView intensity={isShowsTabActive ? 100 : 85} tint={isDark ? 'dark' : 'light'} style={[styles.blurContainer, {
+        backgroundColor: isShowsTabActive ? 'rgba(10, 10, 18, 0.78)' : (isDark ? 'rgba(12, 12, 20, 0.62)' : 'rgba(255, 255, 255, 0.68)'),
+        borderColor: isDark ? 'rgba(255,255,255,0.14)' : 'rgba(255,255,255,0.6)',
       }]}>
         <View style={styles.tabBarInner}>
           {visibleRoutes.map((route) => {
@@ -326,6 +332,7 @@ const styles = StyleSheet.create({
     flex: 1,
     borderRadius: 36,
     overflow: 'hidden',
+    borderWidth: 1,
   },
   tabBarInner: {
     flex: 1,
@@ -349,6 +356,9 @@ const styles = StyleSheet.create({
     paddingHorizontal: 12,
     borderRadius: 24,
     minWidth: 68,
+  },
+  tabItemContainerFocused: {
+    borderWidth: 1,
   },
   tabLabel: {
     fontSize: 9,

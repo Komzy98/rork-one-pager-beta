@@ -176,7 +176,8 @@ const INTERNATIONAL_COMPETITIONS = KEY_INTERNATIONAL_LEAGUES;
 
 export { INTERNATIONAL_COMPETITIONS };
 
-const CORE_LEAGUES = [39, 140, 78, 135, 61, 2, 3];
+const CORE_LEAGUES = [39, 140, 78, 135, 61];
+const CORE_COMPETITIONS = [2, 3, 848]; // UCL, UEL, UECL
 const SECONDARY_LEAGUES = [848, 45, 48, 143, 81, 137, 66];
 
 const getMatchesInputSchema = z.object({
@@ -352,7 +353,8 @@ async function fetchMatchesByType(input: GetMatchesInput) {
         console.log(`⚽ Fetching ${limitedLeagues.length} user-selected leagues`);
         limitedLeagues.forEach(id => allPromises.push(fetchLeagueMatches(id)));
       } else {
-        CORE_LEAGUES.slice(0, 5).forEach(id => allPromises.push(fetchLeagueMatches(id)));
+        // Default feed: top 5 domestic leagues + major UEFA competitions.
+        [...CORE_LEAGUES, ...CORE_COMPETITIONS].forEach(id => allPromises.push(fetchLeagueMatches(id)));
       }
 
       if (nationalTeamIds && nationalTeamIds.length > 0) {

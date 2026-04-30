@@ -180,6 +180,8 @@ export default function HabitDetailModal({
     ? computeAdaptiveWeeks(originalWeeks, originalDaysPerWeek, selectedDays.length)
     : null;
   const isFitnessProgram = !!(habit?.weeks && habit.weeks.length > 0 && originalWeeks);
+  const todayDayIndex = new Date().getDay();
+  const isScheduledToday = selectedDays.includes(todayDayIndex);
 
   if (!habit) return null;
 
@@ -200,19 +202,29 @@ export default function HabitDetailModal({
   };
 
   const handleAdd = () => {
-    if (isAdded) return;
-    
-    void Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
-    
+    void Haptics.notificationAsync(
+      isAdded
+        ? Haptics.NotificationFeedbackType.Warning
+        : Haptics.NotificationFeedbackType.Success
+    );
+
     Animated.sequence([
       Animated.timing(scaleValue, { toValue: 0.95, duration: 100, useNativeDriver: true }),
       Animated.timing(scaleValue, { toValue: 1, duration: 100, useNativeDriver: true }),
     ]).start();
-    
+
+    if (isAdded) {
+      onAdd(habit);
+      setTimeout(onClose, 250);
+      return;
+    }
+
     const customizedHabit: CommunityHabit = {
       ...habit,
       frequency: {
         ...habit.frequency,
+        // When users customize weekdays, treat this as day-specific scheduling.
+        type: 'specific_days',
         days: selectedDays,
         timesPerWeek: selectedDays.length,
       },
@@ -399,6 +411,11 @@ export default function HabitDetailModal({
               </Text>
 
               <Text style={styles.scheduleHint}>Tap a day to customize your schedule</Text>
+              {!isScheduledToday && (
+                <Text style={styles.notScheduledHint}>
+                  Not scheduled for today ({DAY_NAMES_FULL[todayDayIndex]}).
+                </Text>
+              )}
               
               <View style={styles.weekCalendar}>
                 {DAY_NAMES.map((day, index) => {
@@ -821,15 +838,17 @@ export default function HabitDetailModal({
           <View style={styles.footer}>
             <Animated.View style={{ flex: 1, transform: [{ scale: scaleValue }] }}>
               <TouchableOpacity
-                style={[styles.addButton, isAdded && styles.addButtonAdded]}
+                style={[
+                  styles.addButton,
+                  isAdded ? styles.addButtonRemove : styles.addButtonAdded,
+                ]}
                 onPress={handleAdd}
                 activeOpacity={0.8}
-                disabled={isAdded}
               >
                 {isAdded ? (
                   <>
-                    <Check size={20} color="#fff" />
-                    <Text style={styles.addButtonText}>Added to Your Routine</Text>
+                    <X size={20} color="#fff" />
+                    <Text style={styles.addButtonText}>Remove from My Routine</Text>
                   </>
                 ) : (
                   <>
@@ -1036,6 +1055,12 @@ const styles = StyleSheet.create({
     marginBottom: 10,
     fontStyle: 'italic' as const,
   },
+  notScheduledHint: {
+    fontSize: 12,
+    color: '#FF3B30',
+    marginBottom: 10,
+    fontWeight: '600' as const,
+  },
   schedulePresetsRow: {
     flexDirection: 'row',
     flexWrap: 'wrap' as const,
@@ -1230,6 +1255,9 @@ const styles = StyleSheet.create({
   },
   addButtonAdded: {
     backgroundColor: '#34C759',
+  },
+  addButtonRemove: {
+    backgroundColor: '#FF3B30',
   },
   addButtonText: {
     fontSize: 16,

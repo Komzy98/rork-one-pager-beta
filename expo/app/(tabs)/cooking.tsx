@@ -659,8 +659,6 @@ const MOCK_RECIPES: Recipe[] = [
     steps: ['Slice plantains diagonally, fry in coconut oil 3 min per side until caramelised', 'Saut\u00E9 garlic, add black beans with liquid, paprika, simmer 5 min, mash slightly', 'Warm brown rice, divide between bowls', 'Top with beans, plantain, sliced avocado', 'Squeeze lime, scatter coriander & serve'],
     stepTimers: [360, 300, null, null, null],
   },
-];
-
   {
     id: '19',
     title: 'Greek Yoghurt Chicken Salad',

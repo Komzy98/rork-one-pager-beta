@@ -1308,7 +1308,11 @@ export default function ActivitiesScreen() {
       return (
         <TouchableOpacity
           key={show.id}
-          style={[styles.cwCard, index === 0 && { marginLeft: 0 }]}
+          style={[
+            styles.cwCard,
+            { backgroundColor: colors.card, borderColor: colors.border },
+            index === 0 && { marginLeft: 0 },
+          ]}
           onPress={() => handleContinueWatching(show)}
           onLongPress={() => handleRemoveShow(show.id, show.title)}
           delayLongPress={350}
@@ -1328,16 +1332,14 @@ export default function ActivitiesScreen() {
                 <Tv size={28} color="rgba(255,255,255,0.7)" />
               </LinearGradient>
             )}
-            <LinearGradient colors={['transparent', 'rgba(0,0,0,0.4)', 'rgba(0,0,0,0.92)']} start={{ x: 0, y: 0.35 }} end={{ x: 0, y: 1 }} style={styles.cwPosterGradient} />
-            <View style={styles.cwCardBottom}>
-              <Text style={styles.cwCardTitle} numberOfLines={2}>{show.title}</Text>
-              <View style={styles.cwCardMeta}>
-                <Text style={styles.cwCardEpisode} numberOfLines={1}>{episodeLabel}</Text>
-                <Text style={styles.cwCardPlatform} numberOfLines={1}>{show.platform}</Text>
-              </View>
-              <View style={styles.cwProgressTrack}>
-                <View style={[styles.cwProgressFill, { width: `${progress}%` }]} />
-              </View>
+          </View>
+          <View style={styles.cwCardInfo}>
+            <Text style={[styles.cwCardTitle, { color: colors.text }]} numberOfLines={2}>{show.title}</Text>
+            <View style={styles.cwCardMeta}>
+              <Text style={[styles.cwCardEpisode, { color: colors.textSecondary }]} numberOfLines={1}>{episodeLabel}</Text>
+            </View>
+            <View style={styles.cwProgressTrack}>
+              <View style={[styles.cwProgressFill, { width: `${progress}%` }]} />
             </View>
           </View>
         </TouchableOpacity>
@@ -1349,13 +1351,16 @@ export default function ActivitiesScreen() {
     const episode = row.episode != null ? String(row.episode).trim() : '';
     const continueEpisodeLabel = season || episode ? `S${season || '—'} E${episode || '—'}` : 'Resume';
     const svc = row.younifySourceService as YounifySourceServiceSnapshot | undefined;
-    const svcRecord = (svc || {}) as Record<string, unknown>;
     const yProgress = getContinueWatchingProgressPercent(row);
 
     return (
       <TouchableOpacity
         key={`younify-cw-${key}`}
-        style={[styles.cwCard, index === 0 && { marginLeft: 0 }]}
+        style={[
+          styles.cwCard,
+          { backgroundColor: colors.card, borderColor: colors.border },
+          index === 0 && { marginLeft: 0 },
+        ]}
         onPress={async () => {
           if (Platform.OS !== 'web') {
             await Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
@@ -1372,23 +1377,23 @@ export default function ActivitiesScreen() {
               <YounifyServiceLogoMark service={svc} size={28} />
             </View>
           ) : null}
-          <LinearGradient colors={['transparent', 'rgba(0,0,0,0.4)', 'rgba(0,0,0,0.92)']} start={{ x: 0, y: 0.35 }} end={{ x: 0, y: 1 }} style={styles.cwPosterGradient} />
-          <View style={styles.cwCardBottom}>
-            <Text style={styles.cwCardTitle} numberOfLines={2}>{String(row.showTitle || row.title || 'Continue watching')}</Text>
-            <View style={styles.cwCardMeta}>
-              <Text style={styles.cwCardEpisode} numberOfLines={1}>{continueEpisodeLabel}</Text>
-              <Text style={styles.cwCardPlatform} numberOfLines={1}>{String(svcRecord.displayName || svcRecord.name || row.sourceService || 'Streaming')}</Text>
-            </View>
-            {yProgress > 0 ? (
-              <View style={styles.cwProgressTrack}>
-                <View style={[styles.cwProgressFill, { width: `${yProgress}%` }]} />
-              </View>
-            ) : null}
+        </View>
+        <View style={styles.cwCardInfo}>
+          <Text style={[styles.cwCardTitle, { color: colors.text }]} numberOfLines={2}>
+            {String(row.showTitle || row.title || 'Continue watching')}
+          </Text>
+          <View style={styles.cwCardMeta}>
+            <Text style={[styles.cwCardEpisode, { color: colors.textSecondary }]} numberOfLines={1}>{continueEpisodeLabel}</Text>
           </View>
+          {yProgress > 0 ? (
+            <View style={styles.cwProgressTrack}>
+              <View style={[styles.cwProgressFill, { width: `${yProgress}%` }]} />
+            </View>
+          ) : null}
         </View>
       </TouchableOpacity>
     );
-  }, [younifyContinueByTmdbId, handleContinueWatching, handleRemoveShow, linkedStreamingCount]);
+  }, [younifyContinueByTmdbId, handleContinueWatching, handleRemoveShow, linkedStreamingCount, colors.card, colors.border, colors.text, colors.textSecondary]);
 
   const handleContinueWatchingYounify = useCallback(async (row: Record<string, unknown>) => {
     if (Platform.OS !== 'web') {
@@ -3100,16 +3105,19 @@ const styles = StyleSheet.create({
     width: CW_CARD_WIDTH,
     marginLeft: 12,
     borderRadius: 14,
-    overflow: 'hidden',
-    backgroundColor: '#1a1a2e',
+    overflow: 'visible',
+    backgroundColor: '#FFFFFF',
+    borderWidth: 1,
+    borderColor: 'rgba(15, 23, 42, 0.08)',
+    paddingBottom: 10,
     ...Platform.select({
       ios: {
         shadowColor: '#000',
         shadowOffset: { width: 0, height: 6 },
-        shadowOpacity: 0.25,
-        shadowRadius: 12,
+        shadowOpacity: 0.08,
+        shadowRadius: 10,
       },
-      android: { elevation: 8 },
+      android: { elevation: 3 },
     }),
   },
   cwPosterWrap: {
@@ -3117,6 +3125,8 @@ const styles = StyleSheet.create({
     width: CW_CARD_WIDTH,
     height: CW_POSTER_HEIGHT,
     backgroundColor: '#1E293B',
+    borderRadius: 12,
+    overflow: 'hidden',
   },
   cwYounifyLogoMark: {
     position: 'absolute',
@@ -3164,30 +3174,28 @@ const styles = StyleSheet.create({
     paddingBottom: 10,
   },
   cwCardTitle: {
-    fontSize: 15,
+    fontSize: 13,
     fontWeight: '700' as const,
-    color: '#fff',
-    marginBottom: 4,
-    letterSpacing: -0.2,
+    color: '#111827',
+    letterSpacing: -0.1,
+    lineHeight: 17,
   },
   cwCardMeta: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-    marginBottom: 8,
+    marginBottom: 6,
+    marginTop: 3,
   },
   cwCardEpisode: {
-    fontSize: 11,
-    fontWeight: '600' as const,
-    color: 'rgba(255,255,255,0.7)',
-    letterSpacing: 0.2,
-  },
-  cwCardPlatform: {
     fontSize: 10,
     fontWeight: '600' as const,
-    color: 'rgba(255,255,255,0.45)',
-    textTransform: 'uppercase' as const,
-    letterSpacing: 0.5,
+    color: '#6B7280',
+    letterSpacing: 0.2,
+  },
+  cwCardInfo: {
+    paddingHorizontal: 8,
+    paddingTop: 8,
   },
   cwProgressTrack: {
     height: 3,

@@ -272,7 +272,10 @@ export const [HabitsEnhancementProvider, useHabitsEnhancement] = createContextHo
     weekStart.setDate(weekStart.getDate() - weekStart.getDay());
     const weekStartStr = `${weekStart.getFullYear()}-${String(weekStart.getMonth() + 1).padStart(2, '0')}-${String(weekStart.getDate()).padStart(2, '0')}`;
 
-    const frequencyType = communityHabit.frequency.type || 'specific_days';
+    const hasExplicitDays = Array.isArray(communityHabit.frequency.days) && communityHabit.frequency.days.length > 0;
+    const frequencyType = hasExplicitDays
+      ? 'specific_days'
+      : (communityHabit.frequency.type || 'specific_days');
     const timesPerWeek = communityHabit.frequency.timesPerWeek;
     
     const newTaskHabit: Omit<Task, 'id' | 'createdAt' | 'updatedAt'> = {
