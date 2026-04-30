@@ -51,6 +51,8 @@ import { Modal, Platform } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useTheme } from '@/hooks/useTheme';
+import { useUserProfile } from '@/hooks/useUserProfile';
+import { getNationalitySignals } from '@/utils/nationalityPersonalization';
 import * as Haptics from 'expo-haptics';
 import { Stack, useLocalSearchParams, useRouter } from 'expo-router';
 
@@ -659,6 +661,170 @@ const MOCK_RECIPES: Recipe[] = [
   },
 ];
 
+  {
+    id: '19',
+    title: 'Greek Yoghurt Chicken Salad',
+    subtitle: 'Creamy, high-protein and light',
+    cookTime: '10 min',
+    prepTime: '10 min',
+    servings: 2,
+    difficulty: 'Easy',
+    calories: 240,
+    protein: 30,
+    carbs: 9,
+    fat: 8,
+    category: 'lunch',
+    tags: ['low-calorie', 'high-protein', 'healthy', 'quick', 'mediterranean'],
+    image: 'https://images.unsplash.com/photo-1547592166-23ac45744acd?w=600&q=80',
+    rating: 4.7,
+    isFavourite: false,
+    ingredients: [
+      { name: 'Cooked chicken breast', amount: 260, unit: 'g' },
+      { name: 'Greek yoghurt', amount: 120, unit: 'g' },
+      { name: 'Celery', amount: 2, unit: 'stalks' },
+      { name: 'Red onion', amount: 0.25, unit: 'whole' },
+      { name: 'Dijon mustard', amount: 1, unit: 'tsp' },
+      { name: 'Lemon juice', amount: 1, unit: 'tbsp' },
+    ],
+    steps: ['Shred chicken', 'Mix yoghurt, mustard and lemon', 'Fold in chopped veg and chicken', 'Season and chill 5 min'],
+    stepTimers: [null, null, null, 300],
+  },
+  {
+    id: '20',
+    title: 'Lemon Herb Cod Parcels',
+    subtitle: 'Steamed fish with bright citrus',
+    cookTime: '18 min',
+    prepTime: '10 min',
+    servings: 2,
+    difficulty: 'Easy',
+    calories: 230,
+    protein: 33,
+    carbs: 7,
+    fat: 7,
+    category: 'healthy',
+    tags: ['low-calorie', 'fish', 'high-protein', 'mediterranean', 'whole-foods'],
+    image: 'https://images.unsplash.com/photo-1467003909585-2f8a72700288?w=600&q=80',
+    rating: 4.8,
+    isFavourite: false,
+    ingredients: [
+      { name: 'Cod fillets', amount: 2, unit: 'fillets' },
+      { name: 'Lemon', amount: 1, unit: 'whole' },
+      { name: 'Asparagus', amount: 180, unit: 'g' },
+      { name: 'Parsley', amount: 2, unit: 'tbsp' },
+      { name: 'Olive oil', amount: 1, unit: 'tbsp' },
+    ],
+    steps: ['Preheat oven 200C', 'Wrap cod, asparagus, lemon and herbs in foil', 'Bake 15-18 min', 'Serve with pan juices'],
+    stepTimers: [null, null, 1080, null],
+  },
+  {
+    id: '21',
+    title: 'Tomato Basil Egg White Omelette',
+    subtitle: 'Lean breakfast with fresh herbs',
+    cookTime: '7 min',
+    prepTime: '5 min',
+    servings: 1,
+    difficulty: 'Easy',
+    calories: 170,
+    protein: 20,
+    carbs: 6,
+    fat: 6,
+    category: 'breakfast',
+    tags: ['low-calorie', 'high-protein', 'quick', 'healthy', 'low-carb'],
+    image: 'https://images.unsplash.com/photo-1510693206972-df098062cb71?w=600&q=80',
+    rating: 4.4,
+    isFavourite: false,
+    ingredients: [
+      { name: 'Egg whites', amount: 180, unit: 'ml' },
+      { name: 'Cherry tomatoes', amount: 80, unit: 'g' },
+      { name: 'Fresh basil', amount: 1, unit: 'tbsp' },
+      { name: 'Olive oil spray', amount: 1, unit: 'tsp' },
+    ],
+    steps: ['Whisk egg whites', 'Cook tomatoes 1 min', 'Pour whites and set', 'Fold with basil'],
+    stepTimers: [null, 60, null, null],
+  },
+  {
+    id: '22',
+    title: 'Spicy Lentil Soup',
+    subtitle: 'Filling bowl under 300 calories',
+    cookTime: '25 min',
+    prepTime: '10 min',
+    servings: 4,
+    difficulty: 'Easy',
+    calories: 220,
+    protein: 13,
+    carbs: 31,
+    fat: 5,
+    category: 'healthy',
+    tags: ['low-calorie', 'plant-based', 'vegetarian', 'healthy', 'whole-foods'],
+    image: 'https://images.unsplash.com/photo-1547592180-85f173990554?w=600&q=80',
+    rating: 4.7,
+    isFavourite: false,
+    ingredients: [
+      { name: 'Red lentils', amount: 220, unit: 'g' },
+      { name: 'Carrots', amount: 2, unit: 'whole' },
+      { name: 'Onion', amount: 1, unit: 'whole' },
+      { name: 'Vegetable stock', amount: 1.2, unit: 'l' },
+      { name: 'Cumin', amount: 1, unit: 'tsp' },
+    ],
+    steps: ['Saute onion and carrot', 'Add lentils, cumin and stock', 'Simmer 20 min', 'Blend half for creaminess'],
+    stepTimers: [null, null, 1200, null],
+  },
+  {
+    id: '23',
+    title: 'Chicken & Broccoli Stir-Fry',
+    subtitle: 'Weeknight classic made lighter',
+    cookTime: '14 min',
+    prepTime: '10 min',
+    servings: 2,
+    difficulty: 'Easy',
+    calories: 285,
+    protein: 34,
+    carbs: 16,
+    fat: 9,
+    category: 'dinner',
+    tags: ['low-calorie', 'high-protein', 'quick', 'healthy', 'whole-foods'],
+    image: 'https://images.unsplash.com/photo-1603133872878-684f208fb84b?w=600&q=80',
+    rating: 4.7,
+    isFavourite: false,
+    ingredients: [
+      { name: 'Chicken breast', amount: 300, unit: 'g' },
+      { name: 'Broccoli florets', amount: 250, unit: 'g' },
+      { name: 'Low-sodium soy sauce', amount: 1, unit: 'tbsp' },
+      { name: 'Garlic cloves', amount: 2, unit: 'cloves' },
+      { name: 'Sesame oil', amount: 1, unit: 'tsp' },
+    ],
+    steps: ['Sear chicken strips', 'Add broccoli and a splash of water', 'Add garlic and soy', 'Finish with sesame oil'],
+    stepTimers: [300, 300, null, null],
+  },
+  {
+    id: '24',
+    title: 'Cauliflower Rice Burrito Bowl',
+    subtitle: 'Mexican-style bowl, lower carbs',
+    cookTime: '15 min',
+    prepTime: '10 min',
+    servings: 2,
+    difficulty: 'Easy',
+    calories: 270,
+    protein: 17,
+    carbs: 22,
+    fat: 12,
+    category: 'dinner',
+    tags: ['low-calorie', 'low-carb', 'healthy', 'quick', 'vegetarian'],
+    image: 'https://images.unsplash.com/photo-1512621776951-a57141f2eefd?w=600&q=80',
+    rating: 4.5,
+    isFavourite: false,
+    ingredients: [
+      { name: 'Cauliflower rice', amount: 300, unit: 'g' },
+      { name: 'Black beans', amount: 180, unit: 'g' },
+      { name: 'Sweetcorn', amount: 100, unit: 'g' },
+      { name: 'Tomato salsa', amount: 120, unit: 'g' },
+      { name: 'Avocado', amount: 0.5, unit: 'whole' },
+    ],
+    steps: ['Cook cauliflower rice 4 min', 'Warm beans and sweetcorn', 'Assemble with salsa and avocado'],
+    stepTimers: [240, null, null],
+  },
+];
+
 const TODAYS_MEAL_PLAN: MealPlanItem[] = [
   { id: '1', meal: 'Breakfast', recipe: 'Berry Smoothie Bowl', time: '8:00', icon: Coffee, iconColor: '#F59E0B', completed: true },
   { id: '2', meal: 'Lunch', recipe: 'Mediterranean Quinoa Bowl', time: '12:30', icon: Salad, iconColor: '#34C759', completed: false },
@@ -718,6 +884,7 @@ const getDifficultyColor = (difficulty: string): string => {
 
 export default function CookingScreen() {
   const { isDark } = useTheme();
+  const { profile } = useUserProfile();
   const insets = useSafeAreaInsets();
   const router = useRouter();
   const params = useLocalSearchParams<{ diet?: string; dietLabel?: string; habitName?: string }>();
@@ -753,6 +920,10 @@ export default function CookingScreen() {
   const [timerRunning, setTimerRunning] = useState<boolean>(false);
   const [shoppingOpen, setShoppingOpen] = useState<boolean>(false);
   const [shoppingList, setShoppingList] = useState<{ id: string; recipeId: string; name: string; amount: string; checked: boolean }[]>([]);
+
+  const nationalitySignals = useMemo(() => getNationalitySignals(profile), [profile]);
+  const nationalityRecipeTags = nationalitySignals.recipeTags;
+  const nationalityName = nationalitySignals.primaryName;
 
   const cookingRecipe = useMemo(() => recipes.find(r => r.id === cookingRecipeId) ?? null, [recipes, cookingRecipeId]);
 
@@ -872,8 +1043,24 @@ export default function CookingScreen() {
         r.ingredients.some((i: Ingredient) => i.name.toLowerCase().includes(q))
       );
     }
+    if (!searchQuery.trim() && selectedCategory === 'all' && !activeDiet && nationalityRecipeTags.length > 0) {
+      const countrySpecific = filtered.filter((r) =>
+        r.tags.some((t) => nationalityRecipeTags.includes(t.toLowerCase())),
+      );
+      const rest = filtered.filter((r) =>
+        !r.tags.some((t) => nationalityRecipeTags.includes(t.toLowerCase())),
+      );
+      return [...countrySpecific, ...rest];
+    }
     return filtered;
-  }, [recipes, selectedCategory, searchQuery, activeDiet]);
+  }, [recipes, selectedCategory, searchQuery, activeDiet, nationalityRecipeTags]);
+
+  const countryCuisineRecipes = useMemo(() => {
+    if (nationalityRecipeTags.length === 0) return [];
+    return recipes
+      .filter((r) => r.tags.some((t) => nationalityRecipeTags.includes(t.toLowerCase())))
+      .slice(0, 8);
+  }, [recipes, nationalityRecipeTags]);
 
   const clearDiet = useCallback(() => {
     void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
@@ -1162,6 +1349,41 @@ export default function CookingScreen() {
                   >
                     <Heart size={16} color="#FF3B30" fill="#FF3B30" />
                   </TouchableOpacity>
+                </TouchableOpacity>
+              ))}
+            </ScrollView>
+          </View>
+        )}
+
+        {countryCuisineRecipes.length > 0 && selectedCategory === 'all' && !searchQuery && (
+          <View style={styles.section}>
+            <View style={styles.sectionHeader}>
+              <View style={styles.sectionTitleRow}>
+                <Star size={18} color={accentColor} />
+                <Text style={[styles.sectionTitle, { color: mainText }]}>
+                  {nationalityName ? `${nationalityName} recipes` : 'Country recipes'}
+                </Text>
+              </View>
+            </View>
+            <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.favouritesScroll}>
+              {countryCuisineRecipes.map((recipe) => (
+                <TouchableOpacity
+                  key={`country-${recipe.id}`}
+                  style={[styles.favouriteCard, { backgroundColor: cardBg, borderColor: cardBorder }]}
+                  activeOpacity={0.8}
+                >
+                  <Image source={{ uri: recipe.image }} style={styles.favouriteImage} />
+                  <LinearGradient colors={['transparent', 'rgba(0,0,0,0.7)']} style={styles.favouriteGradient} />
+                  <View style={styles.favouriteOverlay}>
+                    <Text style={styles.favouriteTitle} numberOfLines={1}>{recipe.title}</Text>
+                    <View style={styles.favouriteMeta}>
+                      <Clock size={12} color="#FFF" />
+                      <Text style={styles.favouriteMetaText}>{recipe.cookTime}</Text>
+                      <View style={styles.favouriteDot} />
+                      <Star size={12} color="#FFD700" />
+                      <Text style={styles.favouriteMetaText}>{recipe.rating}</Text>
+                    </View>
+                  </View>
                 </TouchableOpacity>
               ))}
             </ScrollView>

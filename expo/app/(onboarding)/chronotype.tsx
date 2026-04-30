@@ -21,7 +21,7 @@ import { Chronotype, ChronotypeInfo } from '@/types/habit';
 export default function ChronotypeScreen() {
   const router = useRouter();
   const insets = useSafeAreaInsets();
-  const { updateProfile, profile } = useUserProfile();
+  const { updateProfile } = useUserProfile();
   const { totalSteps, stepChronotype } = useOnboardingStepMeta();
   const [selected, setSelected] = useState<Chronotype | null>(null);
   const [expandedId, setExpandedId] = useState<Chronotype | null>(null);
@@ -84,14 +84,8 @@ export default function ChronotypeScreen() {
     if (!selected) return;
     void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
     updateProfile({ chronotype: selected });
-
-    const hasSportsInterest = profile?.interests?.includes('football') || profile?.interests?.includes('nba');
-    if (hasSportsInterest) {
-      router.push('/(onboarding)/nationality' as any);
-    } else {
-      router.push('/(onboarding)/complete' as any);
-    }
-  }, [selected, updateProfile, router, profile?.interests]);
+    router.push('/(onboarding)/nationality' as any);
+  }, [selected, updateProfile, router]);
 
   const handleBack = useCallback(() => {
     router.back();
@@ -99,13 +93,8 @@ export default function ChronotypeScreen() {
 
   const handleSkip = useCallback(() => {
     void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-    const hasSportsInterest = profile?.interests?.includes('football') || profile?.interests?.includes('nba');
-    if (hasSportsInterest) {
-      router.push('/(onboarding)/nationality' as any);
-    } else {
-      router.push('/(onboarding)/complete' as any);
-    }
-  }, [router, profile?.interests]);
+    router.push('/(onboarding)/nationality' as any);
+  }, [router]);
 
   const getIconForChronotype = (id: Chronotype) => {
     switch (id) {
@@ -206,7 +195,7 @@ export default function ChronotypeScreen() {
           <ArrowLeft size={20} color={COLORS.textMuted} />
         </TouchableOpacity>
         <View style={styles.progressWrap}>
-          <OnboardingProgress currentStep={3} totalSteps={6} />
+          <OnboardingProgress currentStep={stepChronotype} totalSteps={totalSteps} />
         </View>
         <TouchableOpacity onPress={handleSkip} activeOpacity={0.7}>
           <Text style={styles.skipText}>Skip</Text>

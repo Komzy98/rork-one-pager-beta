@@ -43,6 +43,7 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import { LinearGradient } from 'expo-linear-gradient';
 import { useUserProfile } from '@/hooks/useUserProfile';
 import { useTheme } from '@/hooks/useTheme';
+import { getNationalitySignals } from '@/utils/nationalityPersonalization';
 import { COLORS } from '@/constants/colors';
 import { trpc } from '@/lib/trpc';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -1584,6 +1585,17 @@ export default function SportsScreen() {
   const filteredLiveMatches = useMemo(() => filterMatchesByLeague(liveMatches), [liveMatches, filterMatchesByLeague]);
   const filteredUpcomingMatches = useMemo(() => filterMatchesByLeague(upcomingMatches), [upcomingMatches, filterMatchesByLeague]);
   const filteredCompletedMatches = useMemo(() => filterMatchesByLeague(completedMatches), [completedMatches, filterMatchesByLeague]);
+  const nationalitySignals = useMemo(() => getNationalitySignals(profile), [profile]);
+
+  const applyNationalityFilter = useCallback((matches: Match[]) => {
+    if (sportMode !== 'football') return matches;
+    if (nationalitySignals.countryNamesLower.length === 0) return matches;
+    const filtered = matches.filter((m) => {
+      const haystack = `${m.leagueCountry} ${m.homeTeam} ${m.awayTeam}`.toLowerCase();
+      return nationalitySignals.countryNamesLower.some((country) => haystack.includes(country));
+    });
+    return filtered.length > 0 ? filtered : matches;
+  }, [sportMode, nationalitySignals.countryNamesLower]);
 
   const pinFavorites = useCallback((matches: Match[]) => {
     const pinned: Match[] = [];
@@ -1600,12 +1612,12 @@ export default function SportsScreen() {
 
   const displayMatches = useMemo(() => {
     switch (activeTab) {
-      case 'live': return pinFavorites(filteredLiveMatches);
-      case 'upcoming': return pinFavorites(filteredUpcomingMatches);
-      case 'results': return pinFavorites(filteredCompletedMatches);
+      case 'live': return pinFavorites(applyNationalityFilter(filteredLiveMatches));
+      case 'upcoming': return pinFavorites(applyNationalityFilter(filteredUpcomingMatches));
+      case 'results': return pinFavorites(applyNationalityFilter(filteredCompletedMatches));
       default: return [];
     }
-  }, [activeTab, filteredLiveMatches, filteredUpcomingMatches, filteredCompletedMatches, pinFavorites]);
+  }, [activeTab, filteredLiveMatches, filteredUpcomingMatches, filteredCompletedMatches, pinFavorites, applyNationalityFilter]);
 
   const groupedMatches = useMemo(() => {
     if (activeTab === 'live') return null;

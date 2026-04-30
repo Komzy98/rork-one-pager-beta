@@ -320,25 +320,6 @@ export default function CompleteScreen() {
       });
     }
 
-    if (profile?.nationalities && profile.nationalities.length > 0) {
-      rows.push({
-        key: 'nationality',
-        node: (
-          <View style={styles.summaryItem}>
-            <View style={styles.summaryIconWrap}>
-              <Text style={styles.summaryEmoji}>
-                {profile.nationalities[0]?.flag?.trim() || '🏳️'}
-              </Text>
-            </View>
-            <View style={styles.summaryTextWrap}>
-              <Text style={styles.summaryLabel}>Nationality</Text>
-              <Text style={styles.summaryValue}>{profile.nationalities.map(n => n.name).join(', ')}</Text>
-            </View>
-          </View>
-        ),
-      });
-    }
-
     return rows;
   }, [profile, selectedInterests, hasFootball]);
 

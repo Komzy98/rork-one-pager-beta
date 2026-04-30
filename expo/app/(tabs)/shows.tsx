@@ -75,6 +75,7 @@ import { extractTmdbMediaTypeFromYounifyRow } from '@/utils/younifyTmdbPoster';
 
 import { episodeNotificationService, TrackedShow } from '@/utils/episodeNotificationService';
 import { useUserProfile } from '@/hooks/useUserProfile';
+import { getNationalitySignals } from '@/utils/nationalityPersonalization';
 import { likedContentService } from '@/utils/likedContentService';
 import WatchProviders from '@/components/WatchProviders';
 import ConnectedServicesHero from '@/components/younify/ConnectedServicesHero';
@@ -1067,19 +1068,22 @@ export default function ShowsScreen() {
   });
 
   const { profile } = useUserProfile();
+  const nationalitySignals = useMemo(() => getNationalitySignals(profile), [profile]);
   const userCountryCode = useMemo(() => {
+    if (nationalitySignals.primaryCode) return nationalitySignals.primaryCode;
     if (profile?.favoriteCountries && profile.favoriteCountries.length > 0) {
       return profile.favoriteCountries[0].code;
     }
     return null;
-  }, [profile?.favoriteCountries]);
+  }, [profile?.favoriteCountries, nationalitySignals.primaryCode]);
 
   const userCountryName = useMemo(() => {
+    if (nationalitySignals.primaryName) return nationalitySignals.primaryName;
     if (profile?.favoriteCountries && profile.favoriteCountries.length > 0) {
       return profile.favoriteCountries[0].name;
     }
     return null;
-  }, [profile?.favoriteCountries]);
+  }, [profile?.favoriteCountries, nationalitySignals.primaryName]);
 
   const regionTrendingQuery = useQuery({
     queryKey: ['region-trending', userCountryCode],
@@ -2322,7 +2326,7 @@ export default function ShowsScreen() {
               {regionTrendingQuery.data && userCountryName && (
                 <>
                   {renderSection(
-                    `Trending in ${userCountryName}`,
+                    `${userCountryName} Movie Releases`,
                     <Globe size={18} color={'#00D1FF'} />,
                     regionTrendingQuery.data.movies.slice(0, 10) || [],
                     'movie',

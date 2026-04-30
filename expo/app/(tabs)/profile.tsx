@@ -1,4 +1,4 @@
-import React, { useState, useCallback } from 'react';
+import React, { useState, useCallback, useEffect } from 'react';
 import {
   StyleSheet,
   View,
@@ -82,10 +82,7 @@ import { FOOTBALL_COUNTRIES, FOOTBALL_TEAMS, searchTeams as searchAllTeams } fro
 import { ALL_NBA_TEAMS, searchNBATeams, NBATeamInfo } from '@/constants/nbaData';
 import TabWalkthrough from '@/components/TabWalkthrough';
 import { useWalkthrough } from '@/hooks/useWalkthrough';
-import { ALL_NATIONS, Nation } from '@/constants/nations';
 import { NationFlag } from '@/components/NationFlag';
-
-type Nationality = Nation;
 
 if (Platform.OS === 'android' && UIManager.setLayoutAnimationEnabledExperimental) {
   UIManager.setLayoutAnimationEnabledExperimental(true);
@@ -137,7 +134,7 @@ type ExpandedSection = 'favorites' | 'notifications' | 'security' | 'appearance'
 
 export default function ProfileScreen() {
   const { colors, isDark, setThemeMode } = useTheme();
-  const { user, logout, deleteAccount, isGuest, mfa } = useAuth();
+  const { user, supabaseUser, logout, deleteAccount, isGuest, mfa } = useAuth();
   const {
     profile,
     updateProfile,
@@ -189,11 +186,9 @@ export default function ProfileScreen() {
   const [showNBATeamModal, setShowNBATeamModal] = useState<boolean>(false);
   const [showCountryModal, setShowCountryModal] = useState<boolean>(false);
   const [showInterestsModal, setShowInterestsModal] = useState<boolean>(false);
-  const [showNationalityModal, setShowNationalityModal] = useState<boolean>(false);
   const [teamSearch, setTeamSearch] = useState<string>('');
   const [nbaTeamSearch, setNbaTeamSearch] = useState<string>('');
   const [countrySearch, setCountrySearch] = useState<string>('');
-  const [nationalitySearch, setNationalitySearch] = useState<string>('');
   const [editingName, setEditingName] = useState<boolean>(false);
   const [tempName, setTempName] = useState<string>(profile?.name || '');
   const [expandedSection, setExpandedSection] = useState<ExpandedSection>(null);
@@ -211,6 +206,21 @@ export default function ProfileScreen() {
   const hasSportsInterest = hasInterest('football');
   const hasNBAInterest = hasInterest('nba');
   const unlockedBadgesCount = badges.filter(b => b.unlockedAt).length;
+  const googleProvider = supabaseUser?.app_metadata?.provider;
+  const googleProviders = Array.isArray(supabaseUser?.app_metadata?.providers)
+    ? (supabaseUser.app_metadata.providers as string[])
+    : [];
+  const isGoogleSignedIn =
+    !isGuest && (googleProvider === 'google' || googleProviders.includes('google') || user?.id?.startsWith('google_'));
+  const profileAvatarUri = profile?.avatar || user?.avatar;
+
+  useEffect(() => {
+    if (isGuest) return;
+    if (!user?.avatar) return;
+    if (!profile?.avatar) {
+      updateProfile({ avatar: user.avatar });
+    }
+  }, [isGuest, user?.avatar, profile?.avatar, updateProfile]);
 
   const handleClaimWeeklyReward = useCallback(() => {
     const result = claimWeeklyReward();
@@ -411,11 +421,6 @@ export default function ProfileScreen() {
     country.leagues.some(league => league.toLowerCase().includes(countrySearch.toLowerCase()))
   );
 
-  const filteredNationalities = ALL_NATIONS.filter(nation =>
-    nationalitySearch.trim() === '' || 
-    nation.name.toLowerCase().includes(nationalitySearch.toLowerCase())
-  ).sort((a, b) => a.name.localeCompare(b.name));
-
   const handleSaveName = () => {
     updateProfile({ name: tempName });
     setEditingName(false);
@@ -484,33 +489,6 @@ export default function ProfileScreen() {
     }
   };
 
-  const handleRemoveNationality = (nationalityId: string) => {
-    Alert.alert('Remove Nationality', 'Remove this nationality?', [
-      { text: 'Cancel', style: 'cancel' },
-      { 
-        text: 'Remove', 
-        style: 'destructive', 
-        onPress: () => {
-          const updatedNationalities = profile.nationalities?.filter(n => n.id !== nationalityId) || [];
-          updateProfile({ nationalities: updatedNationalities });
-        }
-      }
-    ]);
-  };
-
-  const handleAddNationality = (nation: Nationality) => {
-    const isAlreadyAdded = profile.nationalities?.some(n => n.id === nation.id) ?? false;
-    if (!isAlreadyAdded) {
-      const updatedNationalities = [
-        ...(profile.nationalities || []),
-        { id: nation.id, name: nation.name, code: nation.code, flag: nation.flag, apiId: nation.apiId }
-      ];
-      updateProfile({ nationalities: updatedNationalities });
-      setShowNationalityModal(false);
-      setNationalitySearch('');
-    }
-  };
-
   const handleLogout = () => {
     Alert.alert('Sign Out', 'Are you sure you want to sign out?', [
       { text: 'Cancel', style: 'cancel' },
@@ -574,8 +552,8 @@ export default function ProfileScreen() {
               >
                 {isUploadingImage ? (
                   <ActivityIndicator size="small" color={colors.primary} />
-                ) : profile?.avatar ? (
-                  <Image source={{ uri: profile.avatar }} style={styles.avatarImage} contentFit="cover" transition={200} />
+                ) : profileAvatarUri ? (
+                  <Image source={{ uri: profileAvatarUri }} style={styles.avatarImage} contentFit="cover" transition={200} />
                 ) : (
                   <User size={36} color={colors.primary} />
                 )}
@@ -613,6 +591,16 @@ export default function ProfileScreen() {
                 <Text style={[styles.heroEmail, { color: colors.textTertiary }]}>
                   {isGuest ? 'guest@example.com' : user.email}
                 </Text>
+                {isGoogleSignedIn && (
+                  <View style={[styles.googleBadge, { backgroundColor: colors.surfaceSecondary, borderColor: colors.border }]}>
+                    <Image
+                      source={{ uri: 'https://developers.google.com/identity/images/g-logo.png' }}
+                      style={styles.googleBadgeLogo}
+                      contentFit="contain"
+                    />
+                    <Text style={[styles.googleBadgeText, { color: colors.textSecondary }]}>Signed in with Google</Text>
+                  </View>
+                )}
               </View>
 
               {/* Dark Mode Toggle */}
@@ -718,7 +706,7 @@ export default function ProfileScreen() {
                 <View style={styles.settingsItemContent}>
                   <Text style={[styles.settingsItemTitle, { color: colors.text }]}>Favorite Teams</Text>
                   <Text style={[styles.settingsItemSubtitle, { color: colors.textTertiary }]}>
-                    {profile.favoriteTeams.length + (profile.favoriteNBATeams?.length || 0) + (profile.nationalities?.length || 0)} teams, {profile.favoriteCountries.length} leagues
+                    {profile.favoriteTeams.length + (profile.favoriteNBATeams?.length || 0)} teams, {profile.favoriteCountries.length} leagues
                   </Text>
                 </View>
                 {expandedSection === 'favorites' ? (
@@ -781,31 +769,6 @@ export default function ProfileScreen() {
                     </View>
                   ) : (
                     <Text style={[styles.emptyFavText, { color: colors.textTertiary }]}>No teams added</Text>
-                  )}
-                </View>
-
-                {/* Nationalities */}
-                <View style={styles.favSubSection}>
-                  <View style={styles.favSubHeader}>
-                    <Text style={[styles.favSubTitle, { color: colors.text }]}>Nationalities</Text>
-                    <TouchableOpacity style={[styles.addSmallBtn, { backgroundColor: colors.primary + '15' }]} onPress={() => setShowNationalityModal(true)}>
-                      <Plus size={14} color={colors.primary} />
-                    </TouchableOpacity>
-                  </View>
-                  {(profile.nationalities?.length || 0) > 0 ? (
-                    <View style={styles.favChipsList}>
-                      {profile.nationalities?.map(nation => (
-                        <View key={nation.id} style={[styles.favChip, { backgroundColor: colors.card, borderColor: colors.border }]}>
-                          <NationFlag code={nation.code} width={22} borderRadius={4} />
-                          <Text style={[styles.favChipText, { color: colors.text }]} numberOfLines={1}>{nation.name}</Text>
-                          <TouchableOpacity onPress={() => handleRemoveNationality(nation.id)} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
-                            <X size={12} color={colors.textTertiary} />
-                          </TouchableOpacity>
-                        </View>
-                      ))}
-                    </View>
-                  ) : (
-                    <Text style={[styles.emptyFavText, { color: colors.textTertiary }]}>No nationalities added</Text>
                   )}
                 </View>
 
@@ -1714,49 +1677,6 @@ export default function ProfileScreen() {
           </View>
         </Modal>
 
-        <Modal visible={showNationalityModal} animationType="slide" presentationStyle="pageSheet">
-          <View style={[styles.modalContainer, { backgroundColor: colors.background }]}>
-            <View style={[styles.modalHeader, { borderBottomColor: colors.border }]}>
-              <Text style={[styles.modalTitle, { color: colors.text }]}>Add Nationality</Text>
-              <TouchableOpacity style={[styles.modalClose, { backgroundColor: colors.surfaceSecondary }]} onPress={() => { setShowNationalityModal(false); setNationalitySearch(''); }}>
-                <X size={20} color={colors.text} />
-              </TouchableOpacity>
-            </View>
-            <View style={[styles.searchBox, { backgroundColor: colors.surfaceSecondary }]}>
-              <TextInput
-                style={[styles.searchInput, { color: colors.text }]}
-                placeholder="Search nationalities..."
-                placeholderTextColor={colors.textTertiary}
-                value={nationalitySearch}
-                onChangeText={setNationalitySearch}
-              />
-            </View>
-            <View style={[styles.modalInfoBanner, { backgroundColor: '#FFD700' + '15' }]}>
-              <Text style={[styles.modalInfoText, { color: colors.text }]}>🏆 Track AFCON, World Cup qualifiers, and international matches</Text>
-            </View>
-            <ScrollView style={styles.modalList}>
-              {filteredNationalities.map((nation) => {
-                const isAdded = profile.nationalities?.some(n => n.id === nation.id) ?? false;
-                return (
-                  <TouchableOpacity
-                    key={nation.id}
-                    style={[styles.modalOption, { borderBottomColor: colors.border }, isAdded && styles.modalOptionDisabled]}
-                    onPress={() => handleAddNationality(nation)}
-                    disabled={isAdded}
-                  >
-                    <NationFlag code={nation.code} width={36} borderRadius={6} style={{ marginRight: 12 }} />
-                    <View style={styles.modalOptionInfo}>
-                      <Text style={[styles.modalOptionName, { color: isAdded ? colors.textTertiary : colors.text }]}>{nation.name}</Text>
-                      <Text style={[styles.modalOptionSub, { color: colors.textTertiary }]}>National Team • AFCON • World Cup</Text>
-                    </View>
-                    {isAdded && <Text style={[styles.addedLabel, { color: colors.primary }]}>Added</Text>}
-                  </TouchableOpacity>
-                );
-              })}
-            </ScrollView>
-          </View>
-        </Modal>
-
         <Modal visible={showTabOrderModal} animationType="slide" presentationStyle="pageSheet">
           <View style={[styles.modalContainer, { backgroundColor: colors.background }]}>
             <View style={[styles.modalHeader, { borderBottomColor: colors.border }]}>
@@ -2029,6 +1949,25 @@ const styles = StyleSheet.create({
   heroEmail: {
     fontSize: 14,
     marginTop: 2,
+  },
+  googleBadge: {
+    marginTop: 8,
+    alignSelf: 'flex-start',
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 10,
+    paddingVertical: 5,
+    borderRadius: 999,
+    borderWidth: 1,
+    gap: 6,
+  },
+  googleBadgeLogo: {
+    width: 14,
+    height: 14,
+  },
+  googleBadgeText: {
+    fontSize: 12,
+    fontWeight: '600',
   },
   nameInput: {
     fontSize: 22,

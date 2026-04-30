@@ -41,6 +41,7 @@ import { LinearGradient } from 'expo-linear-gradient';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useTheme } from '@/hooks/useTheme';
 import { useUserProfile } from '@/hooks/useUserProfile';
+import { getNationalitySignals } from '@/utils/nationalityPersonalization';
 import * as Haptics from 'expo-haptics';
 import { Stack } from 'expo-router';
 import MapView, { Marker } from 'react-native-maps';
@@ -256,6 +257,44 @@ const MOCK_EVENTS: Event[] = [
     latitude: 51.3983,
     longitude: -0.0855,
   },
+  {
+    id: '9',
+    title: 'Nigerian Independence Concert',
+    venue: 'Tafawa Balewa Square',
+    location: 'Lagos',
+    date: 'Wed, 01 Oct',
+    time: '18:00',
+    category: 'music',
+    price: '₦8,000',
+    image: 'https://images.unsplash.com/photo-1511379938547-c1f69419868d?w=600',
+    isSaved: false,
+    attendees: 4200,
+    rating: 4.7,
+    tags: ['nigeria', 'nigerian', 'afrobeats', 'live'],
+    description: 'A national day celebration featuring top Afrobeats artists.',
+    isFeatured: true,
+    latitude: 6.4500,
+    longitude: 3.3947,
+  },
+  {
+    id: '10',
+    title: 'Nollywood Film Night',
+    venue: 'Silverbird Galleria',
+    location: 'Abuja',
+    date: 'Fri, 10 Oct',
+    time: '19:30',
+    category: 'arts',
+    price: '₦5,500',
+    image: 'https://images.unsplash.com/photo-1489599849927-2ee91cede3ba?w=600',
+    isSaved: false,
+    attendees: 900,
+    rating: 4.6,
+    tags: ['nigeria', 'nigerian', 'nollywood', 'film'],
+    description: 'Red carpet screening and panel with Nollywood creators.',
+    isHot: true,
+    latitude: 9.0600,
+    longitude: 7.4900,
+  },
 ];
 
 const MY_UPCOMING: UpcomingEvent[] = [
@@ -444,6 +483,8 @@ export default function EventsScreen() {
   };
 
   const baseEvents = filteredEvents.length > 0 ? filteredEvents : events;
+  const nationalitySignals = useMemo(() => getNationalitySignals(profile), [profile]);
+  const nationalityEventKeywords = nationalitySignals.eventKeywords;
   const savedEvents = useMemo(() => {
     const list = events.filter(e => e.isSaved);
     return list.sort((a, b) => {
@@ -505,10 +546,18 @@ export default function EventsScreen() {
 
   const forYouEvents = useMemo(() => {
     if (baseEvents.length === 0) return [];
+    const countryMatches =
+      nationalityEventKeywords.length > 0
+        ? baseEvents.filter((e) => {
+            const haystack = `${e.location} ${e.venue} ${e.title} ${e.tags.join(' ')}`.toLowerCase();
+            return nationalityEventKeywords.some((k) => haystack.includes(k));
+          })
+        : [];
+    if (countryMatches.length > 0) return countryMatches.slice(0, 4);
     const matches = baseEvents.filter(e => forYouCategorySet.has(e.category)).slice(0, 4);
     if (matches.length > 0) return matches;
     return baseEvents.filter(e => e.isFeatured || e.isHot).slice(0, 4);
-  }, [baseEvents, forYouCategorySet]);
+  }, [baseEvents, forYouCategorySet, nationalityEventKeywords]);
 
   const smartDiscoveryEvents =
     discoveryTab === 'now' ? happeningNowEvents : discoveryTab === 'near' ? nearYouEvents : forYouEvents;
