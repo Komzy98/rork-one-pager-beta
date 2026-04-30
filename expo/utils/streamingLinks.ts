@@ -909,6 +909,21 @@ export async function openYounifyBrowseItemOnPlatform(
   }
 }
 
+/**
+ * TMDB "homepage" for many Disney+ titles is a disneyplus.com series/movie URL.
+ * iOS/Android universal links hand off to the app (watch / browse — closest we get without a UUID from Younify).
+ */
+export async function tryOpenDisneyPlusFromHomepage(
+  homepage: string | null | undefined,
+): Promise<boolean> {
+  if (!homepage || !/disneyplus\.com/i.test(homepage)) return false;
+  const url = normalizeStreamingWatchUrl(homepage.trim());
+  const row = {
+    younifySourceService: { id: "337", name: "Disney Plus" },
+  } as Record<string, unknown>;
+  return openWatchUrlWithProviderFallbacks(url, row);
+}
+
 export async function openStreamingApp(
   providerId: number,
   title: string,

@@ -57,6 +57,8 @@ export interface TMDBTVShowDetails extends TMDBTVShow {
   next_episode_to_air: TMDBEpisode | null;
   last_episode_to_air: TMDBEpisode | null;
   genres: { id: number; name: string }[];
+  /** Official site; often a Disney+/Netflix URL that universal-links into the provider app */
+  homepage?: string | null;
 }
 
 export interface TMDBSearchResponse<T> {
@@ -272,7 +274,13 @@ class TMDBApi {
     return this.makeRequest(`/tv/popular?page=${page}`);
   }
 
-  async getMovieDetails(movieId: number): Promise<TMDBMovie & { runtime: number; genres: { id: number; name: string }[] }> {
+  async getMovieDetails(movieId: number): Promise<
+    TMDBMovie & {
+      runtime: number;
+      genres: { id: number; name: string }[];
+      homepage?: string | null;
+    }
+  > {
     return this.makeRequest(`/movie/${movieId}`);
   }
 

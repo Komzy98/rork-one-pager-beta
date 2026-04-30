@@ -175,44 +175,44 @@ export const [AuthProvider, useAuth] = createContextHook(() => {
     }
   }, [isInitialized, user?.id]);
 
+  const applySupabaseSession = useCallback(async (sessionUser: any) => {
+    if (!sessionUser) return;
+    if (sessionUser.email) {
+      try {
+        await migrateLocalDataToSupabaseUser(sessionUser.email, sessionUser.id);
+      } catch (migrationError) {
+        console.warn('Local->Supabase migration skipped:', migrationError);
+      }
+    }
+    const meta = sessionUser.user_metadata || {};
+    const firstName: string = meta.firstName || (meta.full_name ? String(meta.full_name).split(' ')[0] : '') || '';
+    const lastName: string = meta.lastName || (meta.full_name ? String(meta.full_name).split(' ').slice(1).join(' ') : '') || '';
+    const displayName: string = meta.name || meta.full_name || [firstName, lastName].filter(Boolean).join(' ') || (sessionUser.email ? String(sessionUser.email).split('@')[0] : 'User');
+    const authUser: AuthUser = {
+      id: sessionUser.id,
+      email: sessionUser.email || '',
+      name: displayName,
+      avatar: meta.avatar_url || meta.picture,
+      isAuthenticated: true,
+    };
+    setUser(authUser);
+    setSupabaseUser(sessionUser);
+    setIsGuest(false);
+    try {
+      await AsyncStorage.setItem(AUTH_STORAGE_KEY, JSON.stringify(authUser));
+    } catch {}
+    try {
+      const newSync = new SupabaseUserSync(sessionUser.id);
+      setSupabaseSync(newSync);
+      setAutoSyncEnabled(true);
+      void setSyncUserId(sessionUser.id);
+    } catch (syncError) {
+      console.log('Supabase sync setup skipped:', syncError);
+    }
+  }, []);
+
   useEffect(() => {
     let isMounted = true;
-
-    const applySupabaseSession = async (sessionUser: any) => {
-      if (!sessionUser || !isMounted) return;
-      if (sessionUser.email) {
-        try {
-          await migrateLocalDataToSupabaseUser(sessionUser.email, sessionUser.id);
-        } catch (migrationError) {
-          console.warn('Local->Supabase migration skipped:', migrationError);
-        }
-      }
-      const meta = sessionUser.user_metadata || {};
-      const firstName: string = meta.firstName || (meta.full_name ? String(meta.full_name).split(' ')[0] : '') || '';
-      const lastName: string = meta.lastName || (meta.full_name ? String(meta.full_name).split(' ').slice(1).join(' ') : '') || '';
-      const displayName: string = meta.name || meta.full_name || [firstName, lastName].filter(Boolean).join(' ') || (sessionUser.email ? String(sessionUser.email).split('@')[0] : 'User');
-      const authUser: AuthUser = {
-        id: sessionUser.id,
-        email: sessionUser.email || '',
-        name: displayName,
-        avatar: meta.avatar_url || meta.picture,
-        isAuthenticated: true,
-      };
-      setUser(authUser);
-      setSupabaseUser(sessionUser);
-      setIsGuest(false);
-      try {
-        await AsyncStorage.setItem(AUTH_STORAGE_KEY, JSON.stringify(authUser));
-      } catch {}
-      try {
-        const newSync = new SupabaseUserSync(sessionUser.id);
-        setSupabaseSync(newSync);
-        setAutoSyncEnabled(true);
-        void setSyncUserId(sessionUser.id);
-      } catch (syncError) {
-        console.log('Supabase sync setup skipped:', syncError);
-      }
-    };
 
     const initialize = async () => {
       try {
@@ -284,7 +284,7 @@ export const [AuthProvider, useAuth] = createContextHook(() => {
       isMounted = false;
       sub?.data?.subscription?.unsubscribe?.();
     };
-  }, []);
+  }, [applySupabaseSession]);
 
   const refreshMfaStatus = useCallback(async (): Promise<{ enabled: boolean; factorId?: string }> => {
     if (!supabaseConfigured || !user || Platform.OS === 'web') {
@@ -902,7 +902,7 @@ export const [AuthProvider, useAuth] = createContextHook(() => {
 
       const parsed = Linking.parse(result.url);
       const params: Record<string, string | undefined> = {
-        ...(parsed.queryParams as any),
+        ...(parsed.queryParams as Record<string, string | undefined>),
       };
       const hashIndex = result.url.indexOf('#');
       if (hashIndex >= 0) {
@@ -911,6 +911,15 @@ export const [AuthProvider, useAuth] = createContextHook(() => {
         hashParams.forEach((v, k) => {
           if (!params[k]) params[k] = v;
         });
+      }
+
+      const oauthErr = params.error;
+      if (oauthErr) {
+        const desc = params.error_description?.replace(/\+/g, ' ');
+        return {
+          success: false,
+          error: desc || oauthErr || 'Google sign-in was denied',
+        };
       }
 
       const access_token = params.access_token;
@@ -922,18 +931,22 @@ export const [AuthProvider, useAuth] = createContextHook(() => {
           access_token,
           refresh_token,
         });
-        if (sessionError || !sessionData.user) {
+        const sessionUser = sessionData.session?.user;
+        if (sessionError || !sessionUser) {
           return { success: false, error: sessionError?.message || 'Failed to set session' };
         }
+        await applySupabaseSession(sessionUser);
         console.log('✅ Supabase Google OAuth successful (implicit)');
         return { success: true };
       }
 
       if (code) {
         const { data: sessionData, error: sessionError } = await supabase.auth.exchangeCodeForSession(code);
-        if (sessionError || !sessionData.user) {
+        const sessionUser = sessionData.session?.user;
+        if (sessionError || !sessionUser) {
           return { success: false, error: sessionError?.message || 'Failed to exchange code' };
         }
+        await applySupabaseSession(sessionUser);
         console.log('✅ Supabase Google OAuth successful (PKCE)');
         return { success: true };
       }
@@ -945,7 +958,7 @@ export const [AuthProvider, useAuth] = createContextHook(() => {
     } finally {
       setIsLoading(false);
     }
-  }, []);
+  }, [applySupabaseSession]);
 
   const loginWithGoogle = useCallback(async (
     googleUser: { id: string; email: string; name: string; picture?: string; idToken?: string; nonce?: string }

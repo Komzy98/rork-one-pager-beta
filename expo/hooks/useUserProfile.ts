@@ -9,6 +9,35 @@ import { trpcClient } from '@/lib/trpc';
 import { useSupabaseSync } from '@/utils/supabaseUserSync';
 import { unifiedStorage } from '@/utils/unifiedStorage';
 
+/**
+ * After guest → signed-in migration, stored JSON can still have name "Guest User" while auth has the real email.
+ * Profile UI shows `user.email` from auth but `profile.name` from storage — reconcile so both match the session.
+ */
+function reconcileStoredProfileWithSession(
+  parsed: UserProfile,
+  userId: string,
+  email: string,
+  sessionDisplayName: string,
+): Pick<UserProfile, 'id' | 'email' | 'name'> {
+  const rawName = typeof parsed.name === 'string' ? parsed.name : '';
+  const placeholderName = rawName === 'Guest User' || rawName === 'Guest';
+  const dn = sessionDisplayName.trim();
+  const authNameOk = dn.length > 0 && dn !== 'Guest User' && dn !== 'Guest';
+
+  let name = rawName;
+  if (placeholderName) {
+    if (authNameOk) {
+      name = dn;
+    } else if (email && !email.toLowerCase().startsWith('guest@')) {
+      const local = email.split('@')[0] ?? '';
+      name =
+        local.length > 0 ? local.charAt(0).toUpperCase() + local.slice(1) : 'there';
+    }
+  }
+
+  return { id: userId, email, name };
+}
+
 const createDefaultProfile = (userId: string, email: string, name: string): UserProfile => {
   return {
     id: userId,
@@ -86,7 +115,7 @@ export const [UserProfileProvider, useUserProfile] = createContextHook(() => {
       
       if (stored) {
         console.log('✅ [Profile] Found existing profile');
-        const parsedProfile = JSON.parse(stored);
+        const parsedProfile = JSON.parse(stored) as UserProfile;
         console.log('📊 [Profile] Parsed profile:', {
           platform: Platform.OS,
           source: loadedFromSupabase ? 'Supabase' : 'Local Storage',
@@ -94,9 +123,21 @@ export const [UserProfileProvider, useUserProfile] = createContextHook(() => {
           favoriteTeamsCount: parsedProfile.favoriteTeams?.length || 0,
           favoriteTeams: parsedProfile.favoriteTeams?.map((t: UserTeam) => t.name) || []
         });
-        
-        const updatedProfile = {
+
+        const sessionCore = reconcileStoredProfileWithSession(
+          parsedProfile,
+          userId,
+          email,
+          name,
+        );
+        const sessionReconciled =
+          parsedProfile.id !== sessionCore.id ||
+          parsedProfile.email !== sessionCore.email ||
+          parsedProfile.name !== sessionCore.name;
+
+        const updatedProfile: UserProfile = {
           ...parsedProfile,
+          ...sessionCore,
           interests: parsedProfile.interests || [],
           favoriteCountries: parsedProfile.favoriteCountries || [],
           notificationSettings: {
@@ -113,7 +154,19 @@ export const [UserProfileProvider, useUserProfile] = createContextHook(() => {
         };
         setProfile(updatedProfile);
         console.log('✅ [Profile] Profile loaded successfully on', Platform.OS, ':', updatedProfile.name, 'Teams:', updatedProfile.favoriteTeams?.length, 'Source:', loadedFromSupabase ? 'Supabase' : 'Local');
-        
+        if (sessionReconciled) {
+          console.log('📝 [Profile] Reconciled stored profile with session (id/email/name)');
+          try {
+            await unifiedStorage.setItem(storageKey, JSON.stringify(updatedProfile));
+            if (userId && supabaseSync.saveToCloud) {
+              await supabaseSync.saveToCloud({ userProfile: updatedProfile });
+              console.log('☁️ [Profile] Synced reconciled profile to Supabase');
+            }
+          } catch (syncErr) {
+            console.log('⚠️ [Profile] Failed to persist reconciled profile:', syncErr);
+          }
+        }
+
         if (!parsedProfile.interests || !parsedProfile.favoriteCountries) {
           await unifiedStorage.setItem(storageKey, JSON.stringify(updatedProfile));
           console.log('📝 [Profile] Updated profile with new fields');

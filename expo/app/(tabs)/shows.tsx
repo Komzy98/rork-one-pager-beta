@@ -67,7 +67,7 @@ import { Show, NewShowFormData } from '@/types/habit';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { tmdbApi, TMDBMovie, TMDBTVShow, TMDBTVShowDetails, TMDBEpisode, getGenreNames, formatReleaseDate, formatRating } from '@/utils/tmdbApi';
 import { navigateToShow, showNavigationAlert } from '@/utils/streamingNavigation';
-import { openStreamingApp, getStreamingPlatform, openStreamingTitleSearch, openYounifyBrowseItemOnPlatform, younifySourceToTmdbProviderId } from '@/utils/streamingLinks';
+import { openStreamingApp, getStreamingPlatform, openStreamingTitleSearch, openYounifyBrowseItemOnPlatform, younifySourceToTmdbProviderId, tryOpenDisneyPlusFromHomepage } from '@/utils/streamingLinks';
 import { WatchProvider } from '@/utils/tmdbApi';
 import { buildYounifyProviderIndex, pickBestYounifyRowForEpisode, type YounifyProviderIndex } from '@/utils/younifyProviderIndex';
 import { extractTmdbIdFromYounifyRow } from '@/utils/aroundYouImages';
@@ -209,6 +209,9 @@ function DetailModal({
   const [loadingTrailer, setLoadingTrailer] = useState(false);
   const [tvShowDetails, setTvShowDetails] = useState<TMDBTVShowDetails | null>(null);
   const [loadingTvDetails, setLoadingTvDetails] = useState(false);
+  const [movieDetails, setMovieDetails] = useState<
+    (TMDBMovie & { runtime?: number; genres?: { id: number; name: string }[]; homepage?: string | null }) | null
+  >(null);
   const [modalWatchProviders, setModalWatchProviders] = useState<{
     streaming: WatchProvider[];
     rent: WatchProvider[];
@@ -228,6 +231,7 @@ function DetailModal({
       setModalWatchProviders(null);
       setLoadingProviders(true);
       setTvShowDetails(null);
+      setMovieDetails(null);
       setLoadingTvDetails(mediaType === 'tv');
 
       tmdbApi.getVideos(itemId, mediaType).then((res) => {
@@ -248,6 +252,14 @@ function DetailModal({
           if (__DEV__) console.error('Failed to fetch TV details:', err);
         }).finally(() => {
           setLoadingTvDetails(false);
+        });
+      }
+
+      if (mediaType === 'movie') {
+        tmdbApi.getMovieDetails(itemId).then((details) => {
+          setMovieDetails(details);
+        }).catch((err) => {
+          if (__DEV__) console.error('Failed to fetch movie details:', err);
         });
       }
 
@@ -284,6 +296,14 @@ function DetailModal({
       : parseInt((item as TMDBTVShow)?.first_air_date?.split('-')[0] || '0', 10);
     console.log(`🎬 Opening ${provider.provider_name} for "${itemTitle}"`);
     try {
+      // Disney+: prefer TMDB official homepage (disneyplus.com) — universal links open the app on title/show pages.
+      if (provider.provider_id === 337) {
+        const homepage =
+          mediaType === 'tv' ? tvShowDetails?.homepage : movieDetails?.homepage;
+        const openedDisney = await tryOpenDisneyPlusFromHomepage(homepage ?? undefined);
+        if (openedDisney) return;
+      }
+
       // Deterministic Younify selection: exact provider match first, then best ranked candidate.
       const tmdbId = item?.id ?? null;
       const normalizedTitle = itemTitle.trim().toLowerCase().replace(/\s+/g, ' ');
@@ -299,7 +319,7 @@ function DetailModal({
       });
 
       if (exactProviderRow) {
-        await openYounifyBrowseItemOnPlatform(exactProviderRow, { sectionId: 'continue' });
+        await openYounifyBrowseItemOnPlatform(exactProviderRow, {});
         return;
       }
 
@@ -308,7 +328,7 @@ function DetailModal({
         title: itemTitle,
       });
       if (bestRankedRow) {
-        await openYounifyBrowseItemOnPlatform(bestRankedRow, { sectionId: 'continue' });
+        await openYounifyBrowseItemOnPlatform(bestRankedRow, {});
         return;
       }
 
@@ -321,7 +341,14 @@ function DetailModal({
     } finally {
       setOpeningApp(false);
     }
-  }, [item, mediaType, modalWatchProviders?.link, younifyProviderIndex]);
+  }, [
+    item,
+    mediaType,
+    modalWatchProviders?.link,
+    younifyProviderIndex,
+    tvShowDetails?.homepage,
+    movieDetails?.homepage,
+  ]);
 
   const handleOpenJustWatch = useCallback(async () => {
     if (!modalWatchProviders?.link) return;
@@ -412,6 +439,11 @@ function DetailModal({
           </View>
           
           <View style={styles.detailContent}>
+            <View style={styles.detailSection}>
+              <Text style={styles.detailSectionTitle}>Overview</Text>
+              <Text style={styles.detailOverview}>{item.overview || 'No description available.'}</Text>
+            </View>
+
             {!hasLinkedServices && (
               <View style={styles.connectServicesCard}>
                 <Text style={styles.connectServicesTitle}>Connect your streaming services</Text>
@@ -800,11 +832,6 @@ function DetailModal({
                 </TouchableOpacity>
               </View>
             )}
-            
-            <View style={styles.detailSection}>
-              <Text style={styles.detailSectionTitle}>Overview</Text>
-              <Text style={styles.detailOverview}>{item.overview || 'No description available.'}</Text>
-            </View>
           </View>
         </RNAnimated.ScrollView>
 
