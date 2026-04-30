@@ -1,5 +1,5 @@
 import React, { useMemo, useState, useEffect, useCallback, useRef } from 'react';
-import { StyleSheet, View, Text, ScrollView, TouchableOpacity, Image, Platform, RefreshControl, Animated, Alert } from 'react-native';
+import { StyleSheet, View, Text, ScrollView, TouchableOpacity, Image, Platform, RefreshControl, Animated, Alert, FlatList } from 'react-native';
 import { Play, ChevronRight, Sparkles, Calendar, CheckCircle2, Target, Flame, Tv, Trophy, Radio, X, Clock, BarChart3, Volume2, VolumeX, BellRing, Brain } from 'lucide-react-native';
 import * as Speech from 'expo-speech';
 import * as Haptics from 'expo-haptics';
@@ -51,7 +51,8 @@ import {
 } from '@/services/younify';
 import { extractTmdbIdFromYounifyRow } from '@/utils/aroundYouImages';
 import {
-  getPlaybackResumeSeconds,
+  getContinueWatchingProgressPercent,
+  openStreamingApp,
   openStreamingTitleSearch,
   openYounifyBrowseItemOnPlatform,
   younifySourceToTmdbProviderId,
@@ -810,7 +811,7 @@ export default function ActivitiesScreen() {
   }, [shows]);
 
   const planToWatchShows = useMemo(() => {
-    return shows.filter((show: Show) => show.status === 'Plan to Watch').slice(0, 4);
+    return shows.filter((show: Show) => show.status === 'Plan to Watch').slice(0, 10);
   }, [shows]);
 
   const [planToWatchWithThumbnails, setPlanToWatchWithThumbnails] = useState<(Show & { posterUrl?: string | null })[]>([]);
@@ -927,6 +928,29 @@ export default function ActivitiesScreen() {
     }
     return out;
   }, [younifyContinueItems, showsWithThumbnails]);
+
+  const younifyContinueByTmdbId = useMemo(() => {
+    const map = new Map<number, Record<string, unknown>>();
+    for (const row of younifyContinueItems) {
+      const tmdbId = extractTmdbIdFromYounifyRow(row);
+      if (tmdbId != null && !map.has(tmdbId)) {
+        map.set(tmdbId, row);
+      }
+    }
+    return map;
+  }, [younifyContinueItems]);
+
+  const visibleNewEpisodes = useMemo(() => {
+    return (newEpisodesForMyShows.data ?? []).filter((item) => {
+      const isRecentRelease = item.latestEpisode?.airDate && new Date(item.latestEpisode.airDate) >= new Date(Date.now() - 7 * 24 * 60 * 60 * 1000);
+      const ep = isRecentRelease ? item.latestEpisode : item.nextEpisode;
+      if (!ep) return false;
+      const key = `${item.tmdbId}-s${ep.seasonNumber}e${ep.episodeNumber}`;
+      return !dismissedEpisodes.includes(key);
+    });
+  }, [newEpisodesForMyShows.data, dismissedEpisodes]);
+
+  const upcomingEventsPreview = useMemo(() => getUpcomingCalendarEvents(90).slice(0, 4), [getUpcomingCalendarEvents, calendars.length, eventKit.hasPermission]);
 
   const handleStartWatching = useCallback(async (show: Show) => {
     if (Platform.OS !== 'web') {
@@ -1206,12 +1230,165 @@ export default function ActivitiesScreen() {
     if (Platform.OS !== 'web') {
       await Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
     }
+    if (show.tmdbId) {
+      const matchedRow = pickBestYounifyRowForEpisode(younifyEpisodeIndex, {
+        tmdbId: show.tmdbId,
+        title: show.title,
+        seasonNumber: show.currentSeason,
+        episodeNumber: show.currentEpisode,
+      });
+      if (matchedRow) {
+        await openYounifyBrowseItemOnPlatform(matchedRow, { sectionId: 'continue' });
+        return;
+      }
+    }
+
+    const providerId = platformNameToProviderId(show.platform);
+    if (providerId != null) {
+      const episodeHint =
+        show.type === 'Series' && show.currentSeason && show.currentEpisode
+          ? `S${show.currentSeason}E${show.currentEpisode}`
+          : undefined;
+      const openedSearch = await openStreamingTitleSearch(providerId, show.title, undefined, episodeHint);
+      if (openedSearch) return;
+      const openedApp = await openStreamingApp(providerId, show.title);
+      if (openedApp) return;
+    }
+
     if (show.tmdbId && show.mediaType) {
       setShowInfoModal({ visible: true, tmdbId: show.tmdbId, mediaType: show.mediaType, title: show.title, platform: show.platform });
-    } else {
-      router.push('/shows' as any);
+      return;
     }
+    router.push('/shows' as any);
   };
+
+  const rankedUpNextShows = useMemo(() => {
+    const now = Date.now();
+    const watchingPlatforms = new Set(currentWatchingShows.map((s) => s.platform));
+    const watchingTypes = new Set(currentWatchingShows.map((s) => s.type));
+
+    const scored = planToWatchWithThumbnails.map((show) => {
+      const updatedAtMs = Date.parse(show.updatedAt || show.createdAt || '');
+      const daysOld = Number.isFinite(updatedAtMs) ? (now - updatedAtMs) / (1000 * 60 * 60 * 24) : 365;
+      const freshnessScore = Math.max(0, 30 - daysOld) / 30;
+      const ratingScore = Math.max(0, Math.min(5, Number(show.rating || 0))) / 5;
+      const providerId = platformNameToProviderId(show.platform);
+      const providerLinkedBoost = providerId != null && linkedProviderIds.includes(providerId) ? 1 : 0;
+      const platformContinuity = watchingPlatforms.has(show.platform) ? 1 : 0;
+      const typeContinuity = watchingTypes.has(show.type) ? 1 : 0;
+      const tmdbBoost = show.tmdbId ? 1 : 0;
+
+      const score =
+        freshnessScore * 0.34 +
+        ratingScore * 0.18 +
+        providerLinkedBoost * 0.2 +
+        platformContinuity * 0.14 +
+        typeContinuity * 0.09 +
+        tmdbBoost * 0.05;
+
+      return { show, score };
+    });
+
+    return scored.sort((a, b) => b.score - a.score).map((x) => x.show).slice(0, 4);
+  }, [planToWatchWithThumbnails, currentWatchingShows, linkedProviderIds]);
+
+  const renderContinueWatchingCard = useCallback(({ item, index }: { item: ActivitiesContinueItem; index: number }) => {
+    if (item.kind === 'local') {
+      const show = item.show;
+      const reliableRow = show.tmdbId ? younifyContinueByTmdbId.get(show.tmdbId) : undefined;
+      const providerProgress = reliableRow ? getContinueWatchingProgressPercent(reliableRow) : 0;
+      const localProgress = show.type === 'Series' && show.totalEpisodes && show.currentEpisode
+        ? Math.min((show.currentEpisode / show.totalEpisodes) * 100, 100)
+        : 0;
+      const progress = providerProgress > 0 ? providerProgress : localProgress;
+      const episodeLabel =
+        show.type === 'Series' && show.currentSeason && show.currentEpisode
+          ? `S${show.currentSeason} E${show.currentEpisode}`
+          : 'Resume';
+      return (
+        <TouchableOpacity
+          key={show.id}
+          style={[styles.cwCard, index === 0 && { marginLeft: 0 }]}
+          onPress={() => handleContinueWatching(show)}
+          onLongPress={() => handleRemoveShow(show.id, show.title)}
+          delayLongPress={350}
+          activeOpacity={0.85}
+          testID={`cw-card-${show.id}`}
+        >
+          <View style={styles.cwPosterWrap}>
+            {show.posterUrl ? (
+              <Image source={{ uri: show.posterUrl }} style={styles.cwPoster} resizeMode="cover" />
+            ) : (
+              <LinearGradient
+                colors={[getPlatformColor(show.platform), `${getPlatformColor(show.platform)}66`]}
+                start={{ x: 0, y: 0 }}
+                end={{ x: 1, y: 1 }}
+                style={styles.cwPosterFallback}
+              >
+                <Tv size={28} color="rgba(255,255,255,0.7)" />
+              </LinearGradient>
+            )}
+            <LinearGradient colors={['transparent', 'rgba(0,0,0,0.4)', 'rgba(0,0,0,0.92)']} start={{ x: 0, y: 0.35 }} end={{ x: 0, y: 1 }} style={styles.cwPosterGradient} />
+            <View style={styles.cwCardBottom}>
+              <Text style={styles.cwCardTitle} numberOfLines={2}>{show.title}</Text>
+              <View style={styles.cwCardMeta}>
+                <Text style={styles.cwCardEpisode} numberOfLines={1}>{episodeLabel}</Text>
+                <Text style={styles.cwCardPlatform} numberOfLines={1}>{show.platform}</Text>
+              </View>
+              <View style={styles.cwProgressTrack}>
+                <View style={[styles.cwProgressFill, { width: `${progress}%` }]} />
+              </View>
+            </View>
+          </View>
+        </TouchableOpacity>
+      );
+    }
+
+    const { row, key } = item;
+    const season = row.season != null ? String(row.season).trim() : '';
+    const episode = row.episode != null ? String(row.episode).trim() : '';
+    const continueEpisodeLabel = season || episode ? `S${season || '—'} E${episode || '—'}` : 'Resume';
+    const svc = row.younifySourceService as YounifySourceServiceSnapshot | undefined;
+    const svcRecord = (svc || {}) as Record<string, unknown>;
+    const yProgress = getContinueWatchingProgressPercent(row);
+
+    return (
+      <TouchableOpacity
+        key={`younify-cw-${key}`}
+        style={[styles.cwCard, index === 0 && { marginLeft: 0 }]}
+        onPress={async () => {
+          if (Platform.OS !== 'web') {
+            await Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+          }
+          await openYounifyBrowseItemOnPlatform(row, { sectionId: 'continue' });
+        }}
+        activeOpacity={0.85}
+        testID={`cw-card-younify-${key}`}
+      >
+        <View style={styles.cwPosterWrap}>
+          <TmdbStreamingPosterImage younifyRow={row} width={CW_CARD_WIDTH} style={styles.cwPoster} />
+          {linkedStreamingCount >= 2 && svc?.id ? (
+            <View style={styles.cwYounifyLogoMark} pointerEvents="none">
+              <YounifyServiceLogoMark service={svc} size={28} />
+            </View>
+          ) : null}
+          <LinearGradient colors={['transparent', 'rgba(0,0,0,0.4)', 'rgba(0,0,0,0.92)']} start={{ x: 0, y: 0.35 }} end={{ x: 0, y: 1 }} style={styles.cwPosterGradient} />
+          <View style={styles.cwCardBottom}>
+            <Text style={styles.cwCardTitle} numberOfLines={2}>{String(row.showTitle || row.title || 'Continue watching')}</Text>
+            <View style={styles.cwCardMeta}>
+              <Text style={styles.cwCardEpisode} numberOfLines={1}>{continueEpisodeLabel}</Text>
+              <Text style={styles.cwCardPlatform} numberOfLines={1}>{String(svcRecord.displayName || svcRecord.name || row.sourceService || 'Streaming')}</Text>
+            </View>
+            {yProgress > 0 ? (
+              <View style={styles.cwProgressTrack}>
+                <View style={[styles.cwProgressFill, { width: `${yProgress}%` }]} />
+              </View>
+            ) : null}
+          </View>
+        </View>
+      </TouchableOpacity>
+    );
+  }, [younifyContinueByTmdbId, handleContinueWatching, handleRemoveShow, linkedStreamingCount]);
 
   const handleContinueWatchingYounify = useCallback(async (row: Record<string, unknown>) => {
     if (Platform.OS !== 'web') {
@@ -1895,9 +2072,6 @@ export default function ActivitiesScreen() {
               </View>
 
               {(() => {
-                const upcomingEvents = getUpcomingCalendarEvents(90);
-
-                
                 if (calendars.length === 0 && (!eventKit.isEventKitAvailable || !eventKit.hasPermission)) {
                   return (
                     <View style={[styles.emptyCalendarCard, { backgroundColor: colors.card, borderColor: colors.border }]}>
@@ -1928,12 +2102,12 @@ export default function ActivitiesScreen() {
                 
                 return (
                   <View style={styles.eventsContainer}>
-                    {upcomingEvents.length === 0 ? (
+                    {upcomingEventsPreview.length === 0 ? (
                       <View style={[styles.emptyCalendarCard, { backgroundColor: colors.card, borderColor: colors.border }]}>
                         <Calendar size={32} color={colors.textMuted} />
                         <Text style={[styles.emptyCalendarText, { color: colors.textSecondary }]}>No events 2+ weeks out</Text>
                       </View>
-                    ) : upcomingEvents.slice(0, 4).map((event, index) => (
+                    ) : upcomingEventsPreview.map((event, index) => (
                       <View key={`${event.id}-${index}`} style={[styles.eventCard, { backgroundColor: colors.card, borderColor: colors.border }]}>
                         <View style={[styles.eventIndicator, { 
                           backgroundColor: COLORS.primary 
@@ -1959,14 +2133,7 @@ export default function ActivitiesScreen() {
 
             {/* New Episode Releases for Tracked Shows */}
             {hasShowsInterest && (() => {
-              const visibleEpisodes = (newEpisodesForMyShows.data ?? []).filter((item) => {
-                const isRecentRelease = item.latestEpisode?.airDate && new Date(item.latestEpisode.airDate) >= new Date(Date.now() - 7 * 24 * 60 * 60 * 1000);
-                const ep = isRecentRelease ? item.latestEpisode : item.nextEpisode;
-                if (!ep) return false;
-                const key = `${item.tmdbId}-s${ep.seasonNumber}e${ep.episodeNumber}`;
-                return !dismissedEpisodes.includes(key);
-              });
-              if (visibleEpisodes.length === 0) return null;
+              if (visibleNewEpisodes.length === 0) return null;
               return (
               <View style={styles.newEpisodesSection}>
                 <View style={styles.newEpisodesHeader}>
@@ -1976,7 +2143,7 @@ export default function ActivitiesScreen() {
                     </View>
                     <Text style={[styles.newEpisodesTitle, { color: colors.text }]}>New Episodes</Text>
                     <View style={styles.newEpisodesCountPill}>
-                      <Text style={styles.newEpisodesCountText}>{visibleEpisodes.length}</Text>
+                      <Text style={styles.newEpisodesCountText}>{visibleNewEpisodes.length}</Text>
                     </View>
                   </View>
                   <TouchableOpacity onPress={() => router.push('/shows' as any)} hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}>
@@ -1985,7 +2152,7 @@ export default function ActivitiesScreen() {
                 </View>
 
                 <View style={[styles.newEpisodesList, { backgroundColor: colors.card, borderWidth: StyleSheet.hairlineWidth, borderColor: colors.border }]}>
-                  {visibleEpisodes.slice(0, 5).map((item, index) => {
+                  {visibleNewEpisodes.slice(0, 5).map((item, index) => {
                     const isRecentRelease = item.latestEpisode?.airDate && new Date(item.latestEpisode.airDate) >= new Date(Date.now() - 7 * 24 * 60 * 60 * 1000);
                     const episode = isRecentRelease ? item.latestEpisode : item.nextEpisode;
                     if (!episode) return null;
@@ -2018,7 +2185,7 @@ export default function ActivitiesScreen() {
                         style={[
                           styles.newEpisodeCard,
                           { borderBottomColor: colors.border },
-                          index === (visibleEpisodes.slice(0, 5).length ?? 0) - 1 && { borderBottomWidth: 0 },
+                          index === (visibleNewEpisodes.slice(0, 5).length ?? 0) - 1 && { borderBottomWidth: 0 },
                         ]}
                         onPress={() => void handleOpenNewEpisode(item)}
                         onLongPress={() => confirmDismissEpisode(dismissKey, item.showTitle)}
@@ -2084,144 +2251,33 @@ export default function ActivitiesScreen() {
               </View>
                 
               {continueWatchingItems.length > 0 ? (
-                <ScrollView 
-                  horizontal 
+                <FlatList
+                  data={continueWatchingItems}
+                  horizontal
+                  keyExtractor={(item, idx) => (item.kind === 'local' ? `local-${item.show.id}` : `younify-${item.key}-${idx}`)}
+                  renderItem={renderContinueWatchingCard}
+                  initialNumToRender={4}
+                  maxToRenderPerBatch={4}
+                  windowSize={5}
+                  removeClippedSubviews
                   showsHorizontalScrollIndicator={false}
                   contentContainerStyle={styles.cwScroll}
-                >
-                  {continueWatchingItems.map((item, index) => {
-                    if (item.kind === 'local') {
-                      const show = item.show;
-                      const progress = show.type === 'Series' && show.totalEpisodes && show.currentEpisode
-                        ? Math.min((show.currentEpisode / show.totalEpisodes) * 100, 100)
-                        : show.type === 'Movie' ? 65 : 0;
-                      const episodeLabel =
-                        show.type === 'Series' && show.currentSeason && show.currentEpisode
-                          ? `S${show.currentSeason} E${show.currentEpisode}`
-                          : 'Resume';
-                      return (
-                        <TouchableOpacity 
-                          key={show.id}
-                          style={[styles.cwCard, index === 0 && { marginLeft: 0 }]}
-                          onPress={() => handleContinueWatching(show)}
-                          onLongPress={() => handleRemoveShow(show.id, show.title)}
-                          delayLongPress={350}
-                          activeOpacity={0.85}
-                          testID={`cw-card-${show.id}`}
-                        >
-                          <View style={styles.cwPosterWrap}>
-                            {show.posterUrl ? (
-                              <Image 
-                                source={{ uri: show.posterUrl }}
-                                style={styles.cwPoster}
-                                resizeMode="cover"
-                              />
-                            ) : (
-                              <LinearGradient
-                                colors={[getPlatformColor(show.platform), `${getPlatformColor(show.platform)}66`]}
-                                start={{ x: 0, y: 0 }}
-                                end={{ x: 1, y: 1 }}
-                                style={styles.cwPosterFallback}
-                              >
-                                <Tv size={28} color="rgba(255,255,255,0.7)" />
-                              </LinearGradient>
-                            )}
-                            <LinearGradient
-                              colors={['transparent', 'rgba(0,0,0,0.4)', 'rgba(0,0,0,0.92)']}
-                              start={{ x: 0, y: 0.35 }}
-                              end={{ x: 0, y: 1 }}
-                              style={styles.cwPosterGradient}
-                            />
-                            <View style={styles.cwCardBottom}>
-                              <Text style={styles.cwCardTitle} numberOfLines={2}>{show.title}</Text>
-                              <View style={styles.cwCardMeta}>
-                                <Text style={styles.cwCardEpisode} numberOfLines={1}>{episodeLabel}</Text>
-                                <Text style={styles.cwCardPlatform} numberOfLines={1}>{show.platform}</Text>
-                              </View>
-                              <View style={styles.cwProgressTrack}>
-                                <View style={[styles.cwProgressFill, { width: `${progress}%` }]} />
-                              </View>
-                            </View>
-                          </View>
-                        </TouchableOpacity>
-                      );
-                    }
-
-                    const { row, key } = item;
-                    const season = row.season != null ? String(row.season).trim() : '';
-                    const episode = row.episode != null ? String(row.episode).trim() : '';
-                    const continueEpisodeLabel =
-                      season || episode
-                        ? `S${season || '—'} E${episode || '—'}`
-                        : 'Resume';
-                    const svc = row.younifySourceService as YounifySourceServiceSnapshot | undefined;
-                    const posSec = getPlaybackResumeSeconds(row);
-                    const durationMs = Number(row.duration);
-                    let yProgress = 0;
-                    if (
-                      posSec != null &&
-                      posSec > 0 &&
-                      Number.isFinite(durationMs) &&
-                      durationMs > 60_000
-                    ) {
-                      const totalSec = Math.floor(durationMs / 1000);
-                      if (totalSec > 0) yProgress = Math.min(100, Math.round((posSec / totalSec) * 100));
-                    }
-
-                    return (
-                      <TouchableOpacity 
-                        key={`younify-cw-${key}`}
-                        style={[styles.cwCard, index === 0 && { marginLeft: 0 }]}
-                        onPress={() => void handleContinueWatchingYounify(row)}
-                        activeOpacity={0.85}
-                        testID={`cw-card-younify-${key}`}
-                      >
-                        <View style={styles.cwPosterWrap}>
-                          <TmdbStreamingPosterImage younifyRow={row} width={CW_CARD_WIDTH} style={styles.cwPoster} />
-                          {linkedStreamingCount >= 2 && svc?.id ? (
-                            <View style={styles.cwYounifyLogoMark} pointerEvents="none">
-                              <YounifyServiceLogoMark service={svc} size={28} />
-                            </View>
-                          ) : null}
-                          <LinearGradient
-                            colors={['transparent', 'rgba(0,0,0,0.4)', 'rgba(0,0,0,0.92)']}
-                            start={{ x: 0, y: 0.35 }}
-                            end={{ x: 0, y: 1 }}
-                            style={styles.cwPosterGradient}
-                          />
-                          <View style={styles.cwCardBottom}>
-                            <Text style={styles.cwCardTitle} numberOfLines={2}>
-                              {item.showTitle || row.title || 'Continue watching'}
-                            </Text>
-                            <View style={styles.cwCardMeta}>
-                              <Text style={styles.cwCardEpisode} numberOfLines={1}>{continueEpisodeLabel}</Text>
-                              <Text style={styles.cwCardPlatform} numberOfLines={1}>
-                                {svc?.displayName || svc?.name || row.sourceService || 'Streaming'}
-                              </Text>
-                            </View>
-                            {yProgress > 0 ? (
-                              <View style={styles.cwProgressTrack}>
-                                <View style={[styles.cwProgressFill, { width: `${yProgress}%` }]} />
-                              </View>
-                            ) : null}
-                          </View>
+                  getItemLayout={(_, index) => ({ length: CW_CARD_WIDTH + 12, offset: (CW_CARD_WIDTH + 12) * index, index })}
+                  ListFooterComponent={
+                    <TouchableOpacity
+                      style={[styles.cwAddCard, { backgroundColor: colors.surfaceSecondary }]}
+                      onPress={() => router.push('/shows' as any)}
+                      activeOpacity={0.7}
+                    >
+                      <View style={styles.cwAddInner}>
+                        <View style={[styles.cwAddIcon, { backgroundColor: isDark ? colors.border : '#E2E8F0' }]}>
+                          <Tv size={20} color={colors.textMuted} />
                         </View>
-                      </TouchableOpacity>
-                    );
-                  })}
-                  <TouchableOpacity 
-                    style={[styles.cwAddCard, { backgroundColor: colors.surfaceSecondary }]}
-                    onPress={() => router.push('/shows' as any)}
-                    activeOpacity={0.7}
-                  >
-                    <View style={styles.cwAddInner}>
-                      <View style={[styles.cwAddIcon, { backgroundColor: isDark ? colors.border : '#E2E8F0' }]}>
-                        <Tv size={20} color={colors.textMuted} />
+                        <Text style={[styles.cwAddText, { color: colors.textSecondary }]}>Add Show</Text>
                       </View>
-                      <Text style={[styles.cwAddText, { color: colors.textSecondary }]}>Add Show</Text>
-                    </View>
-                  </TouchableOpacity>
-                </ScrollView>
+                    </TouchableOpacity>
+                  }
+                />
               ) : (
                 <TouchableOpacity 
                   style={[
@@ -2247,13 +2303,13 @@ export default function ActivitiesScreen() {
             )}
 
             {/* Plan to Watch - Up Next Section */}
-            {hasShowsInterest && planToWatchWithThumbnails.length > 0 && (
+            {hasShowsInterest && rankedUpNextShows.length > 0 && (
               <View style={styles.upNextSection}>
                 <View style={styles.upNextHeader}>
                   <View style={styles.upNextHeaderLeft}>
                     <Text style={[styles.upNextTitle, { color: colors.text }]}>Up Next</Text>
                     <View style={styles.upNextCountPill}>
-                      <Text style={styles.upNextCountText}>{planToWatchWithThumbnails.length}</Text>
+                      <Text style={styles.upNextCountText}>{rankedUpNextShows.length}</Text>
                     </View>
                   </View>
                   <TouchableOpacity onPress={() => router.push('/shows' as any)} hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}>
@@ -2262,10 +2318,10 @@ export default function ActivitiesScreen() {
                 </View>
                 
                 <View style={[styles.upNextList, { backgroundColor: colors.card, borderWidth: StyleSheet.hairlineWidth, borderColor: colors.border }]}>
-                  {planToWatchWithThumbnails.slice(0, 4).map((show, index) => (
+                  {rankedUpNextShows.map((show, index) => (
                     <TouchableOpacity 
                       key={show.id} 
-                      style={[styles.upNextCard, { borderBottomColor: colors.border }, index === planToWatchWithThumbnails.slice(0, 4).length - 1 && { borderBottomWidth: 0 }]}
+                      style={[styles.upNextCard, { borderBottomColor: colors.border }, index === rankedUpNextShows.length - 1 && { borderBottomWidth: 0 }]}
                       onPress={() => {
                         if (show.tmdbId && show.mediaType) {
                           setShowInfoModal({ visible: true, tmdbId: show.tmdbId, mediaType: show.mediaType, title: show.title, platform: show.platform });

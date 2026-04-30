@@ -2,6 +2,7 @@ import { useState, useEffect, useCallback, useRef } from 'react';
 import { Platform } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import createContextHook from '@nkzw/create-context-hook';
+import { useAuth } from './useAuth';
 
 let Calendar: typeof import('expo-calendar') | null = null;
 if (Platform.OS !== 'web') {
@@ -38,10 +39,14 @@ interface EventKitCalendar {
   type: string;
 }
 
-const EVENTKIT_PERMISSIONS_KEY = 'eventkit_permissions_granted';
-const SELECTED_CALENDARS_KEY = 'selected_eventkit_calendars';
+const getEventKitPermissionsKey = (userId?: string) => `eventkit_permissions_granted_${userId || 'guest'}`;
+const getSelectedCalendarsKey = (userId?: string) => `selected_eventkit_calendars_${userId || 'guest'}`;
 
 export const [EventKitProvider, useEventKit] = createContextHook(() => {
+  const { user } = useAuth();
+  const userId = user?.id;
+  const EVENTKIT_PERMISSIONS_KEY = getEventKitPermissionsKey(userId);
+  const SELECTED_CALENDARS_KEY = getSelectedCalendarsKey(userId);
   const [hasPermission, setHasPermission] = useState<boolean>(false);
   const [calendars, setCalendars] = useState<EventKitCalendar[]>([]);
   const [selectedCalendarIds, setSelectedCalendarIds] = useState<string[]>([]);
@@ -82,7 +87,7 @@ export const [EventKitProvider, useEventKit] = createContextHook(() => {
       setError('Failed to request calendar permissions');
       return false;
     }
-  }, [isEventKitAvailable]);
+  }, [isEventKitAvailable, EVENTKIT_PERMISSIONS_KEY]);
 
   // Load calendars from device
   const loadDeviceCalendars = useCallback(async (): Promise<void> => {
@@ -135,7 +140,7 @@ export const [EventKitProvider, useEventKit] = createContextHook(() => {
     } finally {
       setIsLoading(false);
     }
-  }, [isEventKitAvailable]);
+  }, [isEventKitAvailable, SELECTED_CALENDARS_KEY]);
 
   // Toggle calendar selection
   const toggleCalendarSelection = useCallback(async (calendarId: string): Promise<void> => {
@@ -152,7 +157,7 @@ export const [EventKitProvider, useEventKit] = createContextHook(() => {
       console.error('Error toggling calendar selection:', error);
       setError('Failed to update calendar selection');
     }
-  }, [selectedCalendarIds]);
+  }, [selectedCalendarIds, SELECTED_CALENDARS_KEY]);
 
   // Use ref to store calendars to avoid dependency issues
   const calendarsRef = useRef<EventKitCalendar[]>([]);

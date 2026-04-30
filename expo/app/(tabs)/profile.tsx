@@ -141,6 +141,7 @@ export default function ProfileScreen() {
   const {
     profile,
     updateProfile,
+    updateNotificationSettings,
     addFavoriteTeam,
     removeFavoriteTeam,
     addFavoriteCountry,
@@ -162,12 +163,15 @@ export default function ProfileScreen() {
     joinChallenge,
     leaveChallenge,
     getLeaderboard,
+    pendingWeeklyRewardXp,
+    claimWeeklyReward,
   } = useGamification();
   const {
     isEnabled: notificationsEnabled,
     toggleNotificationSetting,
     sendTestNotification,
     requestPermissions,
+    weeklyRecap,
   } = useNotificationsSafe();
 
   const {
@@ -207,6 +211,15 @@ export default function ProfileScreen() {
   const hasSportsInterest = hasInterest('football');
   const hasNBAInterest = hasInterest('nba');
   const unlockedBadgesCount = badges.filter(b => b.unlockedAt).length;
+
+  const handleClaimWeeklyReward = useCallback(() => {
+    const result = claimWeeklyReward();
+    if (result?.claimed) {
+      Alert.alert('Reward claimed', `+${result.xp} XP added. Keep the streak alive this week.`);
+      return;
+    }
+    Alert.alert('No reward available yet', 'Complete more habits this week to unlock your next weekly reward.');
+  }, [claimWeeklyReward]);
 
   const toggleSection = useCallback((section: ExpandedSection) => {
     LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
@@ -885,6 +898,98 @@ export default function ProfileScreen() {
                     onValueChange={(value) => toggleNotificationSetting('habitReminders', value)}
                     trackColor={{ false: colors.border, true: colors.primary }}
                   />
+                </View>
+                <View style={[styles.notifRow, { borderBottomColor: colors.border }]}>
+                  <Text style={[styles.notifLabel, { color: colors.text }]}>Habit Risk Nudges</Text>
+                  <Switch
+                    value={profile.notificationSettings.habitRiskAlerts ?? true}
+                    onValueChange={(value) => updateNotificationSettings({ habitRiskAlerts: value })}
+                    trackColor={{ false: colors.border, true: colors.primary }}
+                  />
+                </View>
+                <View style={[styles.notifRow, { borderBottomColor: colors.border }]}>
+                  <Text style={[styles.notifLabel, { color: colors.text }]}>Quiet Hours</Text>
+                  <Switch
+                    value={profile.notificationSettings.quietHoursEnabled ?? true}
+                    onValueChange={(value) => updateNotificationSettings({ quietHoursEnabled: value })}
+                    trackColor={{ false: colors.border, true: colors.primary }}
+                  />
+                </View>
+                <Text style={[styles.notifMetaText, { color: colors.textSecondary }]}>
+                  Quiet hours: {profile.notificationSettings.quietHoursStart || '22:30'} - {profile.notificationSettings.quietHoursEnd || '07:00'}
+                </Text>
+                <View style={styles.notificationOptionRow}>
+                  {[
+                    { label: '22:00-07:00', start: '22:00', end: '07:00' },
+                    { label: '22:30-07:00', start: '22:30', end: '07:00' },
+                    { label: '23:00-07:30', start: '23:00', end: '07:30' },
+                  ].map(option => {
+                    const selected =
+                      (profile.notificationSettings.quietHoursStart || '22:30') === option.start &&
+                      (profile.notificationSettings.quietHoursEnd || '07:00') === option.end;
+                    return (
+                      <TouchableOpacity
+                        key={option.label}
+                        style={[
+                          styles.notificationOptionPill,
+                          {
+                            borderColor: selected ? colors.primary : colors.border,
+                            backgroundColor: selected ? colors.primary + '14' : colors.card,
+                          },
+                        ]}
+                        onPress={() => updateNotificationSettings({ quietHoursStart: option.start, quietHoursEnd: option.end })}
+                        activeOpacity={0.8}
+                      >
+                        <Text style={[styles.notificationOptionPillText, { color: selected ? colors.primary : colors.textSecondary }]}>
+                          {option.label}
+                        </Text>
+                      </TouchableOpacity>
+                    );
+                  })}
+                </View>
+                <Text style={[styles.notifMetaText, { color: colors.textSecondary }]}>Event reminder timing</Text>
+                <View style={styles.notificationOptionRow}>
+                  {[10, 30, 60].map((minutes) => {
+                    const selected = (profile.notificationSettings.eventReminderLeadMinutes ?? 30) === minutes;
+                    return (
+                      <TouchableOpacity
+                        key={minutes}
+                        style={[
+                          styles.notificationOptionPill,
+                          {
+                            borderColor: selected ? colors.primary : colors.border,
+                            backgroundColor: selected ? colors.primary + '14' : colors.card,
+                          },
+                        ]}
+                        onPress={() => updateNotificationSettings({ eventReminderLeadMinutes: minutes })}
+                        activeOpacity={0.8}
+                      >
+                        <Text style={[styles.notificationOptionPillText, { color: selected ? colors.primary : colors.textSecondary }]}>
+                          {minutes}m before
+                        </Text>
+                      </TouchableOpacity>
+                    );
+                  })}
+                </View>
+                <View style={[styles.recapPreviewCard, { backgroundColor: colors.card, borderColor: colors.border }]}>
+                  <Text style={[styles.recapPreviewTitle, { color: colors.text }]}>Weekly Retention Snapshot</Text>
+                  <Text style={[styles.recapPreviewText, { color: colors.textSecondary }]}>
+                    {weeklyRecap.completedHabits} completions this week ({weeklyRecap.completionRate}% pace)
+                    {weeklyRecap.topHabitName ? ` • Top: ${weeklyRecap.topHabitName}` : ''}
+                    {weeklyRecap.atRiskHabits > 0 ? ` • ${weeklyRecap.atRiskHabits} streak at risk` : ' • No streaks at risk'}
+                  </Text>
+                  {pendingWeeklyRewardXp > 0 && (
+                    <TouchableOpacity
+                      style={[styles.claimRewardBtn, { backgroundColor: colors.primary }]}
+                      onPress={handleClaimWeeklyReward}
+                      activeOpacity={0.85}
+                    >
+                      <Sparkles size={14} color={colors.textInverse} />
+                      <Text style={[styles.claimRewardBtnText, { color: colors.textInverse }]}>
+                        Claim reward (+{pendingWeeklyRewardXp} XP)
+                      </Text>
+                    </TouchableOpacity>
+                  )}
                 </View>
 
                 <TouchableOpacity style={[styles.testNotifBtn, { borderColor: colors.primary + '40' }]} onPress={sendTestNotification}>
@@ -2176,6 +2281,57 @@ const styles = StyleSheet.create({
   },
   notifLabel: {
     fontSize: 15,
+  },
+  notifMetaText: {
+    fontSize: 12,
+    marginTop: 10,
+  },
+  notificationOptionRow: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 8,
+    marginTop: 8,
+  },
+  notificationOptionPill: {
+    borderWidth: 1,
+    borderRadius: 999,
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+  },
+  notificationOptionPillText: {
+    fontSize: 12,
+    fontWeight: '600',
+  },
+  recapPreviewCard: {
+    marginTop: 12,
+    borderWidth: 1,
+    borderRadius: 10,
+    padding: 10,
+    gap: 4,
+  },
+  recapPreviewTitle: {
+    fontSize: 12,
+    fontWeight: '700',
+    textTransform: 'uppercase',
+    letterSpacing: 0.3,
+  },
+  recapPreviewText: {
+    fontSize: 12,
+    lineHeight: 17,
+  },
+  claimRewardBtn: {
+    marginTop: 8,
+    minHeight: 34,
+    borderRadius: 999,
+    alignSelf: 'flex-start',
+    paddingHorizontal: 12,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+  },
+  claimRewardBtnText: {
+    fontSize: 12,
+    fontWeight: '700',
   },
   testNotifBtn: {
     alignItems: 'center',

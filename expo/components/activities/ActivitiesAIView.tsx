@@ -1,4 +1,4 @@
-import React, { useMemo } from 'react';
+import React, { useCallback, useMemo } from 'react';
 import {
   View,
   Text,
@@ -18,6 +18,7 @@ import {
   Trophy,
   ChevronRight,
   LayoutGrid,
+  Play,
 } from 'lucide-react-native';
 import * as Haptics from 'expo-haptics';
 import { router } from 'expo-router';
@@ -108,6 +109,28 @@ export default function ActivitiesAIView({ onRequestPeakScheduler }: Props) {
   const surface = colors.card;
   const outline = colors.border;
   const heroTint = isDark ? 'dark' : 'light';
+
+  const runCardAction = useCallback((action?: { action: string; params?: Record<string, any> }) => {
+    if (!action) return;
+    const screen = action.params?.screen;
+    if (action.action === 'open_peak_scheduler') {
+      onRequestPeakScheduler();
+      return;
+    }
+    if (action.action === 'navigate' && typeof screen === 'string') {
+      if (screen === 'tasks') {
+        router.push('/tasks' as any);
+        return;
+      }
+      if (screen === 'shows') {
+        router.push('/shows' as any);
+        return;
+      }
+      if (screen === 'activities') {
+        return;
+      }
+    }
+  }, [onRequestPeakScheduler]);
 
   return (
     <View
@@ -412,7 +435,7 @@ export default function ActivitiesAIView({ onRequestPeakScheduler }: Props) {
       </View>
 
       {/* Insights */}
-      {intelligence.crossInsights.length > 0 ? (
+      {intelligence.rankedCrossInsights.length > 0 ? (
         <View style={styles.section}>
           <View style={styles.sectionHeadBlock}>
             <View style={styles.sectionHeadLeft}>
@@ -426,7 +449,7 @@ export default function ActivitiesAIView({ onRequestPeakScheduler }: Props) {
             </View>
           </View>
           <View style={[styles.insightGrid, useTwoColumnInsights && styles.insightGridWide]}>
-            {intelligence.crossInsights.slice(0, 4).map((insight, index) => (
+            {intelligence.rankedCrossInsights.slice(0, 4).map((insight, index) => (
               <View
                 key={insight.id || `ins-${index}`}
                 style={[
@@ -454,6 +477,20 @@ export default function ActivitiesAIView({ onRequestPeakScheduler }: Props) {
                       {insight.description}
                     </Text>
                   </View>
+                  {insight.actions?.[0] ? (
+                    <Pressable
+                      onPress={() => runCardAction(insight.actions?.[0])}
+                      style={({ pressed }) => [
+                        styles.cardActionBtn,
+                        { borderColor: outline, backgroundColor: `${ACCENT[index % 3]}14`, opacity: pressed ? 0.86 : 1 },
+                      ]}
+                    >
+                      <Play size={14} color={ACCENT[index % 3]} />
+                      <Text style={[styles.cardActionText, { color: ACCENT[index % 3] }]}>
+                        {insight.actions[0].label}
+                      </Text>
+                    </Pressable>
+                  ) : null}
                 </View>
               </View>
             ))}
@@ -487,6 +524,20 @@ export default function ActivitiesAIView({ onRequestPeakScheduler }: Props) {
                 <Text style={[styles.recDesc, { color: colors.textSecondary }]} numberOfLines={3}>
                   {rec.description}
                 </Text>
+                {rec.actions?.[0] ? (
+                  <Pressable
+                    onPress={() => runCardAction(rec.actions?.[0])}
+                    style={({ pressed }) => [
+                      styles.cardActionBtn,
+                      { borderColor: outline, backgroundColor: `${ACCENT[index % 3]}14`, opacity: pressed ? 0.86 : 1, marginTop: SPACE.sm },
+                    ]}
+                  >
+                    <Play size={14} color={ACCENT[index % 3]} />
+                    <Text style={[styles.cardActionText, { color: ACCENT[index % 3] }]}>
+                      {rec.actions[0].label}
+                    </Text>
+                  </Pressable>
+                ) : null}
               </View>
             </View>
           ))}
@@ -961,6 +1012,22 @@ const styles = StyleSheet.create({
   recDesc: {
     fontSize: 14,
     lineHeight: 21,
+  },
+  cardActionBtn: {
+    alignSelf: 'flex-start',
+    minHeight: 36,
+    borderWidth: 1,
+    borderRadius: RADIUS.pill,
+    paddingHorizontal: SPACE.md,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: SPACE.xs,
+    marginTop: SPACE.xs,
+  },
+  cardActionText: {
+    fontSize: 12,
+    fontWeight: '700',
+    letterSpacing: 0.1,
   },
   timelineShell: {
     borderRadius: RADIUS.lg,

@@ -24,6 +24,11 @@ const createDefaultProfile = (userId: string, email: string, name: string): User
       matchReminders: true,
       goalAlerts: true,
       habitReminders: true,
+      habitRiskAlerts: true,
+      quietHoursEnabled: true,
+      quietHoursStart: '22:30',
+      quietHoursEnd: '07:00',
+      eventReminderLeadMinutes: 30,
     },
     displayPreferences: {
       showOnlyFavorites: false,
@@ -93,8 +98,18 @@ export const [UserProfileProvider, useUserProfile] = createContextHook(() => {
         const updatedProfile = {
           ...parsedProfile,
           interests: parsedProfile.interests || [],
-
-          favoriteCountries: parsedProfile.favoriteCountries || []
+          favoriteCountries: parsedProfile.favoriteCountries || [],
+          notificationSettings: {
+            liveMatches: parsedProfile.notificationSettings?.liveMatches ?? true,
+            matchReminders: parsedProfile.notificationSettings?.matchReminders ?? true,
+            goalAlerts: parsedProfile.notificationSettings?.goalAlerts ?? true,
+            habitReminders: parsedProfile.notificationSettings?.habitReminders ?? true,
+            habitRiskAlerts: parsedProfile.notificationSettings?.habitRiskAlerts ?? true,
+            quietHoursEnabled: parsedProfile.notificationSettings?.quietHoursEnabled ?? true,
+            quietHoursStart: parsedProfile.notificationSettings?.quietHoursStart || '22:30',
+            quietHoursEnd: parsedProfile.notificationSettings?.quietHoursEnd || '07:00',
+            eventReminderLeadMinutes: parsedProfile.notificationSettings?.eventReminderLeadMinutes ?? 30,
+          },
         };
         setProfile(updatedProfile);
         console.log('✅ [Profile] Profile loaded successfully on', Platform.OS, ':', updatedProfile.name, 'Teams:', updatedProfile.favoriteTeams?.length, 'Source:', loadedFromSupabase ? 'Supabase' : 'Local');

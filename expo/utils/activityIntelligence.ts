@@ -9,6 +9,12 @@ import {
 import { getLocalDateStr } from '@/utils/dateUtils';
 
 class ActivityIntelligenceService {
+  private getUrgencyLabel(hour: number): 'now' | 'today' | 'later' {
+    if (hour >= 7 && hour <= 11) return 'now';
+    if (hour >= 12 && hour <= 19) return 'today';
+    return 'later';
+  }
+
   unifyActivities(
     habits: any[],
     tasks: any[],
@@ -157,10 +163,14 @@ class ActivityIntelligenceService {
 
   async generateInsights(activities: UnifiedActivity[]): Promise<ActivityInsight[]> {
     const insights: ActivityInsight[] = [];
-    const now = new Date().toISOString();
+    const nowDate = new Date();
+    const now = nowDate.toISOString();
+    const hour = nowDate.getHours();
+    const urgencyLabel = this.getUrgencyLabel(hour);
 
     const completed = activities.filter(a => a.status === 'completed');
     const overdue = activities.filter(a => a.status === 'overdue');
+    const active = activities.filter(a => a.status === 'active');
     const total = activities.length;
 
     if (total > 0) {
@@ -172,6 +182,13 @@ class ActivityIntelligenceService {
         description: `You've completed ${Math.round(completionRate * 100)}% of your activities.`,
         confidence: 0.8,
         actionable: completionRate < 0.5,
+        actions: completionRate < 0.5 ? [{
+          label: 'Do one quick win',
+          action: 'navigate',
+          params: { screen: 'tasks' },
+        }] : undefined,
+        priorityScore: completionRate < 0.5 ? 0.82 : 0.62,
+        urgencyLabel: completionRate < 0.5 ? 'now' : urgencyLabel,
         relatedActivities: completed.map(a => a.id).slice(0, 5),
         createdAt: now,
       });
@@ -190,7 +207,34 @@ class ActivityIntelligenceService {
           action: 'navigate',
           params: { screen: 'tasks' },
         }],
+        priorityScore: 0.98,
+        urgencyLabel: 'now',
         relatedActivities: overdue.map(a => a.id).slice(0, 5),
+        createdAt: now,
+      });
+    }
+
+    if (active.length > 0) {
+      insights.push({
+        id: `insight-time-aware-${Date.now()}`,
+        type: 'recommendation',
+        title: hour < 12 ? 'Prime focus window' : hour < 18 ? 'Protect your momentum' : 'Close the day strong',
+        description:
+          hour < 12
+            ? 'Morning focus is high. Finish one high-impact item before noon.'
+            : hour < 18
+            ? 'Use this window to clear one priority item and keep your streak intact.'
+            : 'Wrap with a short, easy win so tomorrow starts with momentum.',
+        confidence: 0.84,
+        actionable: true,
+        actions: [{
+          label: hour < 18 ? 'Open priorities' : 'Open quick wins',
+          action: 'navigate',
+          params: { screen: 'tasks' },
+        }],
+        priorityScore: hour < 18 ? 0.86 : 0.74,
+        urgencyLabel: hour < 18 ? 'now' : 'today',
+        relatedActivities: active.slice(0, 4).map((a) => a.id),
         createdAt: now,
       });
     }
@@ -203,7 +247,10 @@ class ActivityIntelligenceService {
     _patterns: ActivityPattern[]
   ): Promise<SmartRecommendation[]> {
     const recommendations: SmartRecommendation[] = [];
-    const now = new Date().toISOString();
+    const nowDate = new Date();
+    const now = nowDate.toISOString();
+    const hour = nowDate.getHours();
+    const urgencyLabel = this.getUrgencyLabel(hour);
 
     const highPriority = activities.filter(a => a.priority === 'high' || a.priority === 'urgent');
     if (highPriority.length > 0) {
@@ -216,6 +263,13 @@ class ActivityIntelligenceService {
         confidence: 0.9,
         estimatedBenefit: 0.8,
         difficulty: 0.5,
+        actions: [{
+          label: 'Open priorities',
+          action: 'navigate',
+          params: { screen: 'tasks' },
+        }],
+        priorityScore: 0.95,
+        urgencyLabel: 'now',
         relatedActivities: highPriority.map(a => a.id).slice(0, 3),
         createdAt: now,
       });
@@ -232,10 +286,39 @@ class ActivityIntelligenceService {
         confidence: 0.7,
         estimatedBenefit: 0.6,
         difficulty: 0.1,
+        actions: [{
+          label: 'Open timeline',
+          action: 'navigate',
+          params: { screen: 'activities' },
+        }],
+        priorityScore: 0.58,
+        urgencyLabel: urgencyLabel,
         relatedActivities: [],
         createdAt: now,
       });
     }
+
+    recommendations.push({
+      id: `rec-schedule-${Date.now()}`,
+      type: 'schedule',
+      title: hour < 12 ? 'Lock your peak block now' : 'Plan tomorrow’s peak block',
+      description:
+        hour < 12
+          ? 'Reserve a focused 60-minute block while your energy is strongest.'
+          : 'Set your next deep-work window now to reduce decision fatigue tomorrow.',
+      reasoning: 'Planned focus windows increase follow-through and reduce context switching.',
+      confidence: 0.88,
+      estimatedBenefit: 0.76,
+      difficulty: 0.25,
+      actions: [{
+        label: 'Open scheduler',
+        action: 'open_peak_scheduler',
+      }],
+      priorityScore: hour < 12 ? 0.9 : 0.79,
+      urgencyLabel: hour < 12 ? 'now' : 'today',
+      relatedActivities: [],
+      createdAt: now,
+    });
 
     return recommendations;
   }
@@ -257,8 +340,15 @@ class ActivityIntelligenceService {
           impact: 'positive' as const,
         })),
         insight: 'Maintaining variety across activities helps with overall well-being.',
-        actionable: false,
+        actionable: true,
         confidence: 0.7,
+        actions: [{
+          label: 'Open AI timeline',
+          action: 'navigate',
+          params: { screen: 'activities' },
+        }],
+        priorityScore: 0.66,
+        urgencyLabel: 'today',
       });
     }
 

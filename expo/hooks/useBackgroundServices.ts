@@ -22,6 +22,15 @@ interface NotificationState {
   lastNotification: Notifications.Notification | null;
 }
 
+interface WeeklyRecapSummary {
+  weekLabel: string;
+  completedHabits: number;
+  completionRate: number;
+  activeHabits: number;
+  topHabitName?: string;
+  atRiskHabits: number;
+}
+
 export const [BackgroundServicesProvider, useBackgroundServices] = createContextHook(() => {
   const { profile, updateNotificationSettings } = useUserProfile();
   const appContext = useAppSafe();
@@ -51,6 +60,37 @@ export const [BackgroundServicesProvider, useBackgroundServices] = createContext
   const [isGenerating, setIsGenerating] = useState<boolean>(false);
   const [lastUpdated, setLastUpdated] = useState<string>('');
   const activitiesRef = useRef<UnifiedActivity[]>([]);
+
+  const toMinutes = useCallback((hhmm?: string, fallback: number = 0) => {
+    if (!hhmm || !hhmm.includes(':')) return fallback;
+    const [h, m] = hhmm.split(':').map((v) => Number(v));
+    if (Number.isNaN(h) || Number.isNaN(m)) return fallback;
+    return h * 60 + m;
+  }, []);
+
+  const isInQuietHours = useCallback((date: Date) => {
+    const settings = profile?.notificationSettings;
+    if (!settings?.quietHoursEnabled) return false;
+    const start = toMinutes(settings.quietHoursStart, 22 * 60 + 30);
+    const end = toMinutes(settings.quietHoursEnd, 7 * 60);
+    const nowMinutes = date.getHours() * 60 + date.getMinutes();
+
+    if (start === end) return false;
+    if (start < end) return nowMinutes >= start && nowMinutes < end;
+    return nowMinutes >= start || nowMinutes < end;
+  }, [profile?.notificationSettings, toMinutes]);
+
+  const shiftOutOfQuietHours = useCallback((date: Date) => {
+    const settings = profile?.notificationSettings;
+    if (!settings?.quietHoursEnabled || !isInQuietHours(date)) return date;
+    const end = toMinutes(settings.quietHoursEnd, 7 * 60);
+    const adjusted = new Date(date);
+    adjusted.setHours(Math.floor(end / 60), end % 60, 0, 0);
+    if (adjusted <= new Date()) {
+      adjusted.setDate(adjusted.getDate() + 1);
+    }
+    return adjusted;
+  }, [profile?.notificationSettings, isInQuietHours, toMinutes]);
 
   // === NOTIFICATION FUNCTIONS ===
   const checkPermissions = useCallback(async () => {
@@ -84,11 +124,25 @@ export const [BackgroundServicesProvider, useBackgroundServices] = createContext
     for (const habit of habits) {
       const { days } = habit.frequency;
       if (days.length > 0) {
-        await notificationService.scheduleHabitReminder(habit.id, habit.name, 9, 0, days);
+        const todayKey = new Date().toISOString().slice(0, 10);
+        const completedToday = !!habit.completions?.[todayKey];
+        const streak = Object.values(habit.completions || {}).filter(Boolean).length;
+        const isAtRisk = (profile.notificationSettings.habitRiskAlerts ?? true) && !completedToday && streak >= 2;
+        const baseHour = isAtRisk ? 18 : 9;
+        const reminderDate = shiftOutOfQuietHours(new Date(new Date().setHours(baseHour, 0, 0, 0)));
+        const reminderHour = reminderDate.getHours();
+        const reminderMinute = reminderDate.getMinutes();
+        await notificationService.scheduleHabitReminder(
+          habit.id,
+          isAtRisk ? `${habit.name} (streak at risk)` : habit.name,
+          reminderHour,
+          reminderMinute,
+          days
+        );
       }
     }
     await loadScheduledNotifications();
-  }, [habits, profile?.notificationSettings.habitReminders, notifState.isEnabled, loadScheduledNotifications]);
+  }, [habits, profile?.notificationSettings.habitReminders, notifState.isEnabled, loadScheduledNotifications, shiftOutOfQuietHours]);
 
   const scheduleTaskReminders = useCallback(async () => {
     if (!notifState.isEnabled) return;
@@ -116,10 +170,12 @@ export const [BackgroundServicesProvider, useBackgroundServices] = createContext
   ) => {
     if (!profile?.notificationSettings.matchReminders || !notifState.isEnabled) return null;
 
-    const identifier = await notificationService.scheduleMatchReminder(matchId, homeTeam, awayTeam, matchTime, 30);
+    const leadMinutes = profile.notificationSettings.eventReminderLeadMinutes ?? 30;
+    const adjustedMatchTime = shiftOutOfQuietHours(matchTime);
+    const identifier = await notificationService.scheduleMatchReminder(matchId, homeTeam, awayTeam, adjustedMatchTime, leadMinutes);
     await loadScheduledNotifications();
     return identifier;
-  }, [profile?.notificationSettings.matchReminders, notifState.isEnabled, loadScheduledNotifications]);
+  }, [profile?.notificationSettings, notifState.isEnabled, loadScheduledNotifications, shiftOutOfQuietHours]);
 
   const sendLiveMatchAlert = useCallback(async (
     matchId: string,
@@ -129,8 +185,9 @@ export const [BackgroundServicesProvider, useBackgroundServices] = createContext
     score?: { home: number; away: number }
   ) => {
     if (!profile?.notificationSettings.liveMatches || !notifState.isEnabled) return null;
+    if (isInQuietHours(new Date())) return null;
     return notificationService.sendLiveMatchAlert(matchId, homeTeam, awayTeam, event, score);
-  }, [profile?.notificationSettings.liveMatches, notifState.isEnabled]);
+  }, [profile?.notificationSettings.liveMatches, notifState.isEnabled, isInQuietHours]);
 
   const sendGoalAlert = useCallback(async (
     matchId: string,
@@ -141,8 +198,9 @@ export const [BackgroundServicesProvider, useBackgroundServices] = createContext
     score: { home: number; away: number }
   ) => {
     if (!profile?.notificationSettings.goalAlerts || !notifState.isEnabled) return null;
+    if (isInQuietHours(new Date())) return null;
     return notificationService.sendGoalAlert(matchId, scoringTeam, scorer, homeTeam, awayTeam, score);
-  }, [profile?.notificationSettings.goalAlerts, notifState.isEnabled]);
+  }, [profile?.notificationSettings.goalAlerts, notifState.isEnabled, isInQuietHours]);
 
   const cancelAllHabitReminders = useCallback(async () => {
     for (const habit of habits) {
@@ -313,12 +371,82 @@ export const [BackgroundServicesProvider, useBackgroundServices] = createContext
 
   const actionableInsights = useMemo(() => insights.filter(insight => insight.actionable), [insights]);
 
+  const rankRecommendation = useCallback((rec: SmartRecommendation) => {
+    const nowHour = new Date().getHours();
+    const timingBoost =
+      rec.urgencyLabel === 'now' ? 0.15 : rec.urgencyLabel === 'today' ? 0.08 : 0.02;
+    const morningFocusBoost = nowHour < 12 && rec.type === 'focus' ? 0.08 : 0;
+    const actionBoost = rec.actions?.length ? 0.05 : 0;
+    const explicitScore = typeof rec.priorityScore === 'number' ? rec.priorityScore : 0;
+    return explicitScore + rec.confidence * 0.45 + rec.estimatedBenefit * 0.35 + timingBoost + morningFocusBoost + actionBoost - rec.difficulty * 0.12;
+  }, []);
+
   const topRecommendations = useMemo(() => {
     return recommendations
       .filter(rec => rec.confidence > 0.7)
-      .sort((a, b) => b.confidence - a.confidence)
+      .sort((a, b) => rankRecommendation(b) - rankRecommendation(a))
       .slice(0, 3);
-  }, [recommendations]);
+  }, [recommendations, rankRecommendation]);
+
+  const rankedCrossInsights = useMemo(() => {
+    return [...crossInsights].sort((a, b) => {
+      const aScore = (a.priorityScore || 0) + a.confidence + (a.actionable ? 0.1 : 0);
+      const bScore = (b.priorityScore || 0) + b.confidence + (b.actionable ? 0.1 : 0);
+      return bScore - aScore;
+    });
+  }, [crossInsights]);
+
+  const weeklyRecap = useMemo<WeeklyRecapSummary>(() => {
+    const now = new Date();
+    const monday = new Date(now);
+    const day = (monday.getDay() + 6) % 7;
+    monday.setDate(monday.getDate() - day);
+    monday.setHours(0, 0, 0, 0);
+    const sunday = new Date(monday);
+    sunday.setDate(sunday.getDate() + 6);
+    sunday.setHours(23, 59, 59, 999);
+
+    let completedHabits = 0;
+    let scheduledHabitSlots = 0;
+    let atRiskHabits = 0;
+    let topHabitName = '';
+    let topHabitCompletions = 0;
+
+    habits.forEach((habit) => {
+      const entries = Object.entries(habit.completions || {});
+      let habitCompletions = 0;
+      entries.forEach(([date, completed]) => {
+        if (!completed) return;
+        const d = new Date(date);
+        if (d >= monday && d <= sunday) {
+          habitCompletions++;
+          completedHabits++;
+        }
+      });
+      if (habitCompletions > topHabitCompletions) {
+        topHabitCompletions = habitCompletions;
+        topHabitName = habit.name;
+      }
+      const weeklyDays = habit.frequency?.days?.length || 0;
+      scheduledHabitSlots += weeklyDays;
+      const todayKey = new Date().toISOString().slice(0, 10);
+      const isAtRisk = !habit.completions?.[todayKey] && habitCompletions > 0;
+      if (isAtRisk) atRiskHabits++;
+    });
+
+    const completionRate = scheduledHabitSlots > 0
+      ? Math.round((completedHabits / scheduledHabitSlots) * 100)
+      : 0;
+
+    return {
+      weekLabel: `${monday.toLocaleDateString()} - ${sunday.toLocaleDateString()}`,
+      completedHabits,
+      completionRate,
+      activeHabits: habits.length,
+      topHabitName: topHabitName || undefined,
+      atRiskHabits,
+    };
+  }, [habits]);
 
   // === EFFECTS ===
   useEffect(() => {
@@ -382,6 +510,60 @@ export const [BackgroundServicesProvider, useBackgroundServices] = createContext
     }
   }, [notifState.isEnabled, allTasks.length, scheduleTaskReminders]);
 
+  useEffect(() => {
+    if (!notifState.isEnabled || !profile?.notificationSettings.habitReminders) return;
+
+    const scheduleRetentionNotifications = async () => {
+      const scheduled = await notificationService.getScheduledNotifications();
+      const existingRetention = scheduled.filter(
+        n => n.type === 'weekly_recap' || n.type === 'streak_protection'
+      );
+      for (const item of existingRetention) {
+        await notificationService.cancelNotification(item.identifier);
+      }
+
+      const now = new Date();
+      const daysUntilSunday = (7 - now.getDay()) % 7;
+      const sunday = new Date(now);
+      sunday.setDate(now.getDate() + daysUntilSunday);
+      sunday.setHours(19, 0, 0, 0);
+      const recapTime = shiftOutOfQuietHours(sunday);
+      if (recapTime > new Date()) {
+        await notificationService.scheduleNotification(
+          '📈 Weekly Recap',
+          `You completed ${weeklyRecap.completedHabits} habits this week (${weeklyRecap.completionRate}%). ${weeklyRecap.topHabitName ? `Top habit: ${weeklyRecap.topHabitName}.` : ''}`,
+          recapTime,
+          {
+            type: 'weekly_recap',
+            id: 'weekly_recap',
+            payload: weeklyRecap as unknown as Record<string, any>,
+          }
+        );
+      }
+
+      if (weeklyRecap.atRiskHabits > 0 && (profile.notificationSettings.habitRiskAlerts ?? true)) {
+        const streakTime = shiftOutOfQuietHours(new Date(now.setHours(18, 30, 0, 0)));
+        if (streakTime > new Date()) {
+          await notificationService.scheduleNotification(
+            '🔥 Streak Protection',
+            `${weeklyRecap.atRiskHabits} habit streak${weeklyRecap.atRiskHabits > 1 ? 's are' : ' is'} at risk today. Complete one quick habit to keep momentum.`,
+            streakTime,
+            {
+              type: 'streak_protection',
+              id: 'streak_protection',
+            }
+          );
+        }
+      }
+      await loadScheduledNotifications();
+    };
+
+    const timer = setTimeout(() => {
+      void scheduleRetentionNotifications();
+    }, 1500);
+    return () => clearTimeout(timer);
+  }, [notifState.isEnabled, profile?.notificationSettings, weeklyRecap, shiftOutOfQuietHours, loadScheduledNotifications]);
+
   return {
     // Notifications
     permissionStatus: notifState.permissionStatus,
@@ -409,6 +591,7 @@ export const [BackgroundServicesProvider, useBackgroundServices] = createContext
     recommendations,
     timeline,
     crossInsights,
+    rankedCrossInsights,
     todayActivities,
     upcomingActivities,
     highPriorityActivities,
@@ -416,6 +599,7 @@ export const [BackgroundServicesProvider, useBackgroundServices] = createContext
     todayTimeline,
     actionableInsights,
     topRecommendations,
+    weeklyRecap,
     stats: activityStats,
     isGenerating,
     lastUpdated,
@@ -446,6 +630,7 @@ export const useNotifications = () => {
     cancelAllTaskReminders: ctx.cancelAllTaskReminders,
     cancelAllNotifications: ctx.cancelAllNotifications,
     toggleNotificationSetting: ctx.toggleNotificationSetting,
+    weeklyRecap: ctx.weeklyRecap,
     clearBadge: ctx.clearBadge,
     setBadgeCount: ctx.setBadgeCount,
   };
@@ -472,6 +657,14 @@ export const useNotificationsSafe = () => {
       cancelAllTaskReminders: async () => {},
       cancelAllNotifications: async () => {},
       toggleNotificationSetting: async () => {},
+      weeklyRecap: {
+        weekLabel: '',
+        completedHabits: 0,
+        completionRate: 0,
+        activeHabits: 0,
+        topHabitName: undefined,
+        atRiskHabits: 0,
+      },
       clearBadge: async () => {},
       setBadgeCount: async () => {},
     };
@@ -486,6 +679,7 @@ export const useActivityIntelligence = () => {
     recommendations: ctx.recommendations,
     timeline: ctx.timeline,
     crossInsights: ctx.crossInsights,
+    rankedCrossInsights: ctx.rankedCrossInsights,
     todayActivities: ctx.todayActivities,
     upcomingActivities: ctx.upcomingActivities,
     highPriorityActivities: ctx.highPriorityActivities,

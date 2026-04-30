@@ -5,6 +5,7 @@ import { CalendarEvent, ImportedCalendar } from '@/types/habit';
 import { parseICSFile, getUpcomingEvents, getTodayEvents } from '@/utils/calendarUtils';
 import { Platform } from 'react-native';
 import { useEventKit } from './useEventKit';
+import { useAuth } from './useAuth';
 
 let DocumentPicker: typeof import('expo-document-picker') | null = null;
 if (Platform.OS !== 'web') {
@@ -17,9 +18,12 @@ if (Platform.OS !== 'web') {
 }
 
 
-const CALENDARS_STORAGE_KEY = 'imported_calendars';
+const getCalendarsStorageKey = (userId?: string) => `imported_calendars_${userId || 'guest'}`;
 
 export const [CalendarProvider, useCalendar] = createContextHook(() => {
+  const { user } = useAuth();
+  const userId = user?.id;
+  const CALENDARS_STORAGE_KEY = getCalendarsStorageKey(userId);
   const [calendars, setCalendars] = useState<ImportedCalendar[]>([]);
   const [isLoading, setIsLoading] = useState<boolean>(true);
   const [error, setError] = useState<string | null>(null);
@@ -43,7 +47,7 @@ export const [CalendarProvider, useCalendar] = createContextHook(() => {
     } finally {
       setIsLoading(false);
     }
-  }, []);
+  }, [CALENDARS_STORAGE_KEY]);
 
   // Save calendars to storage
   const saveCalendars = useCallback(async (calendarsToSave: ImportedCalendar[]) => {
@@ -54,7 +58,7 @@ export const [CalendarProvider, useCalendar] = createContextHook(() => {
       console.error('Error saving calendars:', error);
       setError('Failed to save calendars');
     }
-  }, []);
+  }, [CALENDARS_STORAGE_KEY]);
 
   // Import calendar from file
   const importCalendarFromFile = useCallback(async (): Promise<boolean> => {

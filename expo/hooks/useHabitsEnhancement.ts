@@ -42,6 +42,13 @@ interface GamificationData {
   achievements: Achievement[];
   stats: UserStats;
   streaks: StreakData[];
+  retention?: {
+    lastWeeklyBonusWeekKey?: string;
+    weeklyBonusesEarned?: number;
+    pendingWeeklyRewardWeekKey?: string;
+    pendingWeeklyRewardXp?: number;
+    pendingWeeklyRewardCreatedAt?: string;
+  };
   lastUpdated: string;
 }
 
@@ -81,6 +88,17 @@ const getMaxProgressForBadge = (badgeId: string): number => {
     'diverse_5': 5, 'diverse_10': 10,
   };
   return progressMap[badgeId] || 1;
+};
+
+const getWeekKey = (date = new Date()): string => {
+  const target = new Date(date);
+  const day = (target.getDay() + 6) % 7; // Monday-based week
+  target.setDate(target.getDate() - day);
+  const year = target.getFullYear();
+  const firstDay = new Date(year, 0, 1);
+  const diff = Math.floor((target.getTime() - firstDay.getTime()) / 86400000);
+  const week = Math.floor((diff + ((firstDay.getDay() + 6) % 7)) / 7) + 1;
+  return `${year}-W${String(week).padStart(2, '0')}`;
 };
 
 const initializeAchievements = (): Achievement[] => {
@@ -536,6 +554,20 @@ export const [HabitsEnhancementProvider, useHabitsEnhancement] = createContextHo
       xpToNext = XP_PER_LEVEL * finalLevel;
     }
 
+    const currentWeekKey = getWeekKey();
+    const alreadyGrantedWeeklyBonus = data.retention?.lastWeeklyBonusWeekKey === currentWeekKey;
+    const completionsThisWeek = habitsWithStats.reduce((sum, habit) => {
+      const count = Object.entries(habit.completions || {}).filter(([date, completed]) => {
+        if (!completed) return false;
+        return getWeekKey(new Date(date)) === currentWeekKey;
+      }).length;
+      return sum + count;
+    }, 0);
+    const qualifiesForWeeklyBonus = completionsThisWeek >= Math.max(3, habitsWithStats.length);
+    const weeklyBonusXP = !alreadyGrantedWeeklyBonus && qualifiesForWeeklyBonus ? 20 : 0;
+    const existingPendingWeek = data.retention?.pendingWeeklyRewardWeekKey;
+    const shouldSetPendingWeeklyReward = weeklyBonusXP > 0 && existingPendingWeek !== currentWeekKey;
+
     const finalStats: UserStats = {
       ...updatedStats,
       xp: finalXP,
@@ -550,6 +582,13 @@ export const [HabitsEnhancementProvider, useHabitsEnhancement] = createContextHo
       achievements: updatedAchievements,
       stats: finalStats,
       streaks: updatedStreaks,
+      retention: {
+        lastWeeklyBonusWeekKey: data.retention?.lastWeeklyBonusWeekKey,
+        weeklyBonusesEarned: data.retention?.weeklyBonusesEarned || 0,
+        pendingWeeklyRewardWeekKey: shouldSetPendingWeeklyReward ? currentWeekKey : data.retention?.pendingWeeklyRewardWeekKey,
+        pendingWeeklyRewardXp: shouldSetPendingWeeklyReward ? weeklyBonusXP : data.retention?.pendingWeeklyRewardXp,
+        pendingWeeklyRewardCreatedAt: shouldSetPendingWeeklyReward ? new Date().toISOString() : data.retention?.pendingWeeklyRewardCreatedAt,
+      },
       lastUpdated: new Date().toISOString(),
     });
 
@@ -558,7 +597,48 @@ export const [HabitsEnhancementProvider, useHabitsEnhancement] = createContextHo
       newAchievements: newlyUnlockedAchievements,
       levelUp: finalLevel > data.stats.level,
     };
-  }, [gamificationQuery.data, calculateStats, checkBadgeProgress, checkAchievementProgress, calculateStreaks, saveGamification]);
+  }, [gamificationQuery.data, calculateStats, checkBadgeProgress, checkAchievementProgress, calculateStreaks, saveGamification, habitsWithStats]);
+
+  const claimWeeklyReward = useCallback(() => {
+    const data = gamificationQuery.data;
+    if (!data) return { claimed: false, xp: 0 };
+    const pendingXp = data.retention?.pendingWeeklyRewardXp || 0;
+    const pendingWeekKey = data.retention?.pendingWeeklyRewardWeekKey;
+    if (!pendingXp || !pendingWeekKey) return { claimed: false, xp: 0 };
+
+    let newXP = data.stats.xp + pendingXp;
+    let newLevel = data.stats.level;
+    let xpToNext = data.stats.xpToNextLevel;
+
+    while (newXP >= xpToNext) {
+      newXP -= xpToNext;
+      newLevel++;
+      xpToNext = XP_PER_LEVEL * newLevel;
+    }
+
+    saveGamification({
+      ...data,
+      stats: {
+        ...data.stats,
+        xp: newXP,
+        level: newLevel,
+        xpToNextLevel: xpToNext,
+        totalPoints: data.stats.totalPoints + pendingXp,
+        title: getLevelTitle(newLevel),
+      },
+      retention: {
+        ...data.retention,
+        lastWeeklyBonusWeekKey: pendingWeekKey,
+        weeklyBonusesEarned: (data.retention?.weeklyBonusesEarned || 0) + 1,
+        pendingWeeklyRewardWeekKey: undefined,
+        pendingWeeklyRewardXp: 0,
+        pendingWeeklyRewardCreatedAt: undefined,
+      },
+      lastUpdated: new Date().toISOString(),
+    });
+
+    return { claimed: true, xp: pendingXp };
+  }, [gamificationQuery.data, saveGamification]);
 
   const onHabitComplete = useCallback(() => {
     addXP(XP_REWARDS.habitComplete);
@@ -728,6 +808,8 @@ export const [HabitsEnhancementProvider, useHabitsEnhancement] = createContextHo
     unlockedAchievements: getUnlockedAchievements,
     streaksAtRisk: getStreaksAtRisk,
     activeChallenges: getActiveChallenges,
+    pendingWeeklyRewardXp: gamificationQuery.data?.retention?.pendingWeeklyRewardXp || 0,
+    claimWeeklyReward,
     
     onHabitComplete,
     addXP,
@@ -776,6 +858,8 @@ export const useGamification = () => {
     unlockedAchievements: ctx.unlockedAchievements,
     streaksAtRisk: ctx.streaksAtRisk,
     activeChallenges: ctx.activeChallenges,
+    pendingWeeklyRewardXp: ctx.pendingWeeklyRewardXp,
+    claimWeeklyReward: ctx.claimWeeklyReward,
     onHabitComplete: ctx.onHabitComplete,
     addXP: ctx.addXP,
     refreshGamification: ctx.refreshGamification,

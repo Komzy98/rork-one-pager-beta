@@ -749,6 +749,40 @@ export function getPlaybackResumeSeconds(row: Record<string, unknown>): number |
   return null;
 }
 
+/** Best-effort progress percent [0..100] for Continue watching reliability across provider payload shapes. */
+export function getContinueWatchingProgressPercent(row: Record<string, unknown>): number {
+  const durationMs = Number(row.duration);
+  const posSec = getPlaybackResumeSeconds(row);
+  if (
+    posSec != null &&
+    posSec > 0 &&
+    Number.isFinite(durationMs) &&
+    durationMs > 60_000
+  ) {
+    const totalSec = Math.max(1, Math.floor(durationMs / 1000));
+    return Math.max(0, Math.min(100, Math.round((posSec / totalSec) * 100)));
+  }
+
+  const rawProg = pickFirstNumericProgress(row);
+  if (rawProg != null && rawProg > 0) {
+    return Math.max(0, Math.min(100, Math.round(rawProg * 100)));
+  }
+
+  const explicitPct = readPositiveNumber(row, [
+    "watchPercent",
+    "watch_percent",
+    "completionPercent",
+    "completion_percent",
+    "progressPercent",
+    "progress_percent",
+  ]);
+  if (explicitPct != null && explicitPct > 0) {
+    return Math.max(0, Math.min(100, Math.round(explicitPct)));
+  }
+
+  return 0;
+}
+
 /** Append start offset when the provider URL supports it and no `t=` / `start=` is present. */
 export function augmentWatchUrlWithResume(url: string, resumeSeconds: number | null): string {
   if (!url || resumeSeconds == null || resumeSeconds <= 0) return url;

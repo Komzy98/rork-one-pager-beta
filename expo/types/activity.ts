@@ -31,6 +31,8 @@ export interface ActivityInsight {
     action: string;
     params?: Record<string, any>;
   }[];
+  priorityScore?: number;
+  urgencyLabel?: 'now' | 'today' | 'later';
   relatedActivities: string[];
   createdAt: string;
 }
@@ -57,6 +59,13 @@ export interface SmartRecommendation {
   estimatedBenefit: number; // 0-1
   difficulty: number; // 0-1
   relatedActivities: string[];
+  actions?: {
+    label: string;
+    action: string;
+    params?: Record<string, any>;
+  }[];
+  priorityScore?: number;
+  urgencyLabel?: 'now' | 'today' | 'later';
   createdAt: string;
 }
 
@@ -73,6 +82,13 @@ export interface CrossActivityInsight {
   insight: string;
   actionable: boolean;
   confidence: number;
+  actions?: {
+    label: string;
+    action: string;
+    params?: Record<string, any>;
+  }[];
+  priorityScore?: number;
+  urgencyLabel?: 'now' | 'today' | 'later';
 }
 
 export interface UnifiedTimeline {

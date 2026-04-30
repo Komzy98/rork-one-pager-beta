@@ -395,6 +395,11 @@ export interface UserProfile {
     matchReminders: boolean;
     goalAlerts: boolean;
     habitReminders: boolean;
+    habitRiskAlerts?: boolean;
+    quietHoursEnabled?: boolean;
+    quietHoursStart?: string; // HH:mm
+    quietHoursEnd?: string; // HH:mm
+    eventReminderLeadMinutes?: number;
   };
   displayPreferences: {
     showOnlyFavorites: boolean;

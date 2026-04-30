@@ -13,7 +13,7 @@ Notifications.setNotificationHandler({
 });
 
 export interface NotificationData {
-  type: 'match_live' | 'match_reminder' | 'goal_alert' | 'habit_reminder' | 'task_due' | 'reading_reminder';
+  type: 'match_live' | 'match_reminder' | 'goal_alert' | 'habit_reminder' | 'task_due' | 'reading_reminder' | 'weekly_recap' | 'streak_protection';
   id?: string;
   payload?: Record<string, any>;
 }

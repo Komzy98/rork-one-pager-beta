@@ -147,6 +147,31 @@ export class SupabaseUserSync {
     return [...byId.values(), ...cloudWithoutId, ...localWithoutId];
   }
 
+  /**
+   * If Supabase has an empty array for a domain but local disk still has items,
+   * treat cloud as corrupted/out-of-sync and prefer local (self-heal).
+   * Does not replace non-empty cloud data with local (avoids wiping remote wins).
+   */
+  private reconcileCloudWithLocalDisk(
+    cloud: Partial<UserData> | null | undefined,
+    localDisk: Partial<UserData> | null | undefined
+  ): Partial<UserData> {
+    const c = removeUndefined({ ...(cloud || {}) }) as Partial<UserData>;
+    const l = removeUndefined({ ...(localDisk || {}) }) as Partial<UserData>;
+
+    for (const key of ARRAY_MERGE_KEYS) {
+      const cloudArr = Array.isArray(c[key]) ? (c[key] as any[]) : undefined;
+      const localArr = Array.isArray(l[key]) ? (l[key] as any[]) : undefined;
+      const cloudEmpty = !cloudArr || cloudArr.length === 0;
+      const localHas = !!(localArr && localArr.length > 0);
+      if (cloudEmpty && localHas) {
+        (c as any)[key] = localArr;
+      }
+    }
+
+    return c;
+  }
+
   private mergePayload(existing: Partial<UserData> | null, incoming: Partial<UserData>): Partial<UserData> {
     const base = removeUndefined({ ...(existing || {}) }) as Partial<UserData>;
     const next = removeUndefined({ ...incoming }) as Partial<UserData>;
@@ -154,9 +179,11 @@ export class SupabaseUserSync {
 
     for (const key of ARRAY_MERGE_KEYS) {
       const incomingArr = Array.isArray(next[key]) ? (next[key] as any[]) : undefined;
-      const baseArr = Array.isArray(base[key]) ? (base[key] as any[]) : undefined;
-      if (incomingArr && baseArr) {
-        merged[key] = this.mergeArrayById(incomingArr, baseArr) as any;
+      if (incomingArr) {
+        // Treat explicitly provided arrays as source-of-truth snapshots.
+        // This preserves deletions (e.g. habit removed locally) instead of
+        // resurrecting rows from older cloud state.
+        merged[key] = incomingArr as any;
       }
     }
 
@@ -260,7 +287,16 @@ export class SupabaseUserSync {
       return;
     }
     try {
-      const existing = await this.loadFromCloud();
+      const sessionOk = await this.ensureAuthSessionMatchesUser();
+      if (!sessionOk) {
+        // Avoid writing partial payloads when auth session is not fully ready yet.
+        await this.saveToLocalFallback(data);
+        return;
+      }
+
+      const rawCloud = await this.fetchCloudUserDataRow();
+      const localBaseline = await this.loadUserScopedBaseline();
+      const existing = this.reconcileCloudWithLocalDisk(rawCloud, localBaseline);
       const merged = removeUndefined({
         ...this.mergePayload(existing, data),
         userId: this.userId,
@@ -293,8 +329,9 @@ export class SupabaseUserSync {
 
   private async saveToLocalFallback(data: Partial<UserData>): Promise<void> {
     try {
+      const existingLocal = await this.loadFromLocalFallback();
       const sanitized = removeUndefined({
-        ...data,
+        ...this.mergePayload(existingLocal, data),
         userId: this.userId,
         lastSynced: new Date().toISOString(),
       });
@@ -304,6 +341,63 @@ export class SupabaseUserSync {
       );
     } catch (fallbackError) {
       console.error('Local fallback save failed:', fallbackError);
+    }
+  }
+
+  private async loadUserScopedBaseline(): Promise<Partial<UserData> | null> {
+    try {
+      const [
+        habitsRaw,
+        activitiesRaw,
+        showsRaw,
+        sportsRaw,
+        tasksRaw,
+        taskProjectsRaw,
+        taskTimeEntriesRaw,
+        profileRaw,
+      ] = await Promise.all([
+        unifiedStorage.getItem(USER_SCOPED_STORAGE_KEYS.habits(this.userId)),
+        unifiedStorage.getItem(USER_SCOPED_STORAGE_KEYS.activities(this.userId)),
+        unifiedStorage.getItem(USER_SCOPED_STORAGE_KEYS.shows(this.userId)),
+        unifiedStorage.getItem(USER_SCOPED_STORAGE_KEYS.sports(this.userId)),
+        unifiedStorage.getItem(USER_SCOPED_STORAGE_KEYS.tasks(this.userId)),
+        unifiedStorage.getItem(USER_SCOPED_STORAGE_KEYS.taskProjects(this.userId)),
+        unifiedStorage.getItem(USER_SCOPED_STORAGE_KEYS.taskTimeEntries(this.userId)),
+        unifiedStorage.getItem(USER_SCOPED_STORAGE_KEYS.userProfile(this.userId)),
+      ]);
+
+      return removeUndefined({
+        habits: habitsRaw ? JSON.parse(habitsRaw) : [],
+        activities: activitiesRaw ? JSON.parse(activitiesRaw) : [],
+        shows: showsRaw ? JSON.parse(showsRaw) : [],
+        sports: sportsRaw ? JSON.parse(sportsRaw) : [],
+        tasks: tasksRaw ? JSON.parse(tasksRaw) : [],
+        taskProjects: taskProjectsRaw ? JSON.parse(taskProjectsRaw) : [],
+        taskTimeEntries: taskTimeEntriesRaw ? JSON.parse(taskTimeEntriesRaw) : [],
+        userProfile: profileRaw ? JSON.parse(profileRaw) : undefined,
+      }) as Partial<UserData>;
+    } catch (error) {
+      console.warn('Failed to build user-scoped baseline for sync:', error);
+      return null;
+    }
+  }
+
+  /** Raw JSON `data` from Supabase — no reconcile/snapshot (used before merge on save). */
+  private async fetchCloudUserDataRow(): Promise<UserData | null> {
+    if (!supabaseConfigured) return null;
+    try {
+      const { data, error } = await this.withTimeout(
+        supabase
+          .from(TABLE)
+          .select('data')
+          .eq('user_id', this.userId)
+          .maybeSingle()
+      );
+      if (error) throw error;
+      if (data?.data) return data.data as UserData;
+      return null;
+    } catch {
+      return null;
     }
   }
 
@@ -347,7 +441,9 @@ export class SupabaseUserSync {
       if (error) throw error;
       this.failureCount = 0;
       if (data?.data) {
-        const payload = data.data as UserData;
+        const raw = data.data as UserData;
+        const localBaseline = await this.loadUserScopedBaseline();
+        const payload = this.reconcileCloudWithLocalDisk(raw, localBaseline) as UserData;
         await this.saveSnapshot(payload, 'cloud_pull');
         return payload;
       }
@@ -386,7 +482,10 @@ export class SupabaseUserSync {
             const newRow = payload?.new?.data;
             if (newRow) {
               console.log('Realtime update from Supabase for user:', this.userId);
-              onDataChange(newRow as UserData);
+              void this.loadUserScopedBaseline().then((baseline) => {
+                const fixed = this.reconcileCloudWithLocalDisk(newRow as UserData, baseline) as UserData;
+                onDataChange(fixed);
+              });
             }
           }
         )
