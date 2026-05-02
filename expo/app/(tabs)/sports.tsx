@@ -6,6 +6,7 @@ import {
   TouchableOpacity, 
   RefreshControl, 
   Image,
+  ImageBackground,
   ScrollView,
   ActivityIndicator,
   Platform,
@@ -29,35 +30,68 @@ import {
   Flame,
   X,
   Heart,
-  BarChart3,
   Clock,
   Bell,
   BellOff,
   Pin,
   Swords,
   Flag,
+  Zap,
+  Sparkles,
+  TrendingUp,
+  Users,
+  Globe,
+  ChevronDown,
+  BarChart3,
 } from 'lucide-react-native';
 import { router } from 'expo-router';
 import * as Haptics from 'expo-haptics';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { LinearGradient } from 'expo-linear-gradient';
+import { BlurView } from 'expo-blur';
 import { useUserProfile } from '@/hooks/useUserProfile';
+import { useAuth } from '@/hooks/useAuth';
 import { useTheme } from '@/hooks/useTheme';
 import { getNationalitySignals } from '@/utils/nationalityPersonalization';
 import { COLORS } from '@/constants/colors';
 import { trpc } from '@/lib/trpc';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import CompetitionFilter from '@/components/CompetitionFilter';
+import { FootballSmartFilter } from '@/components/SportsSmartFilter';
+import { COMPETITIONS_DATA, QUICK_FILTERS, getCompetitionById } from '@/constants/competitions';
 import MatchDetailsModal from '@/components/MatchDetailsModal';
 import LeagueStandingsModal from '@/components/LeagueStandingsModal';
 import TabWalkthrough from '@/components/TabWalkthrough';
 import UFCFightDetailModal from '@/components/UFCFightDetailModal';
 import F1Section from '@/components/F1Section';
 import NBASection from '@/components/NBASection';
+import FootballPremiumHeroInner from '@/components/FootballPremiumHeroInner';
+import { getFootballTeamLogoUrl } from '@/constants/footballData';
 
 const { width: SCREEN_WIDTH } = Dimensions.get('window');
 
+/** Curated “Top leagues” bundle for API scoping (top 5 + main UEFA club comps). */
+const TOP_LEAGUE_BUNDLE_IDS: number[] = (() => {
+  const top5 = QUICK_FILTERS.find((f) => f.id === 'top5')?.leagueIds ?? [39, 140, 78, 135, 61];
+  const uefaClub = [2, 3, 848, 531];
+  return Array.from(new Set([...top5, ...uefaClub]));
+})();
+
+const FOOTBALL_SMART_FILTER_OPTIONS: {
+  id: FootballSmartFilter;
+  label: string;
+  Icon: typeof Sparkles;
+}[] = [
+  { id: 'for-you', label: 'For You', Icon: Sparkles },
+  { id: 'following', label: 'Following', Icon: Users },
+  { id: 'top-leagues', label: 'Top Leagues', Icon: Trophy },
+  { id: 'worldwide', label: 'Worldwide', Icon: Globe },
+];
+
 type SportMode = 'football' | 'ufc' | 'f1' | 'nba';
+
+function escapeRegExp(value: string): string {
+  return value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+}
 
 /**
  * Live Now carousel cards: fixed forest→navy gradient + light text.
@@ -132,6 +166,24 @@ function sportsFixedPalette(isDark: boolean) {
     tickerGradient: ['#0A1A12', '#145A32', '#1A1A2E'] as const,
     tickerSheen: 'rgba(50, 215, 75, 0.22)',
     ufcGradient: ['#1A0808', '#1C0A18', '#0F0A1E'] as const,
+  };
+}
+
+/** Stadium hero + neon green chrome for Football tab (light / dark). */
+const FOOTBALL_CHROME = {
+  accentDark: '#32D74B',
+  accentLight: '#15803D',
+  stadiumLightImage: require('../../assets/images/sports-stadium-light-premium.png'),
+  stadiumDarkImage: require('../../assets/images/sports-stadium-dark-premium.png'),
+} as const;
+
+function footballChrome(isDark: boolean) {
+  return {
+    accent: isDark ? FOOTBALL_CHROME.accentDark : FOOTBALL_CHROME.accentLight,
+    title: isDark ? '#FFFFFF' : '#0F172A',
+    subtitleMuted: isDark ? '#A1A1AA' : '#64748B',
+    pillTrack: isDark ? 'rgba(24,28,26,0.92)' : 'rgba(255,255,255,0.92)',
+    pillBorder: isDark ? 'rgba(50,215,75,0.22)' : 'rgba(21,128,61,0.25)',
   };
 }
 
@@ -267,6 +319,166 @@ interface Match {
   elapsed?: number;
 }
 
+function countFormWinsInLastN(form: any[] | undefined, teamId: number | undefined, n: number): number {
+  if (!form?.length || !teamId) return 0;
+  let wins = 0;
+  for (const m of form.slice(0, n)) {
+    const hid = m?.teams?.home?.id;
+    const aid = m?.teams?.away?.id;
+    const hg = m?.goals?.home;
+    const ag = m?.goals?.away;
+    if (hg == null || ag == null) continue;
+    if (hid === teamId && hg > ag) wins++;
+    else if (aid === teamId && ag > hg) wins++;
+  }
+  return wins;
+}
+
+function shortTeamLabel(name: string): string {
+  const w = name.trim().split(/\s+/);
+  if (w.length === 1) return w[0].length <= 6 ? w[0] : `${w[0].slice(0, 5)}…`;
+  const first = w[0];
+  return first.length > 5 ? `${first.slice(0, 4)}…` : first;
+}
+
+function abbrevPlayerName(name: string): string {
+  const p = name.trim().split(/\s+/);
+  if (p.length === 1) return p[0];
+  return `${p[0][0]}. ${p[p.length - 1]}`;
+}
+
+/** When TRPC omits `photo`, api-sports CDN still serves portraits by player id (matches MatchDetailsModal lineups). */
+function footballLeaderPortraitUri(row: { photo?: string | null; playerId?: number | null }): string | null {
+  const raw = typeof row.photo === 'string' ? row.photo.trim() : '';
+  if (raw.length > 8 && (raw.startsWith('http://') || raw.startsWith('https://'))) return raw;
+  const id = row.playerId;
+  if (typeof id === 'number' && id > 0) return `https://media.api-sports.io/football/players/${id}.png`;
+  return null;
+}
+
+function isMajorLeagueName(name: string): boolean {
+  return /premier league|la liga|bundesliga|serie a|ligue 1|champions league|europa league|conference league|uefa super/i.test(
+    name,
+  );
+}
+
+function hoursUntilMatchKickoff(m: Match): number {
+  return (new Date(m.date).getTime() - Date.now()) / 3600000;
+}
+
+type StandingRowLite = {
+  rank: number;
+  points: number;
+  team: { id: number; name: string };
+  description?: string | null;
+};
+
+function findHomeAwayInStandings(
+  response: unknown,
+  homeTeamId: number | undefined,
+  awayTeamId: number | undefined,
+): { home: StandingRowLite; away: StandingRowLite } | null {
+  if (!homeTeamId || !awayTeamId) return null;
+  const standings = (response as { league?: { standings?: unknown[] } }[])?.[0]?.league?.standings;
+  if (!Array.isArray(standings)) return null;
+  for (const group of standings) {
+    if (!Array.isArray(group)) continue;
+    const home = group.find((t: { team?: { id?: number } }) => t?.team?.id === homeTeamId);
+    const away = group.find((t: { team?: { id?: number } }) => t?.team?.id === awayTeamId);
+    if (home && away) {
+      return {
+        home: {
+          rank: home.rank,
+          points: home.points,
+          team: home.team,
+          description: home.description,
+        },
+        away: {
+          rank: away.rank,
+          points: away.points,
+          team: away.team,
+          description: away.description,
+        },
+      };
+    }
+  }
+  return null;
+}
+
+function ordinalRank(n: number): string {
+  if (n % 100 >= 11 && n % 100 <= 13) return `${n}th`;
+  switch (n % 10) {
+    case 1:
+      return `${n}st`;
+    case 2:
+      return `${n}nd`;
+    case 3:
+      return `${n}rd`;
+    default:
+      return `${n}th`;
+  }
+}
+
+function shortZoneHint(description: string | undefined | null): string | null {
+  if (!description || typeof description !== 'string') return null;
+  const d = description.trim();
+  if (!d) return null;
+  return d.length > 40 ? `${d.slice(0, 37)}…` : d;
+}
+
+/** Deterministic copy: how a win for either side affects points / ladder (GD caveat). */
+function buildTablestakesSummary(
+  leagueName: string,
+  homeLabel: string,
+  awayLabel: string,
+  home: StandingRowLite,
+  away: StandingRowLite,
+): string {
+  const hr = home.rank;
+  const ar = away.rank;
+  const hp = home.points;
+  const ap = away.points;
+  const homeWinPts = hp + 3;
+  const awayWinPts = ap + 3;
+  const rankGap = Math.abs(hr - ar);
+  const ptsGap = Math.abs(hp - ap);
+  const homeHigher = hr < ar;
+  const tight = rankGap <= 2 || (rankGap <= 4 && ptsGap <= 6);
+
+  const leagueBit = leagueName ? `${leagueName} table: ` : 'Table: ';
+
+  let core: string;
+  if (tight) {
+    core = `${leagueBit}${homeLabel} ${ordinalRank(hr)} (${hp} pts) vs ${awayLabel} ${ordinalRank(ar)} (${ap} pts)—a classic “six-pointer” feel; a ${homeLabel} win → ~${homeWinPts} pts, an ${awayLabel} win → ~${awayWinPts} pts, often enough to swap places on goal difference.`;
+  } else if (homeHigher) {
+    core = `${leagueBit}${homeLabel} ${ordinalRank(hr)} (${hp} pts) sit above ${awayLabel} ${ordinalRank(ar)} (${ap} pts); an away win pushes ${awayLabel} toward ~${awayWinPts} pts and tightens the race for places above.`;
+  } else {
+    core = `${leagueBit}${awayLabel} ${ordinalRank(ar)} (${ap} pts) lead ${homeLabel} ${ordinalRank(hr)} (${hp} pts); a home win lifts ${homeLabel} toward ~${homeWinPts} pts and applies pressure higher up.`;
+  }
+
+  const outcomes = ` If ${homeLabel} win: ~${homeWinPts} pts; if ${awayLabel} win: ~${awayWinPts} pts (order among tied teams depends on GD).`;
+
+  const zh = shortZoneHint(home.description) ?? shortZoneHint(away.description);
+  const zone = zh ? ` Zone: ${zh}.` : '';
+
+  return `${core}${outcomes}${zone}`;
+}
+
+function migrateStoredFootballFocus(raw: string | null): FootballSmartFilter {
+  if (
+    raw === 'for-you' ||
+    raw === 'following' ||
+    raw === 'top-leagues' ||
+    raw === 'worldwide'
+  ) {
+    return raw;
+  }
+  if (raw === 'my-teams') return 'following';
+  if (raw === 'my-leagues') return 'top-leagues';
+  if (raw === 'my-countries' || raw === 'all') return 'worldwide';
+  return 'for-you';
+}
+
 let footballIdCounter = 0;
 function transformApiFootballData(fixtures: any[]): Match[] {
   if (!Array.isArray(fixtures)) return [];
@@ -366,6 +578,10 @@ const LiveTickerCard = React.memo(({
     onPress();
   }, [onPress]);
 
+  const homeScoreVal = Number(match.homeScore ?? 0);
+  const awayScoreVal = Number(match.awayScore ?? 0);
+  const homeMomentum = ((homeScoreVal + 1) / (homeScoreVal + awayScoreVal + 2)) * 100;
+
   return (
     <View style={styles.tickerCardWrapper}>
       <TouchableOpacity onPress={handlePress} activeOpacity={0.92}>
@@ -384,7 +600,7 @@ const LiveTickerCard = React.memo(({
           />
           <View style={styles.tickerTopRow}>
             <View style={styles.tickerLiveBadge}>
-              <LivePulse color={LIVE_TICKER_TEXT.live} size={6} />
+              <LivePulse color={LIVE_TICKER_TEXT.live} size={3} />
               <Text style={styles.tickerLiveText}>LIVE</Text>
             </View>
             {match.elapsed ? (
@@ -402,7 +618,7 @@ const LiveTickerCard = React.memo(({
                 {match.homeTeamLogo ? (
                   <Image source={{ uri: match.homeTeamLogo }} style={styles.tickerLogo} />
                 ) : (
-                  <Shield size={14} color="rgba(255,255,255,0.45)" />
+                  <Shield size={8} color="rgba(255,255,255,0.45)" />
                 )}
               </View>
               <Text style={[styles.tickerTeamName, { color: LIVE_TICKER_TEXT.team }]} numberOfLines={1}>
@@ -417,7 +633,7 @@ const LiveTickerCard = React.memo(({
                 {match.awayTeamLogo ? (
                   <Image source={{ uri: match.awayTeamLogo }} style={styles.tickerLogo} />
                 ) : (
-                  <Shield size={14} color="rgba(255,255,255,0.45)" />
+                  <Shield size={8} color="rgba(255,255,255,0.45)" />
                 )}
               </View>
               <Text style={[styles.tickerTeamName, { color: LIVE_TICKER_TEXT.team }]} numberOfLines={1}>
@@ -429,11 +645,23 @@ const LiveTickerCard = React.memo(({
             </View>
           </View>
 
+          <View style={styles.tickerMomentumRow}>
+            <Text style={styles.tickerMomentumLabel}>Momentum</Text>
+            <View style={styles.tickerMomentumTrack}>
+              <LinearGradient
+                colors={['rgba(50,215,75,0.9)', 'rgba(50,215,75,0.35)']}
+                start={{ x: 0, y: 0 }}
+                end={{ x: 1, y: 0 }}
+                style={[styles.tickerMomentumFill, { width: `${Math.max(16, Math.min(84, homeMomentum))}%` }]}
+              />
+            </View>
+          </View>
+
           <View style={styles.tickerLeague}>
             {match.leagueLogo ? (
               <Image source={{ uri: match.leagueLogo }} style={styles.tickerLeagueLogo} resizeMode="contain" />
             ) : (
-              <Trophy size={10} color="rgba(255,255,255,0.45)" />
+              <Trophy size={6} color="rgba(255,255,255,0.45)" />
             )}
             <Text style={[styles.tickerLeagueName, { color: LIVE_TICKER_TEXT.league }]} numberOfLines={1}>
               {match.league}
@@ -464,6 +692,7 @@ const PremiumMatchCard = React.memo(({
   const sf = sportsFixedPalette(isDark);
   const isLive = match.status === 'Live';
   const isCompleted = match.status === 'Completed';
+  const isUpcoming = !isLive && !isCompleted;
   const hasScore = match.homeScore !== null && match.awayScore !== null;
   const homeIsFavorite = isFavoriteTeam(match.homeTeam);
   const awayIsFavorite = isFavoriteTeam(match.awayTeam);
@@ -518,6 +747,7 @@ const PremiumMatchCard = React.memo(({
         <View style={[
           styles.cardInner,
           { backgroundColor: sf.card, borderColor: sf.border },
+          !isDark && isUpcoming && styles.upcomingPremiumCardLight,
           isLive && styles.liveCardBorder,
           isPinned && !isLive && { borderColor: `${sf.warning}55` },
         ]}>
@@ -534,6 +764,14 @@ const PremiumMatchCard = React.memo(({
               colors={[`${sf.warning}12`, 'transparent']}
               start={{ x: 0, y: 0 }}
               end={{ x: 0, y: 1 }}
+              style={styles.cardGlow}
+              pointerEvents="none"
+            />
+          ) : !isDark && isUpcoming ? (
+            <LinearGradient
+              colors={['rgba(247, 221, 143, 0.18)', 'transparent']}
+              start={{ x: 0, y: 0 }}
+              end={{ x: 1, y: 1 }}
               style={styles.cardGlow}
               pointerEvents="none"
             />
@@ -704,27 +942,17 @@ const TabPill = React.memo(({
   activeTab, 
   onTabChange,
   counts,
+  variant = 'default',
 }: { 
   tabs: { key: string; label: string; icon: any; color: string }[];
   activeTab: string;
   onTabChange: (tab: string) => void;
   counts: Record<string, number>;
+  variant?: 'default' | 'football';
 }) => {
   const { isDark } = useTheme();
   const sf = sportsFixedPalette(isDark);
-  const indicatorAnim = useRef(new Animated.Value(0)).current;
-  const [containerWidth, setContainerWidth] = useState<number>(SCREEN_WIDTH - 40);
-  const activeIndex = tabs.findIndex(t => t.key === activeTab);
-  const tabWidth = (containerWidth - 8) / tabs.length;
-  
-  useEffect(() => {
-    Animated.spring(indicatorAnim, {
-      toValue: activeIndex * tabWidth + 4,
-      tension: 90,
-      friction: 14,
-      useNativeDriver: true,
-    }).start();
-  }, [activeIndex, indicatorAnim, tabWidth]);
+  const fc = footballChrome(isDark);
   
   const handlePress = useCallback(async (tab: string) => {
     if (Platform.OS !== 'web') {
@@ -733,75 +961,74 @@ const TabPill = React.memo(({
     onTabChange(tab);
   }, [onTabChange]);
   
-  const activeColor = tabs[activeIndex]?.color || sf.primary;
-  
+  const isFootball = variant === 'football';
+
   return (
-    <View 
-      onLayout={(e) => setContainerWidth(e.nativeEvent.layout.width)}
+    <View
       style={[
         styles.pillContainer, 
-        { 
-          backgroundColor: sf.surfaceSecondary,
-          borderWidth: 1,
-          borderColor: sf.border,
-        },
+        isFootball
+          ? {
+              backgroundColor: fc.pillTrack,
+              borderWidth: 0.5,
+              borderColor: fc.pillBorder,
+            }
+          : {
+              backgroundColor: sf.surfaceSecondary,
+              borderWidth: 0.5,
+              borderColor: sf.border,
+            },
       ]}
     >
-      <Animated.View 
-        style={[
-          styles.pillIndicator,
-          { 
-            width: tabWidth - 8,
-            transform: [{ translateX: indicatorAnim }],
-          }
-        ]} 
-      >
-        <LinearGradient
-          colors={isDark 
-            ? [activeColor + '25', activeColor + '12'] 
-            : [activeColor + '18', activeColor + '08']
-          }
-          start={{ x: 0, y: 0 }}
-          end={{ x: 0, y: 1 }}
-          style={[
-            styles.pillIndicatorInner,
-            { 
-              borderColor: activeColor + (isDark ? '30' : '25'),
-              shadowColor: activeColor,
-              shadowOpacity: isDark ? 0.3 : 0.15,
-              shadowRadius: 12,
-              shadowOffset: { width: 0, height: 4 },
-              elevation: 4,
-            }
-          ]}
-        />
-      </Animated.View>
-      
       {tabs.map((tab) => {
         const Icon = tab.icon;
         const isActive = activeTab === tab.key;
         const count = counts[tab.key] || 0;
-        
+        const accent = fc.accent;
+
         return (
           <TouchableOpacity 
             key={tab.key}
             onPress={() => handlePress(tab.key)} 
             activeOpacity={0.6} 
-            style={styles.pillTab}
+            style={[
+              styles.pillTab,
+              isFootball && isActive && {
+                backgroundColor: isDark ? 'rgba(50,215,75,0.14)' : 'rgba(21,128,61,0.12)',
+                borderRadius: 11,
+                marginVertical: 2,
+                borderWidth: 0.8,
+                borderColor: accent,
+              },
+            ]}
           >
             <View style={[
               styles.pillTabIconWrap,
-              isActive && { backgroundColor: tab.color + '20' }
+              !isFootball && isActive && {
+                shadowColor: tab.color,
+                shadowOpacity: isDark ? 0.6 : 0.4,
+                shadowRadius: 10,
+                shadowOffset: { width: 0, height: 0 },
+                elevation: 6,
+              }
             ]}>
               <Icon 
                 size={14} 
-                color={isActive ? tab.color : sf.textMuted} 
+                color={
+                  isFootball
+                    ? (isActive ? accent : sf.textMuted)
+                    : (isActive ? tab.color : sf.textMuted)
+                } 
                 strokeWidth={isActive ? 2.8 : 2}
               />
             </View>
             <Text style={[
               styles.pillLabel, 
-              { color: isActive ? sf.text : sf.textMuted },
+              {
+                color: isFootball
+                  ? (isActive ? (isDark ? '#F4FFF6' : '#0F172A') : sf.textMuted)
+                  : (isActive ? sf.text : sf.textMuted),
+              },
               isActive && { fontWeight: '700' as const, letterSpacing: -0.2 }
             ]}>
               {tab.label}
@@ -809,13 +1036,21 @@ const TabPill = React.memo(({
             {count > 0 && (
               <View style={[
                 styles.pillBadge,
-                isActive 
-                  ? { backgroundColor: tab.color } 
-                  : { backgroundColor: sf.surfaceSecondary }
+                isFootball
+                  ? (isActive
+                      ? { backgroundColor: accent }
+                      : { backgroundColor: isDark ? 'rgba(255,255,255,0.06)' : 'rgba(0,0,0,0.05)' })
+                  : (isActive 
+                      ? { backgroundColor: tab.color } 
+                      : { backgroundColor: sf.surfaceSecondary }),
               ]}>
                 <Text style={[
                   styles.pillBadgeText,
-                  { color: isActive ? sf.textInverse : sf.textMuted }
+                  {
+                    color: isFootball
+                      ? (isActive ? '#FFFFFF' : sf.textMuted)
+                      : (isActive ? sf.textInverse : sf.textMuted),
+                  }
                 ]}>
                   {count}
                 </Text>
@@ -1368,23 +1603,36 @@ const EmptyState = React.memo(({ type }: { type: 'live' | 'upcoming' | 'results'
 export default function SportsScreen() {
   const insets = useSafeAreaInsets();
   const { isFavoriteTeam, profile } = useUserProfile();
+  const { user } = useAuth();
   const { colors, isDark } = useTheme();
   const sf = sportsFixedPalette(isDark);
+  const fc = footballChrome(isDark);
+  const scopedKey = useCallback(
+    (base: string) => `${base}_${user?.id || 'guest'}`,
+    [user?.id]
+  );
   const [refreshing, setRefreshing] = useState(false);
   const [sportMode, setSportMode] = useState<SportMode>('football');
   const [activeTab, setActiveTab] = useState<'live' | 'upcoming' | 'results'>('upcoming');
   const [ufcTab, setUfcTab] = useState<'upcoming' | 'results'>('upcoming');
   const [selectedLeagues, setSelectedLeagues] = useState<number[]>([]);
-  const [favoriteLeagues, setFavoriteLeagues] = useState<number[]>([]);
+  const [footballSmartFilter, setFootballSmartFilter] = useState<FootballSmartFilter>('for-you');
+  const [contextFollowingTeamIds, setContextFollowingTeamIds] = useState<number[] | null>(null);
+  const [contextTopLeagueIds, setContextTopLeagueIds] = useState<number[] | null>(null);
+  const [showFootballContextSheet, setShowFootballContextSheet] = useState(false);
+  const [footballSortMode, setFootballSortMode] = useState<'kickoff' | 'competition' | 'smart'>('smart');
   const [preferencesLoaded, setPreferencesLoaded] = useState(false);
   const [selectedMatch, setSelectedMatch] = useState<Match | null>(null);
   const [showMatchModal, setShowMatchModal] = useState(false);
   const [showStandingsModal, setShowStandingsModal] = useState(false);
   const [selectedLeagueForStandings, setSelectedLeagueForStandings] = useState<{ id: number; name: string } | null>(null);
   const [showLeaguePicker, setShowLeaguePicker] = useState(false);
+  const [showFootballFilterPicker, setShowFootballFilterPicker] = useState(false);
+  const [insightCarouselIndex, setInsightCarouselIndex] = useState(0);
   const [notifiedMatches, setNotifiedMatches] = useState<Set<string>>(new Set());
   const [selectedFight, setSelectedFight] = useState<UFCFight | null>(null);
   const [showFightModal, setShowFightModal] = useState(false);
+  const [localHour, setLocalHour] = useState(() => new Date().getHours());
   
   const headerAnim = useRef(new Animated.Value(0)).current;
   
@@ -1397,24 +1645,51 @@ export default function SportsScreen() {
   }, [headerAnim]);
 
   useEffect(() => {
+    const timer = setInterval(() => setLocalHour(new Date().getHours()), 60 * 1000);
+    return () => clearInterval(timer);
+  }, []);
+
+  useEffect(() => {
     const loadPreferences = async () => {
       try {
-        const [savedLeagues, savedFavorites, savedNotifications] = await Promise.all([
-          AsyncStorage.getItem('sports_selected_leagues'),
-          AsyncStorage.getItem('sports_favorite_leagues'),
-          AsyncStorage.getItem('sports_notified_matches'),
+        const [scopedLeagues, scopedNotifications, scopedFocusMode] = await Promise.all([
+          AsyncStorage.getItem(scopedKey('sports_selected_leagues')),
+          AsyncStorage.getItem(scopedKey('sports_notified_matches')),
+          AsyncStorage.getItem(scopedKey('sports_football_focus_mode')),
         ]);
+        let savedLeagues = scopedLeagues;
+        let savedNotifications = scopedNotifications;
+        let savedFocusMode = scopedFocusMode;
+        if (!savedLeagues && !savedNotifications && !savedFocusMode) {
+          const [legacyLeagues, legacyNotifications] = await Promise.all([
+            AsyncStorage.getItem('sports_selected_leagues'),
+            AsyncStorage.getItem('sports_notified_matches'),
+          ]);
+          savedLeagues = legacyLeagues;
+          savedNotifications = legacyNotifications;
+          await Promise.all([
+            legacyLeagues ? AsyncStorage.setItem(scopedKey('sports_selected_leagues'), legacyLeagues) : Promise.resolve(),
+            legacyNotifications ? AsyncStorage.setItem(scopedKey('sports_notified_matches'), legacyNotifications) : Promise.resolve(),
+          ]);
+        }
         if (savedLeagues) {
           const parsed = JSON.parse(savedLeagues);
           if (Array.isArray(parsed)) setSelectedLeagues(parsed);
-        }
-        if (savedFavorites) {
-          const parsed = JSON.parse(savedFavorites);
-          if (Array.isArray(parsed)) setFavoriteLeagues(parsed);
+        } else {
+          setSelectedLeagues([]);
         }
         if (savedNotifications) {
           const parsed = JSON.parse(savedNotifications);
           if (Array.isArray(parsed)) setNotifiedMatches(new Set(parsed));
+        } else {
+          setNotifiedMatches(new Set());
+        }
+        if (savedFocusMode) {
+          setFootballSmartFilter(migrateStoredFootballFocus(savedFocusMode));
+        } else if ((profile?.favoriteTeams?.length ?? 0) > 0) {
+          setFootballSmartFilter('following');
+        } else {
+          setFootballSmartFilter('for-you');
         }
       } catch (e) {
         console.log('Failed to load league preferences:', e);
@@ -1423,14 +1698,14 @@ export default function SportsScreen() {
       }
     };
     void loadPreferences();
-  }, []);
+  }, [scopedKey, profile?.favoriteTeams?.length]);
 
   useEffect(() => {
     if (!preferencesLoaded) return;
-    AsyncStorage.setItem('sports_favorite_leagues', JSON.stringify(favoriteLeagues)).catch(e =>
-      console.log('Failed to save favorite leagues:', e)
+    AsyncStorage.setItem(scopedKey('sports_football_focus_mode'), footballSmartFilter).catch((e) =>
+      console.log('Failed to save football focus mode:', e)
     );
-  }, [favoriteLeagues, preferencesLoaded]);
+  }, [footballSmartFilter, preferencesLoaded, scopedKey]);
 
   const teamApiIds = useMemo(() => {
     if (!profile?.favoriteTeams) return [];
@@ -1447,13 +1722,69 @@ export default function SportsScreen() {
   }, [profile?.nationalities]);
 
   const hasNationalTeams = nationalTeamApiIds.length > 0;
+  const favoriteTeamApiIdSet = useMemo(() => new Set(teamApiIds), [teamApiIds]);
+  const nationalitySignals = useMemo(() => getNationalitySignals(profile), [profile]);
+  const countryInterestNamesLower = useMemo(() => {
+    const fromNationalities = nationalitySignals.countryNamesLower;
+    const fromFavoriteCountries = (profile?.favoriteCountries ?? [])
+      .map((country) => country.name?.toLowerCase().trim())
+      .filter((name): name is string => Boolean(name));
+    return Array.from(new Set([...fromNationalities, ...fromFavoriteCountries]));
+  }, [nationalitySignals.countryNamesLower, profile?.favoriteCountries]);
+  const selectedProfileLeagueIds = useMemo(() => {
+    return new Set((profile?.favoriteLeagues ?? []).filter((id): id is number => typeof id === 'number' && id > 0));
+  }, [profile?.favoriteLeagues]);
+
+  // Self-heal: Following needs at least one followed club in the app.
+  useEffect(() => {
+    if (!preferencesLoaded) return;
+    const hasFavoriteTeams = teamApiIds.length > 0;
+    if (footballSmartFilter === 'following' && !hasFavoriteTeams) {
+      setFootballSmartFilter('for-you');
+    }
+  }, [footballSmartFilter, preferencesLoaded, teamApiIds.length]);
+
+  useEffect(() => {
+    if (footballSmartFilter !== 'following' && footballSmartFilter !== 'top-leagues') {
+      setShowFootballContextSheet(false);
+    }
+  }, [footballSmartFilter]);
 
 
+
+  const countryLeagueIds = useMemo(() => {
+    if (countryInterestNamesLower.length === 0) return [];
+    const ids = new Set<number>();
+    COMPETITIONS_DATA.forEach((continent) => {
+      continent.countries.forEach((country) => {
+        const countryName = country.name.toLowerCase();
+        const isCountryOfInterest = countryInterestNamesLower.some((interest) => countryName.includes(interest));
+        if (!isCountryOfInterest) return;
+        country.competitions.forEach((competition) => {
+          if (competition.type === 'league' && (competition.tier ?? 2) <= 2) {
+            ids.add(competition.id);
+          }
+        });
+      });
+    });
+    return Array.from(ids);
+  }, [countryInterestNamesLower]);
 
   const queryLeagueIds = useMemo(() => {
-    if (selectedLeagues.length === 0) return undefined;
-    return selectedLeagues;
-  }, [selectedLeagues]);
+    if (selectedLeagues.length > 0) return selectedLeagues;
+    if (footballSmartFilter === 'top-leagues') {
+      if (contextTopLeagueIds != null && contextTopLeagueIds.length > 0) return contextTopLeagueIds;
+      return TOP_LEAGUE_BUNDLE_IDS.length > 0 ? TOP_LEAGUE_BUNDLE_IDS : undefined;
+    }
+    return undefined;
+  }, [selectedLeagues, footballSmartFilter, contextTopLeagueIds]);
+
+  const queryTeamIds = useMemo(() => {
+    if (footballSmartFilter !== 'following') return undefined;
+    if (teamApiIds.length === 0) return undefined;
+    if (contextFollowingTeamIds != null && contextFollowingTeamIds.length > 0) return contextFollowingTeamIds;
+    return teamApiIds;
+  }, [footballSmartFilter, teamApiIds, contextFollowingTeamIds]);
 
   const [hasViewedLive, setHasViewedLive] = useState(false);
   const [hasViewedResults, setHasViewedResults] = useState(false);
@@ -1468,7 +1799,7 @@ export default function SportsScreen() {
   const footballBundleQuery = trpc.football.getMatchesBundle.useQuery(
     {
       days: 14,
-      teamIds: teamApiIds.length > 0 ? teamApiIds : undefined,
+      teamIds: queryTeamIds,
       leagueIds: queryLeagueIds,
       nationalTeamIds: hasNationalTeams ? nationalTeamApiIds : undefined,
       includeAfcon: hasNationalTeams ? true : undefined,
@@ -1508,30 +1839,71 @@ export default function SportsScreen() {
   const availableLeaguesForStandings = useMemo(() => {
     const allMatches = [...liveMatches, ...upcomingMatches, ...completedMatches];
     const leagueMap = new Map<number, { id: number; name: string; logo?: string; country: string }>();
-    allMatches.forEach(m => {
-      if (m.leagueId && m.leagueId > 0 && !leagueMap.has(m.leagueId)) {
-        const leagueName = m.league.toLowerCase();
-        const isInternational = 
-          leagueName.includes('world cup') || leagueName.includes('euro') ||
-          leagueName.includes('afcon') || leagueName.includes('copa america') ||
-          leagueName.includes('nations league') || leagueName.includes('friendly') ||
-          leagueName.includes('qualification');
-        if (!isInternational) {
-          leagueMap.set(m.leagueId, { id: m.leagueId, name: m.league, logo: m.leagueLogo, country: m.leagueCountry || '' });
-        }
+    const leagueScore = new Map<number, number>();
+
+    allMatches.forEach((m) => {
+      if (!m.leagueId || m.leagueId <= 0) return;
+
+      const leagueNameLower = m.league.toLowerCase();
+      const isInternational =
+        leagueNameLower.includes('world cup') ||
+        leagueNameLower.includes('euro') ||
+        leagueNameLower.includes('afcon') ||
+        leagueNameLower.includes('copa america') ||
+        leagueNameLower.includes('nations league') ||
+        leagueNameLower.includes('friendly') ||
+        leagueNameLower.includes('qualification');
+
+      if (isInternational) return;
+
+      if (!leagueMap.has(m.leagueId)) {
+        leagueMap.set(m.leagueId, {
+          id: m.leagueId,
+          name: m.league,
+          logo: m.leagueLogo,
+          country: m.leagueCountry || '',
+        });
       }
+
+      let score = leagueScore.get(m.leagueId) ?? 0;
+      if (selectedLeagues.includes(m.leagueId)) score += 8;
+      if (selectedProfileLeagueIds.has(m.leagueId)) score += 6;
+      if (
+        (typeof m.homeTeamId === 'number' && favoriteTeamApiIdSet.has(m.homeTeamId)) ||
+        (typeof m.awayTeamId === 'number' && favoriteTeamApiIdSet.has(m.awayTeamId))
+      ) {
+        score += 5;
+      }
+      const matchCountry = (m.leagueCountry || '').toLowerCase();
+      if (countryInterestNamesLower.some((country) => matchCountry.includes(country))) {
+        score += 3;
+      }
+      if (m.status === 'Live') score += 1;
+      leagueScore.set(m.leagueId, score);
     });
+
     const leagues = Array.from(leagueMap.values());
     const TOP_LEAGUES = ['premier league', 'la liga', 'bundesliga', 'serie a', 'ligue 1', 'champions league', 'europa league'];
     return leagues.sort((a, b) => {
-      const aIdx = TOP_LEAGUES.findIndex(l => a.name.toLowerCase().includes(l));
-      const bIdx = TOP_LEAGUES.findIndex(l => b.name.toLowerCase().includes(l));
+      const scoreDiff = (leagueScore.get(b.id) ?? 0) - (leagueScore.get(a.id) ?? 0);
+      if (scoreDiff !== 0) return scoreDiff;
+
+      const aIdx = TOP_LEAGUES.findIndex((l) => a.name.toLowerCase().includes(l));
+      const bIdx = TOP_LEAGUES.findIndex((l) => b.name.toLowerCase().includes(l));
       if (aIdx !== -1 && bIdx === -1) return -1;
       if (bIdx !== -1 && aIdx === -1) return 1;
       if (aIdx !== -1 && bIdx !== -1) return aIdx - bIdx;
       return a.name.localeCompare(b.name);
     });
-  }, [liveMatches, upcomingMatches, completedMatches]);
+  }, [
+    liveMatches,
+    upcomingMatches,
+    completedMatches,
+    selectedLeagues,
+    selectedProfileLeagueIds,
+    favoriteTeamApiIdSet,
+    countryInterestNamesLower,
+  ]);
   
   const handleLeagueTablesPress = useCallback(async () => {
     if (Platform.OS !== 'web') {
@@ -1571,60 +1943,360 @@ export default function SportsScreen() {
     if (pruned.length !== selectedLeagues.length) {
       console.log('🧹 Pruning stale league filter:', selectedLeagues, '->', pruned);
       setSelectedLeagues(pruned);
-      AsyncStorage.setItem('sports_selected_leagues', JSON.stringify(pruned)).catch(() => {});
+      AsyncStorage.setItem(scopedKey('sports_selected_leagues'), JSON.stringify(pruned)).catch(() => {});
     }
-  }, [availableLeagueIds, selectedLeagues, preferencesLoaded]);
+  }, [availableLeagueIds, selectedLeagues, preferencesLoaded, scopedKey]);
 
-  const filterMatchesByLeague = useCallback((matches: Match[]) => {
-    if (selectedLeagues.length === 0) return matches;
-    const filtered = matches.filter(match => selectedLeagues.includes(match.leagueId));
-    if (filtered.length === 0 && matches.length > 0) return matches;
-    return filtered;
-  }, [selectedLeagues]);
+  const isFavoriteMatchByTeamId = useCallback((match: Match) => {
+    if (favoriteTeamApiIdSet.size === 0) return false;
+    if (typeof match.homeTeamId === 'number' && favoriteTeamApiIdSet.has(match.homeTeamId)) return true;
+    if (typeof match.awayTeamId === 'number' && favoriteTeamApiIdSet.has(match.awayTeamId)) return true;
+    return false;
+  }, [favoriteTeamApiIdSet]);
 
-  const filteredLiveMatches = useMemo(() => filterMatchesByLeague(liveMatches), [liveMatches, filterMatchesByLeague]);
-  const filteredUpcomingMatches = useMemo(() => filterMatchesByLeague(upcomingMatches), [upcomingMatches, filterMatchesByLeague]);
-  const filteredCompletedMatches = useMemo(() => filterMatchesByLeague(completedMatches), [completedMatches, filterMatchesByLeague]);
-  const nationalitySignals = useMemo(() => getNationalitySignals(profile), [profile]);
+  const nationalityCountryRegexes = useMemo(() => {
+    return countryInterestNamesLower.map((country) => new RegExp(`\\b${escapeRegExp(country)}\\b`, 'i'));
+  }, [countryInterestNamesLower]);
 
-  const applyNationalityFilter = useCallback((matches: Match[]) => {
-    if (sportMode !== 'football') return matches;
-    if (nationalitySignals.countryNamesLower.length === 0) return matches;
-    const filtered = matches.filter((m) => {
-      const haystack = `${m.leagueCountry} ${m.homeTeam} ${m.awayTeam}`.toLowerCase();
-      return nationalitySignals.countryNamesLower.some((country) => haystack.includes(country));
-    });
-    return filtered.length > 0 ? filtered : matches;
-  }, [sportMode, nationalitySignals.countryNamesLower]);
+  const matchesNationalityCountry = useCallback((match: Match) => {
+    if (nationalityCountryRegexes.length === 0 && nationalTeamApiIds.length === 0) return false;
+    if (
+      (typeof match.homeTeamId === 'number' && nationalTeamApiIds.includes(match.homeTeamId)) ||
+      (typeof match.awayTeamId === 'number' && nationalTeamApiIds.includes(match.awayTeamId))
+    ) {
+      return true;
+    }
+    const normalizedCountry = match.leagueCountry?.trim() || '';
+    if (!normalizedCountry) return false;
+    return nationalityCountryRegexes.some((regex) => regex.test(normalizedCountry));
+  }, [nationalityCountryRegexes, nationalTeamApiIds]);
 
   const pinFavorites = useCallback((matches: Match[]) => {
     const pinned: Match[] = [];
     const rest: Match[] = [];
-    matches.forEach(m => {
-      if (isFavoriteTeam(m.homeTeam) || isFavoriteTeam(m.awayTeam)) {
+    matches.forEach((m) => {
+      if (isFavoriteMatchByTeamId(m)) {
         pinned.push(m);
       } else {
         rest.push(m);
       }
     });
     return [...pinned, ...rest];
-  }, [isFavoriteTeam]);
+  }, [isFavoriteMatchByTeamId]);
+
+  const applyFootballFilters = useCallback(
+    (matches: Match[]) => {
+      let filtered = matches;
+
+      if (selectedLeagues.length > 0) {
+        filtered = filtered.filter((match) => selectedLeagues.includes(match.leagueId));
+      }
+
+      if (footballSmartFilter === 'following') {
+        filtered = filtered.filter((match) => isFavoriteMatchByTeamId(match));
+      }
+
+      return pinFavorites(filtered);
+    },
+    [selectedLeagues, footballSmartFilter, isFavoriteMatchByTeamId, pinFavorites],
+  );
+
+  const sortMatchesForDisplay = useCallback(
+    (matches: Match[]) => {
+      const arr = [...matches];
+      const scoreForYou = (m: Match) => {
+        let s = 0;
+        if (isFavoriteMatchByTeamId(m)) s += 100;
+        if (isMajorLeagueName(m.league)) s += 40;
+        if (m.status === 'Live') s += 80;
+        const h = hoursUntilMatchKickoff(m);
+        if (h >= 0 && h < 2) s += 45;
+        else if (h >= 0 && h < 6) s += 30;
+        else if (h >= 0 && h < 24) s += 15;
+        if (matchesNationalityCountry(m)) s += 20;
+        if (selectedProfileLeagueIds.has(m.leagueId)) s += 25;
+        if (selectedLeagues.includes(m.leagueId)) s += 20;
+        return s;
+      };
+
+      if (footballSortMode === 'competition') {
+        arr.sort((a, b) => {
+          const c = a.league.localeCompare(b.league);
+          if (c !== 0) return c;
+          return new Date(a.date).getTime() - new Date(b.date).getTime();
+        });
+        return arr;
+      }
+      if (footballSortMode === 'smart') {
+        arr.sort((a, b) => scoreForYou(b) - scoreForYou(a));
+        return arr;
+      }
+      arr.sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime());
+      return pinFavorites(arr);
+    },
+    [
+      footballSortMode,
+      isFavoriteMatchByTeamId,
+      matchesNationalityCountry,
+      selectedProfileLeagueIds,
+      selectedLeagues,
+      pinFavorites,
+    ],
+  );
+
+  const filteredLiveMatches = useMemo(() => applyFootballFilters(liveMatches), [liveMatches, applyFootballFilters]);
+  const filteredUpcomingMatches = useMemo(() => applyFootballFilters(upcomingMatches), [upcomingMatches, applyFootballFilters]);
+  const filteredCompletedMatches = useMemo(() => applyFootballFilters(completedMatches), [completedMatches, applyFootballFilters]);
+  const featuredUpcomingMatch = filteredUpcomingMatches[0] ?? null;
+  const aiInsightMatch = filteredLiveMatches[0] ?? featuredUpcomingMatch;
+
+  const insightFixtureNumericId = useMemo(() => {
+    const raw = aiInsightMatch?.id;
+    if (!raw || String(raw).startsWith('gen')) return null;
+    const n = Number(raw);
+    return Number.isFinite(n) && n > 0 ? n : null;
+  }, [aiInsightMatch?.id]);
+
+  const footballSeasonYear = useMemo(() => {
+    const now = new Date();
+    const month = now.getMonth();
+    const year = now.getFullYear();
+    if (month < 6) return year - 1;
+    return year;
+  }, []);
+
+  const insightMatchDetailsQuery = trpc.football.getMatchDetails.useQuery(
+    { fixtureId: insightFixtureNumericId! },
+    {
+      enabled: sportMode === 'football' && insightFixtureNumericId != null,
+      staleTime: 60 * 1000,
+    }
+  );
+
+  const trendingLeagueId = insightMatchDetailsQuery.data?.fixture?.league?.id ?? aiInsightMatch?.leagueId ?? 0;
+  const trendingSeason =
+    insightMatchDetailsQuery.data?.fixture?.league?.season ?? footballSeasonYear;
+
+  const leagueTopPlayersQuery = trpc.football.getLeagueTopPlayers.useQuery(
+    { leagueId: trendingLeagueId, season: trendingSeason },
+    {
+      enabled: sportMode === 'football' && trendingLeagueId > 0,
+      staleTime: 45 * 60 * 1000,
+    }
+  );
+
+  const insightStandingsQuery = trpc.football.getLeagueStandings.useQuery(
+    { leagueId: trendingLeagueId, season: trendingSeason },
+    {
+      enabled: sportMode === 'football' && trendingLeagueId > 0,
+      staleTime: 5 * 60 * 1000,
+    },
+  );
+
+  const aiInsightData = useMemo(() => {
+    if (!aiInsightMatch) return null;
+
+    const isFav = isFavoriteMatchByTeamId(aiInsightMatch);
+    const isCountryAligned = matchesNationalityCountry(aiInsightMatch);
+    const isLeagueSelected = selectedLeagues.includes(aiInsightMatch.leagueId);
+    const isLeagueProfileAligned = selectedProfileLeagueIds.has(aiInsightMatch.leagueId);
+    const isLive = aiInsightMatch.status === 'Live';
+    const hasScores = aiInsightMatch.homeScore !== null && aiInsightMatch.awayScore !== null;
+
+    let score = 52;
+    if (isLive) score += 12;
+    if (isFav) score += 14;
+    if (isCountryAligned) score += 8;
+    if (isLeagueSelected) score += 8;
+    if (isLeagueProfileAligned) score += 6;
+    if (hasScores) score += 4;
+    const confidence = Math.max(55, Math.min(95, score));
+
+    const reasons: string[] = [];
+    if (isFav) reasons.push('favorite-club signal');
+    if (isCountryAligned) reasons.push('nationality match');
+    if (isLeagueSelected || isLeagueProfileAligned) reasons.push('league preference');
+    if (isLive) reasons.push('live momentum');
+    if (hasScores) reasons.push('in-game context');
+
+    let summary = isLive
+      ? `Live insight: ${aiInsightMatch.homeTeam} vs ${aiInsightMatch.awayTeam} is trending now from ${reasons.slice(0, 2).join(' + ') || 'real-time demand'}.`
+      : `Upcoming insight: ${aiInsightMatch.homeTeam} vs ${aiInsightMatch.awayTeam} ranks highly from ${reasons.slice(0, 2).join(' + ') || 'profile relevance'}.`;
+
+    if (sportMode === 'football') {
+      const hid =
+        insightMatchDetailsQuery.data?.fixture?.teams?.home?.id ?? aiInsightMatch.homeTeamId;
+      const aid =
+        insightMatchDetailsQuery.data?.fixture?.teams?.away?.id ?? aiInsightMatch.awayTeamId;
+      const rows = findHomeAwayInStandings(insightStandingsQuery.data?.response, hid, aid);
+      if (rows) {
+        summary = `${summary} ${buildTablestakesSummary(
+          aiInsightMatch.league,
+          aiInsightMatch.homeTeam,
+          aiInsightMatch.awayTeam,
+          rows.home,
+          rows.away,
+        )}`;
+      }
+    }
+
+    const confidenceLabel =
+      confidence >= 82 ? 'High confidence' : confidence >= 70 ? 'Medium confidence' : 'Early signal';
+
+    return {
+      summary,
+      confidence,
+      confidenceLabel,
+    };
+  }, [
+    aiInsightMatch,
+    isFavoriteMatchByTeamId,
+    matchesNationalityCountry,
+    selectedLeagues,
+    selectedProfileLeagueIds,
+    sportMode,
+    insightMatchDetailsQuery.data,
+    insightStandingsQuery.data?.response,
+  ]);
+
+  const footballTrendingPreview = useMemo(() => {
+    const match = aiInsightMatch;
+    if (!match) return null;
+    const det = insightMatchDetailsQuery.data;
+    const homeId = det?.fixture?.teams?.home?.id ?? match.homeTeamId;
+    const awayId = det?.fixture?.teams?.away?.id ?? match.awayTeamId;
+    const homeWins = countFormWinsInLastN(det?.homeForm, homeId, 5);
+    const awayWins = countFormWinsInLastN(det?.awayForm, awayId, 5);
+
+    const favIds = new Set(
+      (profile?.favoriteTeams ?? [])
+        .map((t) => t.apiId)
+        .filter((id): id is number => typeof id === 'number' && id > 0)
+    );
+
+    let formName = match.homeTeam;
+    let formLogo = match.homeTeamLogo;
+    let wins = homeWins;
+    if (homeId && favIds.has(homeId)) {
+      formName = match.homeTeam;
+      formLogo = match.homeTeamLogo;
+      wins = homeWins;
+    } else if (awayId && favIds.has(awayId)) {
+      formName = match.awayTeam;
+      formLogo = match.awayTeamLogo;
+      wins = awayWins;
+    } else if (awayWins > homeWins && awayId) {
+      formName = match.awayTeam;
+      formLogo = match.awayTeamLogo;
+      wins = awayWins;
+    }
+
+    const formSub =
+      wins > 0
+        ? `${wins} wins in last 5`
+        : det?.homeForm?.length || det?.awayForm?.length
+          ? 'Recent form updating'
+          : 'Match context';
+
+    const scorers = leagueTopPlayersQuery.data?.topScorers ?? [];
+    const assists = leagueTopPlayersQuery.data?.topAssists ?? [];
+
+    const pickScorer = () => {
+      const forTeams = scorers.find(
+        (r: (typeof scorers)[number]) =>
+          r.teamId != null && (r.teamId === homeId || r.teamId === awayId)
+      );
+      return forTeams ?? scorers[0] ?? null;
+    };
+    const pickAssist = () => {
+      const forTeams = assists.find(
+        (r: (typeof assists)[number]) =>
+          r.teamId != null && (r.teamId === homeId || r.teamId === awayId)
+      );
+      return forTeams ?? assists[0] ?? null;
+    };
+
+    return {
+      formName,
+      formLogo,
+      formSub,
+      topScorer: pickScorer(),
+      topAssist: pickAssist(),
+      leagueLabel: match.league,
+    };
+  }, [
+    aiInsightMatch,
+    insightMatchDetailsQuery.data,
+    leagueTopPlayersQuery.data?.topScorers,
+    leagueTopPlayersQuery.data?.topAssists,
+    profile?.favoriteTeams,
+  ]);
+
+  useEffect(() => {
+    setInsightCarouselIndex(0);
+  }, [aiInsightMatch?.id]);
+
+  const insightCarouselWidth = SCREEN_WIDTH - 40;
+
+  const recommendedLeagueIds = useMemo(() => {
+    const ranked = new Map<number, number>();
+    const allMatches = [...liveMatches, ...upcomingMatches, ...completedMatches];
+    allMatches.forEach((match) => {
+      if (!match.leagueId || match.leagueId <= 0) return;
+      let score = ranked.get(match.leagueId) ?? 0;
+      if (isFavoriteMatchByTeamId(match)) score += 5;
+      if (matchesNationalityCountry(match)) score += 3;
+      if (selectedLeagues.includes(match.leagueId)) score += 6;
+      if (selectedProfileLeagueIds.has(match.leagueId)) score += 4;
+      ranked.set(match.leagueId, score);
+    });
+    const sortedBySignal = Array.from(ranked.entries())
+      .filter(([, score]) => score > 0)
+      .sort((a, b) => b[1] - a[1])
+      .slice(0, 12)
+      .map(([leagueId]) => leagueId);
+    if (sortedBySignal.length > 0) return sortedBySignal;
+    return Array.from(selectedProfileLeagueIds).slice(0, 8);
+  }, [
+    liveMatches,
+    upcomingMatches,
+    completedMatches,
+    isFavoriteMatchByTeamId,
+    matchesNationalityCountry,
+    selectedLeagues,
+    selectedProfileLeagueIds,
+  ]);
 
   const displayMatches = useMemo(() => {
+    let base: Match[];
     switch (activeTab) {
-      case 'live': return pinFavorites(applyNationalityFilter(filteredLiveMatches));
-      case 'upcoming': return pinFavorites(applyNationalityFilter(filteredUpcomingMatches));
-      case 'results': return pinFavorites(applyNationalityFilter(filteredCompletedMatches));
-      default: return [];
+      case 'live':
+        base = filteredLiveMatches;
+        break;
+      case 'upcoming':
+        base = filteredUpcomingMatches;
+        break;
+      case 'results':
+        base = filteredCompletedMatches;
+        break;
+      default:
+        base = [];
     }
-  }, [activeTab, filteredLiveMatches, filteredUpcomingMatches, filteredCompletedMatches, pinFavorites, applyNationalityFilter]);
+    return sortMatchesForDisplay(base);
+  }, [
+    activeTab,
+    filteredLiveMatches,
+    filteredUpcomingMatches,
+    filteredCompletedMatches,
+    sortMatchesForDisplay,
+  ]);
 
   const groupedMatches = useMemo(() => {
     if (activeTab === 'live') return null;
     const groups: { date: string; matches: Match[] }[] = [];
-    displayMatches.forEach(match => {
+    displayMatches.forEach((match) => {
       const dateKey = match.date.includes('T') ? match.date.split('T')[0] : match.date;
-      const existing = groups.find(g => g.date === dateKey);
+      const existing = groups.find((g) => g.date === dateKey);
       if (existing) {
         existing.matches.push(match);
       } else {
@@ -1633,12 +2305,6 @@ export default function SportsScreen() {
     });
     return groups;
   }, [displayMatches, activeTab]);
-
-  const toggleFavoriteLeague = useCallback((leagueId: number) => {
-    setFavoriteLeagues(prev => 
-      prev.includes(leagueId) ? prev.filter(id => id !== leagueId) : [...prev, leagueId]
-    );
-  }, []);
 
   const toggleMatchNotification = useCallback(async (matchId: string) => {
     if (Platform.OS !== 'web') {
@@ -1651,12 +2317,12 @@ export default function SportsScreen() {
       } else {
         next.add(matchId);
       }
-      AsyncStorage.setItem('sports_notified_matches', JSON.stringify([...next])).catch(e =>
+      AsyncStorage.setItem(scopedKey('sports_notified_matches'), JSON.stringify([...next])).catch(e =>
         console.log('Failed to save notified matches:', e)
       );
       return next;
     });
-  }, []);
+  }, [scopedKey]);
 
   type FlatListItem = { type: 'date'; date: string; key: string } | { type: 'match'; match: Match; key: string };
 
@@ -1691,11 +2357,11 @@ export default function SportsScreen() {
         isFavoriteTeam={isFavoriteTeam}
         isNotified={notifiedMatches.has(match.id)}
         onToggleNotification={toggleMatchNotification}
-        isPinned={isFavoriteTeam(match.homeTeam) || isFavoriteTeam(match.awayTeam)}
+        isPinned={isFavoriteMatchByTeamId(match)}
         onPress={() => handleMatchCardPress(match)}
       />
     );
-  }, [isFavoriteTeam, notifiedMatches, toggleMatchNotification, handleMatchCardPress]);
+  }, [isFavoriteTeam, notifiedMatches, toggleMatchNotification, handleMatchCardPress, isFavoriteMatchByTeamId]);
 
   const flatListKeyExtractor = useCallback((item: FlatListItem) => item.key, []);
 
@@ -1885,13 +2551,21 @@ export default function SportsScreen() {
     [],
   );
 
+  const footballTabs = useMemo(() => {
+    const accent = footballChrome(isDark).accent;
+    return [
+      { key: 'live', label: 'Live', icon: Flame, color: accent },
+      { key: 'upcoming', label: 'Upcoming', icon: Calendar, color: accent },
+      { key: 'results', label: 'Results', icon: Trophy, color: accent },
+    ];
+  }, [isDark]);
+
   const counts: Record<string, number> = {
     live: filteredLiveMatches.length,
     upcoming: filteredUpcomingMatches.length,
     results: filteredCompletedMatches.length,
 
   };
-
   const hasTeams = teamApiIds.length > 0 || nationalTeamApiIds.length > 0;
 
   const ufcTabs = useMemo(
@@ -1907,259 +2581,653 @@ export default function SportsScreen() {
     results: ufcResultsFights.length,
   };
 
-  const footballHeader = (
+  const footballHeroClubLogos = useMemo(
+    () => (profile?.favoriteTeams?.slice(0, 4) ?? []).map((t) => getFootballTeamLogoUrl(t)),
+    [profile?.favoriteTeams],
+  );
+  const competitionQuickPicks = useMemo(() => {
+    const competitionMatchers = [
+      { key: 'ucl', label: 'Champions League', matcher: /(champions league|uefa champions league)/i, rank: 1 },
+      { key: 'uel', label: 'Europa League', matcher: /(europa league|uefa europa league)/i, rank: 2 },
+      { key: 'uecl', label: 'Conference League', matcher: /(conference league|uefa conference league)/i, rank: 3 },
+      { key: 'uwcl', label: "Women's Champions", matcher: /(women.?s champions league|uwcl)/i, rank: 4 },
+      { key: 'usc', label: 'UEFA Super Cup', matcher: /(uefa super cup|super cup)/i, rank: 5 },
+    ] as const;
+
+    const found: { id: number; label: string; rank: number; logo?: string }[] = [];
+    availableLeaguesForStandings.forEach((league) => {
+      const name = league.name || '';
+      const matched = competitionMatchers.find((c) => c.matcher.test(name));
+      if (!matched) return;
+      if (found.some((item) => item.id === league.id)) return;
+      found.push({ id: league.id, label: matched.label, rank: matched.rank, logo: league.logo });
+    });
+
+    return found.sort((a, b) => a.rank - b.rank).slice(0, 5);
+  }, [availableLeaguesForStandings]);
+  const footballFilterSummary = useMemo(() => {
+    const modeLabel =
+      footballSmartFilter === 'for-you'
+        ? 'For You'
+        : footballSmartFilter === 'following'
+          ? 'Following'
+          : footballSmartFilter === 'top-leagues'
+            ? 'Top leagues'
+            : 'Worldwide';
+    const sortLabel =
+      footballSortMode === 'smart'
+        ? 'Smart order'
+        : footballSortMode === 'kickoff'
+          ? 'Kickoff time'
+          : 'Competition';
+    const leagueHint = selectedLeagues.length > 0 ? ` · ${selectedLeagues.length} competition(s)` : '';
+    return `${modeLabel} · ${sortLabel}${leagueHint}`;
+  }, [footballSmartFilter, footballSortMode, selectedLeagues.length]);
+
+  const followingContextLabel = useMemo(() => {
+    const teams = profile?.favoriteTeams?.filter((t) => t.apiId && t.apiId > 0) ?? [];
+    if (teams.length === 0) return 'Add clubs';
+    const activeIds = contextFollowingTeamIds ?? teams.map((t) => t.apiId!);
+    const ordered = teams.filter((t) => activeIds.includes(t.apiId!));
+    const primary = ordered[0] ?? teams[0];
+    const n = Math.max(0, ordered.length - 1);
+    const label = shortTeamLabel(primary.name ?? 'Club');
+    return n > 0 ? `${label} +${n}` : label;
+  }, [profile?.favoriteTeams, contextFollowingTeamIds]);
+
+  const topLeagueContextLabel = useMemo(() => {
+    const ids = contextTopLeagueIds ?? TOP_LEAGUE_BUNDLE_IDS;
+    if (ids.length === 0) return 'Competitions';
+    const firstId = ids[0];
+    const name = getCompetitionById(firstId)?.name ?? 'Competition';
+    const short = name.replace(/^UEFA\s+/i, '').trim().slice(0, 24);
+    const n = ids.length - 1;
+    return n > 0 ? `${short} +${n}` : short;
+  }, [contextTopLeagueIds]);
+
+  const toggleFollowingContextTeam = useCallback(
+    (id: number) => {
+      if (teamApiIds.length === 0) return;
+      const all = teamApiIds;
+      const effective = contextFollowingTeamIds ?? [...all];
+      const set = new Set(effective);
+      if (set.has(id)) set.delete(id);
+      else set.add(id);
+      const next = all.filter((tid) => set.has(tid));
+      if (next.length === 0 || next.length === all.length) {
+        setContextFollowingTeamIds(null);
+      } else {
+        setContextFollowingTeamIds(next);
+      }
+    },
+    [teamApiIds, contextFollowingTeamIds],
+  );
+
+  const toggleTopLeagueContextId = useCallback(
+    (id: number) => {
+      const all = TOP_LEAGUE_BUNDLE_IDS;
+      const effective = contextTopLeagueIds ?? [...all];
+      const set = new Set(effective);
+      if (set.has(id)) set.delete(id);
+      else set.add(id);
+      const next = all.filter((lid) => set.has(lid));
+      if (next.length === 0 || next.length === all.length) {
+        setContextTopLeagueIds(null);
+      } else {
+        setContextTopLeagueIds(next);
+      }
+    },
+    [contextTopLeagueIds],
+  );
+  const useDarkHeroImage = localHour >= 18;
+
+  const renderFootballHeader = () => {
+    const trendingScorerUri = footballTrendingPreview?.topScorer
+      ? footballLeaderPortraitUri(footballTrendingPreview.topScorer)
+      : null;
+    const trendingAssistUri = footballTrendingPreview?.topAssist
+      ? footballLeaderPortraitUri(footballTrendingPreview.topAssist)
+      : null;
+
+    return (
     <View>
-      {sportMode === 'football' && filteredLiveMatches.length > 0 && (
-        <View style={styles.tickerSection}>
-          <View style={styles.tickerHeader}>
-            <View style={styles.tickerHeaderLeft}>
-              <LinearGradient
-                colors={['#FF3B30', '#FF6B6B']}
-                start={{ x: 0, y: 0 }}
-                end={{ x: 1, y: 1 }}
-                style={styles.tickerLiveDot}
-              >
-                <LivePulse color="#FFFFFF" size={7} />
-              </LinearGradient>
-              <Text style={[styles.tickerTitle, { color: sf.text }]}>Live Now</Text>
-              <View style={[styles.tickerCountBadge, { backgroundColor: 'rgba(255,59,48,0.12)' }]}>
-                <Text style={[styles.tickerCountText, { color: sf.live }]}>{filteredLiveMatches.length}</Text>
-              </View>
-            </View>
-            <TouchableOpacity
-              onPress={() => setActiveTab('live')}
-              activeOpacity={0.7}
-              style={styles.tickerSeeAllBtn}
-            >
-              <Text style={[styles.tickerSeeAll, { color: sf.primary }]}>See All</Text>
-              <ChevronRight size={14} color={sf.primary} />
-            </TouchableOpacity>
-          </View>
-          <FlatList
-            data={filteredLiveMatches}
-            horizontal
-            showsHorizontalScrollIndicator={false}
-            contentContainerStyle={styles.tickerList}
-            keyExtractor={(item) => item.id}
-            renderItem={({ item, index }) => (
-              <LiveTickerCard
-                match={item}
-                index={index}
-                onPress={() => {
-                  setSelectedMatch(item);
-                  setShowMatchModal(true);
-                }}
-              />
-            )}
-          />
-        </View>
-      )}
+      <ImageBackground
+        source={useDarkHeroImage ? FOOTBALL_CHROME.stadiumDarkImage : FOOTBALL_CHROME.stadiumLightImage}
+        style={[
+          styles.headerGradient,
+          styles.stadiumHeroRoot,
+          styles.stadiumHeroRootFootball,
+          { paddingTop: insets.top, paddingBottom: 14 },
+        ]}
+        imageStyle={[styles.stadiumHeroImage, styles.stadiumHeroImageCropBottom]}
+      >
+        <View style={styles.stadiumHeroForeground}>{sportsMainHeaderInner}</View>
+      </ImageBackground>
       <View style={styles.tabWrapper}>
         <TabPill
-          tabs={tabs}
+          variant="football"
+          tabs={footballTabs}
           activeTab={activeTab}
           onTabChange={(tab) => setActiveTab(tab as 'live' | 'upcoming' | 'results')}
           counts={counts}
         />
       </View>
       <View style={styles.filterArea}>
-        <View style={styles.filterRow}>
-          <View style={{ flex: 1 }}>
-            <CompetitionFilter
-              selectedLeagues={selectedLeagues}
-              onLeaguesChange={setSelectedLeagues}
-              favoriteLeagues={favoriteLeagues}
-              onToggleFavorite={toggleFavoriteLeague}
-              isDark={isDark}
-            />
-          </View>
+        <Text style={[styles.footballSmartSectionLabel, { color: sf.textMuted }]}>Smart filters</Text>
+        <View style={styles.footballSmartPillsRow}>
+          {FOOTBALL_SMART_FILTER_OPTIONS.map((opt) => {
+            const Icon = opt.Icon;
+            const active = footballSmartFilter === opt.id;
+            const disabled = opt.id === 'following' && teamApiIds.length === 0;
+            return (
+              <TouchableOpacity
+                key={opt.id}
+                accessibilityRole="button"
+                accessibilityState={{ selected: active, disabled }}
+                disabled={disabled}
+                activeOpacity={0.85}
+                onPress={() => setFootballSmartFilter(opt.id)}
+                style={[
+                  styles.footballSmartPill,
+                  {
+                    backgroundColor: sf.surfaceSecondary,
+                    borderColor: active ? `${fc.accent}88` : sf.border,
+                    opacity: disabled ? 0.4 : 1,
+                  },
+                  active && { shadowColor: fc.accent, shadowOpacity: 0.35, shadowRadius: 10 },
+                ]}
+              >
+                <Icon size={13} color={active ? fc.accent : sf.textSecondary} />
+                <Text
+                  style={[styles.footballSmartPillText, { color: active ? fc.accent : sf.text }]}
+                  numberOfLines={1}
+                >
+                  {opt.label}
+                </Text>
+              </TouchableOpacity>
+            );
+          })}
         </View>
-        <View style={styles.filterActionsRow}>
+
+        <View style={styles.footballContextRow}>
+          {footballSmartFilter === 'following' ? (
+            <TouchableOpacity
+              activeOpacity={0.85}
+              onPress={() => setShowFootballContextSheet(true)}
+              style={[styles.footballContextChip, { backgroundColor: sf.surfaceSecondary, borderColor: sf.border }]}
+            >
+              <Text style={[styles.footballContextChipTitle, { color: sf.text }]} numberOfLines={1}>
+                {followingContextLabel}
+              </Text>
+              <ChevronDown size={16} color={sf.textSecondary} />
+            </TouchableOpacity>
+          ) : footballSmartFilter === 'top-leagues' ? (
+            <TouchableOpacity
+              activeOpacity={0.85}
+              onPress={() => setShowFootballContextSheet(true)}
+              style={[styles.footballContextChip, { backgroundColor: sf.surfaceSecondary, borderColor: sf.border }]}
+            >
+              <Text style={[styles.footballContextChipTitle, { color: sf.text }]} numberOfLines={1}>
+                {topLeagueContextLabel}
+              </Text>
+              <ChevronDown size={16} color={sf.textSecondary} />
+            </TouchableOpacity>
+          ) : (
+            <View style={styles.footballContextSpacer} />
+          )}
           <TouchableOpacity
-            style={[
-              styles.standingsBtn,
-              { backgroundColor: 'rgba(52, 199, 89, 0.12)' },
-              availableLeaguesForStandings.length === 0 && { opacity: 0.3 },
-            ]}
-            onPress={handleLeagueTablesPress}
-            activeOpacity={0.7}
+            accessibilityRole="button"
+            accessibilityLabel="League tables"
+            accessibilityState={{ disabled: availableLeaguesForStandings.length === 0 }}
+            activeOpacity={0.85}
             disabled={availableLeaguesForStandings.length === 0}
+            onPress={handleLeagueTablesPress}
+            style={[
+              styles.footballRefineBtn,
+              {
+                backgroundColor: sf.surfaceSecondary,
+                borderColor: sf.border,
+                opacity: availableLeaguesForStandings.length === 0 ? 0.38 : 1,
+              },
+            ]}
           >
-            <BarChart3 size={15} color="#34C759" />
-            <Text style={styles.standingsBtnText}>Tables</Text>
+            <BarChart3 size={18} color="#34C759" />
           </TouchableOpacity>
         </View>
       </View>
+      {sportMode === 'football' && aiInsightMatch && footballTrendingPreview ? (
+        <View style={styles.insightCarouselShell}>
+          <ScrollView
+            horizontal
+            pagingEnabled
+            showsHorizontalScrollIndicator={false}
+            decelerationRate="fast"
+            onMomentumScrollEnd={(e) => {
+              const x = e.nativeEvent.contentOffset.x;
+              const page = Math.round(x / insightCarouselWidth);
+              setInsightCarouselIndex(Math.min(1, Math.max(0, page)));
+            }}
+            style={{ width: insightCarouselWidth, alignSelf: 'center' }}
+            contentContainerStyle={{ width: insightCarouselWidth * 2 }}
+          >
+            <View style={{ width: insightCarouselWidth }}>
+              <LinearGradient
+                colors={isDark ? ['#08160D', '#0B0B0F'] : ['#ECFDF3', '#F8FAFC']}
+                start={{ x: 0, y: 0 }}
+                end={{ x: 1, y: 1 }}
+                style={styles.insightCarouselPage}
+              >
+                <View style={styles.aiInsightTopRow}>
+                  <LinearGradient
+                    colors={[`${fc.accent}DD`, fc.accent]}
+                    start={{ x: 0, y: 0 }}
+                    end={{ x: 1, y: 1 }}
+                    style={styles.aiInsightOrb}
+                  >
+                    <Sparkles size={18} color="#FFFFFF" />
+                  </LinearGradient>
+                  <View style={styles.aiInsightTitleBlock}>
+                    <Text style={[styles.aiLabel, { color: fc.accent }]}>ONE PAGER INSIGHT AI</Text>
+                    <Text style={[styles.aiHeadline, { color: isDark ? '#FFFFFF' : '#0F172A' }]}>
+                      {aiInsightMatch.homeTeam} vs {aiInsightMatch.awayTeam}
+                    </Text>
+                  </View>
+                </View>
+                <Text style={[styles.aiSub, { color: isDark ? '#9AB0A0' : '#5B6475' }]}>
+                  {aiInsightData?.summary ??
+                    (aiInsightMatch.status === 'Live'
+                      ? 'Live now. Momentum is shifting — watch the next 10 minutes.'
+                      : 'Upcoming fixture with strong engagement from your followed interests.')}
+                </Text>
+                {aiInsightData ? (
+                  <View
+                    style={[
+                      styles.aiConfidencePill,
+                      { backgroundColor: isDark ? 'rgba(50,215,75,0.2)' : 'rgba(22,163,74,0.14)' },
+                    ]}
+                  >
+                    <Zap size={12} color={fc.accent} />
+                    <Text style={[styles.aiConfidenceText, { color: fc.accent }]}>
+                      {aiInsightData.confidenceLabel} {aiInsightData.confidence}%
+                    </Text>
+                  </View>
+                ) : null}
+              </LinearGradient>
+            </View>
+
+            <View style={{ width: insightCarouselWidth }}>
+              <LinearGradient
+                colors={isDark ? ['#0B1220', '#151B2C'] : ['#1E293B', '#0F172A']}
+                start={{ x: 0, y: 0 }}
+                end={{ x: 1, y: 1 }}
+                style={styles.trendingCardInner}
+              >
+                <View style={styles.trendingCardHeader}>
+                  <TrendingUp size={14} color={fc.accent} />
+                  <Text style={[styles.trendingNowLabel, { color: fc.accent }]}>TRENDING NOW</Text>
+                  <View style={{ flex: 1 }} />
+                  {leagueTopPlayersQuery.isFetching ? (
+                    <ActivityIndicator size="small" color={fc.accent} />
+                  ) : null}
+                </View>
+                <Text style={styles.trendingMatchContext} numberOfLines={1}>
+                  Around {aiInsightMatch.homeTeam} vs {aiInsightMatch.awayTeam}
+                </Text>
+                <View style={styles.trendingThreeCol}>
+                  <View style={styles.trendingCol}>
+                    <Text style={styles.trendingColTag}>Top form</Text>
+                    {footballTrendingPreview.formLogo ? (
+                      <Image
+                        source={{ uri: footballTrendingPreview.formLogo }}
+                        style={styles.trendingTeamLogo}
+                        resizeMode="contain"
+                      />
+                    ) : (
+                      <View style={styles.trendingLogoPlaceholder} />
+                    )}
+                    <Text numberOfLines={1} style={styles.trendingColTitle}>
+                      {shortTeamLabel(footballTrendingPreview.formName)}
+                    </Text>
+                    <Text numberOfLines={2} style={styles.trendingColSub}>
+                      {footballTrendingPreview.formSub}
+                    </Text>
+                  </View>
+                  <View style={styles.trendingCol}>
+                    <Text style={styles.trendingColTag}>Top scorer</Text>
+                    {trendingScorerUri ? (
+                      <Image source={{ uri: trendingScorerUri }} style={styles.trendingPlayerAvatar} />
+                    ) : (
+                      <View style={styles.trendingPlayerPlaceholder} />
+                    )}
+                    <Text numberOfLines={1} style={styles.trendingColTitle}>
+                      {footballTrendingPreview.topScorer
+                        ? abbrevPlayerName(footballTrendingPreview.topScorer.playerName)
+                        : '—'}
+                    </Text>
+                    <Text numberOfLines={1} style={styles.trendingColSub}>
+                      {footballTrendingPreview.topScorer
+                        ? `${footballTrendingPreview.topScorer.goals} goals`
+                        : 'League leaders'}
+                    </Text>
+                  </View>
+                  <View style={styles.trendingCol}>
+                    <Text style={styles.trendingColTag}>Most assists</Text>
+                    {trendingAssistUri ? (
+                      <Image source={{ uri: trendingAssistUri }} style={styles.trendingPlayerAvatar} />
+                    ) : (
+                      <View style={styles.trendingPlayerPlaceholder} />
+                    )}
+                    <Text numberOfLines={1} style={styles.trendingColTitle}>
+                      {footballTrendingPreview.topAssist
+                        ? abbrevPlayerName(footballTrendingPreview.topAssist.playerName)
+                        : '—'}
+                    </Text>
+                    <Text numberOfLines={1} style={styles.trendingColSub}>
+                      {footballTrendingPreview.topAssist
+                        ? `${footballTrendingPreview.topAssist.assists} assists`
+                        : 'League leaders'}
+                    </Text>
+                  </View>
+                </View>
+                <View style={styles.trendingLeagueFoot}>
+                  <Text style={styles.trendingLeagueFootText} numberOfLines={1}>
+                    {footballTrendingPreview.leagueLabel} · leaders {trendingSeason}
+                  </Text>
+                  <ChevronRight size={14} color="rgba(255,255,255,0.42)" />
+                </View>
+              </LinearGradient>
+            </View>
+          </ScrollView>
+          <View style={styles.insightPageDots}>
+            <View
+              style={[
+                styles.insightDot,
+                insightCarouselIndex === 0 && { backgroundColor: fc.accent },
+              ]}
+            />
+            <View
+              style={[
+                styles.insightDot,
+                insightCarouselIndex === 1 && { backgroundColor: fc.accent },
+              ]}
+            />
+          </View>
+        </View>
+      ) : null}
     </View>
+    );
+  };
+
+  const sportModeToggleEl =
+    enabledSports.length > 1 ? (
+      <View style={sportToggleStyles.container}>
+        <View
+          style={[
+            sportToggleStyles.track,
+            { backgroundColor: sf.surfaceSecondary, borderWidth: 1, borderColor: sf.border },
+          ]}
+        >
+          {enabledSports.includes('football') && (
+            <TouchableOpacity style={[sportToggleStyles.option]} onPress={() => handleSportModeChange('football')} activeOpacity={0.7}>
+              <View
+                style={[
+                  sportToggleStyles.iconGlowWrap,
+                  sportMode === 'football' && {
+                    shadowColor: isDark ? '#32D74B' : '#1B6B34',
+                    shadowOpacity: isDark ? 0.55 : 0.35,
+                    shadowRadius: 8,
+                    shadowOffset: { width: 0, height: 0 },
+                    elevation: 5,
+                  },
+                ]}
+              >
+                <Trophy
+                  size={15}
+                  color={sportMode === 'football' ? (isDark ? '#32D74B' : '#1B6B34') : isDark ? '#8E8E93' : '#AEAEB2'}
+                />
+              </View>
+              <Text
+                style={[
+                  sportToggleStyles.optionLabel,
+                  {
+                    color:
+                      sportMode === 'football' ? (isDark ? '#32D74B' : '#1B6B34') : isDark ? '#8E8E93' : '#AEAEB2',
+                  },
+                  sportMode === 'football' && { fontWeight: '700' as const },
+                ]}
+              >
+                Football
+              </Text>
+            </TouchableOpacity>
+          )}
+          {enabledSports.includes('ufc') && (
+            <TouchableOpacity style={[sportToggleStyles.option]} onPress={() => handleSportModeChange('ufc')} activeOpacity={0.7}>
+              <View
+                style={[
+                  sportToggleStyles.iconGlowWrap,
+                  sportMode === 'ufc' && {
+                    shadowColor: isDark ? '#FFD60A' : '#8B0000',
+                    shadowOpacity: isDark ? 0.55 : 0.35,
+                    shadowRadius: 8,
+                    shadowOffset: { width: 0, height: 0 },
+                    elevation: 5,
+                  },
+                ]}
+              >
+                <Swords
+                  size={15}
+                  color={sportMode === 'ufc' ? (isDark ? '#FFD60A' : '#8B0000') : isDark ? '#8E8E93' : '#AEAEB2'}
+                />
+              </View>
+              <Text
+                style={[
+                  sportToggleStyles.optionLabel,
+                  {
+                    color:
+                      sportMode === 'ufc' ? (isDark ? '#FFD60A' : '#8B0000') : isDark ? '#8E8E93' : '#AEAEB2',
+                  },
+                  sportMode === 'ufc' && { fontWeight: '700' as const },
+                ]}
+              >
+                UFC
+              </Text>
+            </TouchableOpacity>
+          )}
+          {enabledSports.includes('f1') && (
+            <TouchableOpacity style={[sportToggleStyles.option]} onPress={() => handleSportModeChange('f1')} activeOpacity={0.7}>
+              <View
+                style={[
+                  sportToggleStyles.iconGlowWrap,
+                  sportMode === 'f1' && {
+                    shadowColor: isDark ? '#FF453A' : '#B80000',
+                    shadowOpacity: isDark ? 0.55 : 0.35,
+                    shadowRadius: 8,
+                    shadowOffset: { width: 0, height: 0 },
+                    elevation: 5,
+                  },
+                ]}
+              >
+                <Flag
+                  size={15}
+                  color={sportMode === 'f1' ? (isDark ? '#FF453A' : '#B80000') : isDark ? '#8E8E93' : '#AEAEB2'}
+                />
+              </View>
+              <Text
+                style={[
+                  sportToggleStyles.optionLabel,
+                  {
+                    color:
+                      sportMode === 'f1' ? (isDark ? '#FF453A' : '#B80000') : isDark ? '#8E8E93' : '#AEAEB2',
+                  },
+                  sportMode === 'f1' && { fontWeight: '700' as const },
+                ]}
+              >
+                F1
+              </Text>
+            </TouchableOpacity>
+          )}
+          {enabledSports.includes('nba') && (
+            <TouchableOpacity style={[sportToggleStyles.option]} onPress={() => handleSportModeChange('nba')} activeOpacity={0.7}>
+              <View
+                style={[
+                  sportToggleStyles.iconGlowWrap,
+                  sportMode === 'nba' && {
+                    shadowColor: isDark ? '#0A84FF' : '#1D428A',
+                    shadowOpacity: isDark ? 0.55 : 0.35,
+                    shadowRadius: 8,
+                    shadowOffset: { width: 0, height: 0 },
+                    elevation: 5,
+                  },
+                ]}
+              >
+                <Trophy
+                  size={15}
+                  color={sportMode === 'nba' ? (isDark ? '#0A84FF' : '#1D428A') : isDark ? '#8E8E93' : '#AEAEB2'}
+                />
+              </View>
+              <Text
+                style={[
+                  sportToggleStyles.optionLabel,
+                  {
+                    color:
+                      sportMode === 'nba' ? (isDark ? '#0A84FF' : '#1D428A') : isDark ? '#8E8E93' : '#AEAEB2',
+                  },
+                  sportMode === 'nba' && { fontWeight: '700' as const },
+                ]}
+              >
+                NBA
+              </Text>
+            </TouchableOpacity>
+          )}
+        </View>
+      </View>
+    ) : null;
+
+  const sportsMainHeaderInner = (
+    <>
+      {sportMode === 'football' ? (
+        <>
+          <FootballPremiumHeroInner
+            liveCount={filteredLiveMatches.length}
+            clubLogoUris={footballHeroClubLogos}
+            featuredMatch={featuredUpcomingMatch}
+            onSearch={() => router.push('/(tabs)/discover' as any)}
+            onRefresh={onRefresh}
+            onMyClubs={() => {
+              setFootballSmartFilter('following');
+              setActiveTab('upcoming');
+            }}
+            onSavedPress={() => setShowFootballFilterPicker(true)}
+            onFeaturedPress={() => {
+              if (featuredUpcomingMatch) handleMatchCardPress(featuredUpcomingMatch);
+            }}
+            onAddClub={() => router.push('/(tabs)/profile' as any)}
+          />
+          {filteredLiveMatches.length > 0 && (
+            <View style={styles.tickerSection}>
+              <View style={styles.tickerHeader}>
+                <View style={styles.tickerHeaderLeft}>
+              <LinearGradient
+                    colors={['#FF3B30', '#FF6B6B']}
+                    start={{ x: 0, y: 0 }}
+                    end={{ x: 1, y: 1 }}
+                    style={styles.tickerLiveDot}
+                  >
+                <LivePulse color="#FFFFFF" size={5} />
+                  </LinearGradient>
+                  <Text style={[styles.tickerTitle, { color: '#FFFFFF' }]}>Live Now</Text>
+                  <View style={[styles.tickerCountBadge, { backgroundColor: 'rgba(255,59,48,0.18)' }]}>
+                    <Text style={[styles.tickerCountText, { color: '#FF8A80' }]}>{filteredLiveMatches.length}</Text>
+                  </View>
+                </View>
+                <TouchableOpacity
+                  onPress={() => setActiveTab('live')}
+                  activeOpacity={0.7}
+                  style={styles.tickerSeeAllBtn}
+                >
+                  <Text style={[styles.tickerSeeAll, { color: fc.accent }]}>SEE ALL</Text>
+                  <ChevronRight size={12} color={fc.accent} />
+                </TouchableOpacity>
+              </View>
+              <FlatList
+                data={filteredLiveMatches}
+                horizontal
+                showsHorizontalScrollIndicator={false}
+                contentContainerStyle={styles.tickerList}
+                keyExtractor={(item) => item.id}
+                renderItem={({ item, index }) => (
+                  <LiveTickerCard
+                    match={item}
+                    index={index}
+                    onPress={() => {
+                      setSelectedMatch(item);
+                      setShowMatchModal(true);
+                    }}
+                  />
+                )}
+              />
+            </View>
+          )}
+        </>
+      ) : (sportMode === 'f1' || sportMode === 'ufc') ? (
+        <View style={styles.headerTop}>
+          <View style={styles.titleArea}>
+            <Text style={[styles.headerTitle, { color: isDark ? '#FFFFFF' : '#1C1C1E' }]}>
+              {sportMode === 'f1' ? 'Formula 1' : 'UFC'}
+            </Text>
+            <Text style={[styles.headerSubtitle, { color: isDark ? '#8E8E93' : '#6B6B85' }]}>
+              {sportMode === 'f1'
+                ? 'Races & standings'
+                : ufcUpcomingFights.length > 0
+                  ? `${ufcUpcomingFights.length} upcoming`
+                  : 'Fights & results'}
+            </Text>
+          </View>
+          <TouchableOpacity
+            style={[
+              styles.refreshBtn,
+              {
+                backgroundColor: isDark ? 'rgba(255,255,255,0.06)' : 'rgba(0,0,0,0.04)',
+              },
+            ]}
+            onPress={onRefresh}
+            activeOpacity={0.7}
+          >
+            <RefreshCw size={16} color="#8E8E93" />
+          </TouchableOpacity>
+        </View>
+      ) : null}
+
+      {sportMode !== 'nba' && sportModeToggleEl}
+    </>
   );
 
   return (
-    <View style={[styles.container, { backgroundColor: colors.background }]}>
+    <View style={[styles.container, { backgroundColor: isDark ? colors.background : '#F6F8F7' }]}>
       <TabWalkthrough tabName="sports" />
       <StatusBar barStyle={isDark ? "light-content" : "dark-content"} />
 
-      <Animated.View style={[
-        styles.header, 
-        { 
-          paddingTop: insets.top,
-          opacity: headerAnim,
-          transform: [{
-            translateY: headerAnim.interpolate({ inputRange: [0, 1], outputRange: [-20, 0] })
-          }]
-        }
-      ]}>
-        <LinearGradient
-          colors={getSportsMainHeaderGradient(sportMode, isDark)}
-          start={{ x: 0, y: 0 }}
-          end={{ x: 1, y: 1 }}
-          style={styles.headerGradient}
-        >
-          <View style={styles.headerTop}>
-            <View style={styles.titleArea}>
-              <Text style={[styles.headerTitle, { color: isDark ? '#FFFFFF' : '#1C1C1E' }]}>
-                {sportMode === 'football' ? 'Football' : sportMode === 'f1' ? 'Formula 1' : sportMode === 'nba' ? 'NBA' : 'UFC'}
-              </Text>
-              <Text style={[styles.headerSubtitle, { color: isDark ? '#8E8E93' : '#6B6B85' }]}>
-                {sportMode === 'football'
-                  ? (filteredLiveMatches.length > 0 
-                      ? `${filteredLiveMatches.length} live now`
-                      : 'Matches & results')
-                  : sportMode === 'f1'
-                    ? 'Races & standings'
-                    : sportMode === 'nba'
-                      ? 'Games & standings'
-                      : (ufcUpcomingFights.length > 0
-                          ? `${ufcUpcomingFights.length} upcoming`
-                          : 'Fights & results')
-                }
-              </Text>
-              {sportMode === 'football' ? (
-                <Text style={[styles.headerInfoLabel, { color: isDark ? 'rgba(142,142,147,0.9)' : 'rgba(107,107,133,0.9)' }]}>
-                  Top 5 leagues + competitions
-                </Text>
-              ) : null}
-            </View>
-            <TouchableOpacity 
-              style={[styles.refreshBtn, { backgroundColor: isDark ? 'rgba(255,255,255,0.06)' : 'rgba(0,0,0,0.04)' }]}
-              onPress={onRefresh}
-              activeOpacity={0.7}
-            >
-              <RefreshCw size={16} color={isDark ? '#8E8E93' : '#8E8E93'} />
-            </TouchableOpacity>
-          </View>
-
-          {enabledSports.length > 1 && (
-          <View style={sportToggleStyles.container}>
-            <View style={[
-              sportToggleStyles.track,
-              { backgroundColor: sf.surfaceSecondary, borderWidth: 1, borderColor: sf.border },
-            ]}>
-              {enabledSports.includes('football') && (
-              <TouchableOpacity
-                style={[
-                  sportToggleStyles.option,
-                  sportMode === 'football' && sportToggleStyles.optionActive,
-                  sportMode === 'football' && {
-                    backgroundColor: 'rgba(46, 204, 113, 0.18)',
-                    shadowColor: sf.shadow,
-                    shadowOpacity: isDark ? 0.22 : 0.1,
-                    shadowRadius: 8,
-                    shadowOffset: { width: 0, height: 2 },
-                    elevation: 3,
-                  },
-                ]}
-                onPress={() => handleSportModeChange('football')}
-                activeOpacity={0.7}
-              >
-                <Trophy size={15} color={sportMode === 'football' ? (isDark ? '#32D74B' : '#1B6B34') : (isDark ? '#8E8E93' : '#AEAEB2')} />
-                <Text style={[
-                  sportToggleStyles.optionLabel,
-                  { color: sportMode === 'football' ? (isDark ? '#32D74B' : '#1B6B34') : (isDark ? '#8E8E93' : '#AEAEB2') },
-                  sportMode === 'football' && { fontWeight: '700' as const },
-                ]}>Football</Text>
-              </TouchableOpacity>
-              )}
-              {enabledSports.includes('ufc') && (
-              <TouchableOpacity
-                style={[
-                  sportToggleStyles.option,
-                  sportMode === 'ufc' && sportToggleStyles.optionActive,
-                  sportMode === 'ufc' && {
-                    backgroundColor: 'rgba(212, 175, 55, 0.18)',
-                    shadowColor: sf.shadow,
-                    shadowOpacity: isDark ? 0.22 : 0.1,
-                    shadowRadius: 8,
-                    shadowOffset: { width: 0, height: 2 },
-                    elevation: 3,
-                  },
-                ]}
-                onPress={() => handleSportModeChange('ufc')}
-                activeOpacity={0.7}
-              >
-                <Swords size={15} color={sportMode === 'ufc' ? (isDark ? '#FFD60A' : '#8B0000') : (isDark ? '#8E8E93' : '#AEAEB2')} />
-                <Text style={[
-                  sportToggleStyles.optionLabel,
-                  { color: sportMode === 'ufc' ? (isDark ? '#FFD60A' : '#8B0000') : (isDark ? '#8E8E93' : '#AEAEB2') },
-                  sportMode === 'ufc' && { fontWeight: '700' as const },
-                ]}>UFC</Text>
-              </TouchableOpacity>
-              )}
-              {enabledSports.includes('f1') && (
-              <TouchableOpacity
-                style={[
-                  sportToggleStyles.option,
-                  sportMode === 'f1' && sportToggleStyles.optionActive,
-                  sportMode === 'f1' && {
-                    backgroundColor: 'rgba(225, 6, 0, 0.18)',
-                    shadowColor: sf.shadow,
-                    shadowOpacity: isDark ? 0.22 : 0.1,
-                    shadowRadius: 8,
-                    shadowOffset: { width: 0, height: 2 },
-                    elevation: 3,
-                  },
-                ]}
-                onPress={() => handleSportModeChange('f1')}
-                activeOpacity={0.7}
-              >
-                <Flag size={15} color={sportMode === 'f1' ? (isDark ? '#FF453A' : '#B80000') : (isDark ? '#8E8E93' : '#AEAEB2')} />
-                <Text style={[
-                  sportToggleStyles.optionLabel,
-                  { color: sportMode === 'f1' ? (isDark ? '#FF453A' : '#B80000') : (isDark ? '#8E8E93' : '#AEAEB2') },
-                  sportMode === 'f1' && { fontWeight: '700' as const },
-                ]}>F1</Text>
-              </TouchableOpacity>
-              )}
-              {enabledSports.includes('nba') && (
-              <TouchableOpacity
-                style={[
-                  sportToggleStyles.option,
-                  sportMode === 'nba' && sportToggleStyles.optionActive,
-                  sportMode === 'nba' && {
-                    backgroundColor: 'rgba(0, 122, 255, 0.18)',
-                    shadowColor: sf.shadow,
-                    shadowOpacity: isDark ? 0.22 : 0.1,
-                    shadowRadius: 8,
-                    shadowOffset: { width: 0, height: 2 },
-                    elevation: 3,
-                  },
-                ]}
-                onPress={() => handleSportModeChange('nba')}
-                activeOpacity={0.7}
-              >
-                <Trophy size={15} color={sportMode === 'nba' ? (isDark ? '#0A84FF' : '#1D428A') : (isDark ? '#8E8E93' : '#AEAEB2')} />
-                <Text style={[
-                  sportToggleStyles.optionLabel,
-                  { color: sportMode === 'nba' ? (isDark ? '#0A84FF' : '#1D428A') : (isDark ? '#8E8E93' : '#AEAEB2') },
-                  sportMode === 'nba' && { fontWeight: '700' as const },
-                ]}>NBA</Text>
-              </TouchableOpacity>
-              )}
-            </View>
-          </View>
-          )}
-
-        </LinearGradient>
-      </Animated.View>
+      {sportMode !== 'football' && sportMode !== 'nba' && (
+        <Animated.View style={[
+          styles.header,
+          {
+            paddingTop: insets.top,
+            opacity: headerAnim,
+            transform: [{
+              translateY: headerAnim.interpolate({ inputRange: [0, 1], outputRange: [-20, 0] })
+            }]
+          }
+        ]}>
+          <LinearGradient
+            colors={getSportsMainHeaderGradient(sportMode, isDark)}
+            start={{ x: 0, y: 0 }}
+            end={{ x: 1, y: 1 }}
+            style={styles.headerGradient}
+          >
+            {sportsMainHeaderInner}
+          </LinearGradient>
+        </Animated.View>
+      )}
 
       {sportMode === 'ufc' && (
         <View style={styles.tabWrapper}>
@@ -2186,7 +3254,7 @@ export default function SportsScreen() {
             <RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={colors.primary} colors={[colors.primary]} />
           }
         >
-          {footballHeader}
+          {renderFootballHeader()}
           <View style={styles.setupPrompt}>
             <LinearGradient
               colors={[colors.success, colors.successLight]}
@@ -2262,7 +3330,7 @@ export default function SportsScreen() {
             <RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={colors.primary} colors={[colors.primary]} />
           }
         >
-          {footballHeader}
+          {renderFootballHeader()}
           <EmptyState type={activeTab} />
         </ScrollView>
       ) : sportMode === 'football' && !isLoading ? (
@@ -2270,7 +3338,7 @@ export default function SportsScreen() {
           data={flatListData}
           renderItem={renderFlatListItem}
           keyExtractor={flatListKeyExtractor}
-          ListHeaderComponent={<>{footballHeader}</>}
+          ListHeaderComponent={<>{renderFootballHeader()}</>}
           style={styles.scrollView}
           contentContainerStyle={[styles.scrollContent, { paddingBottom: insets.bottom + 100 }]}
           showsVerticalScrollIndicator={false}
@@ -2462,9 +3530,11 @@ export default function SportsScreen() {
         <F1Section isDark={isDark} insets={insets} />
       )}
 
-      {sportMode === 'nba' && (
-        <NBASection isDark={isDark} insets={insets} />
-      )}
+      {sportMode === 'nba' ? (
+        <View style={{ flex: 1 }}>
+          <NBASection isDark={isDark} insets={insets} sportToggleSlot={sportModeToggleEl} />
+        </View>
+      ) : null}
       
       {selectedMatch && showMatchModal && (
         <MatchDetailsModal
@@ -2497,6 +3567,202 @@ export default function SportsScreen() {
           fight={selectedFight}
         />
       )}
+
+      <Modal
+        visible={showFootballFilterPicker}
+        animationType="slide"
+        transparent
+        onRequestClose={() => setShowFootballFilterPicker(false)}
+      >
+        <View style={styles.pickerOverlay}>
+          <TouchableOpacity style={StyleSheet.absoluteFill} activeOpacity={1} onPress={() => setShowFootballFilterPicker(false)} />
+          <View style={[styles.pickerContainer, { backgroundColor: colors.surface }]}>
+            <View style={styles.pickerHandle} />
+            <View style={[styles.pickerHeader, { borderBottomColor: colors.border }]}>
+              <Text style={[styles.pickerTitle, { color: colors.text }]}>Football Filters</Text>
+              <TouchableOpacity onPress={() => setShowFootballFilterPicker(false)} style={styles.pickerClose}>
+                <X size={20} color={colors.textSecondary} />
+              </TouchableOpacity>
+            </View>
+
+            <ScrollView style={styles.pickerScroll} showsVerticalScrollIndicator={false}>
+              <Text style={[styles.unifiedFilterSectionTitle, { color: colors.textSecondary }]}>Sort</Text>
+              <Text style={[styles.refineModalHint, { color: colors.textMuted }]}>
+                {footballFilterSummary}
+              </Text>
+              <View style={styles.unifiedFilterModeGrid}>
+                {(
+                  [
+                    { id: 'smart' as const, label: 'Smart (For You)' },
+                    { id: 'kickoff' as const, label: 'Kickoff time' },
+                    { id: 'competition' as const, label: 'Competition' },
+                  ] as const
+                ).map((item) => {
+                  const selected = footballSortMode === item.id;
+                  return (
+                    <TouchableOpacity
+                      key={item.id}
+                      activeOpacity={0.8}
+                      onPress={() => setFootballSortMode(item.id)}
+                      style={[
+                        styles.unifiedFilterModeChip,
+                        {
+                          borderColor: selected ? `${fc.accent}66` : colors.border,
+                          backgroundColor: selected ? `${fc.accent}18` : colors.surfaceSecondary,
+                        },
+                      ]}
+                    >
+                      <Text
+                        style={[styles.unifiedFilterModeChipText, { color: selected ? fc.accent : colors.text }]}
+                      >
+                        {item.label}
+                      </Text>
+                    </TouchableOpacity>
+                  );
+                })}
+              </View>
+
+              <Text style={[styles.unifiedFilterSectionTitle, { color: colors.textSecondary, marginTop: 14 }]}>
+                Saved competitions
+              </Text>
+              <View style={styles.competitionQuickFilterWrap}>
+                <TouchableOpacity
+                  activeOpacity={0.8}
+                  onPress={() => setSelectedLeagues([])}
+                  style={[
+                    styles.competitionQuickChip,
+                    {
+                      backgroundColor: selectedLeagues.length === 0 ? `${fc.accent}22` : colors.surfaceSecondary,
+                      borderColor: selectedLeagues.length === 0 ? `${fc.accent}66` : colors.border,
+                    },
+                  ]}
+                >
+                  <Trophy size={12} color={selectedLeagues.length === 0 ? fc.accent : colors.textSecondary} />
+                  <Text style={[styles.competitionQuickChipText, { color: selectedLeagues.length === 0 ? fc.accent : colors.textSecondary }]}>
+                    All competitions
+                  </Text>
+                </TouchableOpacity>
+                {competitionQuickPicks.map((competition) => {
+                  const selected = selectedLeagues.length === 1 && selectedLeagues[0] === competition.id;
+                  return (
+                    <TouchableOpacity
+                      key={competition.id}
+                      activeOpacity={0.8}
+                      onPress={() => setSelectedLeagues([competition.id])}
+                      style={[
+                        styles.competitionQuickChip,
+                        {
+                          backgroundColor: selected ? `${fc.accent}22` : colors.surfaceSecondary,
+                          borderColor: selected ? `${fc.accent}66` : colors.border,
+                        },
+                      ]}
+                    >
+                      {competition.logo ? (
+                        <Image source={{ uri: competition.logo }} style={styles.competitionQuickChipLogo} resizeMode="contain" />
+                      ) : (
+                        <Trophy size={11} color={selected ? fc.accent : colors.textSecondary} />
+                      )}
+                      <Text style={[styles.competitionQuickChipText, { color: selected ? fc.accent : colors.textSecondary }]}>
+                        {competition.label}
+                      </Text>
+                    </TouchableOpacity>
+                  );
+                })}
+              </View>
+            </ScrollView>
+          </View>
+        </View>
+      </Modal>
+
+      <Modal
+        visible={showFootballContextSheet}
+        animationType="slide"
+        transparent
+        onRequestClose={() => setShowFootballContextSheet(false)}
+      >
+        <View style={styles.pickerOverlay}>
+          <TouchableOpacity
+            style={StyleSheet.absoluteFill}
+            activeOpacity={1}
+            onPress={() => setShowFootballContextSheet(false)}
+          />
+          <View style={[styles.pickerContainer, { backgroundColor: colors.surface }]}>
+            <View style={styles.pickerHandle} />
+            <View style={[styles.pickerHeader, { borderBottomColor: colors.border }]}>
+              <Text style={[styles.pickerTitle, { color: colors.text }]}>
+                {footballSmartFilter === 'following' ? 'Followed clubs' : 'Top competitions'}
+              </Text>
+              <TouchableOpacity onPress={() => setShowFootballContextSheet(false)} style={styles.pickerClose}>
+                <X size={20} color={colors.textSecondary} />
+              </TouchableOpacity>
+            </View>
+            <ScrollView style={styles.pickerScroll} showsVerticalScrollIndicator={false}>
+              {footballSmartFilter === 'following'
+                ? (profile?.favoriteTeams ?? [])
+                    .filter((t) => t.apiId && t.apiId > 0)
+                    .map((team) => {
+                      const effective = contextFollowingTeamIds ?? teamApiIds;
+                      const selected = effective.includes(team.apiId!);
+                      return (
+                        <TouchableOpacity
+                          key={String(team.id ?? team.apiId)}
+                          style={[styles.footballContextSheetRow, { borderBottomColor: colors.border }]}
+                          activeOpacity={0.75}
+                          onPress={() => toggleFollowingContextTeam(team.apiId!)}
+                        >
+                          {team.logo ? (
+                            <Image
+                              source={{ uri: team.logo }}
+                              style={styles.footballContextLogo}
+                              resizeMode="contain"
+                            />
+                          ) : (
+                            <View
+                              style={[styles.footballContextLogo, { backgroundColor: colors.surfaceSecondary }]}
+                            />
+                          )}
+                          <View style={{ flex: 1 }}>
+                            <Text style={{ color: colors.text, fontWeight: '700' }}>{team.name}</Text>
+                          </View>
+                          {selected ? <CheckCircle2 size={20} color={fc.accent} /> : null}
+                        </TouchableOpacity>
+                      );
+                    })
+                : TOP_LEAGUE_BUNDLE_IDS.map((leagueId) => {
+                    const effective = contextTopLeagueIds ?? TOP_LEAGUE_BUNDLE_IDS;
+                    const selected = effective.includes(leagueId);
+                    const name = getCompetitionById(leagueId)?.name ?? `League ${leagueId}`;
+                    const logoUri = `https://media.api-sports.io/football/leagues/${leagueId}.png`;
+                    return (
+                      <TouchableOpacity
+                        key={leagueId}
+                        style={[styles.footballContextSheetRow, { borderBottomColor: colors.border }]}
+                        activeOpacity={0.75}
+                        onPress={() => toggleTopLeagueContextId(leagueId)}
+                      >
+                        <Image source={{ uri: logoUri }} style={styles.footballContextLogo} resizeMode="contain" />
+                        <View style={{ flex: 1 }}>
+                          <Text style={{ color: colors.text, fontWeight: '700' }}>{name}</Text>
+                        </View>
+                        {selected ? <CheckCircle2 size={20} color={fc.accent} /> : null}
+                      </TouchableOpacity>
+                    );
+                  })}
+              <View style={styles.footballContextSheetFooter}>
+                <TouchableOpacity
+                  style={styles.footballContextResetBtn}
+                  onPress={() => {
+                    if (footballSmartFilter === 'following') setContextFollowingTeamIds(null);
+                    else setContextTopLeagueIds(null);
+                  }}
+                >
+                  <Text style={{ color: fc.accent, fontWeight: '700' }}>Use full selection</Text>
+                </TouchableOpacity>
+              </View>
+            </ScrollView>
+          </View>
+        </View>
+      </Modal>
 
       <Modal
         visible={showLeaguePicker}
@@ -2560,7 +3826,7 @@ const styles = StyleSheet.create({
   },
   headerTop: {
     flexDirection: 'row',
-    alignItems: 'flex-end',
+    alignItems: 'flex-start',
     justifyContent: 'space-between',
     marginBottom: 16,
   },
@@ -2585,13 +3851,34 @@ const styles = StyleSheet.create({
     letterSpacing: 0.2,
     textTransform: 'uppercase' as const,
   },
+  stadiumHeroRoot: {
+    overflow: 'hidden' as const,
+    minHeight: 170,
+    justifyContent: 'flex-end' as const,
+  },
+  /** Tall hero must anchor content to the top; `stadiumHeroRoot` uses flex-end for the short legacy bar only. */
+  stadiumHeroRootFootball: {
+    minHeight: 470,
+    justifyContent: 'flex-start' as const,
+  },
+  stadiumHeroImage: {
+    resizeMode: 'cover' as const,
+  },
+  /* Visually crop the lower 20% of the hero image. */
+  stadiumHeroImageCropBottom: {
+    transform: [{ translateY: -90 }],
+  },
+  stadiumHeroForeground: {
+    position: 'relative' as const,
+    zIndex: 1,
+  },
   refreshBtn: {
     width: 38,
     height: 38,
     borderRadius: 19,
     justifyContent: 'center',
     alignItems: 'center',
-    marginBottom: 4,
+    marginTop: 2,
   },
   statsRow: {
     flexDirection: 'row',
@@ -2616,77 +3903,79 @@ const styles = StyleSheet.create({
     fontWeight: '600' as const,
   },
   tickerSection: {
-    paddingTop: 8,
-    paddingBottom: 18,
+    paddingTop: 5,
+    paddingBottom: 11,
   },
   tickerHeader: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
     paddingHorizontal: 20,
-    marginBottom: 14,
+    marginBottom: 8,
   },
   tickerHeaderLeft: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 8,
+    gap: 5,
   },
   tickerLiveDot: {
-    width: 26,
-    height: 26,
-    borderRadius: 13,
+    width: 16,
+    height: 16,
+    borderRadius: 8,
     justifyContent: 'center',
     alignItems: 'center',
     shadowColor: '#FF3B30',
     shadowOpacity: 0.4,
-    shadowRadius: 10,
-    shadowOffset: { width: 0, height: 4 },
-    elevation: 4,
+    shadowRadius: 6,
+    shadowOffset: { width: 0, height: 2 },
+    elevation: 3,
   },
   tickerTitle: {
-    fontSize: 16,
+    fontSize: 10,
     fontWeight: '700' as const,
-    letterSpacing: -0.3,
+    letterSpacing: -0.15,
   },
   tickerCountBadge: {
-    paddingHorizontal: 6,
-    paddingVertical: 2,
-    borderRadius: 8,
-    minWidth: 22,
+    paddingHorizontal: 4,
+    paddingVertical: 1,
+    borderRadius: 5,
+    minWidth: 13,
     alignItems: 'center' as const,
   },
   tickerCountText: {
-    fontSize: 11,
+    fontSize: 7,
     fontWeight: '800' as const,
     color: '#FF3B30',
   },
   tickerSeeAllBtn: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 2,
+    gap: 1,
   },
   tickerSeeAll: {
-    fontSize: 14,
+    fontSize: 8,
     fontWeight: '600' as const,
     color: '#007AFF',
   },
   tickerList: {
     paddingHorizontal: 20,
-    gap: 14,
+    gap: 8,
   },
   tickerCardWrapper: {
-    width: SCREEN_WIDTH * 0.66,
+    width: SCREEN_WIDTH * 0.4,
   },
   tickerCard: {
-    borderRadius: 22,
-    padding: 18,
-    borderWidth: 1,
-    borderColor: 'rgba(46, 204, 113, 0.25)',
+    borderRadius: 13,
+    height: 121,
+    paddingHorizontal: 10,
+    paddingVertical: 8,
+    borderWidth: 0.6,
+    borderColor: 'rgba(46, 204, 113, 0.18)',
     shadowColor: '#2ECC71',
-    shadowOpacity: 0.18,
-    shadowRadius: 20,
-    shadowOffset: { width: 0, height: 8 },
-    elevation: 6,
+    shadowOpacity: 0.24,
+    shadowRadius: 14,
+    shadowOffset: { width: 0, height: 5 },
+    elevation: 4,
     overflow: 'hidden' as const,
   },
   tickerSheen: {
@@ -2694,56 +3983,60 @@ const styles = StyleSheet.create({
     top: 0,
     left: 0,
     right: 0,
-    height: 80,
+    height: 48,
   },
   tickerTopRow: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-    marginBottom: 16,
+    marginBottom: 7,
   },
   tickerLiveBadge: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 5,
+    gap: 4,
     backgroundColor: 'rgba(255, 71, 87, 0.12)',
-    paddingHorizontal: 8,
-    paddingVertical: 4,
-    borderRadius: 8,
-    borderWidth: 1,
-    borderColor: 'rgba(255, 71, 87, 0.25)',
+    paddingHorizontal: 5,
+    paddingVertical: 2,
+    borderRadius: 5,
+    borderWidth: 0.5,
+    borderColor: 'rgba(255, 71, 87, 0.2)',
+    shadowColor: '#FF4757',
+    shadowOpacity: 0.35,
+    shadowRadius: 5,
+    shadowOffset: { width: 0, height: 0 },
   },
   tickerElapsedPill: {
     backgroundColor: 'rgba(255,255,255,0.08)',
-    paddingHorizontal: 8,
-    paddingVertical: 3,
-    borderRadius: 8,
+    paddingHorizontal: 5,
+    paddingVertical: 2,
+    borderRadius: 5,
   },
   tickerLiveText: {
-    fontSize: 10,
+    fontSize: 6,
     fontWeight: '800' as const,
     color: '#FF4757',
-    letterSpacing: 0.8,
+    letterSpacing: 0.5,
   },
   tickerElapsed: {
-    fontSize: 10,
+    fontSize: 6,
     fontWeight: '800' as const,
     color: '#F5F5FA',
-    letterSpacing: 0.3,
+    letterSpacing: 0.15,
   },
   tickerTeams: {
-    gap: 10,
-    marginBottom: 14,
+    gap: 5,
+    marginBottom: 6,
   },
   tickerTeamRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 10,
+    gap: 6,
   },
   tickerLogoWrap: {
-    width: 26,
-    height: 26,
-    borderRadius: 13,
+    width: 18,
+    height: 18,
+    borderRadius: 9,
     backgroundColor: 'rgba(255,255,255,0.08)',
     justifyContent: 'center',
     alignItems: 'center',
@@ -2751,46 +4044,68 @@ const styles = StyleSheet.create({
     borderColor: 'rgba(255,255,255,0.08)',
   },
   tickerLogo: {
-    width: 18,
-    height: 18,
+    width: 13,
+    height: 13,
     resizeMode: 'contain',
   },
   tickerTeamName: {
     flex: 1,
-    fontSize: 14,
+    fontSize: 8,
     fontWeight: '600' as const,
     color: '#C8C8D8',
-    letterSpacing: -0.1,
+    letterSpacing: -0.05,
   },
   tickerScore: {
-    fontSize: 20,
+    fontSize: 14,
     fontWeight: '800' as const,
     color: '#E4E4ED',
-    minWidth: 24,
+    minWidth: 14,
     textAlign: 'right' as const,
-    letterSpacing: -0.5,
+    letterSpacing: -0.25,
   },
   tickerLeague: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 6,
-    borderTopWidth: 1,
-    borderTopColor: 'rgba(255,255,255,0.06)',
-    paddingTop: 10,
+    gap: 4,
+    borderTopWidth: 0.5,
+    borderTopColor: 'rgba(255,255,255,0.03)',
+    paddingTop: 6,
+  },
+  tickerMomentumRow: {
+    marginBottom: 5,
+  },
+  tickerMomentumLabel: {
+    fontSize: 6,
+    fontWeight: '700' as const,
+    color: '#7D8AA8',
+    marginBottom: 4,
+    letterSpacing: 0.1,
+    textTransform: 'uppercase' as const,
+  },
+  tickerMomentumTrack: {
+    height: 4,
+    borderRadius: 999,
+    backgroundColor: 'rgba(255,255,255,0.1)',
+    overflow: 'hidden' as const,
+  },
+  tickerMomentumFill: {
+    height: '100%',
+    borderRadius: 999,
   },
   tickerLeagueLogo: {
-    width: 14,
-    height: 14,
+    width: 8,
+    height: 8,
   },
   tickerLeagueName: {
-    fontSize: 10,
+    fontSize: 6,
     fontWeight: '600' as const,
     color: '#6B6B85',
     textTransform: 'uppercase' as const,
-    letterSpacing: 0.3,
+    letterSpacing: 0.18,
   },
   tabWrapper: {
     paddingHorizontal: 20,
+    marginTop: -14,
     marginBottom: 12,
   },
   pillContainer: {
@@ -2848,33 +4163,426 @@ const styles = StyleSheet.create({
   },
   filterArea: {
     marginBottom: 12,
-    gap: 8,
-  },
-  filterRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-  },
-  filterActionsRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
     paddingHorizontal: 20,
+  },
+  footballSmartSectionLabel: {
+    fontSize: 11,
+    fontWeight: '700' as const,
+    letterSpacing: 0.8,
+    textTransform: 'uppercase' as const,
+    marginBottom: 10,
+  },
+  footballSmartPillsRow: {
+    flexDirection: 'row' as const,
+    flexWrap: 'nowrap' as const,
+    gap: 8,
+    marginBottom: 12,
+  },
+  footballSmartPill: {
+    flex: 1,
+    minWidth: 0,
+    flexDirection: 'row' as const,
+    alignItems: 'center' as const,
+    justifyContent: 'center' as const,
+    gap: 5,
+    paddingVertical: 10,
+    paddingHorizontal: 6,
+    borderRadius: 14,
+    borderWidth: 1,
+  },
+  footballSmartPillText: {
+    fontSize: 11,
+    fontWeight: '700' as const,
+    letterSpacing: -0.2,
+  },
+  footballContextRow: {
+    flexDirection: 'row' as const,
+    alignItems: 'center' as const,
+    gap: 10,
+  },
+  footballContextChip: {
+    flex: 1,
+    flexDirection: 'row' as const,
+    alignItems: 'center' as const,
+    gap: 8,
+    paddingHorizontal: 14,
+    paddingVertical: 11,
+    borderRadius: 14,
+    borderWidth: 1,
+  },
+  footballContextChipTitle: {
+    flex: 1,
+    fontSize: 15,
+    fontWeight: '700' as const,
+    letterSpacing: -0.2,
+  },
+  footballContextSpacer: {
+    flex: 1,
+  },
+  footballRefineBtn: {
+    width: 48,
+    height: 48,
+    borderRadius: 24,
+    alignItems: 'center' as const,
+    justifyContent: 'center' as const,
+    borderWidth: 1,
+  },
+  refineModalHint: {
+    fontSize: 12,
+    fontWeight: '600' as const,
+    marginBottom: 10,
+    marginTop: -4,
+  },
+  footballContextSheetRow: {
+    flexDirection: 'row' as const,
+    alignItems: 'center' as const,
+    gap: 12,
+    paddingVertical: 12,
+    paddingHorizontal: 4,
+    borderBottomWidth: StyleSheet.hairlineWidth,
+  },
+  footballContextLogo: {
+    width: 28,
+    height: 28,
+    borderRadius: 14,
+  },
+  footballContextSheetFooter: {
+    paddingTop: 14,
+    paddingBottom: 6,
+  },
+  footballContextResetBtn: {
+    paddingVertical: 12,
+    alignItems: 'center' as const,
+  },
+  heroMetaRow: {
+    flexDirection: 'row' as const,
+    gap: 8,
+    marginTop: 8,
+    flexWrap: 'wrap' as const,
+  },
+  heroMetaChip: {
+    flexDirection: 'row' as const,
+    alignItems: 'center' as const,
+    gap: 5,
+    paddingHorizontal: 9,
+    paddingVertical: 5,
+    borderRadius: 999,
+  },
+  heroMetaText: {
+    fontSize: 11,
+    fontWeight: '700' as const,
+    letterSpacing: -0.1,
+  },
+  emotionalHookCard: {
+    marginTop: 10,
+    borderRadius: 14,
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+    borderWidth: 0.5,
+    borderColor: 'rgba(255,255,255,0.22)',
+  },
+  emotionalHookLabel: {
+    fontSize: 10,
+    fontWeight: '800' as const,
+    letterSpacing: 1,
+    textTransform: 'uppercase' as const,
+  },
+  emotionalHookMatch: {
+    marginTop: 4,
+    fontSize: 14,
+    fontWeight: '700' as const,
+    letterSpacing: -0.2,
+  },
+  featuredHeroCard: {
+    marginTop: 14,
+    borderRadius: 18,
+    paddingHorizontal: 14,
+    paddingVertical: 12,
+    overflow: 'hidden' as const,
+    borderWidth: 0.5,
+    borderColor: 'rgba(255,255,255,0.18)',
+  },
+  featuredHeroLabel: {
+    fontSize: 10,
+    fontWeight: '800' as const,
+    letterSpacing: 1.2,
+    textTransform: 'uppercase' as const,
+  },
+  featuredHeroMatch: {
+    marginTop: 6,
+    fontSize: 16,
+    fontWeight: '700' as const,
+    letterSpacing: -0.2,
+  },
+  featuredHeroTime: {
+    marginTop: 5,
+    fontSize: 12,
+    fontWeight: '600' as const,
+  },
+  aiCard: {
+    marginHorizontal: 20,
+    marginBottom: 12,
+    borderRadius: 20,
+    paddingHorizontal: 16,
+    paddingVertical: 14,
+  },
+  insightCarouselShell: {
+    marginHorizontal: 20,
+    marginBottom: 12,
+  },
+  insightCarouselPage: {
+    borderRadius: 20,
+    paddingHorizontal: 16,
+    paddingVertical: 14,
+    overflow: 'hidden' as const,
+    minHeight: 148,
+  },
+  aiInsightTopRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+  },
+  aiInsightOrb: {
+    width: 44,
+    height: 44,
+    borderRadius: 22,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  aiInsightTitleBlock: {
+    flex: 1,
+  },
+  trendingCardInner: {
+    borderRadius: 20,
+    paddingHorizontal: 14,
+    paddingVertical: 12,
+    overflow: 'hidden' as const,
+    minHeight: 148,
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.08)',
+  },
+  trendingCardHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    marginBottom: 6,
+  },
+  trendingNowLabel: {
+    fontSize: 10,
+    fontWeight: '800' as const,
+    letterSpacing: 1,
+    textTransform: 'uppercase' as const,
+  },
+  trendingMatchContext: {
+    fontSize: 11,
+    fontWeight: '600' as const,
+    color: 'rgba(226,232,240,0.72)',
+    marginBottom: 10,
+  },
+  trendingThreeCol: {
+    flexDirection: 'row',
+    gap: 8,
+    justifyContent: 'space-between',
+  },
+  trendingCol: {
+    flex: 1,
+    minWidth: 0,
+    alignItems: 'center',
+  },
+  trendingColTag: {
+    fontSize: 9,
+    fontWeight: '700' as const,
+    color: 'rgba(148,163,184,0.95)',
+    textTransform: 'uppercase' as const,
+    letterSpacing: 0.4,
+    marginBottom: 6,
+  },
+  trendingTeamLogo: {
+    width: 28,
+    height: 28,
+    marginBottom: 6,
+  },
+  trendingLogoPlaceholder: {
+    width: 28,
+    height: 28,
+    borderRadius: 14,
+    marginBottom: 6,
+    backgroundColor: 'rgba(255,255,255,0.08)',
+  },
+  trendingPlayerAvatar: {
+    width: 34,
+    height: 34,
+    borderRadius: 17,
+    marginBottom: 6,
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.18)',
+  },
+  trendingPlayerPlaceholder: {
+    width: 34,
+    height: 34,
+    borderRadius: 17,
+    marginBottom: 6,
+    backgroundColor: 'rgba(255,255,255,0.08)',
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.12)',
+  },
+  trendingColTitle: {
+    fontSize: 11,
+    fontWeight: '800' as const,
+    color: '#F8FAFC',
+    textAlign: 'center' as const,
+  },
+  trendingColSub: {
+    marginTop: 2,
+    fontSize: 10,
+    fontWeight: '600' as const,
+    color: 'rgba(226,232,240,0.78)',
+    textAlign: 'center' as const,
+  },
+  trendingLeagueFoot: {
+    marginTop: 10,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingTop: 8,
+    borderTopWidth: 1,
+    borderTopColor: 'rgba(255,255,255,0.1)',
     gap: 8,
   },
-  standingsBtn: {
+  trendingLeagueFootText: {
+    flex: 1,
+    fontSize: 11,
+    fontWeight: '600' as const,
+    color: 'rgba(226,232,240,0.62)',
+  },
+  insightPageDots: {
+    flexDirection: 'row',
+    justifyContent: 'center',
+    alignItems: 'center',
+    gap: 6,
+    marginTop: 8,
+  },
+  insightDot: {
+    width: 6,
+    height: 6,
+    borderRadius: 3,
+    backgroundColor: 'rgba(100,116,139,0.45)',
+  },
+  aiLabel: {
+    fontSize: 10,
+    fontWeight: '800' as const,
+    letterSpacing: 1,
+    textTransform: 'uppercase' as const,
+  },
+  aiHeadline: {
+    marginTop: 6,
+    fontSize: 16,
+    fontWeight: '700' as const,
+    letterSpacing: -0.2,
+  },
+  aiSub: {
+    marginTop: 6,
+    fontSize: 13,
+    fontWeight: '500' as const,
+    lineHeight: 18,
+  },
+  aiConfidencePill: {
+    marginTop: 8,
+    alignSelf: 'flex-start',
+    borderRadius: 12,
+    paddingHorizontal: 10,
+    paddingVertical: 5,
     flexDirection: 'row',
     alignItems: 'center',
     gap: 5,
-    paddingHorizontal: 12,
-    paddingVertical: 8,
-    borderRadius: 10,
-    borderWidth: 1,
-    borderColor: 'rgba(52, 199, 89, 0.12)',
   },
-  standingsBtnText: {
+  aiConfidenceText: {
+    fontSize: 11,
+    fontWeight: '800' as const,
+    letterSpacing: 0.1,
+  },
+  unifiedFilterTrigger: {
+    paddingHorizontal: 20,
+    height: 52,
+    borderRadius: 16,
+    borderWidth: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+  },
+  unifiedFilterIconWrap: {
+    width: 26,
+    height: 26,
+    borderRadius: 13,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  unifiedFilterTextWrap: {
+    flex: 1,
+  },
+  unifiedFilterLabel: {
+    fontSize: 10,
+    fontWeight: '700' as const,
+    letterSpacing: 0.6,
+    textTransform: 'uppercase' as const,
+  },
+  unifiedFilterValue: {
+    marginTop: 2,
     fontSize: 13,
     fontWeight: '700' as const,
-    color: '#34C759',
-    letterSpacing: -0.2,
+  },
+  unifiedFilterSectionTitle: {
+    fontSize: 10,
+    fontWeight: '700' as const,
+    letterSpacing: 0.8,
+    marginBottom: 8,
+    textTransform: 'uppercase' as const,
+  },
+  unifiedFilterModeGrid: {
+    flexDirection: 'row',
+    flexWrap: 'wrap' as const,
+    gap: 8,
+  },
+  unifiedFilterModeChip: {
+    height: 40,
+    borderRadius: 12,
+    borderWidth: 1,
+    paddingHorizontal: 12,
+    justifyContent: 'center',
+    width: '48%',
+  },
+  unifiedFilterModeChipText: {
+    fontSize: 13,
+    fontWeight: '700' as const,
+  },
+  competitionQuickFilterWrap: {
+    flexDirection: 'row',
+    flexWrap: 'wrap' as const,
+    gap: 8,
+    paddingBottom: 8,
+  },
+  competitionQuickFilterScroll: {
+    gap: 8,
+    paddingRight: 8,
+    paddingBottom: 8,
+  },
+  competitionQuickChip: {
+    height: 34,
+    borderRadius: 17,
+    borderWidth: 1,
+    paddingHorizontal: 12,
+    flexDirection: 'row' as const,
+    alignItems: 'center' as const,
+    gap: 6,
+  },
+  competitionQuickChipText: {
+    fontSize: 12,
+    fontWeight: '700' as const,
+    letterSpacing: -0.1,
+  },
+  competitionQuickChipLogo: {
+    width: 13,
+    height: 13,
   },
   scrollView: {
     flex: 1,
@@ -2923,6 +4631,15 @@ const styles = StyleSheet.create({
     borderColor: 'rgba(0, 0, 0, 0.04)',
     overflow: 'hidden' as const,
     position: 'relative' as const,
+  },
+  upcomingPremiumCardLight: {
+    backgroundColor: '#FFFFFF',
+    borderColor: 'rgba(185, 145, 58, 0.35)',
+    shadowColor: '#B9913A',
+    shadowOpacity: 0.1,
+    shadowRadius: 14,
+    shadowOffset: { width: 0, height: 4 },
+    elevation: 3,
   },
   cardGlow: {
     position: 'absolute' as const,
@@ -3380,8 +5097,11 @@ const sportToggleStyles = StyleSheet.create({
     paddingVertical: 10,
     borderRadius: 11,
   },
-  optionActive: {
-    borderWidth: 0,
+  iconGlowWrap: {
+    width: 18,
+    height: 18,
+    alignItems: 'center',
+    justifyContent: 'center',
   },
   optionEmoji: {
     fontSize: 15,

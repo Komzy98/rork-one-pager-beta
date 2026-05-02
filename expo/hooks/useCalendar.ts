@@ -40,6 +40,10 @@ export const [CalendarProvider, useCalendar] = createContextHook(() => {
         const parsedCalendars = JSON.parse(stored);
         setCalendars(parsedCalendars);
         console.log(`Loaded ${parsedCalendars.length} calendars from storage`);
+      } else {
+        // Important on account switch: don't keep previous user's calendars in memory.
+        setCalendars([]);
+        console.log('No stored calendars for current user, reset in-memory calendars');
       }
     } catch (error) {
       console.error('Error loading calendars:', error);

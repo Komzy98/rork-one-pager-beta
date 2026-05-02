@@ -5,7 +5,7 @@ import { Stack, useRouter } from "expo-router";
 import * as SplashScreen from "expo-splash-screen";
 import * as Linking from "expo-linking";
 import React, { useEffect, ReactNode } from "react";
-import { Platform, StatusBar, StyleSheet } from "react-native";
+import { LogBox, Platform, StatusBar, StyleSheet } from "react-native";
 
 if (typeof __DEV__ !== 'undefined' && !__DEV__) {
   const noop = () => {};
@@ -13,6 +13,29 @@ if (typeof __DEV__ !== 'undefined' && !__DEV__) {
   console.warn = noop;
   console.info = noop;
   console.debug = noop;
+}
+
+if (typeof __DEV__ !== 'undefined' && __DEV__) {
+  const originalConsoleError = console.error;
+  console.error = (...args: any[]) => {
+    const joined = args
+      .map((arg) => {
+        if (arg instanceof Error) return `${arg.name}: ${arg.message}`;
+        if (typeof arg === 'string') return arg;
+        return '';
+      })
+      .join(' ');
+    if (/Network request failed|Failed to fetch|Load failed|network connection was lost/i.test(joined)) {
+      console.warn('[Network]', ...args);
+      return;
+    }
+    originalConsoleError(...args);
+  };
+
+  LogBox.ignoreLogs([
+    'TypeError: Network request failed',
+    'Error: Network request failed',
+  ]);
 }
 import { GestureHandlerRootView } from "react-native-gesture-handler";
 import { ErrorBoundary } from "@/components/ErrorBoundary";

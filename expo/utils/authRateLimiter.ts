@@ -16,6 +16,15 @@ export function checkAuthRateLimit(action: string = "login"): {
   remainingAttempts: number;
   retryAfterSeconds: number | null;
 } {
+  // Dev-only: do not lock engineers out while debugging network/auth issues.
+  if (typeof __DEV__ !== "undefined" && __DEV__) {
+    return {
+      allowed: true,
+      remainingAttempts: AUTH_MAX_ATTEMPTS,
+      retryAfterSeconds: null,
+    };
+  }
+
   const now = Date.now();
   const key = `auth_${action}`;
 

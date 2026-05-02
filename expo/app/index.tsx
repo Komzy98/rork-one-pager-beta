@@ -7,7 +7,7 @@ import { COLORS } from '@/constants/colors';
 
 export default function Index() {
   const { isAuthenticated, isInitialized, isGuest, user } = useAuth();
-  const { profile } = useUserProfile();
+  const { profile, isLoading: profileLoading } = useUserProfile();
 
   if (__DEV__) {
     console.log('🏠 [Index] Page state:', {
@@ -17,6 +17,7 @@ export default function Index() {
       isGuest,
       hasUser: !!user,
       hasProfile: !!profile,
+      profileLoading,
       onboardingCompleted: profile?.onboardingCompleted
     });
   }
@@ -42,12 +43,20 @@ export default function Index() {
     if (__DEV__) console.log('👤 Guest user, redirecting to onboarding');
     return <Redirect href={"/(onboarding)/welcome" as any} />;
   }
+
+  // Wait for profile hydration before routing authenticated users
+  // so onboarding decisions are made from real profile state.
+  if (profileLoading) {
+    if (__DEV__) console.log('🔄 Profile still loading, waiting before redirect');
+    return (
+      <View style={styles.loadingContainer}>
+        <ActivityIndicator size="large" color={COLORS.primary} />
+      </View>
+    );
+  }
   
-  // Don't block on profile loading - let the app render and load profile in background
-  // This prevents hydration timeout issues
-  
-  // Authenticated but onboarding not completed
-  if (profile && !profile.onboardingCompleted) {
+  // Missing profile should still continue onboarding, especially for first OAuth logins.
+  if (!profile || !profile.onboardingCompleted) {
     if (__DEV__) console.log('📋 Onboarding not completed, redirecting to welcome');
     return <Redirect href={"/(onboarding)/welcome" as any} />;
   }

@@ -1411,9 +1411,9 @@ const styles = StyleSheet.create({
     fontSize: 36,
   },
   headerTitle: {
-    fontSize: 26,
-    fontWeight: '700' as const,
-    letterSpacing: -0.5,
+    fontSize: 32,
+    fontWeight: '800' as const,
+    letterSpacing: -1,
   },
   headerSubtitle: {
     fontSize: 13,

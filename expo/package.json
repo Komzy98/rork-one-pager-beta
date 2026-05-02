@@ -11,6 +11,8 @@
     "eas:build:preview": "eas build --profile preview",
     "eas:build:preview:android": "eas build --profile preview --platform android",
     "eas:build:preview:ios": "eas build --profile preview --platform ios",
+    "eas:build:production:ios": "eas build --profile production --platform ios",
+    "eas:submit:ios": "eas submit --profile production --platform ios --latest",
     "eas:build:dev": "eas build --profile development",
     "android": "expo run:android",
     "ios": "expo run:ios",
@@ -82,6 +84,7 @@
     "@babel/core": "^7.25.2",
     "@expo/ngrok": "^4.1.0",
     "@types/react": "~19.1.10",
+    "eas-cli": "^16.32.0",
     "typescript": "~5.9.2"
   },
   "private": true

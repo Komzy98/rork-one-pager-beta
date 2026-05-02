@@ -34,6 +34,10 @@ export const [CloudSyncProvider, useCloudSync] = createContextHook(() => {
   const [latestSnapshotTime, setLatestSnapshotTime] = useState<string | null>(null);
 
   const { isAuthenticated, user } = useAuth();
+  const getScopedSyncKey = useCallback(
+    (base: string) => `${base}_${user?.id || 'guest'}`,
+    [user?.id]
+  );
   const supabaseUserSync = useSupabaseSync(user?.id);
   const { profile } = useUserProfile();
   
@@ -72,23 +76,51 @@ export const [CloudSyncProvider, useCloudSync] = createContextHook(() => {
 
   const loadSyncStatus = useCallback(async () => {
     try {
-      const enabled = await AsyncStorage.getItem('cloud_sync_enabled');
-      const lastSync = await AsyncStorage.getItem('cloud_sync_timestamp');
-      const provider = await AsyncStorage.getItem('cloud_sync_provider');
+      const enabledKey = getScopedSyncKey('cloud_sync_enabled');
+      const timestampKey = getScopedSyncKey('cloud_sync_timestamp');
+      const providerKey = getScopedSyncKey('cloud_sync_provider');
+      let [enabled, lastSync, provider] = await Promise.all([
+        AsyncStorage.getItem(enabledKey),
+        AsyncStorage.getItem(timestampKey),
+        AsyncStorage.getItem(providerKey),
+      ]);
+      if (!enabled && !lastSync && !provider) {
+        const legacy = await Promise.all([
+          AsyncStorage.getItem('cloud_sync_enabled'),
+          AsyncStorage.getItem('cloud_sync_timestamp'),
+          AsyncStorage.getItem('cloud_sync_provider'),
+        ]);
+        enabled = legacy[0];
+        lastSync = legacy[1];
+        provider = legacy[2];
+        if (enabled || lastSync || provider) {
+          await Promise.all([
+            enabled ? AsyncStorage.setItem(enabledKey, enabled) : Promise.resolve(),
+            lastSync ? AsyncStorage.setItem(timestampKey, lastSync) : Promise.resolve(),
+            provider ? AsyncStorage.setItem(providerKey, provider) : Promise.resolve(),
+          ]);
+        }
+      }
       
       if (enabled === 'true') {
         setIsCloudEnabled(true);
+      } else {
+        setIsCloudEnabled(false);
       }
       if (lastSync) {
         setLastSyncTime(lastSync);
+      } else {
+        setLastSyncTime(null);
       }
       if (provider === 'supabase' || provider === 'firebase') {
         setUseSupabase(true);
+      } else {
+        setUseSupabase(false);
       }
     } catch (error) {
       console.error('Failed to load sync status:', error);
     }
-  }, []);
+  }, [getScopedSyncKey]);
 
   const initializeSync = useCallback(async (preferSupabase = true) => {
     if (!user) {
@@ -111,8 +143,8 @@ export const [CloudSyncProvider, useCloudSync] = createContextHook(() => {
           if (supabaseInitialized) {
             setUseSupabase(true);
             setIsCloudEnabled(true);
-            await AsyncStorage.setItem('cloud_sync_enabled', 'true');
-            await AsyncStorage.setItem('cloud_sync_provider', 'supabase');
+            await AsyncStorage.setItem(getScopedSyncKey('cloud_sync_enabled'), 'true');
+            await AsyncStorage.setItem(getScopedSyncKey('cloud_sync_provider'), 'supabase');
             setSyncStatus('success');
             console.log('Supabase cloud sync initialized');
             return true;
@@ -130,7 +162,7 @@ export const [CloudSyncProvider, useCloudSync] = createContextHook(() => {
       console.log('Cloud sync init error, continuing with local storage:', err instanceof Error ? err.message : 'Unknown error');
       return false;
     }
-  }, [user, contextsReady]);
+  }, [user, contextsReady, getScopedSyncKey]);
 
   const syncToCloud = useCallback(async (storage?: any) => {
     if (!isAuthenticated || !user) {
@@ -178,7 +210,7 @@ export const [CloudSyncProvider, useCloudSync] = createContextHook(() => {
       setSyncStatus('success');
       const now = new Date().toISOString();
       setLastSyncTime(now);
-      await AsyncStorage.setItem('cloud_sync_timestamp', now);
+      await AsyncStorage.setItem(getScopedSyncKey('cloud_sync_timestamp'), now);
       
       console.log('Data synced to cloud successfully');
       return true;
@@ -192,7 +224,7 @@ export const [CloudSyncProvider, useCloudSync] = createContextHook(() => {
       console.warn('Sync to cloud failed:', msg, err);
       return false;
     }
-  }, [isAuthenticated, user, useSupabase, cloudStorage, isCloudEnabled, habits, activities, shows, sports, allTasks, projects, timeEntries, profile, contextsReady, refreshSnapshotMeta]);
+  }, [isAuthenticated, user, useSupabase, cloudStorage, isCloudEnabled, habits, activities, shows, sports, allTasks, projects, timeEntries, profile, contextsReady, refreshSnapshotMeta, getScopedSyncKey]);
 
   const syncFromCloud = useCallback(async (storage?: any) => {
     if (!isAuthenticated || !user) {
@@ -237,7 +269,7 @@ export const [CloudSyncProvider, useCloudSync] = createContextHook(() => {
         setSyncStatus('success');
         const now = new Date().toISOString();
         setLastSyncTime(now);
-        await AsyncStorage.setItem('cloud_sync_timestamp', now);
+        await AsyncStorage.setItem(getScopedSyncKey('cloud_sync_timestamp'), now);
         return true;
       } else {
         setSyncStatus('success');
@@ -253,7 +285,7 @@ export const [CloudSyncProvider, useCloudSync] = createContextHook(() => {
       console.warn('Sync from cloud failed:', msg, err);
       return false;
     }
-  }, [isAuthenticated, user, useSupabase, cloudStorage, isCloudEnabled, contextsReady]);
+  }, [isAuthenticated, user, useSupabase, cloudStorage, isCloudEnabled, contextsReady, getScopedSyncKey]);
 
   const enableCloudSync = useCallback(async (preferSupabase = false) => {
     if (!isAuthenticated || !user) {
@@ -269,8 +301,8 @@ export const [CloudSyncProvider, useCloudSync] = createContextHook(() => {
     setCloudStorage(null);
     setSyncStatus('idle');
     setError(null);
-    await AsyncStorage.setItem('cloud_sync_enabled', 'false');
-  }, []);
+    await AsyncStorage.setItem(getScopedSyncKey('cloud_sync_enabled'), 'false');
+  }, [getScopedSyncKey]);
 
   const forceSync = useCallback(async () => {
     if (!cloudStorage) {
@@ -284,6 +316,10 @@ export const [CloudSyncProvider, useCloudSync] = createContextHook(() => {
   }, [cloudStorage, syncToCloud, syncFromCloud]);
 
   const [supabaseInitAttempted, setSupabaseInitAttempted] = useState<boolean>(false);
+
+  useEffect(() => {
+    setSupabaseInitAttempted(false);
+  }, [user?.id]);
 
   useEffect(() => {
     const autoInitializeSupabaseSync = async () => {

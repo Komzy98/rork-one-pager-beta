@@ -23,10 +23,8 @@ import * as Haptics from 'expo-haptics';
 import { LinearGradient } from 'expo-linear-gradient';
 import { BlurView } from 'expo-blur';
 import {
-  fetchYounifyBrowseSections,
-  fetchYounifyContentForConnectedServices,
   getYounifyRuntimeIssue,
-  getLinkedStreamingServicesList,
+  loadYounifyStreamingBundle,
   type YounifyBrowseSection,
 } from '@/services/younify';
 import { 
@@ -893,10 +891,13 @@ export default function ShowsScreen() {
     [streamingSections, linkedProviderIds],
   );
 
-  const refetchStreamingBrowse = useCallback(async () => {
+  /** Single SDK round-trip: one linked fetch + hero & browse `fetchContent` in parallel (see `loadYounifyStreamingBundle`). */
+  const refetchYounifyStreamingUnified = useCallback(async () => {
     try {
+      setYounifyLoading(true);
       setStreamingLoading(true);
-      const linkedList = await getLinkedStreamingServicesList();
+      const bundle = await loadYounifyStreamingBundle();
+      const linkedList = bundle.linkedServices;
       setLinkedStreamingCount(linkedList.length);
       setHasLinkedServices(linkedList.length > 0);
       const ids = Array.from(
@@ -912,14 +913,14 @@ export default function ShowsScreen() {
         ),
       );
       setLinkedProviderIds(ids);
-      const rows = await fetchYounifyBrowseSections();
-      setStreamingSections(Array.isArray(rows) ? rows : []);
+      setYounifyContent(Array.isArray(bundle.heroContent) ? bundle.heroContent : []);
+      setStreamingSections(Array.isArray(bundle.browseSections) ? bundle.browseSections : []);
     } catch (error) {
       if (__DEV__) {
-        console.warn('Failed to load Younify streaming browse:', error);
+        console.warn('Failed to load Younify streaming bundle:', error);
       }
-      // Keep previous sections on failure so focus/tab refetches don't wipe rows on transient errors.
     } finally {
+      setYounifyLoading(false);
       setStreamingLoading(false);
       setStreamingInitialized(true);
     }
@@ -928,68 +929,28 @@ export default function ShowsScreen() {
   const onStreamingPullRefresh = useCallback(async () => {
     setStreamingRefreshing(true);
     try {
-      await refetchStreamingBrowse();
+      await refetchYounifyStreamingUnified();
     } finally {
       setStreamingRefreshing(false);
     }
-  }, [refetchStreamingBrowse]);
+  }, [refetchYounifyStreamingUnified]);
 
-  const refetchYounifyRail = useCallback(async () => {
-    try {
-      setYounifyLoading(true);
-      const linkedList = await getLinkedStreamingServicesList();
-      setLinkedStreamingCount(linkedList.length);
-      const has = linkedList.length > 0;
-      setHasLinkedServices(has);
-      const ids = Array.from(
-        new Set(
-          linkedList
-            .map((service: any) =>
-              younifySourceToTmdbProviderId({
-                id: String(service?.id ?? ''),
-                name: String(service?.name ?? ''),
-              }),
-            )
-            .filter((id: number | null): id is number => id != null),
-        ),
-      );
-      setLinkedProviderIds(ids);
-      if (!has) {
-        setYounifyContent([]);
-        return;
-      }
-      const result = await fetchYounifyContentForConnectedServices();
-      setYounifyContent(Array.isArray(result) ? result : []);
-    } catch (error) {
-      if (__DEV__) {
-        console.warn('Failed to load Younify connected content:', error);
-      }
-      // Don't zero hero/browse-linked state on transient failures — avoids empty streaming UI after tab blur/focus.
-    } finally {
-      setYounifyLoading(false);
-    }
-  }, []);
-
+  /** Heavy Younify work only when Streaming / Watchlist sub-tab is active — avoids duplicate SDK calls while browsing For You. */
   useFocusEffect(
     useCallback(() => {
-      void refetchYounifyRail();
-      void refetchStreamingBrowse();
-    }, [refetchYounifyRail, refetchStreamingBrowse]),
+      if (selectedTab === 'streaming' || selectedTab === 'watchlist') {
+        void refetchYounifyStreamingUnified();
+      }
+    }, [selectedTab, refetchYounifyStreamingUnified]),
   );
 
-  /** After login / logout / account switch — Younify is per-user; refresh immediately so the tab isn’t stale. */
+  /** Account switch: refresh Younify only if Streaming/Watchlist is visible (avoids full SDK load on For You). */
   useEffect(() => {
     if (!authInitialized) return;
-    void refetchYounifyRail();
-    void refetchStreamingBrowse();
-  }, [authInitialized, user?.id, refetchYounifyRail, refetchStreamingBrowse]);
-
-  useEffect(() => {
     if (selectedTab === 'streaming' || selectedTab === 'watchlist') {
-      void refetchStreamingBrowse();
-      void refetchYounifyRail();
+      void refetchYounifyStreamingUnified();
     }
-  }, [selectedTab, refetchStreamingBrowse, refetchYounifyRail]);
+  }, [authInitialized, user?.id, selectedTab, refetchYounifyStreamingUnified]);
 
   useEffect(() => {
     setYounifyRuntimeBanner(getYounifyRuntimeIssue());
@@ -1271,10 +1232,9 @@ export default function ShowsScreen() {
       refetchUpcoming(),
       refetchNewEpisodes(),
       refetchRegionTrending(),
-      refetchYounifyRail(),
     ];
     if (selectedTab === 'streaming' || selectedTab === 'watchlist') {
-      tasks.push(refetchStreamingBrowse());
+      tasks.push(refetchYounifyStreamingUnified());
     }
     await Promise.all(tasks);
     setRefreshing(false);
@@ -1289,8 +1249,7 @@ export default function ShowsScreen() {
     refetchUpcoming,
     refetchNewEpisodes,
     refetchRegionTrending,
-    refetchYounifyRail,
-    refetchStreamingBrowse,
+    refetchYounifyStreamingUnified,
   ]);
 
   const heroItems = useMemo(() => {
@@ -2178,9 +2137,11 @@ export default function ShowsScreen() {
                   onPress={() => setSelectedTab(tab.key)}
                   activeOpacity={0.7}
                 >
-                  {React.cloneElement(tab.icon as React.ReactElement<{ color: string }>, {
-                    color: isActive ? '#FFF' : THEME.textMuted,
-                  })}
+                  <View style={[styles.tabIconWrap, isActive && styles.tabIconWrapActive]}>
+                    {React.cloneElement(tab.icon as React.ReactElement<{ color: string }>, {
+                      color: isActive ? THEME.primary : THEME.textMuted,
+                    })}
+                  </View>
                   <Text style={[styles.tabButtonText, isActive && styles.tabButtonTextActive]}>{tab.label}</Text>
                   {tab.badge > 0 && (
                     <View style={[styles.tabBadge, isActive && styles.tabBadgeActive]}>
@@ -2210,9 +2171,11 @@ export default function ShowsScreen() {
                   }}
                   activeOpacity={0.7}
                 >
-                  {React.cloneElement(tab.icon as React.ReactElement<{ color: string }>, {
-                    color: isActive ? '#FFF' : THEME.textMuted,
-                  })}
+                  <View style={[styles.tabIconWrap, isActive && styles.tabIconWrapActive]}>
+                    {React.cloneElement(tab.icon as React.ReactElement<{ color: string }>, {
+                      color: isActive ? THEME.primary : THEME.textMuted,
+                    })}
+                  </View>
                   <Text style={[styles.tabButtonText, isActive && styles.tabButtonTextActive]}>{tab.label}</Text>
                   {tab.badge > 0 && (
                     <View style={[styles.tabBadge, isActive && styles.tabBadgeActive]}>
@@ -2802,13 +2765,21 @@ const styles = StyleSheet.create({
     backgroundColor: 'rgba(255,255,255,0.04)',
     gap: 6,
   },
+  tabIconWrap: {
+    width: 18,
+    height: 18,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  tabIconWrapActive: {
+    shadowColor: THEME.primary,
+    shadowOffset: { width: 0, height: 0 },
+    shadowOpacity: 0.55,
+    shadowRadius: 9,
+    elevation: 5,
+  },
   tabButtonActive: {
-    backgroundColor: THEME.primary,
-    shadowColor: '#E50914',
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.3,
-    shadowRadius: 10,
-    elevation: 4,
+    backgroundColor: 'rgba(255,255,255,0.04)',
   },
   tabButtonText: {
     fontSize: 13,
@@ -2817,7 +2788,7 @@ const styles = StyleSheet.create({
     letterSpacing: -0.1,
   },
   tabButtonTextActive: {
-    color: '#FFF',
+    color: THEME.text,
   },
   tabBadge: {
     backgroundColor: 'rgba(255,255,255,0.08)',

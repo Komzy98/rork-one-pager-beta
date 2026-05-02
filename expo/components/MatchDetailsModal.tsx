@@ -13,6 +13,15 @@ const { width: SCREEN_WIDTH } = Dimensions.get('window');
 const HOME_COLOR = '#00E5FF';
 const AWAY_COLOR = '#FF5C8A';
 
+/** api-sports CDN portraits (same host as team logos). Lineup payloads often omit `photo`; id-based URL still works. */
+function footballPlayerPortraitUri(player: { id?: number; photo?: string | null }): string | null {
+  const raw = typeof player.photo === 'string' ? player.photo.trim() : '';
+  if (raw.length > 8 && (raw.startsWith('http://') || raw.startsWith('https://'))) return raw;
+  const id = player.id;
+  if (typeof id === 'number' && id > 0) return `https://media.api-sports.io/football/players/${id}.png`;
+  return null;
+}
+
 export type MatchModalTokens = {
   accent: string;
   accentSecondary: string;
@@ -276,8 +285,8 @@ interface MatchEvent {
 interface TeamLineup {
   team: { id: number; name: string; logo: string };
   formation: string;
-  startXI: { player: { id: number; name: string; number: number; pos: string } }[];
-  substitutes: { player: { id: number; name: string; number: number; pos: string } }[];
+  startXI: { player: { id: number; name: string; number: number; pos: string; photo?: string | null } }[];
+  substitutes: { player: { id: number; name: string; number: number; pos: string; photo?: string | null } }[];
   coach: { id: number; name: string; photo?: string };
 }
 
@@ -338,6 +347,51 @@ const AnimatedStatBar = ({ homeValue, awayValue, label, delay = 0 }: { homeValue
 
 type LineupTab = 'home' | 'away';
 
+function LineupPlayerAvatar({
+  player,
+  accentColor,
+  size = 'md',
+}: {
+  player: { id: number; name: string; photo?: string | null };
+  accentColor: string;
+  size?: 'sm' | 'md';
+}) {
+  const { styles } = useMatchModalShell();
+  const uri = footballPlayerPortraitUri(player);
+  const [failed, setFailed] = useState(false);
+  const dim = size === 'sm' ? 26 : 36;
+
+  if (!uri || failed) {
+    return (
+      <View
+        style={[
+          styles.playerAvatar,
+          {
+            width: dim,
+            height: dim,
+            borderRadius: dim / 2,
+            backgroundColor: accentColor + '22',
+            borderColor: accentColor + '44',
+          },
+        ]}
+      >
+        <Text style={[styles.playerAvatarInitial, { color: accentColor, fontSize: size === 'sm' ? 11 : 14 }]}>
+          {(player.name || '?').charAt(0)}
+        </Text>
+      </View>
+    );
+  }
+
+  return (
+    <Image
+      source={{ uri }}
+      style={[styles.playerAvatar, { width: dim, height: dim, borderRadius: dim / 2 }]}
+      resizeMode="cover"
+      onError={() => setFailed(true)}
+    />
+  );
+}
+
 const getPositionGroup = (pos: string): string => {
   if (pos === 'G') return 'Goalkeeper';
   if (pos === 'D') return 'Defenders';
@@ -379,7 +433,9 @@ const LineupListView = ({ homeLineup, awayLineup, homeTeam, awayTeam, homeTeamLo
 
   const groupedPlayers = React.useMemo(() => {
     if (!currentLineup?.startXI) return [];
-    const groups: { [key: string]: { player: { id: number; name: string; number: number; pos: string } }[] } = {};
+    const groups: {
+      [key: string]: { player: { id: number; name: string; number: number; pos: string; photo?: string | null } }[];
+    } = {};
     currentLineup.startXI.forEach(item => {
       const group = getPositionGroup(item.player.pos);
       if (!groups[group]) groups[group] = [];
@@ -467,6 +523,7 @@ const LineupListView = ({ homeLineup, awayLineup, homeTeam, awayTeam, homeTeamLo
             <View style={styles.playersList}>
               {players.map((item, idx) => (
                 <View key={idx} style={styles.playerRow}>
+                  <LineupPlayerAvatar player={item.player} accentColor={accentColor} />
                   <View style={[styles.playerNum, { backgroundColor: accentColor }]}>
                     <Text style={styles.playerNumText}>{item.player.number}</Text>
                   </View>
@@ -939,6 +996,7 @@ export default function MatchDetailsModal({
               </View>
               {homeLineup?.substitutes?.slice(0, 7).map((item: any, idx: number) => (
                 <View key={idx} style={styles.subRow}>
+                  <LineupPlayerAvatar size="sm" player={item.player} accentColor={HOME_COLOR} />
                   <View style={[styles.subNum, { backgroundColor: HOME_COLOR }]}>
                     <Text style={styles.subNumText}>{item.player?.number}</Text>
                   </View>
@@ -955,7 +1013,8 @@ export default function MatchDetailsModal({
                 ) : null}
               </View>
               {awayLineup?.substitutes?.slice(0, 7).map((item: any, idx: number) => (
-                <View key={idx} style={[styles.subRow, { flexDirection: 'row-reverse' }]}>
+                <View key={idx} style={styles.subRow}>
+                  <LineupPlayerAvatar size="sm" player={item.player} accentColor={AWAY_COLOR} />
                   <View style={[styles.subNum, { backgroundColor: AWAY_COLOR }]}>
                     <Text style={styles.subNumText}>{item.player?.number}</Text>
                   </View>
@@ -2295,6 +2354,17 @@ function createMatchModalStyles(t: MatchModalTokens) {
     gap: 10,
     borderWidth: 1,
     borderColor: t.borderSubtle,
+  },
+  playerAvatar: {
+    borderWidth: 1,
+    overflow: 'hidden' as const,
+    justifyContent: 'center',
+    alignItems: 'center',
+    backgroundColor: t.surfaceElevated,
+    borderColor: t.borderSubtle,
+  },
+  playerAvatarInitial: {
+    fontWeight: '800' as const,
   },
   playerNum: {
     width: 30,

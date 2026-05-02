@@ -975,7 +975,7 @@ export default function ProfileScreen() {
                   <View style={styles.settingsItemContent}>
                     <Text style={[styles.settingsItemTitle, { color: colors.text }]}>Security</Text>
                     <Text style={[styles.settingsItemSubtitle, { color: mfa.isEnabled ? colors.success : colors.textTertiary }]}>
-                      {mfa.isEnabled ? 'Two-factor authentication enabled' : 'Two-factor authentication disabled'}
+                      {mfa.isEnabled ? '2FA enabled. Data is isolated per account on this device.' : '2FA disabled. Data remains isolated per account on this device.'}
                     </Text>
                   </View>
                   {expandedSection === 'security' ? (
@@ -1163,7 +1163,7 @@ export default function ProfileScreen() {
               <View style={styles.settingsItemContent}>
                 <Text style={[styles.settingsItemTitle, { color: colors.text }]}>Privacy Policy</Text>
                 <Text style={[styles.settingsItemSubtitle, { color: colors.textTertiary }]}>
-                  How we handle your data
+                  How we handle your data and account-level isolation
                 </Text>
               </View>
               <ChevronRight size={20} color={colors.textTertiary} />

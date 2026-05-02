@@ -132,6 +132,10 @@ export const [EventKitProvider, useEventKit] = createContextHook(() => {
         if (validIds.length !== selectedIds.length) {
           await AsyncStorage.setItem(SELECTED_CALENDARS_KEY, JSON.stringify(validIds));
         }
+      } else {
+        // Important on account switch: clear selection when this user has no saved choice.
+        setSelectedCalendarIds([]);
+        console.log('No stored EventKit calendar selection for current user, reset selection');
       }
       
     } catch (error) {

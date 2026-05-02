@@ -13,27 +13,43 @@ export interface LikedItem {
 }
 
 const STORAGE_KEY = 'liked_content';
+const LEGACY_STORAGE_KEY = STORAGE_KEY;
+let activeUserId: string = 'guest';
+const likesCache = new Map<string, LikedItem[]>();
 
-let cachedLikes: LikedItem[] | null = null;
+function scopedStorageKey() {
+  return `${STORAGE_KEY}_${activeUserId}`;
+}
 
 async function loadLikes(): Promise<LikedItem[]> {
-  if (cachedLikes !== null) return cachedLikes;
+  const cacheKey = scopedStorageKey();
+  const cachedLikes = likesCache.get(cacheKey);
+  if (cachedLikes !== undefined) return cachedLikes;
   try {
-    const stored = await unifiedStorage.getItem(STORAGE_KEY);
-    cachedLikes = stored ? JSON.parse(stored) : [];
-    console.log('❤️ Loaded', cachedLikes!.length, 'liked items from storage');
-    return cachedLikes!;
+    let stored = await unifiedStorage.getItem(cacheKey);
+    if (!stored) {
+      const legacy = await unifiedStorage.getItem(LEGACY_STORAGE_KEY);
+      if (legacy) {
+        stored = legacy;
+        await unifiedStorage.setItem(cacheKey, legacy);
+      }
+    }
+    const parsed: LikedItem[] = stored ? JSON.parse(stored) : [];
+    likesCache.set(cacheKey, parsed);
+    console.log('❤️ Loaded', parsed.length, 'liked items from storage');
+    return parsed;
   } catch (error) {
     console.error('Failed to load liked content:', error);
-    cachedLikes = [];
+    likesCache.set(cacheKey, []);
     return [];
   }
 }
 
 async function saveLikes(likes: LikedItem[]): Promise<void> {
-  cachedLikes = likes;
+  const cacheKey = scopedStorageKey();
+  likesCache.set(cacheKey, likes);
   try {
-    await unifiedStorage.setItem(STORAGE_KEY, JSON.stringify(likes));
+    await unifiedStorage.setItem(cacheKey, JSON.stringify(likes));
     console.log('❤️ Saved', likes.length, 'liked items to storage');
   } catch (error) {
     console.error('Failed to save liked content:', error);
@@ -41,6 +57,10 @@ async function saveLikes(likes: LikedItem[]): Promise<void> {
 }
 
 export const likedContentService = {
+  setActiveUser(userId?: string) {
+    activeUserId = userId || 'guest';
+  },
+
   async getLikedItems(): Promise<LikedItem[]> {
     return loadLikes();
   },
@@ -112,7 +132,11 @@ export const likedContentService = {
     return 'both';
   },
 
-  clearCache() {
-    cachedLikes = null;
+  clearCache(userId?: string) {
+    if (userId) {
+      likesCache.delete(`${STORAGE_KEY}_${userId}`);
+      return;
+    }
+    likesCache.clear();
   },
 };

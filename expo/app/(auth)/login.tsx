@@ -150,7 +150,7 @@ export default function LoginScreen() {
             Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
           }
           setTimeout(() => {
-            router.replace('/(tabs)/activities' as any);
+            router.replace('/' as any);
           }, 1200);
         } else if (loginResult.error && loginResult.error !== 'Cancelled') {
           Alert.alert('Sign In Failed', loginResult.error);
@@ -234,7 +234,7 @@ export default function LoginScreen() {
           }
 
           setTimeout(() => {
-            router.replace('/(tabs)/activities' as any);
+            router.replace('/' as any);
           }, 1200);
         } else {
           Alert.alert('Sign In Failed', loginResult.error || 'Please try again.');
@@ -281,7 +281,7 @@ export default function LoginScreen() {
         }
         
         setTimeout(() => {
-          router.replace('/(tabs)/activities' as any);
+          router.replace('/' as any);
         }, 1200);
       } else if (result.error !== 'Authentication cancelled' && result.error !== 'User chose password fallback') {
         Alert.alert('Authentication Failed', result.error || 'Please try again');
@@ -337,7 +337,7 @@ export default function LoginScreen() {
         }
         
         setTimeout(() => {
-          router.replace('/(tabs)/activities' as any);
+          router.replace('/' as any);
         }, 1200);
       } else {
         const errorMessage = result.error || 'Please try again';
@@ -803,7 +803,7 @@ export default function LoginScreen() {
                         }
                         
                         setTimeout(() => {
-                          router.replace('/(tabs)/activities' as any);
+                          router.replace('/' as any);
                         }, 1200);
                       } else {
                         Alert.alert('Login Failed', result.error || 'Please try again');

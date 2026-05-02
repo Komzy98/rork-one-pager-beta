@@ -5,14 +5,18 @@ import createContextHook from '@nkzw/create-context-hook';
 import * as WebBrowser from 'expo-web-browser';
 import { AuthUser, LoginCredentials, SignupCredentials } from '@/types/habit';
 import { SupabaseUserSync } from '@/utils/supabaseUserSync';
-import { setSyncUserId } from '@/utils/supabaseSync';
+import { clearSyncUserId, setSyncUserId } from '@/utils/supabaseSync';
 import { supabase, supabaseConfigured, supabaseUrl } from '@/utils/supabaseClient';
 import * as AuthSession from 'expo-auth-session';
 import * as Linking from 'expo-linking';
 import * as Crypto from 'expo-crypto';
+import Constants from 'expo-constants';
 
 import { migrateLocalDataToSupabaseUser } from '@/utils/localToSupabaseMigration';
 import { resetYounifySession, setYounifyExternalUserId } from '@/services/younify';
+import { likedContentService } from '@/utils/likedContentService';
+import { episodeNotificationService } from '@/utils/episodeNotificationService';
+import notificationService from '@/utils/notificationService';
 
 if (Platform.OS !== 'web') {
   WebBrowser.maybeCompleteAuthSession();
@@ -119,6 +123,57 @@ const createDemoUserIfNeeded = async () => {
 };
 
 export const [AuthProvider, useAuth] = createContextHook(() => {
+  const resolveApiBaseUrl = useCallback((): string => {
+    const envBase = (process.env.EXPO_PUBLIC_RORK_API_BASE_URL || '').trim();
+    if (envBase.length > 0) {
+      return envBase
+        .replace(/\/+$/, '')
+        .replace(/\/api\/trpc$/i, '')
+        .replace(/\/trpc$/i, '');
+    }
+    const hostUri = Constants.expoConfig?.hostUri ?? Constants.expoGoConfig?.hostUri;
+    if (hostUri) {
+      const [host] = hostUri.split('/');
+      if (host) return `http://${host.replace(/\/+$/, '')}`;
+    }
+    return '';
+  }, []);
+
+  const deleteSupabaseAuthUser = useCallback(async (userId: string): Promise<{ success: boolean; error?: string }> => {
+    if (!supabaseConfigured) return { success: true };
+    const { data: sessionData, error: sessionError } = await supabase.auth.getSession();
+    const accessToken = sessionData?.session?.access_token;
+    if (sessionError || !accessToken) {
+      return { success: false, error: 'No active Supabase session found for secure account deletion.' };
+    }
+
+    const apiBaseUrl = resolveApiBaseUrl();
+    if (!apiBaseUrl) {
+      return {
+        success: false,
+        error: 'API base URL is not configured. Set EXPO_PUBLIC_RORK_API_BASE_URL to enable server-side account deletion.',
+      };
+    }
+
+    try {
+      const response = await fetch(`${apiBaseUrl}/auth/delete-account`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${accessToken}`,
+        },
+        body: JSON.stringify({ userId }),
+      });
+      const payload = await response.json().catch(() => ({}));
+      if (!response.ok || payload?.success !== true) {
+        return { success: false, error: payload?.error || 'Server-side account deletion failed.' };
+      }
+      return { success: true };
+    } catch (error: any) {
+      return { success: false, error: error?.message || 'Failed to reach secure deletion endpoint.' };
+    }
+  }, [resolveApiBaseUrl]);
+
   const [user, setUser] = useState<AuthUser | null>(null);
   const [isLoading, setIsLoading] = useState<boolean>(true);
   const [isInitialized, setIsInitialized] = useState<boolean>(false);
@@ -164,6 +219,13 @@ export const [AuthProvider, useAuth] = createContextHook(() => {
     };
     void checkBiometricAvailability();
   }, []);
+
+  useEffect(() => {
+    const activeUserId = user?.id;
+    likedContentService.setActiveUser(activeUserId);
+    episodeNotificationService.setActiveUser(activeUserId);
+    notificationService.setActiveUser(activeUserId);
+  }, [user?.id]);
 
   /** Isolate Younify `external_id` per app user and clear SDK state on sign-out (prevents linked streaming bleeding across accounts). */
   useEffect(() => {
@@ -460,9 +522,11 @@ export const [AuthProvider, useAuth] = createContextHook(() => {
         if (error || !data.user) {
           const msg = error?.message || 'Invalid email or password';
           console.warn('Supabase login failed:', msg);
+          const networkFriendly =
+            error != null ? friendlyMessageForAuthNetworkError(error) : friendlyMessageForAuthNetworkError(new Error(msg));
           const friendly = /invalid login credentials/i.test(msg)
             ? 'Invalid email or password'
-            : msg;
+            : networkFriendly || msg;
           return { success: false, error: friendly };
         }
         const meta = data.user.user_metadata || {};
@@ -649,11 +713,18 @@ export const [AuthProvider, useAuth] = createContextHook(() => {
 
   const logout = useCallback(async () => {
     try {
+      const currentUserId = user?.id;
+      const scopedCalendarKeys = [
+        `imported_calendars_${currentUserId || 'guest'}`,
+        `selected_eventkit_calendars_${currentUserId || 'guest'}`,
+        `eventkit_permissions_granted_${currentUserId || 'guest'}`,
+      ];
       if (supabaseSync) {
         supabaseSync.cleanup();
         setSupabaseSync(null);
       }
       setAutoSyncEnabled(false);
+      await clearSyncUserId();
       if (supabaseConfigured) {
         try {
           await supabase.auth.signOut();
@@ -662,12 +733,15 @@ export const [AuthProvider, useAuth] = createContextHook(() => {
         }
       }
       try {
-        await AsyncStorage.removeItem(AUTH_STORAGE_KEY);
-        await AsyncStorage.removeItem('biometric_enabled');
-        await AsyncStorage.removeItem('biometric_credentials');
-        await AsyncStorage.removeItem('imported_calendars');
-        await AsyncStorage.removeItem('selected_eventkit_calendars');
-        await AsyncStorage.removeItem('eventkit_permissions_granted');
+        await AsyncStorage.multiRemove([
+          AUTH_STORAGE_KEY,
+          'biometric_enabled',
+          'biometric_credentials',
+          'imported_calendars',
+          'selected_eventkit_calendars',
+          'eventkit_permissions_granted',
+          ...scopedCalendarKeys,
+        ]);
       } catch (error) {
         console.log('⚠️ Failed to clear cached auth data:', error);
       }
@@ -678,7 +752,7 @@ export const [AuthProvider, useAuth] = createContextHook(() => {
     } catch (error) {
       console.error('💥 Logout error:', error);
     }
-  }, [supabaseSync]);
+  }, [supabaseSync, user?.id]);
 
   const continueAsGuest = useCallback(async (): Promise<{ success: boolean; error?: string }> => {
     try {
@@ -757,19 +831,47 @@ export const [AuthProvider, useAuth] = createContextHook(() => {
   const deleteAccount = useCallback(async (): Promise<{ success: boolean; error?: string }> => {
     if (!user) return { success: false, error: 'No user logged in' };
     try {
+      const currentUserId = user.id;
+      if (supabaseConfigured) {
+        const serverDelete = await deleteSupabaseAuthUser(currentUserId);
+        if (!serverDelete.success) {
+          return { success: false, error: serverDelete.error || 'Secure account deletion failed.' };
+        }
+      }
+      await clearSyncUserId();
+      if (supabaseSync) {
+        supabaseSync.cleanup();
+        setSupabaseSync(null);
+      }
+      setAutoSyncEnabled(false);
+      if (supabaseConfigured) {
+        try {
+          await supabase.auth.signOut();
+        } catch (e) {
+          console.log('Supabase signOut failed during account deletion:', e);
+        }
+      }
       const users = await getUsersDb();
       await saveUsersDb(users.filter(u => u.id !== user.id));
-      await AsyncStorage.removeItem(AUTH_STORAGE_KEY);
-      await AsyncStorage.removeItem('biometric_enabled');
-      await AsyncStorage.removeItem('biometric_credentials');
-      await AsyncStorage.removeItem('@user_profile');
+      await AsyncStorage.multiRemove([
+        AUTH_STORAGE_KEY,
+        'biometric_enabled',
+        'biometric_credentials',
+        '@user_profile',
+        `@user_profile_${currentUserId}`,
+        `imported_calendars_${currentUserId}`,
+        `selected_eventkit_calendars_${currentUserId}`,
+        `eventkit_permissions_granted_${currentUserId}`,
+      ]);
       setUser(null);
+      setSupabaseUser(null);
+      setIsGuest(false);
       return { success: true };
     } catch (error) {
       console.error('Delete account error:', error);
       return { success: false, error: 'Failed to delete account' };
     }
-  }, [user]);
+  }, [user, supabaseConfigured, supabaseSync, deleteSupabaseAuthUser]);
 
   const createDemoUser = useCallback(async (): Promise<{ success: boolean; error?: string }> => {
     try {

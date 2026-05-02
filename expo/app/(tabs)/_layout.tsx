@@ -133,11 +133,6 @@ const AnimatedTabItem = React.memo(({
       >
       <Animated.View style={[
         styles.tabItemContainer,
-        isFocused && styles.tabItemContainerFocused,
-        isFocused && {
-          backgroundColor: 'rgba(255, 255, 255, 0.18)',
-          borderColor: 'rgba(255, 255, 255, 0.3)',
-        },
         { transform: [{ scale: scaleAnim }] },
       ]}>
         <Animated.View style={[{ transform: [{ scale: iconScale }] }]}>
@@ -210,9 +205,9 @@ function CustomTabBar({ state, descriptors, navigation }: BottomTabBarProps) {
       shadowColor: colors.shadow,
       opacity: containerOpacity,
     }]}>
-      <BlurView intensity={isShowsTabActive ? 100 : 85} tint={isDark ? 'dark' : 'light'} style={[styles.blurContainer, {
-        backgroundColor: isShowsTabActive ? 'rgba(10, 10, 18, 0.78)' : (isDark ? 'rgba(12, 12, 20, 0.62)' : 'rgba(255, 255, 255, 0.68)'),
-        borderColor: isDark ? 'rgba(255,255,255,0.14)' : 'rgba(255,255,255,0.6)',
+      <BlurView intensity={isShowsTabActive ? 88 : 72} tint={isDark ? 'dark' : 'light'} style={[styles.blurContainer, {
+        backgroundColor: isShowsTabActive ? 'rgba(10, 10, 18, 0.72)' : (isDark ? 'rgba(12, 12, 20, 0.56)' : 'rgba(255, 255, 255, 0.64)'),
+        borderColor: isDark ? 'rgba(255,255,255,0.08)' : 'rgba(255,255,255,0.42)',
       }]}>
         <View style={styles.tabBarInner}>
           {visibleRoutes.map((route) => {
@@ -308,18 +303,18 @@ const styles = StyleSheet.create({
     bottom: 30,
     left: 20,
     right: 20,
-    height: 72,
-    borderRadius: 36,
+    height: 62,
+    borderRadius: 30,
     overflow: 'visible',
     ...Platform.select({
       ios: {
         shadowColor: '#000',
-        shadowOffset: { width: 0, height: 10 },
-        shadowOpacity: 0.3,
-        shadowRadius: 20,
+        shadowOffset: { width: 0, height: 8 },
+        shadowOpacity: 0.18,
+        shadowRadius: 14,
       },
       android: {
-        elevation: 10,
+        elevation: 6,
       },
     }),
   },
@@ -330,9 +325,9 @@ const styles = StyleSheet.create({
   },
   blurContainer: {
     flex: 1,
-    borderRadius: 36,
+    borderRadius: 30,
     overflow: 'hidden',
-    borderWidth: 1,
+    borderWidth: 0.5,
   },
   tabBarInner: {
     flex: 1,
@@ -352,13 +347,10 @@ const styles = StyleSheet.create({
   tabItemContainer: {
     alignItems: 'center',
     justifyContent: 'center',
-    paddingVertical: 10,
+    paddingVertical: 8,
     paddingHorizontal: 12,
     borderRadius: 24,
     minWidth: 68,
-  },
-  tabItemContainerFocused: {
-    borderWidth: 1,
   },
   tabLabel: {
     fontSize: 9,

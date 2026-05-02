@@ -11,6 +11,7 @@ import { useTheme } from '@/hooks/useTheme';
 import { useApp } from '@/hooks/useHabitsStore';
 import { useTasks } from '@/hooks/useTasksStore';
 import { useUserProfile } from '@/hooks/useUserProfile';
+import { useAuth } from '@/hooks/useAuth';
 import { router, Stack } from 'expo-router';
 import { useFocusEffect } from '@react-navigation/native';
 import SwipeableTabContainer from '@/components/SwipeableTabContainer';
@@ -131,6 +132,7 @@ function buildSpeechSummaryText(summary: string): string {
 }
 
 export default function ActivitiesScreen() {
+  const { user } = useAuth();
   const { colors, isDark } = useTheme();
   const appContext = useApp();
   const tasksContext = useTasks();
@@ -167,31 +169,42 @@ export default function ActivitiesScreen() {
   const [showInfoModal, setShowInfoModal] = useState<{ visible: boolean; tmdbId: number | null; mediaType: 'movie' | 'tv'; title: string; platform: string }>({ visible: false, tmdbId: null, mediaType: 'tv', title: '', platform: '' });
   const [sportsSelectedLeagues, setSportsSelectedLeagues] = useState<number[]>([]);
   const [dismissedEpisodes, setDismissedEpisodes] = useState<string[]>([]);
+  const scopedStorageKey = useCallback((base: string) => `${base}_${user?.id || 'guest'}`, [user?.id]);
 
   useEffect(() => {
-    AsyncStorage.getItem('dismissed_new_episodes').then((raw) => {
-      if (raw) {
+    AsyncStorage.getItem(scopedStorageKey('dismissed_new_episodes')).then(async (raw) => {
+      let stored = raw;
+      if (!stored) {
+        const legacy = await AsyncStorage.getItem('dismissed_new_episodes');
+        if (legacy) {
+          stored = legacy;
+          await AsyncStorage.setItem(scopedStorageKey('dismissed_new_episodes'), legacy);
+        }
+      }
+      if (stored) {
         try {
-          const parsed = JSON.parse(raw) as string[];
+          const parsed = JSON.parse(stored) as string[];
           if (Array.isArray(parsed)) setDismissedEpisodes(parsed);
         } catch (e) {
           console.log('Failed to parse dismissed episodes', e);
         }
+      } else {
+        setDismissedEpisodes([]);
       }
     });
-  }, []);
+  }, [scopedStorageKey]);
 
   const dismissEpisode = useCallback((key: string) => {
     console.log('🗑️ [Activities] Dismissing episode', key);
     setDismissedEpisodes((prev) => {
       const next = prev.includes(key) ? prev : [...prev, key];
-      AsyncStorage.setItem('dismissed_new_episodes', JSON.stringify(next)).catch((e) => console.log('Failed to save dismissed', e));
+      AsyncStorage.setItem(scopedStorageKey('dismissed_new_episodes'), JSON.stringify(next)).catch((e) => console.log('Failed to save dismissed', e));
       return next;
     });
     if (Platform.OS !== 'web') {
       Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light).catch(() => {});
     }
-  }, []);
+  }, [scopedStorageKey]);
 
   const confirmDismissEpisode = useCallback((key: string, title: string) => {
     if (Platform.OS !== 'web') {
@@ -244,6 +257,7 @@ export default function ActivitiesScreen() {
   const rainDrops = useRef(Array.from({ length: 15 }, () => new Animated.Value(0))).current;
   const snowFlakes = useRef(Array.from({ length: 20 }, () => new Animated.Value(0))).current;
   const lightning = useRef(new Animated.Value(0)).current;
+  const hubsPulse = useRef(new Animated.Value(0)).current;
 
   useEffect(() => {
     Animated.parallel([
@@ -260,6 +274,25 @@ export default function ActivitiesScreen() {
       }),
     ]).start();
   }, [fadeAnim, slideAnim]);
+
+  useEffect(() => {
+    const pulseLoop = Animated.loop(
+      Animated.sequence([
+        Animated.timing(hubsPulse, {
+          toValue: 1,
+          duration: 900,
+          useNativeDriver: true,
+        }),
+        Animated.timing(hubsPulse, {
+          toValue: 0,
+          duration: 900,
+          useNativeDriver: true,
+        }),
+      ]),
+    );
+    pulseLoop.start();
+    return () => pulseLoop.stop();
+  }, [hubsPulse]);
 
   useEffect(() => {
     void setAudioModeAsync({
@@ -439,10 +472,18 @@ export default function ActivitiesScreen() {
 
   // Load the same league selections as the Sports tab so queries share cache
   useEffect(() => {
-    AsyncStorage.getItem('sports_selected_leagues').then(saved => {
-      if (saved) {
+    AsyncStorage.getItem(scopedStorageKey('sports_selected_leagues')).then(async saved => {
+      let stored = saved;
+      if (!stored) {
+        const legacy = await AsyncStorage.getItem('sports_selected_leagues');
+        if (legacy) {
+          stored = legacy;
+          await AsyncStorage.setItem(scopedStorageKey('sports_selected_leagues'), legacy);
+        }
+      }
+      if (stored) {
         try {
-          const parsed = JSON.parse(saved);
+          const parsed = JSON.parse(stored);
           if (Array.isArray(parsed)) {
             setSportsSelectedLeagues(parsed);
             if (__DEV__) console.log('📋 [Activities] Loaded sports league IDs:', parsed);
@@ -450,9 +491,11 @@ export default function ActivitiesScreen() {
         } catch (e) {
           console.log('⚠️ [Activities] Failed to parse sports leagues:', e);
         }
+      } else {
+        setSportsSelectedLeagues([]);
       }
     }).catch(e => console.log('⚠️ [Activities] Failed to load sports leagues:', e));
-  }, []);
+  }, [scopedStorageKey]);
 
   const queryLeagueIds = useMemo(() => {
     if (sportsSelectedLeagues.length === 0) return undefined;
@@ -951,6 +994,34 @@ export default function ActivitiesScreen() {
   }, [newEpisodesForMyShows.data, dismissedEpisodes]);
 
   const upcomingEventsPreview = useMemo(() => getUpcomingCalendarEvents(90).slice(0, 4), [getUpcomingCalendarEvents, calendars.length, eventKit.hasPermission]);
+
+  const hubShowPosterPreviews = useMemo(
+    () => showsWithThumbnails.filter((show) => !!show.posterUrl).slice(0, 3),
+    [showsWithThumbnails],
+  );
+
+  const hubSportsCrestPreviews = useMemo(() => {
+    const logoEntries: { key: string; uri: string }[] = [];
+    for (const match of upcomingMatches.slice(0, 3)) {
+      if (match.homeTeamLogo) {
+        logoEntries.push({ key: `${match.id}-home`, uri: match.homeTeamLogo });
+      }
+      if (match.awayTeamLogo) {
+        logoEntries.push({ key: `${match.id}-away`, uri: match.awayTeamLogo });
+      }
+      if (logoEntries.length >= 4) break;
+    }
+    return logoEntries.slice(0, 4);
+  }, [upcomingMatches]);
+
+  const hubsPulseScale = hubsPulse.interpolate({
+    inputRange: [0, 1],
+    outputRange: [0.85, 1.85],
+  });
+  const hubsPulseOpacity = hubsPulse.interpolate({
+    inputRange: [0, 1],
+    outputRange: [0.4, 0.04],
+  });
 
   const handleStartWatching = useCallback(async (show: Show) => {
     if (Platform.OS !== 'web') {
@@ -2007,54 +2078,264 @@ export default function ActivitiesScreen() {
 
 
 
-            {/* Quick Actions Grid - 2x2 Colored Cards */}
-            <View style={styles.quickActionsSection}>
-              <View style={styles.quickActionsGrid}>
-                <TouchableOpacity 
-                  style={[styles.coloredActionCard, { backgroundColor: '#10B981' }]} 
-                  onPress={() => router.push('/tasks' as any)}
+            {/* Your Hubs - Premium Live Modules */}
+            <View style={styles.hubsSection}>
+              <View style={styles.hubsHeaderRow}>
+                <View>
+                  <Text style={[styles.hubsTitle, { color: colors.text }]}>Your Hubs</Text>
+                  <Text style={[styles.hubsSubtitle, { color: colors.textSecondary }]}>
+                    Everything you need, right at your fingertips.
+                  </Text>
+                </View>
+                <TouchableOpacity
+                  style={styles.hubsCustomizeButton}
                   activeOpacity={0.85}
+                  onPress={() => router.push('/profile' as any)}
                 >
-                  <View style={styles.coloredCardHeader}>
-                    <Target size={24} color="#fff" />
-                    <View style={styles.coloredCardBadge}>
-                      <Text style={styles.coloredCardBadgeText}>{stats.completedHabits}/{stats.totalHabits}</Text>
+                  <Text style={styles.hubsCustomizeText}>Customize</Text>
+                </TouchableOpacity>
+              </View>
+
+              <View style={styles.hubsGrid}>
+                <TouchableOpacity style={styles.hubCardTouchable} onPress={() => router.push('/tasks' as any)} activeOpacity={0.9}>
+                  <LinearGradient
+                    colors={isDark ? ['#122A2A', '#11243C'] : ['#173C36', '#1A2D4A']}
+                    start={{ x: 0, y: 0 }}
+                    end={{ x: 1, y: 1 }}
+                    style={styles.hubCard}
+                  >
+                    <LinearGradient
+                      colors={['rgba(255,255,255,0.16)', 'rgba(255,255,255,0.02)', 'transparent']}
+                      start={{ x: 0, y: 0 }}
+                      end={{ x: 1, y: 1 }}
+                      style={styles.hubCardSheen}
+                      pointerEvents="none"
+                    />
+                    <View style={styles.hubCardTopRow}>
+                      <View style={styles.hubIconWrap}>
+                        <Target size={18} color="#ECFFFA" />
+                      </View>
+                      <View style={styles.hubTopRight}>
+                        <View style={styles.hubLiveDot}>
+                          <Animated.View
+                            style={[
+                              styles.hubLivePulse,
+                              {
+                                backgroundColor: 'rgba(52, 211, 153, 0.95)',
+                                transform: [{ scale: hubsPulseScale }],
+                                opacity: hubsPulseOpacity,
+                              },
+                            ]}
+                          />
+                          <View style={[styles.hubLiveCore, { backgroundColor: '#34D399' }]} />
+                        </View>
+                        <View style={styles.hubBadge}>
+                          <Text style={styles.hubBadgeText}>{stats.completedHabits}/{stats.totalHabits}</Text>
+                        </View>
+                      </View>
                     </View>
-                  </View>
-                  <Text style={styles.coloredCardTitle}>Tasks</Text>
-                  <Text style={styles.coloredCardSubtitle}>Manage your goals</Text>
+                    <Text style={styles.hubTitle}>Tasks</Text>
+                    <Text style={styles.hubMetric}>{stats.completedHabits}/{stats.totalHabits} completed today</Text>
+                    <View style={styles.hubFooterRow}>
+                      <View style={styles.hubFooterLeft}>
+                        <CheckCircle2 size={12} color="rgba(233,242,255,0.84)" />
+                        <Text style={styles.hubFooterText}>
+                          {stats.completedHabits >= Math.max(1, stats.totalHabits) ? 'All clear today' : 'Keep the streak alive'}
+                        </Text>
+                      </View>
+                      <ChevronRight size={14} color="rgba(233,242,255,0.8)" />
+                    </View>
+                  </LinearGradient>
                 </TouchableOpacity>
 
                 {hasShowsInterest && (
-                  <TouchableOpacity 
-                    style={[styles.coloredActionCard, { backgroundColor: '#EC4899' }]} 
-                    onPress={() => router.push('/shows' as any)}
-                    activeOpacity={0.85}
-                  >
-                    <View style={styles.coloredCardHeader}>
-                      <Tv size={24} color="#fff" />
-                      <View style={styles.coloredCardBadge}>
-                        <Text style={styles.coloredCardBadgeText}>{currentWatchingShows.length}</Text>
+                  <TouchableOpacity style={styles.hubCardTouchable} onPress={() => router.push('/shows' as any)} activeOpacity={0.9}>
+                    <LinearGradient
+                      colors={isDark ? ['#2B2242', '#1A2138'] : ['#3D2A58', '#252F50']}
+                      start={{ x: 0, y: 0 }}
+                      end={{ x: 1, y: 1 }}
+                      style={styles.hubCard}
+                    >
+                      <LinearGradient
+                        colors={['rgba(255,255,255,0.16)', 'rgba(255,255,255,0.02)', 'transparent']}
+                        start={{ x: 0, y: 0 }}
+                        end={{ x: 1, y: 1 }}
+                        style={styles.hubCardSheen}
+                        pointerEvents="none"
+                      />
+                      <View style={styles.hubCardTopRow}>
+                        <View style={[styles.hubIconWrap, styles.hubIconShows]}>
+                          <Tv size={18} color="#F2EFFF" />
+                        </View>
+                        <View style={styles.hubTopRight}>
+                          <View style={styles.hubLiveDot}>
+                            <Animated.View
+                              style={[
+                                styles.hubLivePulse,
+                                {
+                                  backgroundColor: 'rgba(216, 180, 254, 0.95)',
+                                  transform: [{ scale: hubsPulseScale }],
+                                  opacity: hubsPulseOpacity,
+                                },
+                              ]}
+                            />
+                            <View style={[styles.hubLiveCore, { backgroundColor: '#D8B4FE' }]} />
+                          </View>
+                          <View style={styles.hubBadge}>
+                            <Text style={styles.hubBadgeText}>{currentWatchingShows.length}</Text>
+                          </View>
+                        </View>
                       </View>
-                    </View>
-                    <Text style={styles.coloredCardTitle}>Shows</Text>
-                    <Text style={styles.coloredCardSubtitle}>Continue watching</Text>
+                      <Text style={styles.hubTitle}>Shows</Text>
+                      <Text style={styles.hubMetric}>{currentWatchingShows.length} episodes waiting</Text>
+                      <View style={styles.hubPosterRow}>
+                        {hubShowPosterPreviews.length > 0 ? (
+                          hubShowPosterPreviews.map((show) => (
+                            <Image key={show.id} source={{ uri: show.posterUrl! }} style={styles.hubPosterThumb} />
+                          ))
+                        ) : (
+                          <>
+                            <View style={styles.hubPosterPlaceholder} />
+                            <View style={styles.hubPosterPlaceholder} />
+                            <View style={styles.hubPosterPlaceholder} />
+                          </>
+                        )}
+                      </View>
+                      <View style={styles.hubFooterRow}>
+                        <View style={styles.hubFooterLeft}>
+                          <Play size={12} color="rgba(233,242,255,0.84)" />
+                          <Text style={styles.hubFooterText} numberOfLines={1}>
+                            Continue: {showsWithThumbnails[0]?.title ?? currentWatchingShows[0]?.title ?? 'Pick tonight'}
+                          </Text>
+                        </View>
+                        <ChevronRight size={14} color="rgba(233,242,255,0.8)" />
+                      </View>
+                    </LinearGradient>
                   </TouchableOpacity>
                 )}
 
                 {hasSportsInterest && (
-                  <TouchableOpacity 
-                    style={[styles.coloredActionCard, { backgroundColor: '#3B82F6' }]} 
-                    onPress={() => router.push('/sports' as any)}
-                    activeOpacity={0.85}
-                  >
-                    <View style={styles.coloredCardHeader}>
-                      <Trophy size={24} color="#fff" />
-                    </View>
-                    <Text style={styles.coloredCardTitle}>Sports</Text>
-                    <Text style={styles.coloredCardSubtitle}>{upcomingMatches.length} upcoming</Text>
+                  <TouchableOpacity style={styles.hubCardTouchable} onPress={() => router.push('/sports' as any)} activeOpacity={0.9}>
+                    <LinearGradient
+                      colors={isDark ? ['#1A3354', '#18263F'] : ['#204A86', '#243D69']}
+                      start={{ x: 0, y: 0 }}
+                      end={{ x: 1, y: 1 }}
+                      style={styles.hubCard}
+                    >
+                      <LinearGradient
+                        colors={['rgba(255,255,255,0.16)', 'rgba(255,255,255,0.02)', 'transparent']}
+                        start={{ x: 0, y: 0 }}
+                        end={{ x: 1, y: 1 }}
+                        style={styles.hubCardSheen}
+                        pointerEvents="none"
+                      />
+                      <View style={styles.hubCardTopRow}>
+                        <View style={[styles.hubIconWrap, styles.hubIconSports]}>
+                          <Trophy size={18} color="#EAF3FF" />
+                        </View>
+                        <View style={styles.hubTopRight}>
+                          <View style={styles.hubLiveDot}>
+                            <Animated.View
+                              style={[
+                                styles.hubLivePulse,
+                                {
+                                  backgroundColor: 'rgba(147, 197, 253, 0.95)',
+                                  transform: [{ scale: hubsPulseScale }],
+                                  opacity: hubsPulseOpacity,
+                                },
+                              ]}
+                            />
+                            <View style={[styles.hubLiveCore, { backgroundColor: '#93C5FD' }]} />
+                          </View>
+                          <View style={styles.hubBadge}>
+                            <Text style={styles.hubBadgeText}>{upcomingMatches.length}</Text>
+                          </View>
+                        </View>
+                      </View>
+                      <Text style={styles.hubTitle}>Sports</Text>
+                      <Text style={styles.hubMetric}>{upcomingMatches.length} tracked fixtures</Text>
+                      <View style={styles.hubCrestRow}>
+                        {hubSportsCrestPreviews.length > 0 ? (
+                          hubSportsCrestPreviews.map((crest) => (
+                            <View key={crest.key} style={styles.hubCrestWrap}>
+                              <Image source={{ uri: crest.uri }} style={styles.hubCrestImage} />
+                            </View>
+                          ))
+                        ) : (
+                          <>
+                            <View style={styles.hubCrestPlaceholder} />
+                            <View style={styles.hubCrestPlaceholder} />
+                            <View style={styles.hubCrestPlaceholder} />
+                          </>
+                        )}
+                      </View>
+                      <View style={styles.hubFooterRow}>
+                        <View style={styles.hubFooterLeft}>
+                          <Calendar size={12} color="rgba(233,242,255,0.84)" />
+                          <Text style={styles.hubFooterText} numberOfLines={1}>
+                            {upcomingMatches[0]
+                              ? `${upcomingMatches[0].homeTeam} vs ${upcomingMatches[0].awayTeam}`
+                              : 'No match in your feed yet'}
+                          </Text>
+                        </View>
+                        <ChevronRight size={14} color="rgba(233,242,255,0.8)" />
+                      </View>
+                    </LinearGradient>
                   </TouchableOpacity>
                 )}
+
+                <TouchableOpacity style={styles.hubCardTouchable} onPress={() => setShowEventKitManager(true)} activeOpacity={0.9}>
+                  <LinearGradient
+                    colors={isDark ? ['#473A2B', '#242B39'] : ['#6F5738', '#35455E']}
+                    start={{ x: 0, y: 0 }}
+                    end={{ x: 1, y: 1 }}
+                    style={styles.hubCard}
+                  >
+                    <LinearGradient
+                      colors={['rgba(255,255,255,0.16)', 'rgba(255,255,255,0.02)', 'transparent']}
+                      start={{ x: 0, y: 0 }}
+                      end={{ x: 1, y: 1 }}
+                      style={styles.hubCardSheen}
+                      pointerEvents="none"
+                    />
+                    <View style={styles.hubCardTopRow}>
+                      <View style={[styles.hubIconWrap, styles.hubIconEvents]}>
+                        <Calendar size={18} color="#FFF6E9" />
+                      </View>
+                      <View style={styles.hubTopRight}>
+                        <View style={styles.hubLiveDot}>
+                          <Animated.View
+                            style={[
+                              styles.hubLivePulse,
+                              {
+                                backgroundColor: 'rgba(253, 186, 116, 0.95)',
+                                transform: [{ scale: hubsPulseScale }],
+                                opacity: hubsPulseOpacity,
+                              },
+                            ]}
+                          />
+                          <View style={[styles.hubLiveCore, { backgroundColor: '#FDBA74' }]} />
+                        </View>
+                        <View style={styles.hubBadge}>
+                          <Text style={styles.hubBadgeText}>{upcomingEventsPreview.length}</Text>
+                        </View>
+                      </View>
+                    </View>
+                    <Text style={styles.hubTitle}>Events</Text>
+                    <Text style={styles.hubMetric}>
+                      {upcomingEventsPreview.length > 0 ? `${upcomingEventsPreview.length} upcoming` : 'No events queued'}
+                    </Text>
+                    <View style={styles.hubFooterRow}>
+                      <View style={styles.hubFooterLeft}>
+                        <Calendar size={12} color="rgba(233,242,255,0.84)" />
+                        <Text style={styles.hubFooterText} numberOfLines={1}>
+                          {upcomingEventsPreview[0]?.title ?? 'Connect calendar'}
+                        </Text>
+                      </View>
+                      <ChevronRight size={14} color="rgba(233,242,255,0.8)" />
+                    </View>
+                  </LinearGradient>
+                </TouchableOpacity>
               </View>
             </View>
 
@@ -2892,66 +3173,228 @@ const styles = StyleSheet.create({
     lineHeight: 18,
   },
   
-  // Quick Actions - 2x2 Grid
-  quickActionsSection: {
-    paddingTop: 20,
+  // Your Hubs - premium live modules
+  hubsSection: {
+    paddingTop: 18,
     paddingHorizontal: 20,
   },
-  quickActionsGrid: {
+  hubsHeaderRow: {
     flexDirection: 'row',
-    flexWrap: 'wrap',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    marginBottom: 14,
     gap: 12,
   },
-  coloredActionCard: {
-    width: '47.5%',
-    borderRadius: 22,
-    padding: 20,
-    minHeight: 140,
+  hubsTitle: {
+    fontSize: 18,
+    fontWeight: '800' as const,
+    letterSpacing: -0.5,
+  },
+  hubsSubtitle: {
+    marginTop: 2,
+    fontSize: 13,
+    fontWeight: '500' as const,
+  },
+  hubsCustomizeButton: {
+    backgroundColor: 'rgba(124, 58, 237, 0.08)',
+    borderRadius: 999,
+    paddingHorizontal: 14,
+    paddingVertical: 8,
+    borderWidth: 1,
+    borderColor: 'rgba(124, 58, 237, 0.12)',
+  },
+  hubsCustomizeText: {
+    fontSize: 14,
+    fontWeight: '700' as const,
+    color: '#5B2FB5',
+  },
+  hubsGrid: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 10,
+  },
+  hubCardTouchable: {
+    width: '48.5%',
+    minHeight: 166,
+  },
+  hubCard: {
+    borderRadius: 20,
+    padding: 14,
+    minHeight: 166,
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.1)',
     justifyContent: 'space-between',
     overflow: 'hidden',
     ...Platform.select({
       ios: {
-        shadowColor: '#000',
-        shadowOffset: { width: 0, height: 10 },
-        shadowOpacity: 0.25,
-        shadowRadius: 20,
+        shadowColor: '#0B1220',
+        shadowOffset: { width: 0, height: 8 },
+        shadowOpacity: 0.14,
+        shadowRadius: 14,
       },
-      android: { elevation: 10 },
+      android: { elevation: 5 },
     }),
   },
-  coloredCardHeader: {
+  hubCardSheen: {
+    position: 'absolute',
+    top: -8,
+    right: -12,
+    width: 120,
+    height: 74,
+    borderRadius: 28,
+    opacity: 0.5,
+    transform: [{ rotate: '-10deg' }],
+  },
+  hubCardTopRow: {
     flexDirection: 'row',
-    justifyContent: 'space-between',
     alignItems: 'center',
-    marginBottom: 20,
+    justifyContent: 'space-between',
   },
-  coloredCardBadge: {
-    backgroundColor: 'rgba(255, 255, 255, 0.22)',
-    paddingHorizontal: 10,
-    paddingVertical: 4,
-    borderRadius: 10,
+  hubTopRight: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 7,
+  },
+  hubLiveDot: {
+    width: 10,
+    height: 10,
+    borderRadius: 999,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  hubLivePulse: {
+    position: 'absolute',
+    width: 10,
+    height: 10,
+    borderRadius: 999,
+  },
+  hubLiveCore: {
+    width: 5,
+    height: 5,
+    borderRadius: 999,
+  },
+  hubIconWrap: {
+    width: 34,
+    height: 34,
+    borderRadius: 17,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: 'rgba(255,255,255,0.16)',
     borderWidth: 1,
-    borderColor: 'rgba(255, 255, 255, 0.15)',
+    borderColor: 'rgba(255,255,255,0.2)',
   },
-  coloredCardBadgeText: {
-    fontSize: 13,
-    fontWeight: '800' as const,
-    color: '#fff',
+  hubIconShows: {
+    backgroundColor: 'rgba(181,131,255,0.22)',
+    borderColor: 'rgba(232,213,255,0.35)',
   },
-  coloredCardTitle: {
-    fontSize: 19,
-    fontWeight: '800' as const,
-    color: '#fff',
-    marginBottom: 4,
-    lineHeight: 23,
-    letterSpacing: -0.4,
+  hubIconSports: {
+    backgroundColor: 'rgba(100,160,255,0.24)',
+    borderColor: 'rgba(201,223,255,0.38)',
   },
-  coloredCardSubtitle: {
+  hubIconEvents: {
+    backgroundColor: 'rgba(255,196,104,0.24)',
+    borderColor: 'rgba(255,227,179,0.36)',
+  },
+  hubBadge: {
+    minWidth: 34,
+    height: 24,
+    borderRadius: 999,
+    paddingHorizontal: 8,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: 'rgba(255,255,255,0.14)',
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.16)',
+  },
+  hubBadgeText: {
     fontSize: 12,
-    color: 'rgba(255, 255, 255, 0.8)',
-    fontWeight: '500' as const,
-    lineHeight: 17,
-    letterSpacing: 0.1,
+    fontWeight: '700' as const,
+    color: '#F8FAFC',
+  },
+  hubTitle: {
+    marginTop: 8,
+    fontSize: 16,
+    fontWeight: '800' as const,
+    color: '#F8FAFC',
+    letterSpacing: -0.35,
+  },
+  hubMetric: {
+    marginTop: 2,
+    fontSize: 13,
+    fontWeight: '600' as const,
+    color: 'rgba(236,243,255,0.92)',
+    lineHeight: 18,
+  },
+  hubPosterRow: {
+    marginTop: 8,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+  },
+  hubPosterThumb: {
+    width: 24,
+    height: 34,
+    borderRadius: 7,
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.22)',
+    backgroundColor: 'rgba(255,255,255,0.12)',
+  },
+  hubPosterPlaceholder: {
+    width: 24,
+    height: 34,
+    borderRadius: 7,
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.16)',
+    backgroundColor: 'rgba(255,255,255,0.08)',
+  },
+  hubCrestRow: {
+    marginTop: 8,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+  },
+  hubCrestWrap: {
+    width: 26,
+    height: 26,
+    borderRadius: 13,
+    backgroundColor: 'rgba(255,255,255,0.14)',
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.2)',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  hubCrestImage: {
+    width: 18,
+    height: 18,
+  },
+  hubCrestPlaceholder: {
+    width: 26,
+    height: 26,
+    borderRadius: 13,
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.15)',
+    backgroundColor: 'rgba(255,255,255,0.08)',
+  },
+  hubFooterRow: {
+    marginTop: 10,
+    paddingTop: 10,
+    borderTopWidth: 1,
+    borderTopColor: 'rgba(255,255,255,0.14)',
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    gap: 8,
+  },
+  hubFooterLeft: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+  },
+  hubFooterText: {
+    fontSize: 12,
+    fontWeight: '600' as const,
+    color: 'rgba(233,242,255,0.88)',
   },
   
   // Progress Cards

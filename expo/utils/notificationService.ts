@@ -29,8 +29,18 @@ export interface ScheduledNotification {
 }
 
 const SCHEDULED_NOTIFICATIONS_KEY = 'scheduled_notifications';
+const LEGACY_SCHEDULED_NOTIFICATIONS_KEY = SCHEDULED_NOTIFICATIONS_KEY;
+let activeUserId: string = 'guest';
+
+function getScheduledNotificationsKey() {
+  return `${SCHEDULED_NOTIFICATIONS_KEY}_${activeUserId}`;
+}
 
 export const notificationService = {
+  setActiveUser(userId?: string) {
+    activeUserId = userId || 'guest';
+  },
+
   async requestPermissions(): Promise<boolean> {
     try {
       if (Platform.OS === 'web') {
@@ -418,7 +428,7 @@ export const notificationService = {
     try {
       if (Platform.OS === 'web') return;
       await Notifications.cancelAllScheduledNotificationsAsync();
-      await unifiedStorage.removeItem(SCHEDULED_NOTIFICATIONS_KEY);
+      await unifiedStorage.removeItem(getScheduledNotificationsKey());
       console.log('🗑️ All notifications cancelled');
     } catch (error) {
       console.error('❌ Error cancelling all notifications:', error);
@@ -427,7 +437,15 @@ export const notificationService = {
 
   async getScheduledNotifications(): Promise<ScheduledNotification[]> {
     try {
-      const stored = await unifiedStorage.getItem(SCHEDULED_NOTIFICATIONS_KEY);
+      const scopedKey = getScheduledNotificationsKey();
+      let stored = await unifiedStorage.getItem(scopedKey);
+      if (!stored) {
+        const legacy = await unifiedStorage.getItem(LEGACY_SCHEDULED_NOTIFICATIONS_KEY);
+        if (legacy) {
+          stored = legacy;
+          await unifiedStorage.setItem(scopedKey, legacy);
+        }
+      }
       return stored ? JSON.parse(stored) : [];
     } catch (error) {
       console.error('❌ Error getting scheduled notifications:', error);
@@ -446,7 +464,7 @@ export const notificationService = {
         scheduled.push(notification);
       }
 
-      await unifiedStorage.setItem(SCHEDULED_NOTIFICATIONS_KEY, JSON.stringify(scheduled));
+      await unifiedStorage.setItem(getScheduledNotificationsKey(), JSON.stringify(scheduled));
     } catch (error) {
       console.error('❌ Error saving scheduled notification:', error);
     }
@@ -456,7 +474,7 @@ export const notificationService = {
     try {
       const scheduled = await this.getScheduledNotifications();
       const filtered = scheduled.filter(n => n.identifier !== identifier);
-      await unifiedStorage.setItem(SCHEDULED_NOTIFICATIONS_KEY, JSON.stringify(filtered));
+      await unifiedStorage.setItem(getScheduledNotificationsKey(), JSON.stringify(filtered));
     } catch (error) {
       console.error('❌ Error removing scheduled notification:', error);
     }

@@ -1,6 +1,7 @@
 import { useState, useEffect, useCallback } from 'react';
 import createContextHook from '@nkzw/create-context-hook';
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import { useAuth } from './useAuth';
 
 const WALKTHROUGH_KEY = '@tab_walkthroughs_seen';
 
@@ -179,16 +180,27 @@ const TAB_WALKTHROUGHS: Record<string, TabWalkthroughData> = {
 };
 
 export const [WalkthroughProvider, useWalkthrough] = createContextHook(() => {
+  const { user } = useAuth();
+  const scopedKey = `${WALKTHROUGH_KEY}_${user?.id || 'guest'}`;
   const [seenTabs, setSeenTabs] = useState<Set<string>>(new Set());
   const [isLoaded, setIsLoaded] = useState<boolean>(false);
 
   useEffect(() => {
     const load = async () => {
       try {
-        const stored = await AsyncStorage.getItem(WALKTHROUGH_KEY);
+        let stored = await AsyncStorage.getItem(scopedKey);
+        if (!stored) {
+          const legacy = await AsyncStorage.getItem(WALKTHROUGH_KEY);
+          if (legacy) {
+            stored = legacy;
+            await AsyncStorage.setItem(scopedKey, legacy);
+          }
+        }
         if (stored) {
           const parsed = JSON.parse(stored) as string[];
           setSeenTabs(new Set(parsed));
+        } else {
+          setSeenTabs(new Set());
         }
       } catch (e) {
         console.log('[Walkthrough] Failed to load seen tabs:', e);
@@ -196,19 +208,19 @@ export const [WalkthroughProvider, useWalkthrough] = createContextHook(() => {
         setIsLoaded(true);
       }
     };
-    load();
-  }, []);
+    void load();
+  }, [scopedKey]);
 
   const markTabSeen = useCallback(async (tabName: string) => {
     setSeenTabs((prev) => {
       const next = new Set(prev);
       next.add(tabName);
-      AsyncStorage.setItem(WALKTHROUGH_KEY, JSON.stringify([...next])).catch((e) =>
+      AsyncStorage.setItem(scopedKey, JSON.stringify([...next])).catch((e) =>
         console.log('[Walkthrough] Failed to save:', e)
       );
       return next;
     });
-  }, []);
+  }, [scopedKey]);
 
   const shouldShowWalkthrough = useCallback(
     (tabName: string): boolean => {
@@ -224,8 +236,8 @@ export const [WalkthroughProvider, useWalkthrough] = createContextHook(() => {
 
   const resetAllWalkthroughs = useCallback(async () => {
     setSeenTabs(new Set());
-    await AsyncStorage.removeItem(WALKTHROUGH_KEY).catch(() => {});
-  }, []);
+    await AsyncStorage.removeItem(scopedKey).catch(() => {});
+  }, [scopedKey]);
 
   return {
     seenTabs,

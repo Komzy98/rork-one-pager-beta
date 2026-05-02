@@ -40,6 +40,7 @@ const CACHE_TTL: Record<string, number> = {
   results: 2 * 60 * 60 * 1000,
   standings: 60 * 60 * 1000,
   matchDetails: 60 * 1000,
+  topPlayers: 45 * 60 * 1000,
 };
 
 let apiCallCount = 0;
@@ -574,6 +575,8 @@ export const getMatchDetailsRoute = publicProcedure
         statistics: [],
         goals: [],
         headToHead: [],
+        homeForm: [],
+        awayForm: [],
         errors: { config: 'API key not configured' },
       };
     }
@@ -671,6 +674,182 @@ export const getMatchDetailsRoute = publicProcedure
         lineups: [],
         statistics: [],
         headToHead: [],
+        homeForm: [],
+        awayForm: [],
+        errors: { network: error.message },
+      };
+    }
+  });
+
+/** Public CDN portrait (same host as team logos). Works when list endpoints omit `player.photo`. */
+function apiSportsPlayerPhotoUrl(playerId: number): string {
+  return `https://media.api-sports.io/football/players/${playerId}.png`;
+}
+
+/** API-Football can expose portraits on `player.photo`, rarely `image`, or omit until `/players?id=` is called. */
+function normalizePlayerPhotoFromTopRow(row: any): string | null {
+  const p = row?.player;
+  const candidates = [p?.photo, p?.image, row?.photo, row?.image];
+  for (const c of candidates) {
+    if (typeof c === 'string') {
+      const t = c.trim();
+      if (t.length > 4 && (t.startsWith('http://') || t.startsWith('https://'))) {
+        return t;
+      }
+    }
+  }
+  return null;
+}
+
+/** Prefer a statistics row that includes `team` (topscorers can return multiple seasons/tournaments). */
+function pickPrimaryStatistic(row: any): any {
+  const list = row?.statistics;
+  if (!Array.isArray(list) || list.length === 0) return undefined;
+  const withTeam = list.find((s: any) => s?.team?.id != null);
+  return withTeam ?? list[0];
+}
+
+function readPlayerId(row: any): number | null {
+  const raw = row?.player?.id;
+  if (raw == null) return null;
+  const n = Number(raw);
+  return Number.isFinite(n) && n > 0 ? n : null;
+}
+
+type TopPlayerBase = {
+  playerId: number | null;
+  playerName: string;
+  photo: string | null;
+  teamId: number | null;
+  teamLogo: string | null;
+  goals?: number;
+  assists?: number;
+};
+
+const topScorerRow = (row: any): TopPlayerBase & { goals: number } => {
+  const stats = pickPrimaryStatistic(row);
+  return {
+    playerId: readPlayerId(row),
+    playerName: String(row?.player?.name || 'Player'),
+    photo: normalizePlayerPhotoFromTopRow(row),
+    teamId: (stats?.team?.id as number | null) ?? null,
+    teamLogo: (stats?.team?.logo as string | null) ?? null,
+    goals: Number(stats?.goals?.total ?? 0) || 0,
+  };
+};
+
+const topAssistRow = (row: any): TopPlayerBase & { assists: number } => {
+  const stats = pickPrimaryStatistic(row);
+  return {
+    playerId: readPlayerId(row),
+    playerName: String(row?.player?.name || 'Player'),
+    photo: normalizePlayerPhotoFromTopRow(row),
+    teamId: (stats?.team?.id as number | null) ?? null,
+    teamLogo: (stats?.team?.logo as string | null) ?? null,
+    assists: Number(stats?.goals?.assists ?? 0) || 0,
+  };
+};
+
+/** Ensure portrait URL when API omitted it (enrich may still replace with signed URLs). */
+function withDefaultPlayerPhoto<T extends TopPlayerBase>(row: T): T {
+  if (row.photo && row.photo.length > 8) return row;
+  if (row.playerId != null && row.playerId > 0) {
+    return { ...row, photo: apiSportsPlayerPhotoUrl(row.playerId) };
+  }
+  return row;
+}
+
+/** Fill missing portraits using GET /players?id= (cached per player). */
+async function enrichMissingPlayerPhotos<T extends TopPlayerBase>(
+  rows: T[],
+  headers: Record<string, string>,
+  ttl: number,
+): Promise<T[]> {
+  const missing = rows.filter((r) => !r.photo && r.playerId != null && r.playerId > 0);
+  if (missing.length === 0) return rows;
+
+  const ids = [...new Set(missing.map((r) => r.playerId!))].slice(0, 16);
+  const photoById = new Map<number, string>();
+
+  await Promise.all(
+    ids.map(async (id) => {
+      const cacheKey = `player:profile:${id}`;
+      const url = `${BASE_URL}/players?id=${id}`;
+      try {
+        const data = await cachedFetch(url, headers, cacheKey, ttl);
+        const p = data.response?.[0]?.player;
+        const u = p?.photo || p?.image;
+        if (typeof u === 'string' && u.trim().length > 4) {
+          photoById.set(id, u.trim());
+        }
+      } catch (e) {
+        console.warn(`⚠️ Player photo enrich failed for id=${id}`, e);
+      }
+    }),
+  );
+
+  return rows.map((r) => {
+    if (r.photo || !r.playerId) return r;
+    const shot = photoById.get(r.playerId);
+    return shot ? { ...r, photo: shot } : r;
+  });
+}
+
+export const getLeagueTopPlayersRoute = publicProcedure
+  .input(
+    z.object({
+      leagueId: z.number().int().positive().max(99999),
+      season: z.number().int().min(1900).max(2100).optional(),
+    }),
+  )
+  .query(async ({ input }) => {
+    const season = input.season ?? getCurrentSeason();
+    const apiKey = getFootballApiKeyFromEnv();
+
+    if (!apiKey) {
+      console.error('❌ No football API key: set FOOTBALL_API_KEY or EXPO_PUBLIC_FOOTBALL_API_KEY for the API server');
+      return {
+        topScorers: [] as ReturnType<typeof topScorerRow>[],
+        topAssists: [] as ReturnType<typeof topAssistRow>[],
+        errors: { config: 'API key not configured' as const },
+      };
+    }
+
+    const headers: Record<string, string> = {
+      'x-apisports-key': apiKey,
+    };
+
+    const ttl = CACHE_TTL.topPlayers;
+    const cacheScorers = `topscorers:${input.leagueId}:${season}`;
+    const cacheAssists = `topassists:${input.leagueId}:${season}`;
+
+    try {
+      const scorersUrl = `${BASE_URL}/players/topscorers?league=${input.leagueId}&season=${season}`;
+      const assistsUrl = `${BASE_URL}/players/topassists?league=${input.leagueId}&season=${season}`;
+
+      const [scorersData, assistsData] = await Promise.all([
+        cachedFetch(scorersUrl, headers, cacheScorers, ttl),
+        cachedFetch(assistsUrl, headers, cacheAssists, ttl),
+      ]);
+
+      let scorers = (scorersData.response || []).slice(0, 12).map(topScorerRow);
+      let assists = (assistsData.response || []).slice(0, 12).map(topAssistRow);
+
+      scorers = await enrichMissingPlayerPhotos(scorers, headers, ttl);
+      assists = await enrichMissingPlayerPhotos(assists, headers, ttl);
+      scorers = scorers.map(withDefaultPlayerPhoto);
+      assists = assists.map(withDefaultPlayerPhoto);
+
+      return {
+        topScorers: scorers,
+        topAssists: assists,
+        errors: {} as Record<string, string>,
+      };
+    } catch (error: any) {
+      console.error(`💥 Top players fetch error:`, error.message);
+      return {
+        topScorers: [] as ReturnType<typeof topScorerRow>[],
+        topAssists: [] as ReturnType<typeof topAssistRow>[],
         errors: { network: error.message },
       };
     }

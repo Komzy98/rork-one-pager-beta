@@ -11,6 +11,7 @@ import {
   FlatList,
   Image,
   ActivityIndicator,
+  ImageBackground,
 } from 'react-native';
 import {
   Calendar,
@@ -20,7 +21,6 @@ import {
   CheckCircle2,
   BarChart3,
   Tv,
-  Flame,
   Zap,
   Radio,
   AlertCircle,
@@ -41,12 +41,18 @@ import {
 } from '@/constants/nbaData';
 import { fetchNBAGamesMultipleDays, fetchNBAStandings } from '@/utils/nbaApi';
 import NBAGameDetailsModal from './NBAGameDetailsModal';
+import NBAPremiumHeroInner from './NBAPremiumHeroInner';
 
 const { width: SCREEN_WIDTH } = Dimensions.get('window');
+
+/** User-provided NBA arena hero (blue/red court); no gradient overlay on top. */
+const NBA_HERO_BACKGROUND = require('../assets/images/nba-hero-premium.png');
 
 interface NBASectionProps {
   isDark: boolean;
   insets: { top: number; bottom: number };
+  /** Sport switcher from Sports tab (Football / UFC / …), same pattern as football stadium hero. */
+  sportToggleSlot?: React.ReactNode;
 }
 
 const NBA_ORANGE = '#F26522';
@@ -55,135 +61,6 @@ const NBA_ORANGE_LIGHT = 'rgba(242, 101, 34, 0.12)';
 const NBA_BLUE_LIGHT = 'rgba(29, 66, 138, 0.12)';
 
 type NBATab = 'upcoming' | 'results' | 'standings';
-
-const CountdownUnit = React.memo(({ value, label, isDark }: { value: number; label: string; isDark: boolean }) => (
-  <View style={[s.cdUnit, { backgroundColor: isDark ? 'rgba(242,101,34,0.1)' : 'rgba(29,66,138,0.06)' }]}>
-    <Text style={[s.cdValue, { color: isDark ? NBA_ORANGE : NBA_BLUE }]}>{String(value).padStart(2, '0')}</Text>
-    <Text style={[s.cdLabel, { color: isDark ? '#6B6B85' : '#9CA3AF' }]}>{label}</Text>
-  </View>
-));
-
-const HeroGameCard = React.memo(({ game, isDark }: { game: NBAGame; isDark: boolean }) => {
-  const [timeLeft, setTimeLeft] = useState({ days: 0, hours: 0, mins: 0, secs: 0 });
-  const pulseAnim = useRef(new Animated.Value(1)).current;
-
-  useEffect(() => {
-    const calc = () => {
-      const now = new Date().getTime();
-      const target = new Date(game.date).getTime();
-      const diff = Math.max(0, target - now);
-      setTimeLeft({
-        days: Math.floor(diff / (1000 * 60 * 60 * 24)),
-        hours: Math.floor((diff % (1000 * 60 * 60 * 24)) / (1000 * 60 * 60)),
-        mins: Math.floor((diff % (1000 * 60 * 60)) / (1000 * 60)),
-        secs: Math.floor((diff % (1000 * 60)) / 1000),
-      });
-    };
-    calc();
-    const interval = setInterval(calc, 1000);
-    return () => clearInterval(interval);
-  }, [game.date]);
-
-  useEffect(() => {
-    const pulse = Animated.loop(
-      Animated.sequence([
-        Animated.timing(pulseAnim, { toValue: 1.02, duration: 2000, useNativeDriver: true }),
-        Animated.timing(pulseAnim, { toValue: 1, duration: 2000, useNativeDriver: true }),
-      ])
-    );
-    pulse.start();
-    return () => pulse.stop();
-  }, [pulseAnim]);
-
-  return (
-    <Animated.View style={[s.heroCard, { transform: [{ scale: pulseAnim }] }]}>
-      <LinearGradient
-        colors={isDark ? ['#0A0A1E', '#0D1225', '#0A0A1A'] : ['#0D1B3E', '#122040', '#0A1530']}
-        start={{ x: 0, y: 0 }}
-        end={{ x: 1, y: 1 }}
-        style={s.heroGradient}
-      >
-        <View style={[s.heroAccent, { backgroundColor: NBA_ORANGE }]} />
-
-        <View style={s.heroTopRow}>
-          <View style={s.heroLabelWrap}>
-            <Flame size={10} color={NBA_ORANGE} />
-            <Text style={[s.heroLabel, { color: NBA_ORANGE }]}>NEXT GAME</Text>
-          </View>
-          {!!game.series && (
-            <View style={s.heroSeriesBadge}>
-              <Text style={s.heroSeriesText}>{game.series}</Text>
-            </View>
-          )}
-        </View>
-
-        <Text style={s.heroSeason} numberOfLines={1}>{game.season}</Text>
-
-        <View style={s.heroTeams}>
-          <View style={s.heroTeamSide}>
-            <View style={s.heroAvatarWrap}>
-                <Image
-                  source={{ uri: getTeamLogo(game.team1.abbreviation) }}
-                  style={s.teamLogoImg}
-                  resizeMode="contain"
-                />
-            </View>
-            <Text style={s.heroTeamName} numberOfLines={2}>{game.team1.name}</Text>
-            {!!game.team1.record && (
-              <Text style={s.heroTeamRecord}>{game.team1.record}</Text>
-            )}
-          </View>
-
-          <View style={s.heroVsWrap}>
-            <LinearGradient
-              colors={[NBA_ORANGE, '#D4540E']}
-              style={s.heroVsBadge}
-            >
-              <Text style={s.heroVsText}>VS</Text>
-            </LinearGradient>
-          </View>
-
-          <View style={s.heroTeamSide}>
-            <View style={s.heroAvatarWrap}>
-                <Image
-                  source={{ uri: getTeamLogo(game.team2.abbreviation) }}
-                  style={s.teamLogoImg}
-                  resizeMode="contain"
-                />
-            </View>
-            <Text style={s.heroTeamName} numberOfLines={2}>{game.team2.name}</Text>
-            {!!game.team2.record && (
-              <Text style={s.heroTeamRecord}>{game.team2.record}</Text>
-            )}
-          </View>
-        </View>
-
-        <View style={s.heroCountdownRow}>
-          <CountdownUnit value={timeLeft.days} label="DAYS" isDark={isDark} />
-          <Text style={s.heroCountdownSep}>:</Text>
-          <CountdownUnit value={timeLeft.hours} label="HRS" isDark={isDark} />
-          <Text style={s.heroCountdownSep}>:</Text>
-          <CountdownUnit value={timeLeft.mins} label="MIN" isDark={isDark} />
-          <Text style={s.heroCountdownSep}>:</Text>
-          <CountdownUnit value={timeLeft.secs} label="SEC" isDark={isDark} />
-        </View>
-
-        <View style={s.heroInfoRow}>
-          <View style={s.heroInfoItem}>
-            <MapPin size={11} color="#6B6B85" />
-            <Text style={s.heroInfoText}>{game.arena}, {game.city}</Text>
-          </View>
-          {!!game.broadcast && (
-            <View style={s.heroInfoItem}>
-              <Tv size={11} color="#6B6B85" />
-              <Text style={s.heroInfoText}>{game.broadcast}</Text>
-            </View>
-          )}
-        </View>
-      </LinearGradient>
-    </Animated.View>
-  );
-});
 
 const InlinePlayerRow = React.memo(({ player, isDark, teamColor }: { player: NBAPlayer; isDark: boolean; teamColor: string }) => (
   <View style={s.lineupPlayerRow}>
@@ -647,7 +524,7 @@ const TabPill = React.memo(({ activeTab, onTabChange, isDark, counts }: {
   );
 });
 
-export default function NBASection({ isDark, insets }: NBASectionProps) {
+export default function NBASection({ isDark, insets, sportToggleSlot }: NBASectionProps) {
   const [activeTab, setActiveTab] = useState<NBATab>('upcoming');
   const [selectedGame, setSelectedGame] = useState<NBAGame | null>(null);
   const [showGameModal, setShowGameModal] = useState<boolean>(false);
@@ -680,6 +557,23 @@ export default function NBASection({ isDark, insets }: NBASectionProps) {
     return upcomingGames.length > 0 ? upcomingGames[0] : null;
   }, [liveGames, upcomingGames]);
 
+  const heroTeamAbbreviations = useMemo(() => {
+    const seen = new Set<string>();
+    const out: string[] = [];
+    const take = (g: (typeof liveGames)[number]) => {
+      if (!seen.has(g.team1.abbreviation)) {
+        seen.add(g.team1.abbreviation);
+        out.push(g.team1.abbreviation);
+      }
+      if (!seen.has(g.team2.abbreviation)) {
+        seen.add(g.team2.abbreviation);
+        out.push(g.team2.abbreviation);
+      }
+    };
+    [...liveGames, ...upcomingGames].slice(0, 8).forEach(take);
+    return out;
+  }, [liveGames, upcomingGames]);
+
   const easternStandings = useMemo(() => standingsQuery.data?.eastern ?? NBA_EASTERN_STANDINGS, [standingsQuery.data?.eastern]);
   const westernStandings = useMemo(() => standingsQuery.data?.western ?? NBA_WESTERN_STANDINGS, [standingsQuery.data?.western]);
 
@@ -709,7 +603,6 @@ export default function NBASection({ isDark, insets }: NBASectionProps) {
   }, [liveGames, upcomingGames, completedGames]);
 
   type ListItem =
-    | { type: 'hero'; game: NBAGame; key: string }
     | { type: 'stats'; key: string }
     | { type: 'loading'; key: string }
     | { type: 'error'; key: string }
@@ -732,9 +625,6 @@ export default function NBASection({ isDark, insets }: NBASectionProps) {
     }
 
     if (activeTab === 'upcoming') {
-      if (nextGame) {
-        items.push({ type: 'hero', game: nextGame, key: 'hero-game' });
-      }
       items.push({ type: 'stats', key: 'stats-bar' });
 
       if (liveGames.length > 0) {
@@ -770,12 +660,10 @@ export default function NBASection({ isDark, insets }: NBASectionProps) {
     }
 
     return items;
-  }, [activeTab, nextGame, liveGames, upcomingGames, completedGames, easternStandings, westernStandings, isLoading, isError, standingsQuery.isLoading]);
+  }, [activeTab, liveGames, upcomingGames, completedGames, easternStandings, westernStandings, isLoading, isError, standingsQuery.isLoading]);
 
   const renderItem = useCallback(({ item }: { item: ListItem }) => {
     switch (item.type) {
-      case 'hero':
-        return <HeroGameCard game={item.game} isDark={isDark} />;
       case 'loading':
         return (
           <View style={s.loadingState}>
@@ -851,15 +739,87 @@ export default function NBASection({ isDark, insets }: NBASectionProps) {
 
   const keyExtractor = useCallback((item: ListItem) => item.key, []);
 
+  const listHeaderComponent = useMemo(
+    () => (
+      <>
+        <ImageBackground
+          source={NBA_HERO_BACKGROUND}
+          style={[s.nbaHeroRoot, { paddingTop: insets.top, paddingBottom: 14 }]}
+          imageStyle={s.nbaHeroImage}
+        >
+          <View style={s.nbaHeroForeground}>
+            <NBAPremiumHeroInner
+              liveCount={liveGames.length}
+              teamAbbreviations={heroTeamAbbreviations}
+              featuredGame={nextGame}
+              onRefresh={onRefresh}
+              onFeaturedPress={() => {
+                if (nextGame) handleGamePress(nextGame);
+              }}
+            />
+            {liveGames.length > 0 ? (
+              <View style={s.heroTickerSection}>
+                <View style={s.heroTickerHeader}>
+                  <View style={s.heroTickerHeaderLeft}>
+                    <LinearGradient colors={['#FF3B30', '#FF6B6B']} style={s.heroTickerLiveDot}>
+                      <Radio size={10} color="#FFFFFF" />
+                    </LinearGradient>
+                    <Text style={s.heroTickerTitle}>Live Now</Text>
+                    <View style={s.heroTickerBadge}>
+                      <Text style={s.heroTickerBadgeText}>{liveGames.length}</Text>
+                    </View>
+                  </View>
+                </View>
+                <FlatList
+                  horizontal
+                  data={liveGames}
+                  keyExtractor={(g) => `nba-live-ticker-${g.id}`}
+                  showsHorizontalScrollIndicator={false}
+                  nestedScrollEnabled
+                  contentContainerStyle={s.heroTickerListContent}
+                  renderItem={({ item: g }) => (
+                    <TouchableOpacity style={s.heroTickerChip} onPress={() => handleGamePress(g)} activeOpacity={0.88}>
+                      <Image source={{ uri: getTeamLogo(g.team1.abbreviation) }} style={s.heroTickerLogo} resizeMode="contain" />
+                      <Text style={s.heroTickerScore} numberOfLines={1}>
+                        {g.team1.score ?? '—'} : {g.team2.score ?? '—'}
+                      </Text>
+                      <Image source={{ uri: getTeamLogo(g.team2.abbreviation) }} style={s.heroTickerLogo} resizeMode="contain" />
+                    </TouchableOpacity>
+                  )}
+                />
+              </View>
+            ) : null}
+            {sportToggleSlot}
+          </View>
+        </ImageBackground>
+        <View style={s.tabWrapper}>
+          <TabPill activeTab={activeTab} onTabChange={setActiveTab} isDark={isDark} counts={counts} />
+        </View>
+      </>
+    ),
+    [
+      insets.top,
+      liveGames,
+      heroTeamAbbreviations,
+      nextGame,
+      onRefresh,
+      handleGamePress,
+      sportToggleSlot,
+      activeTab,
+      isDark,
+      counts,
+    ],
+  );
+
   return (
     <View style={{ flex: 1 }}>
-      <View style={s.tabWrapper}>
-        <TabPill activeTab={activeTab} onTabChange={setActiveTab} isDark={isDark} counts={counts} />
-      </View>
       <FlatList
         data={listData}
         renderItem={renderItem}
         keyExtractor={keyExtractor}
+        ListHeaderComponent={listHeaderComponent}
+        ListHeaderComponentStyle={s.listHeaderBleed}
+        nestedScrollEnabled
         style={s.scrollView}
         contentContainerStyle={[s.scrollContent, { paddingBottom: insets.bottom + 100 }]}
         showsVerticalScrollIndicator={false}
@@ -882,6 +842,84 @@ export default function NBASection({ isDark, insets }: NBASectionProps) {
 }
 
 const s = StyleSheet.create({
+  nbaHeroRoot: {
+    overflow: 'hidden' as const,
+    minHeight: 470,
+    justifyContent: 'flex-start' as const,
+    paddingHorizontal: 20,
+  },
+  nbaHeroImage: {
+    resizeMode: 'cover' as const,
+  },
+  nbaHeroForeground: {
+    position: 'relative' as const,
+    zIndex: 1,
+  },
+  heroTickerSection: {
+    paddingTop: 5,
+    paddingBottom: 4,
+  },
+  heroTickerHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: 8,
+  },
+  heroTickerHeaderLeft: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+  },
+  heroTickerLiveDot: {
+    width: 16,
+    height: 16,
+    borderRadius: 8,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  heroTickerTitle: {
+    fontSize: 10,
+    fontWeight: '700' as const,
+    letterSpacing: -0.15,
+    color: '#FFFFFF',
+  },
+  heroTickerBadge: {
+    paddingHorizontal: 6,
+    paddingVertical: 2,
+    borderRadius: 6,
+    backgroundColor: 'rgba(255,59,48,0.22)',
+  },
+  heroTickerBadgeText: {
+    fontSize: 9,
+    fontWeight: '800' as const,
+    color: '#FF8A80',
+  },
+  heroTickerListContent: {
+    gap: 8,
+    paddingBottom: 4,
+  },
+  heroTickerChip: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+    borderRadius: 14,
+    backgroundColor: 'rgba(10,12,22,0.55)',
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.18)',
+    marginRight: 10,
+  },
+  heroTickerLogo: {
+    width: 28,
+    height: 28,
+  },
+  heroTickerScore: {
+    fontSize: 14,
+    fontWeight: '800' as const,
+    color: '#FFFFFF',
+    minWidth: 52,
+    textAlign: 'center' as const,
+  },
   tabWrapper: {
     paddingHorizontal: 20,
     marginBottom: 12,
@@ -942,167 +980,12 @@ const s = StyleSheet.create({
   scrollView: {
     flex: 1,
   },
+  /** Cancel parent `scrollContent` horizontal inset so the NBA hero matches full-bleed football stadium. */
+  listHeaderBleed: {
+    marginHorizontal: -20,
+  },
   scrollContent: {
     paddingHorizontal: 20,
-  },
-  heroCard: {
-    marginBottom: 16,
-    borderRadius: 22,
-    overflow: 'hidden' as const,
-    shadowColor: NBA_BLUE,
-    shadowOpacity: 0.15,
-    shadowRadius: 24,
-    shadowOffset: { width: 0, height: 10 },
-    elevation: 8,
-  },
-  heroGradient: {
-    paddingVertical: 24,
-    paddingHorizontal: 20,
-    alignItems: 'center' as const,
-    position: 'relative' as const,
-  },
-  heroAccent: {
-    position: 'absolute' as const,
-    top: 0,
-    left: 0,
-    right: 0,
-    height: 3,
-  },
-  heroTopRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    width: '100%',
-    marginBottom: 8,
-  },
-  heroLabelWrap: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 4,
-  },
-  heroLabel: {
-    fontSize: 10,
-    fontWeight: '800' as const,
-    letterSpacing: 2,
-  },
-  heroSeriesBadge: {
-    backgroundColor: 'rgba(242,101,34,0.15)',
-    paddingHorizontal: 8,
-    paddingVertical: 3,
-    borderRadius: 6,
-    borderWidth: 1,
-    borderColor: 'rgba(242,101,34,0.2)',
-  },
-  heroSeriesText: {
-    fontSize: 9,
-    fontWeight: '800' as const,
-    color: NBA_ORANGE,
-    letterSpacing: 0.3,
-  },
-  heroSeason: {
-    fontSize: 16,
-    fontWeight: '800' as const,
-    color: '#F0F0FA',
-    letterSpacing: -0.3,
-    marginBottom: 20,
-    textAlign: 'center' as const,
-  },
-  heroTeams: {
-    flexDirection: 'row',
-    alignItems: 'flex-start',
-    justifyContent: 'center',
-    width: '100%',
-    marginBottom: 20,
-  },
-  heroTeamSide: {
-    flex: 1,
-    alignItems: 'center' as const,
-    gap: 4,
-  },
-  heroAvatarWrap: {
-    marginBottom: 4,
-  },
-  teamLogoImg: {
-    width: 56,
-    height: 56,
-  },
-  heroTeamName: {
-    fontSize: 13,
-    fontWeight: '700' as const,
-    color: '#F0F0FA',
-    textAlign: 'center' as const,
-    lineHeight: 17,
-  },
-  heroTeamRecord: {
-    fontSize: 11,
-    fontWeight: '600' as const,
-    color: '#5A5A7A',
-    letterSpacing: 0.5,
-  },
-  heroVsWrap: {
-    paddingHorizontal: 10,
-    paddingTop: 18,
-  },
-  heroVsBadge: {
-    width: 38,
-    height: 38,
-    borderRadius: 19,
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  heroVsText: {
-    fontSize: 12,
-    fontWeight: '900' as const,
-    color: '#FFFFFF',
-    letterSpacing: 0.5,
-  },
-  heroCountdownRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 6,
-    marginBottom: 16,
-  },
-  heroCountdownSep: {
-    fontSize: 18,
-    fontWeight: '300' as const,
-    color: '#4A4A6A',
-  },
-  heroInfoRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 16,
-    flexWrap: 'wrap',
-    justifyContent: 'center',
-  },
-  heroInfoItem: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 4,
-  },
-  heroInfoText: {
-    fontSize: 11,
-    fontWeight: '500' as const,
-    color: '#6B6B85',
-  },
-  cdUnit: {
-    alignItems: 'center' as const,
-    paddingVertical: 8,
-    paddingHorizontal: 12,
-    borderRadius: 10,
-    borderWidth: 1,
-    borderColor: 'rgba(29,66,138,0.12)',
-    minWidth: 52,
-  },
-  cdValue: {
-    fontSize: 20,
-    fontWeight: '900' as const,
-    letterSpacing: -0.5,
-  },
-  cdLabel: {
-    fontSize: 8,
-    fontWeight: '700' as const,
-    letterSpacing: 1.5,
-    marginTop: 2,
   },
   statsBar: {
     flexDirection: 'row',

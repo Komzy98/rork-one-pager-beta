@@ -3,6 +3,7 @@ import { Platform, AppState, AppStateStatus } from 'react-native';
 import * as Notifications from 'expo-notifications';
 import createContextHook from '@nkzw/create-context-hook';
 import { useUserProfile } from './useUserProfile';
+import { useAuth } from './useAuth';
 import { useAppSafe } from './useHabitsStore';
 import { useTasks } from './useTasksStore';
 import { notificationService, ScheduledNotification } from '@/utils/notificationService';
@@ -32,6 +33,7 @@ interface WeeklyRecapSummary {
 }
 
 export const [BackgroundServicesProvider, useBackgroundServices] = createContextHook(() => {
+  const { user } = useAuth();
   const { profile, updateNotificationSettings } = useUserProfile();
   const appContext = useAppSafe();
   const tasksContext = useTasks();
@@ -464,6 +466,11 @@ export const [BackgroundServicesProvider, useBackgroundServices] = createContext
       return () => clearTimeout(timeoutId);
     }
   }, [isInitialized, allActivities.length]);
+
+  useEffect(() => {
+    setNotifState(prev => ({ ...prev, scheduledNotifications: [] }));
+    void loadScheduledNotifications();
+  }, [user?.id, loadScheduledNotifications]);
 
   useEffect(() => {
     checkPermissions();

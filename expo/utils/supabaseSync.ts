@@ -64,6 +64,13 @@ export const setSyncUserId = async (userId: string) => {
   } catch {}
 };
 
+export const clearSyncUserId = async () => {
+  currentUserId = null;
+  try {
+    await AsyncStorage.removeItem(USER_ID_KEY);
+  } catch {}
+};
+
 export const initializeCloudSync = async (): Promise<boolean> => {
   if (!supabaseConfigured) {
     console.log('Supabase not configured, cloud sync unavailable');

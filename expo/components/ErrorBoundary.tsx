@@ -31,7 +31,12 @@ export class ErrorBoundary extends React.Component<ErrorBoundaryProps, ErrorBoun
       this.setState({ hasError: false, error: undefined });
       return;
     }
-    
+
+    if (/Network request failed|Failed to fetch|Load failed|network connection was lost/i.test(error?.message || '')) {
+      console.warn('ErrorBoundary caught network error:', error?.message);
+      return;
+    }
+
     console.error('ErrorBoundary caught an error:', error, errorInfo);
   }
 

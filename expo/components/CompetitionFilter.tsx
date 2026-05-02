@@ -42,10 +42,9 @@ interface CompetitionFilterProps {
   favoriteLeagues?: number[];
   onToggleFavorite?: (leagueId: number) => void;
   onPreferencesSaved?: () => void;
+  storageKey?: string;
   isDark: boolean;
 }
-
-const SAVED_LEAGUES_KEY = 'sports_selected_leagues';
 
 interface QuickChip {
   id: string;
@@ -92,6 +91,7 @@ export default function CompetitionFilter({
   favoriteLeagues = [],
   onToggleFavorite,
   onPreferencesSaved,
+  storageKey = 'sports_selected_leagues',
   isDark,
 }: CompetitionFilterProps) {
   const insets = useSafeAreaInsets();
@@ -200,7 +200,7 @@ export default function CompetitionFilter({
 
   const savePreferences = useCallback(async () => {
     try {
-      await AsyncStorage.setItem(SAVED_LEAGUES_KEY, JSON.stringify(selectedLeagues));
+      await AsyncStorage.setItem(storageKey, JSON.stringify(selectedLeagues));
       onPreferencesSaved?.();
       if (Platform.OS !== 'web') {
         await Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
@@ -209,7 +209,7 @@ export default function CompetitionFilter({
     } catch (e) {
       console.log('[CompetitionFilter] Failed to save:', e);
     }
-  }, [selectedLeagues, onPreferencesSaved]);
+  }, [selectedLeagues, onPreferencesSaved, storageKey]);
 
   const filteredData = useMemo(() => {
     if (!searchQuery.trim()) return COMPETITIONS_DATA;

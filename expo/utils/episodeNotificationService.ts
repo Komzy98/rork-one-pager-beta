@@ -3,6 +3,12 @@ import { tmdbApi } from '@/utils/tmdbApi';
 import { notificationService } from '@/utils/notificationService';
 
 const TRACKED_SHOWS_KEY = 'tracked_shows_notifications';
+const LEGACY_TRACKED_SHOWS_KEY = TRACKED_SHOWS_KEY;
+let activeUserId: string = 'guest';
+
+function getTrackedShowsKey() {
+  return `${TRACKED_SHOWS_KEY}_${activeUserId}`;
+}
 
 export interface TrackedShow {
   id: string;
@@ -37,9 +43,21 @@ export interface NewEpisodeAlert {
 }
 
 class EpisodeNotificationService {
+  setActiveUser(userId?: string) {
+    activeUserId = userId || 'guest';
+  }
+
   async getTrackedShows(): Promise<TrackedShow[]> {
     try {
-      const stored = await unifiedStorage.getItem(TRACKED_SHOWS_KEY);
+      const scopedKey = getTrackedShowsKey();
+      let stored = await unifiedStorage.getItem(scopedKey);
+      if (!stored) {
+        const legacy = await unifiedStorage.getItem(LEGACY_TRACKED_SHOWS_KEY);
+        if (legacy) {
+          stored = legacy;
+          await unifiedStorage.setItem(scopedKey, legacy);
+        }
+      }
       return stored ? JSON.parse(stored) : [];
     } catch (error) {
       console.error('❌ Error getting tracked shows:', error);
@@ -49,7 +67,7 @@ class EpisodeNotificationService {
 
   async saveTrackedShows(shows: TrackedShow[]): Promise<void> {
     try {
-      await unifiedStorage.setItem(TRACKED_SHOWS_KEY, JSON.stringify(shows));
+      await unifiedStorage.setItem(getTrackedShowsKey(), JSON.stringify(shows));
     } catch (error) {
       console.error('❌ Error saving tracked shows:', error);
     }

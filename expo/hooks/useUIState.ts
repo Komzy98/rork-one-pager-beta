@@ -3,6 +3,7 @@ import { useEffect, useState, useCallback } from 'react';
 import { useQuery, useMutation } from '@tanstack/react-query';
 import { Platform } from 'react-native';
 import createContextHook from '@nkzw/create-context-hook';
+import { useAuth } from './useAuth';
 
 // Web-compatible storage
 const storage = {
@@ -57,20 +58,30 @@ const initialState: PersistedState = {
 };
 
 export const [UIStateProvider, useUIState] = createContextHook<UIStateShape>(() => {
+  const { user } = useAuth();
+  const scopedStorageKey = `${STORAGE_KEY}_${user?.id || 'guest'}`;
+
   const stateQuery = useQuery<PersistedState>({
-    queryKey: ['ui-state'],
+    queryKey: ['ui-state', user?.id || 'guest'],
     queryFn: async () => {
       try {
-        const raw = await storage.getItem(STORAGE_KEY);
+        let raw = await storage.getItem(scopedStorageKey);
         if (!raw) {
-          await storage.setItem(STORAGE_KEY, JSON.stringify(initialState));
+          const legacy = await storage.getItem(STORAGE_KEY);
+          if (legacy) {
+            raw = legacy;
+            await storage.setItem(scopedStorageKey, legacy);
+          }
+        }
+        if (!raw) {
+          await storage.setItem(scopedStorageKey, JSON.stringify(initialState));
           return initialState;
         }
         try {
           const parsed = JSON.parse(raw) as PersistedState;
           return { ...initialState, ...parsed };
         } catch {
-          await storage.setItem(STORAGE_KEY, JSON.stringify(initialState));
+          await storage.setItem(scopedStorageKey, JSON.stringify(initialState));
           return initialState;
         }
       } catch {
@@ -92,7 +103,7 @@ export const [UIStateProvider, useUIState] = createContextHook<UIStateShape>(() 
 
   const { mutate } = useMutation({
     mutationFn: async (next: PersistedState) => {
-      await storage.setItem(STORAGE_KEY, JSON.stringify(next));
+      await storage.setItem(scopedStorageKey, JSON.stringify(next));
       return next;
     },
   });

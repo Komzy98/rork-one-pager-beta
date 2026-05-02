@@ -578,12 +578,12 @@ export type YounifyBrowseSection = {
   items: any[];
 };
 
-/**
- * Rows from linked providers (Continue watching, Trending, etc.) using SDK well-known categories.
- */
-export async function fetchYounifyBrowseSections(): Promise<YounifyBrowseSection[]> {
-  const connect = await configureYounify();
-  const linked = normalizeLinkedServices(await connect.fetchLinkedServices(null));
+type YounifyConnectClient = Awaited<ReturnType<typeof configureYounify>>;
+
+async function fetchBrowseSectionsWithLinked(
+  connect: YounifyConnectClient,
+  linked: any[],
+): Promise<YounifyBrowseSection[]> {
   if (!linked.length) {
     return YOUNIFY_BROWSE_ROWS.map((row) => ({ id: row.id, title: row.title, items: [] }));
   }
@@ -594,7 +594,7 @@ export async function fetchYounifyBrowseSections(): Promise<YounifyBrowseSection
     const raw = await connect.fetchContent(categories, linked, null, null, null);
     contentResult = Array.isArray(raw) ? raw : [];
   } catch (error) {
-    console.warn("fetchYounifyBrowseSections: fetchContent failed", error);
+    console.warn("fetchBrowseSectionsWithLinked: fetchContent failed", error);
     return YOUNIFY_BROWSE_ROWS.map((row) => ({ id: row.id, title: row.title, items: [] }));
   }
 
@@ -609,10 +609,7 @@ export async function fetchYounifyBrowseSections(): Promise<YounifyBrowseSection
   });
 }
 
-export async function fetchYounifyContentForConnectedServices() {
-  const connect = await configureYounify();
-
-  const linkedServices = normalizeLinkedServices(await connect.fetchLinkedServices(null));
+async function fetchHeroContentWithLinked(connect: YounifyConnectClient, linkedServices: any[]): Promise<any[]> {
   if (!linkedServices.length) {
     return [];
   }
@@ -641,7 +638,6 @@ export async function fetchYounifyContentForConnectedServices() {
     ) ??
     categories[0];
 
-  /** Extra catalog slices so providers that are sparse in “popular” still return rows. */
   const seenKeys = new Set<string>();
   const catalogToFetch: any[] = [];
   const pushCat = (c: any) => {
@@ -670,4 +666,52 @@ export async function fetchYounifyContentForConnectedServices() {
     : flattenYounifyFetchContentNodes(contentResult);
 
   return scoreAndTrimYounifyItemsBalanced(normalizedContent, 60);
+}
+
+/**
+ * One configure + one linked-services fetch, then hero rail and browse rows load **in parallel**.
+ * Use this from Shows instead of calling `fetchYounifyContentForConnectedServices` and
+ * `fetchYounifyBrowseSections` separately (which duplicated SDK work and doubled latency).
+ */
+export async function loadYounifyStreamingBundle(): Promise<{
+  linkedServices: any[];
+  heroContent: any[];
+  browseSections: YounifyBrowseSection[];
+}> {
+  const connect = await configureYounify();
+  const linkedServices = normalizeLinkedServices(await connect.fetchLinkedServices(null));
+
+  if (!linkedServices.length) {
+    return {
+      linkedServices: [],
+      heroContent: [],
+      browseSections: YOUNIFY_BROWSE_ROWS.map((row) => ({ id: row.id, title: row.title, items: [] })),
+    };
+  }
+
+  const [heroContent, browseSections] = await Promise.all([
+    fetchHeroContentWithLinked(connect, linkedServices),
+    fetchBrowseSectionsWithLinked(connect, linkedServices),
+  ]);
+
+  return {
+    linkedServices,
+    heroContent,
+    browseSections,
+  };
+}
+
+/**
+ * Rows from linked providers (Continue watching, Trending, etc.) using SDK well-known categories.
+ */
+export async function fetchYounifyBrowseSections(): Promise<YounifyBrowseSection[]> {
+  const connect = await configureYounify();
+  const linked = normalizeLinkedServices(await connect.fetchLinkedServices(null));
+  return fetchBrowseSectionsWithLinked(connect, linked);
+}
+
+export async function fetchYounifyContentForConnectedServices() {
+  const connect = await configureYounify();
+  const linkedServices = normalizeLinkedServices(await connect.fetchLinkedServices(null));
+  return fetchHeroContentWithLinked(connect, linkedServices);
 }

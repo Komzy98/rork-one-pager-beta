@@ -2109,9 +2109,9 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
   },
   headerTitle: {
-    fontSize: 26,
-    fontWeight: '700' as const,
-    letterSpacing: -0.5,
+    fontSize: 32,
+    fontWeight: '800' as const,
+    letterSpacing: -1,
   },
   headerSubtitle: {
     fontSize: 13,

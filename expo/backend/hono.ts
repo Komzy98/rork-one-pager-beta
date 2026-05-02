@@ -2,6 +2,7 @@ import { Hono } from "hono";
 import type { Context } from "hono";
 import { cors } from "hono/cors";
 import { fetchRequestHandler } from "@trpc/server/adapters/fetch";
+import { createClient } from "@supabase/supabase-js";
 import { appRouter } from "./trpc/app-router";
 import { createContext } from "./trpc/create-context";
 import { getFootballApiKeyFromEnv } from "./utils/footballApiKey";
@@ -31,6 +32,60 @@ app.use("*", generalRateLimiter());
 
 app.use("/auth/*", authRateLimiter());
 app.use("/trpc/auth.*", authRateLimiter());
+
+app.post("/auth/delete-account", async (c) => {
+  const supabaseUrl = (process.env.EXPO_PUBLIC_SUPABASE_URL || process.env.SUPABASE_URL || "").trim();
+  const serviceRoleKey = (process.env.SUPABASE_SERVICE_ROLE_KEY || "").trim();
+  if (!supabaseUrl || !serviceRoleKey) {
+    return c.json(
+      { success: false, error: "Server is missing SUPABASE URL or service role key." },
+      500
+    );
+  }
+
+  const authHeader = c.req.header("authorization") || c.req.header("Authorization");
+  if (!authHeader?.startsWith("Bearer ")) {
+    return c.json({ success: false, error: "Missing Bearer token." }, 401);
+  }
+  const accessToken = authHeader.slice("Bearer ".length).trim();
+  if (!accessToken) {
+    return c.json({ success: false, error: "Invalid Bearer token." }, 401);
+  }
+
+  const payload = await c.req.json().catch(() => ({} as { userId?: string }));
+  const requestedUserId = typeof payload?.userId === "string" ? payload.userId : undefined;
+
+  const admin = createClient(supabaseUrl, serviceRoleKey, {
+    auth: { autoRefreshToken: false, persistSession: false },
+  });
+
+  const { data: userData, error: userError } = await admin.auth.getUser(accessToken);
+  const authUser = userData?.user;
+  if (userError || !authUser?.id) {
+    return c.json({ success: false, error: "Unauthorized request." }, 401);
+  }
+
+  if (requestedUserId && requestedUserId !== authUser.id) {
+    return c.json({ success: false, error: "You can only delete your own account." }, 403);
+  }
+
+  // Best-effort app-table cleanup before auth user deletion.
+  try {
+    await admin.from("user_data").delete().eq("user_id", authUser.id);
+  } catch (cleanupErr) {
+    console.warn("Failed to delete user_data row before auth deletion:", cleanupErr);
+  }
+
+  const { error: deleteError } = await admin.auth.admin.deleteUser(authUser.id);
+  if (deleteError) {
+    return c.json(
+      { success: false, error: deleteError.message || "Failed to delete auth user." },
+      500
+    );
+  }
+
+  return c.json({ success: true, userId: authUser.id });
+});
 
 app.onError((err, c) => {
   console.error('🔥 Hono Error:', err);

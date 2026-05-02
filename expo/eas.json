@@ -24,6 +24,7 @@
     "production": {
       "node": "20.19.4",
       "environment": "production",
+      "distribution": "store",
       "autoIncrement": true,
       "env": {
         "APP_ENV": "production"
