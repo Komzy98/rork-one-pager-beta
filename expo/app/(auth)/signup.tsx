@@ -197,7 +197,13 @@ export default function SignupScreen() {
     try {
       const result = await signup(credentials);
       if (result.success) {
-        router.replace('/(onboarding)/welcome' as any);
+        if (result.error) {
+          Alert.alert('Almost there', result.error, [
+            { text: 'OK', onPress: () => router.replace('/(onboarding)/welcome' as any) },
+          ]);
+        } else {
+          router.replace('/(onboarding)/welcome' as any);
+        }
       } else {
         Alert.alert('Signup Failed', result.error || 'Please try again');
       }

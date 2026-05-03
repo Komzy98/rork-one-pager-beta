@@ -3,9 +3,23 @@ import 'react-native-url-polyfill/auto';
 import { createClient, SupabaseClient } from '@supabase/supabase-js';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { Platform } from 'react-native';
+import Constants from 'expo-constants';
+import { fetch as expoFetch } from 'expo/fetch';
 
-const rawUrl = (process.env.EXPO_PUBLIC_SUPABASE_URL || '').trim();
-const rawKey = (process.env.EXPO_PUBLIC_SUPABASE_ANON_KEY || '').trim();
+type PublicSupabaseExtra = { url?: string; anonKey?: string };
+
+function readPublicSupabaseFromExtra(): PublicSupabaseExtra {
+  const extra = Constants.expoConfig?.extra as { publicSupabase?: PublicSupabaseExtra } | undefined;
+  return extra?.publicSupabase ?? {};
+}
+
+const fromEnv = {
+  url: (process.env.EXPO_PUBLIC_SUPABASE_URL || '').trim(),
+  key: (process.env.EXPO_PUBLIC_SUPABASE_ANON_KEY || '').trim(),
+};
+const fromExtra = readPublicSupabaseFromExtra();
+const rawUrl = fromEnv.url || (fromExtra.url || '').trim();
+const rawKey = fromEnv.key || (fromExtra.anonKey || '').trim();
 
 function isValidSupabaseUrl(u: string): boolean {
   if (!u) return false;
@@ -40,6 +54,53 @@ export const supabaseUrl = isValidSupabaseUrl(rawUrl) ? normalizeSupabaseUrl(raw
 export const supabaseAnonKey = rawKey;
 
 export const supabaseConfigured = !!supabaseUrl && !!supabaseAnonKey;
+
+function requestInputToUrl(input: RequestInfo | URL): string {
+  if (typeof input === 'string') return input;
+  if (input instanceof URL) return input.href;
+  if (typeof Request !== 'undefined' && input instanceof Request) return input.url;
+  return String(input);
+}
+
+function isLikelyTransientNetworkFailure(e: unknown): boolean {
+  return /network request failed|failed to fetch|load failed|network connection was lost|timed out|ECONNRESET|ETIMEDOUT/i.test(
+    String((e as Error)?.message ?? e),
+  );
+}
+
+/**
+ * RN `fetch` can throw once on Simulator HTTPS; retry then fall back to Expo's native HTTP client.
+ */
+function createSupabaseFetch(): typeof fetch {
+  if (Platform.OS === 'web') {
+    return fetch;
+  }
+
+  const resilientFetch = async (input: RequestInfo | URL, init?: RequestInit): Promise<Response> => {
+    const url = requestInputToUrl(input);
+    let lastNativeErr: unknown;
+
+    for (let attempt = 0; attempt < 2; attempt++) {
+      try {
+        return await fetch(url, init);
+      } catch (e) {
+        lastNativeErr = e;
+        if (!isLikelyTransientNetworkFailure(e)) {
+          throw e;
+        }
+        await new Promise<void>((r) => setTimeout(r, 400 * (attempt + 1)));
+      }
+    }
+
+    try {
+      return (await expoFetch(url, init as Parameters<typeof expoFetch>[1])) as unknown as Response;
+    } catch {
+      throw lastNativeErr instanceof Error ? lastNativeErr : new Error(String(lastNativeErr));
+    }
+  };
+
+  return resilientFetch as typeof fetch;
+}
 
 function createStubClient(): SupabaseClient {
   const notConfigured = () => {
@@ -101,6 +162,9 @@ function safeCreateClient(): SupabaseClient {
         autoRefreshToken: true,
         persistSession: true,
         detectSessionInUrl: false,
+      },
+      global: {
+        fetch: createSupabaseFetch(),
       },
     });
   } catch (err) {

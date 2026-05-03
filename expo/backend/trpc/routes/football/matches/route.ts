@@ -696,6 +696,12 @@ function normalizePlayerPhotoFromTopRow(row: any): string | null {
       if (t.length > 4 && (t.startsWith('http://') || t.startsWith('https://'))) {
         return t;
       }
+      if (t.startsWith('//') && t.includes('.')) {
+        return `https:${t}`;
+      }
+      if (t.startsWith('/') && /\/football\/players\//i.test(t)) {
+        return `https://media.api-sports.io${t}`;
+      }
     }
   }
   return null;

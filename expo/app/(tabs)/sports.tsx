@@ -31,8 +31,6 @@ import {
   X,
   Heart,
   Clock,
-  Bell,
-  BellOff,
   Pin,
   Swords,
   Flag,
@@ -44,6 +42,7 @@ import {
   ChevronDown,
   BarChart3,
 } from 'lucide-react-native';
+import { Image as ExpoImage } from 'expo-image';
 import { router } from 'expo-router';
 import * as Haptics from 'expo-haptics';
 import AsyncStorage from '@react-native-async-storage/async-storage';
@@ -66,6 +65,8 @@ import F1Section from '@/components/F1Section';
 import NBASection from '@/components/NBASection';
 import FootballPremiumHeroInner from '@/components/FootballPremiumHeroInner';
 import { getFootballTeamLogoUrl } from '@/constants/footballData';
+import { PremiumSportsMatchCard } from '@/components/PremiumSportsMatchCard';
+import { sportsFixedPalette } from '@/utils/sportsPalette';
 
 const { width: SCREEN_WIDTH } = Dimensions.get('window');
 
@@ -109,65 +110,6 @@ const LIVE_TICKER_TEXT = {
   elapsedBg: 'rgba(0,0,0,0.38)',
   elapsedText: '#FFFFFF',
 } as const;
-
-/** Fixed iOS-style sports chrome — ignores Profile → Appearance (match cards, headers, UFC cards). */
-function sportsFixedPalette(isDark: boolean) {
-  if (isDark) {
-    return {
-      card: '#111125',
-      text: '#F0F0FA',
-      textSecondary: '#A1A1B5',
-      textMuted: '#6B6B85',
-      textTertiary: '#5A5A7A',
-      textInverse: '#FFFFFF',
-      border: '#2A2A44',
-      surfaceSecondary: '#1A1A2E',
-      backgroundSecondary: '#151528',
-      backgroundTertiary: '#1A1A32',
-      live: '#FF453A',
-      success: '#32D74B',
-      primary: '#0A84FF',
-      warning: '#FFD60A',
-      error: '#FF453A',
-      warningLight: '#FFD60A',
-      successLight: '#32D74B',
-      shadow: '#000000',
-      info: '#5E5CE6',
-      secondary: '#BF5AF2',
-      errorLight: '#3A1A1A',
-      tickerGradient: ['#0A1A12', '#145A32', '#1A1A2E'] as const,
-      tickerSheen: 'rgba(50, 215, 75, 0.22)',
-      ufcGradient: ['#0A0606', '#0E0814', '#06040E'] as const,
-    };
-  }
-  return {
-    card: COLORS.card,
-    text: COLORS.text,
-    textSecondary: COLORS.textSecondary,
-    textMuted: COLORS.textMuted,
-    textTertiary: COLORS.textTertiary,
-    textInverse: COLORS.textInverse,
-    border: COLORS.border,
-    surfaceSecondary: COLORS.surfaceSecondary,
-    backgroundSecondary: COLORS.backgroundSecondary,
-    backgroundTertiary: COLORS.backgroundTertiary,
-    live: COLORS.live,
-    success: COLORS.success,
-    primary: COLORS.primary,
-    warning: COLORS.warning,
-    error: COLORS.error,
-    warningLight: COLORS.warningLight,
-    successLight: COLORS.successLight,
-    shadow: COLORS.shadow,
-    info: COLORS.info,
-    secondary: COLORS.secondary,
-    errorLight: COLORS.errorLight,
-    /** Same as dark — light theme previously used a white endpoint here and broke the card. */
-    tickerGradient: ['#0A1A12', '#145A32', '#1A1A2E'] as const,
-    tickerSheen: 'rgba(50, 215, 75, 0.22)',
-    ufcGradient: ['#1A0808', '#1C0A18', '#0F0A1E'] as const,
-  };
-}
 
 /** Stadium hero + neon green chrome for Football tab (light / dark). */
 const FOOTBALL_CHROME = {
@@ -347,14 +289,79 @@ function abbrevPlayerName(name: string): string {
   return `${p[0][0]}. ${p[p.length - 1]}`;
 }
 
-/** When TRPC omits `photo`, api-sports CDN still serves portraits by player id (matches MatchDetailsModal lineups). */
-function footballLeaderPortraitUri(row: { photo?: string | null; playerId?: number | null }): string | null {
-  const raw = typeof row.photo === 'string' ? row.photo.trim() : '';
-  if (raw.length > 8 && (raw.startsWith('http://') || raw.startsWith('https://'))) return raw;
-  const id = row.playerId;
-  if (typeof id === 'number' && id > 0) return `https://media.api-sports.io/football/players/${id}.png`;
+function coercePositivePlayerId(row: {
+  playerId?: number | null;
+  id?: number | null;
+}): number | null {
+  const candidates = [row.playerId, row.id];
+  for (const c of candidates) {
+    if (typeof c === 'number' && Number.isFinite(c) && c > 0) return c;
+    if (typeof c === 'string' && /^\d+$/.test(c.trim())) {
+      const n = Number(c.trim());
+      if (Number.isFinite(n) && n > 0) return n;
+    }
+  }
   return null;
 }
+
+/** Resolves api-sports player headshots: full URL, relative CDN path, or id-based PNG (same as lineups). */
+function footballLeaderPortraitUri(row: {
+  photo?: string | null;
+  playerId?: number | null;
+  id?: number | null;
+}): string | null {
+  const raw = typeof row.photo === 'string' ? row.photo.trim() : '';
+  if (raw.length > 4) {
+    if (raw.startsWith('http://') || raw.startsWith('https://')) return raw;
+    if (raw.startsWith('//') && /\./.test(raw)) return `https:${raw}`;
+    if (raw.startsWith('/') && /\/football\/players\//i.test(raw)) {
+      return `https://media.api-sports.io${raw}`;
+    }
+  }
+  const id = coercePositivePlayerId(row);
+  if (id != null) return `https://media.api-sports.io/football/players/${id}.png`;
+  return null;
+}
+
+const TrendingLeaderAvatar = React.memo(function TrendingLeaderAvatar({
+  row,
+  style,
+  placeholderStyle,
+}: {
+  row: { photo?: string | null; playerId?: number | null; id?: number | null; playerName?: string };
+  style: object;
+  placeholderStyle: object;
+}) {
+  const id = coercePositivePlayerId(row);
+  const cdnFallback = id != null ? `https://media.api-sports.io/football/players/${id}.png` : null;
+  const primary = footballLeaderPortraitUri(row);
+  const [useCdnOnly, setUseCdnOnly] = useState(false);
+
+  useEffect(() => {
+    setUseCdnOnly(false);
+  }, [row.photo, row.playerId, row.id]);
+
+  const uri = useCdnOnly ? cdnFallback ?? primary : primary ?? cdnFallback;
+
+  if (!uri) {
+    return <View style={[placeholderStyle]} />;
+  }
+
+  return (
+    <ExpoImage
+      source={{ uri }}
+      style={style}
+      contentFit="cover"
+      cachePolicy="memory-disk"
+      transition={180}
+      onError={() => {
+        if (!useCdnOnly && cdnFallback != null && uri !== cdnFallback) {
+          setUseCdnOnly(true);
+        }
+      }}
+    />
+  );
+});
 
 function isMajorLeagueName(name: string): boolean {
   return /premier league|la liga|bundesliga|serie a|ligue 1|champions league|europa league|conference league|uefa super/i.test(
@@ -670,270 +677,6 @@ const LiveTickerCard = React.memo(({
         </LinearGradient>
       </TouchableOpacity>
     </View>
-  );
-});
-
-const PremiumMatchCard = React.memo(({ 
-  match, 
-  isFavoriteTeam, 
-  onPress,
-  isNotified,
-  onToggleNotification,
-  isPinned,
-}: { 
-  match: Match; 
-  isFavoriteTeam: (name: string) => boolean; 
-  onPress?: () => void;
-  isNotified?: boolean;
-  onToggleNotification?: (matchId: string) => void;
-  isPinned?: boolean;
-}) => {
-  const { isDark } = useTheme();
-  const sf = sportsFixedPalette(isDark);
-  const isLive = match.status === 'Live';
-  const isCompleted = match.status === 'Completed';
-  const isUpcoming = !isLive && !isCompleted;
-  const hasScore = match.homeScore !== null && match.awayScore !== null;
-  const homeIsFavorite = isFavoriteTeam(match.homeTeam);
-  const awayIsFavorite = isFavoriteTeam(match.awayTeam);
-
-  const handlePress = useCallback(async () => {
-    if (Platform.OS !== 'web') {
-      await Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-    }
-    onPress?.();
-  }, [onPress]);
-
-  const getMatchTime = () => {
-    if (isLive && match.elapsed) return `${match.elapsed}'`;
-    if (isCompleted) return 'FT';
-    
-    let matchDate: Date;
-    if (match.date.includes('T')) {
-      matchDate = new Date(match.date);
-    } else {
-      const [year, month, day] = match.date.split('-').map(Number);
-      matchDate = new Date(year, month - 1, day);
-    }
-    
-    const today = new Date();
-    today.setHours(0, 0, 0, 0);
-    const tomorrow = new Date(today);
-    tomorrow.setDate(tomorrow.getDate() + 1);
-    const matchDateNormalized = new Date(matchDate);
-    matchDateNormalized.setHours(0, 0, 0, 0);
-    
-    if (matchDateNormalized.getTime() === today.getTime()) return match.time;
-    if (matchDateNormalized.getTime() === tomorrow.getTime()) return 'Tomorrow';
-    return matchDate.toLocaleDateString('en-GB', { month: 'short', day: 'numeric' });
-  };
-
-  const getResultStyle = () => {
-    if (!hasScore) return null;
-    if (match.homeScore! > match.awayScore!) return { home: 'winner' as const, away: 'loser' as const };
-    if (match.awayScore! > match.homeScore!) return { home: 'loser' as const, away: 'winner' as const };
-    return { home: 'draw' as const, away: 'draw' as const };
-  };
-
-  const resultStyle = getResultStyle();
-
-  return (
-    <View style={styles.cardWrapper}>
-      <TouchableOpacity 
-        style={styles.matchCard}
-        onPress={handlePress}
-        activeOpacity={0.95}
-      >
-        <View style={[
-          styles.cardInner,
-          { backgroundColor: sf.card, borderColor: sf.border },
-          !isDark && isUpcoming && styles.upcomingPremiumCardLight,
-          isLive && styles.liveCardBorder,
-          isPinned && !isLive && { borderColor: `${sf.warning}55` },
-        ]}>
-          {isLive ? (
-            <LinearGradient
-              colors={[`${sf.live}14`, 'transparent']}
-              start={{ x: 0, y: 0 }}
-              end={{ x: 0, y: 1 }}
-              style={styles.cardGlow}
-              pointerEvents="none"
-            />
-          ) : isPinned ? (
-            <LinearGradient
-              colors={[`${sf.warning}12`, 'transparent']}
-              start={{ x: 0, y: 0 }}
-              end={{ x: 0, y: 1 }}
-              style={styles.cardGlow}
-              pointerEvents="none"
-            />
-          ) : !isDark && isUpcoming ? (
-            <LinearGradient
-              colors={['rgba(247, 221, 143, 0.18)', 'transparent']}
-              start={{ x: 0, y: 0 }}
-              end={{ x: 1, y: 1 }}
-              style={styles.cardGlow}
-              pointerEvents="none"
-            />
-          ) : null}
-          <View style={styles.matchHeader}>
-            <View style={styles.leagueInfo}>
-              {match.leagueLogo ? (
-                <Image source={{ uri: match.leagueLogo }} style={styles.leagueLogo} resizeMode="contain" />
-              ) : (
-                <View style={[styles.leagueIconFallback, { backgroundColor: sf.surfaceSecondary }]}>
-                  <Trophy size={11} color={sf.textMuted} />
-                </View>
-              )}
-              <Text style={[styles.leagueName, { color: sf.textMuted }]} numberOfLines={1}>
-                {match.league}
-              </Text>
-              {(homeIsFavorite || awayIsFavorite) && (
-                <View style={[styles.favStarHeader, { backgroundColor: `${sf.warning}28` }]}>
-                  <Star size={9} color={sf.warning} fill={sf.warning} />
-                </View>
-              )}
-            </View>
-            
-            {isLive ? (
-              <View style={styles.liveIndicator}>
-                <LivePulse color={sf.live} size={6} />
-                <Text style={[styles.liveText, { color: sf.live }]}>LIVE</Text>
-                {match.elapsed ? (
-                  <Text style={[styles.elapsedText, { color: sf.live }]}>{match.elapsed}&apos;</Text>
-                ) : null}
-              </View>
-            ) : isCompleted ? (
-              <View style={[styles.statusBadge, { backgroundColor: `${sf.success}22` }]}>
-                <CheckCircle2 size={11} color={sf.success} />
-                <Text style={[styles.statusBadgeText, { color: sf.success }]}>FT</Text>
-              </View>
-            ) : (
-              <View style={[styles.statusBadge, { backgroundColor: `${sf.primary}18` }]}>
-                <Clock size={11} color={sf.primary} />
-                <Text style={[styles.statusBadgeText, { color: sf.primary }]}>{getMatchTime()}</Text>
-              </View>
-            )}
-          </View>
-
-          <View style={styles.matchBody}>
-            <View style={styles.teamRowLeft}>
-                {match.homeTeamLogo ? (
-                  <Image source={{ uri: match.homeTeamLogo }} style={styles.teamLogo} />
-                ) : (
-                  <Shield size={22} color={sf.textMuted} />
-                )}
-              <Text style={[
-                styles.teamNameHorizontal,
-                { color: sf.text },
-                resultStyle?.home === 'loser' && { opacity: 0.5 },
-              ]} numberOfLines={2}>
-                {match.homeTeam}
-              </Text>
-            </View>
-            
-            <View style={styles.scoreCenter}>
-              {hasScore ? (
-                <View style={[
-                  styles.scoreBlock,
-                  isLive && styles.scoreBlockLive,
-                  { backgroundColor: sf.surfaceSecondary },
-                ]}>
-                  <Text style={[
-                    styles.scoreNum,
-                    { color: sf.text },
-                    isLive && { color: sf.live },
-                    resultStyle?.home === 'winner' && { color: sf.success },
-                  ]}>
-                    {match.homeScore}
-                  </Text>
-                  <Text style={[
-                    styles.scoreDash,
-                    { color: sf.border },
-                  ]}>:</Text>
-                  <Text style={[
-                    styles.scoreNum,
-                    { color: sf.text },
-                    isLive && { color: sf.live },
-                    resultStyle?.away === 'winner' && { color: sf.success },
-                  ]}>
-                    {match.awayScore}
-                  </Text>
-                </View>
-              ) : (
-                <View style={[styles.vsBlock, { backgroundColor: sf.surfaceSecondary }]}>
-                  <Text style={[styles.vsLabel, { color: sf.textMuted }]}>VS</Text>
-                </View>
-              )}
-            </View>
-            
-            <View style={styles.teamRowRight}>
-              <Text style={[
-                styles.teamNameHorizontal,
-                { color: sf.text, textAlign: 'right' as const },
-                resultStyle?.away === 'loser' && { opacity: 0.5 },
-              ]} numberOfLines={2}>
-                {match.awayTeam}
-              </Text>
-                {match.awayTeamLogo ? (
-                  <Image source={{ uri: match.awayTeamLogo }} style={styles.teamLogo} />
-                ) : (
-                  <Shield size={22} color={sf.textMuted} />
-                )}
-            </View>
-          </View>
-
-          <View style={[styles.matchFooter, { borderTopColor: sf.border }]}>
-            <View style={styles.footerLeft}>
-              {isPinned && (
-                <View style={styles.pinnedBadge}>
-                  <Pin size={10} color={sf.warning} />
-                  <Text style={[styles.pinnedText, { color: sf.warning }]}>Pinned</Text>
-                </View>
-              )}
-              {match.venue ? (
-                <View style={styles.venueRow}>
-                  <MapPin size={10} color={sf.textMuted} />
-                  <Text style={[styles.venueText, { color: sf.textMuted }]} numberOfLines={1}>
-                    {match.venue}{match.venueCity ? `, ${match.venueCity}` : ''}
-                  </Text>
-                </View>
-              ) : null}
-            </View>
-            {match.status !== 'Completed' && onToggleNotification && (
-              <TouchableOpacity
-                style={[
-                  styles.bellBtn,
-                  { backgroundColor: isNotified ? `${sf.primary}22` : sf.surfaceSecondary },
-                ]}
-                onPress={(e) => {
-                  e.stopPropagation?.();
-                  onToggleNotification(match.id);
-                }}
-                activeOpacity={0.7}
-                hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
-              >
-                {isNotified ? (
-                  <Bell size={14} color={sf.primary} fill={sf.primary} />
-                ) : (
-                  <BellOff size={14} color={sf.textMuted} />
-                )}
-              </TouchableOpacity>
-            )}
-          </View>
-        </View>
-      </TouchableOpacity>
-    </View>
-  );
-}, (prevProps, nextProps) => {
-  return (
-    prevProps.match.id === nextProps.match.id &&
-    prevProps.match.homeScore === nextProps.match.homeScore &&
-    prevProps.match.awayScore === nextProps.match.awayScore &&
-    prevProps.match.status === nextProps.match.status &&
-    prevProps.match.elapsed === nextProps.match.elapsed &&
-    prevProps.isNotified === nextProps.isNotified &&
-    prevProps.isPinned === nextProps.isPinned
   );
 });
 
@@ -2352,7 +2095,7 @@ export default function SportsScreen() {
     }
     const match = item.match;
     return (
-      <PremiumMatchCard
+      <PremiumSportsMatchCard
         match={match}
         isFavoriteTeam={isFavoriteTeam}
         isNotified={notifiedMatches.has(match.id)}
@@ -2682,13 +2425,6 @@ export default function SportsScreen() {
   const useDarkHeroImage = localHour >= 18;
 
   const renderFootballHeader = () => {
-    const trendingScorerUri = footballTrendingPreview?.topScorer
-      ? footballLeaderPortraitUri(footballTrendingPreview.topScorer)
-      : null;
-    const trendingAssistUri = footballTrendingPreview?.topAssist
-      ? footballLeaderPortraitUri(footballTrendingPreview.topAssist)
-      : null;
-
     return (
     <View>
       <ImageBackground
@@ -2894,8 +2630,12 @@ export default function SportsScreen() {
                   </View>
                   <View style={styles.trendingCol}>
                     <Text style={styles.trendingColTag}>Top scorer</Text>
-                    {trendingScorerUri ? (
-                      <Image source={{ uri: trendingScorerUri }} style={styles.trendingPlayerAvatar} />
+                    {footballTrendingPreview.topScorer ? (
+                      <TrendingLeaderAvatar
+                        row={footballTrendingPreview.topScorer}
+                        style={styles.trendingPlayerAvatar}
+                        placeholderStyle={styles.trendingPlayerPlaceholder}
+                      />
                     ) : (
                       <View style={styles.trendingPlayerPlaceholder} />
                     )}
@@ -2912,8 +2652,12 @@ export default function SportsScreen() {
                   </View>
                   <View style={styles.trendingCol}>
                     <Text style={styles.trendingColTag}>Most assists</Text>
-                    {trendingAssistUri ? (
-                      <Image source={{ uri: trendingAssistUri }} style={styles.trendingPlayerAvatar} />
+                    {footballTrendingPreview.topAssist ? (
+                      <TrendingLeaderAvatar
+                        row={footballTrendingPreview.topAssist}
+                        style={styles.trendingPlayerAvatar}
+                        placeholderStyle={styles.trendingPlayerPlaceholder}
+                      />
                     ) : (
                       <View style={styles.trendingPlayerPlaceholder} />
                     )}

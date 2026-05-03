@@ -39,6 +39,13 @@ const USERS_STORAGE_KEY = '@users_db';
 
 const GOOGLE_CLIENT_ID = process.env.EXPO_PUBLIC_GOOGLE_CLIENT_ID || '';
 
+function appendDevDetail(friendly: string, technical: string): string {
+  if (typeof __DEV__ === 'undefined' || !__DEV__) return friendly;
+  const t = technical.trim();
+  if (!t || t === friendly) return friendly;
+  return `${friendly}\n(${t})`;
+}
+
 /** Supabase sign-in uses HTTPS to your project (not the local Metro/tRPC server). */
 function friendlyMessageForAuthNetworkError(error: unknown): string | null {
   if (!(error instanceof Error)) {
@@ -526,7 +533,9 @@ export const [AuthProvider, useAuth] = createContextHook(() => {
             error != null ? friendlyMessageForAuthNetworkError(error) : friendlyMessageForAuthNetworkError(new Error(msg));
           const friendly = /invalid login credentials/i.test(msg)
             ? 'Invalid email or password'
-            : networkFriendly || msg;
+            : networkFriendly
+              ? appendDevDetail(networkFriendly, msg)
+              : msg;
           return { success: false, error: friendly };
         }
         const meta = data.user.user_metadata || {};
@@ -598,7 +607,13 @@ export const [AuthProvider, useAuth] = createContextHook(() => {
           "Email/password sign-in uses Supabase (EXPO_PUBLIC_SUPABASE_URL). It does not use your computer's local Metro server. If this is new, check Wi-Fi in the simulator, or restart Expo with --clear after changing .env.",
         );
       }
-      return { success: false, error: networkMsg || error?.message || 'Login failed' };
+      return {
+        success: false,
+        error:
+          networkMsg != null
+            ? appendDevDetail(networkMsg, String(error?.message ?? error))
+            : error?.message || 'Login failed',
+      };
     } finally {
       setIsLoading(false);
     }
@@ -632,7 +647,9 @@ export const [AuthProvider, useAuth] = createContextHook(() => {
             error != null ? friendlyMessageForAuthNetworkError(error) : friendlyMessageForAuthNetworkError(new Error(msg));
           const friendly = /already registered|already exists/i.test(msg)
             ? 'An account with this email already exists'
-            : networkFriendly || msg;
+            : networkFriendly
+              ? appendDevDetail(networkFriendly, msg)
+              : msg;
           return { success: false, error: friendly };
         }
         const authUser: AuthUser = {
@@ -705,7 +722,13 @@ export const [AuthProvider, useAuth] = createContextHook(() => {
           "Sign-up uses Supabase (EXPO_PUBLIC_SUPABASE_URL). Check simulator Wi‑Fi, VPN/firewall, or restart Expo with --clear after changing .env.",
         );
       }
-      return { success: false, error: networkMsg || error?.message || 'Signup failed' };
+      return {
+        success: false,
+        error:
+          networkMsg != null
+            ? appendDevDetail(networkMsg, String(error?.message ?? error))
+            : error?.message || 'Signup failed',
+      };
     } finally {
       setIsLoading(false);
     }

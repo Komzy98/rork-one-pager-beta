@@ -1,6 +1,6 @@
 import React, { useMemo, useState, useRef, useEffect, useCallback } from 'react';
 import { StyleSheet, View, Text, TouchableOpacity, ScrollView, Platform, Animated, Image, Dimensions } from 'react-native';
-import { Trophy, Clock, Calendar, Zap, Shield, TrendingUp, TrendingDown, Minus, Heart, ChevronRight, MapPin, Radio } from 'lucide-react-native';
+import { Trophy, Clock, Calendar, Zap, Shield, Heart, ChevronRight, MapPin, Radio } from 'lucide-react-native';
 import * as Haptics from 'expo-haptics';
 import { LinearGradient } from 'expo-linear-gradient';
 import { useUserProfile } from '@/hooks/useUserProfile';
@@ -11,6 +11,7 @@ import { SPACING, cardShadow } from '@/constants/design';
 
 import EnhancedLoadingState from './EnhancedLoadingState';
 import MatchDetailsModal from './MatchDetailsModal';
+import { PremiumSportsMatchCard, liveFootballMatchToCardModel } from './PremiumSportsMatchCard';
 
 const { width: SCREEN_WIDTH } = Dimensions.get('window');
 
@@ -318,109 +319,6 @@ const PremiumUpcomingCard = React.memo(({ match, isFirst, onPress }: { match: Li
   );
 });
 
-const PremiumResultCard = React.memo(({ match, teamName, isTeamMatchFn, onPress }: {
-  match: LiveFootballMatch;
-  teamName: string;
-  isTeamMatchFn: (matchTeam: string, favTeam: string) => boolean;
-  onPress: () => void;
-}) => {
-  const scaleAnim = useRef(new Animated.Value(1)).current;
-  const isHome = isTeamMatchFn(match.homeTeam, teamName);
-  const teamScore = isHome ? (match.homeScore ?? 0) : (match.awayScore ?? 0);
-  const opponentScore = isHome ? (match.awayScore ?? 0) : (match.homeScore ?? 0);
-  const result = teamScore > opponentScore ? 'W' : teamScore < opponentScore ? 'L' : 'D';
-  const resultColor = result === 'W' ? '#10B981' : result === 'L' ? '#EF4444' : '#8E8E93';
-  const resultLabel = result === 'W' ? 'Victory' : result === 'L' ? 'Defeat' : 'Draw';
-  const ResultIcon = result === 'W' ? TrendingUp : result === 'L' ? TrendingDown : Minus;
-
-  const handlePressIn = useCallback(() => {
-    Animated.spring(scaleAnim, { toValue: 0.98, useNativeDriver: true, tension: 100, friction: 10 }).start();
-  }, [scaleAnim]);
-
-  const handlePressOut = useCallback(() => {
-    Animated.spring(scaleAnim, { toValue: 1, useNativeDriver: true, tension: 100, friction: 10 }).start();
-  }, [scaleAnim]);
-
-  return (
-    <Animated.View style={{ transform: [{ scale: scaleAnim }] }}>
-      <TouchableOpacity
-        onPress={onPress}
-        onPressIn={handlePressIn}
-        onPressOut={handlePressOut}
-        activeOpacity={1}
-        style={styles.premiumCardWrap}
-      >
-        <View style={styles.resultCard}>
-          <View style={[styles.resultAccent, { backgroundColor: resultColor }]} />
-          <View style={styles.resultContent}>
-            <View style={styles.resultHeader}>
-              <View style={styles.resultLeagueRow}>
-                {match.leagueLogo ? (
-                  <Image source={{ uri: match.leagueLogo }} style={styles.resultLeagueLogo} />
-                ) : (
-                  <Trophy size={11} color="#8E8E93" />
-                )}
-                <Text style={styles.resultLeagueName} numberOfLines={1}>{match.league}</Text>
-              </View>
-              <View style={[styles.resultBadge, { backgroundColor: resultColor + '15' }]}>
-                <ResultIcon size={11} color={resultColor} />
-                <Text style={[styles.resultBadgeText, { color: resultColor }]}>{resultLabel}</Text>
-              </View>
-            </View>
-
-            <View style={styles.resultBody}>
-              <View style={styles.resultTeamRow}>
-                <View style={styles.resultTeamLogoBox}>
-                  {match.homeTeamLogo ? (
-                    <Image source={{ uri: match.homeTeamLogo }} style={styles.resultTeamLogo} />
-                  ) : (
-                    <Shield size={16} color="#C7C7CC" />
-                  )}
-                </View>
-                <Text style={[
-                  styles.resultTeamName,
-                  isHome && styles.resultTeamNameBold
-                ]} numberOfLines={1}>{match.homeTeam}</Text>
-                <Text style={[
-                  styles.resultScore,
-                  isHome && (match.homeScore ?? 0) > (match.awayScore ?? 0) && { color: '#10B981' },
-                  isHome && (match.homeScore ?? 0) < (match.awayScore ?? 0) && { color: '#EF4444' },
-                ]}>{match.homeScore ?? 0}</Text>
-              </View>
-
-              <View style={styles.resultDividerLine} />
-
-              <View style={styles.resultTeamRow}>
-                <View style={styles.resultTeamLogoBox}>
-                  {match.awayTeamLogo ? (
-                    <Image source={{ uri: match.awayTeamLogo }} style={styles.resultTeamLogo} />
-                  ) : (
-                    <Shield size={16} color="#C7C7CC" />
-                  )}
-                </View>
-                <Text style={[
-                  styles.resultTeamName,
-                  !isHome && styles.resultTeamNameBold
-                ]} numberOfLines={1}>{match.awayTeam}</Text>
-                <Text style={[
-                  styles.resultScore,
-                  !isHome && (match.awayScore ?? 0) > (match.homeScore ?? 0) && { color: '#10B981' },
-                  !isHome && (match.awayScore ?? 0) < (match.homeScore ?? 0) && { color: '#EF4444' },
-                ]}>{match.awayScore ?? 0}</Text>
-              </View>
-            </View>
-
-            <View style={styles.resultFooter}>
-              <Text style={styles.resultDateText}>{formatMatchDate(match.date)}</Text>
-              <Text style={styles.resultFTText}>FT</Text>
-            </View>
-          </View>
-        </View>
-      </TouchableOpacity>
-    </Animated.View>
-  );
-});
-
 const TabIndicator = React.memo(({ tabs, activeIndex }: { tabs: { key: string }[]; activeIndex: number }) => {
   const { colors } = useTheme();
   const translateX = useRef(new Animated.Value(0)).current;
@@ -678,6 +576,15 @@ function ModernSportsSectionComponent({
 
     return false;
   }, []);
+
+  const isFavoriteTeamForCard = useCallback(
+    (teamName: string) => {
+      const clubHit = !!profile?.favoriteTeams?.some((t) => isTeamMatch(teamName, t.name));
+      const nationHit = !!profile?.nationalities?.some((n) => isNationalTeamMatch(teamName, n));
+      return clubHit || nationHit;
+    },
+    [profile?.favoriteTeams, profile?.nationalities, isTeamMatch, isNationalTeamMatch],
+  );
 
   const getNationalTeamMatches = useCallback((nationality: UserNationality) => {
     const allMatches = [...liveMatches, ...completedMatches, ...upcomingMatches];
@@ -1085,12 +992,11 @@ function ModernSportsSectionComponent({
               showsVerticalScrollIndicator={false}
               contentContainerStyle={styles.premiumListContent}
             >
-              {filteredMatches.slice(0, 10).map(({ match, teamName }, idx) => (
-                <PremiumResultCard
+              {filteredMatches.slice(0, 10).map(({ match }, idx) => (
+                <PremiumSportsMatchCard
                   key={match.id || `result-${idx}`}
-                  match={match}
-                  teamName={teamName}
-                  isTeamMatchFn={isTeamMatch}
+                  match={liveFootballMatchToCardModel(match)}
+                  isFavoriteTeam={isFavoriteTeamForCard}
                   onPress={() => handleMatchPress(match)}
                 />
               ))}
@@ -1516,121 +1422,6 @@ const styles = StyleSheet.create({
     fontSize: 11,
     fontWeight: '500' as const,
     color: '#AEAEB2',
-  },
-
-  resultCard: {
-    flexDirection: 'row',
-    backgroundColor: '#FFFFFF',
-    borderRadius: 18,
-    overflow: 'hidden',
-    ...cardShadow(2),
-  },
-  resultAccent: {
-    width: 4,
-  },
-  resultContent: {
-    flex: 1,
-    padding: 14,
-  },
-  resultHeader: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    marginBottom: 12,
-  },
-  resultLeagueRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 6,
-    flex: 1,
-  },
-  resultLeagueLogo: {
-    width: 16,
-    height: 16,
-    resizeMode: 'contain' as const,
-  },
-  resultLeagueName: {
-    fontSize: 12,
-    fontWeight: '600' as const,
-    color: '#6E6E73',
-    flex: 1,
-  },
-  resultBadge: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 4,
-    paddingHorizontal: 10,
-    paddingVertical: 5,
-    borderRadius: 10,
-  },
-  resultBadgeText: {
-    fontSize: 11,
-    fontWeight: '700' as const,
-  },
-  resultBody: {
-    gap: 2,
-  },
-  resultTeamRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 10,
-    paddingVertical: 6,
-  },
-  resultTeamLogoBox: {
-    width: 32,
-    height: 32,
-    borderRadius: 10,
-    backgroundColor: '#F5F5F7',
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  resultTeamLogo: {
-    width: 22,
-    height: 22,
-    resizeMode: 'contain' as const,
-  },
-  resultTeamName: {
-    flex: 1,
-    fontSize: 14,
-    fontWeight: '500' as const,
-    color: '#6E6E73',
-  },
-  resultTeamNameBold: {
-    fontWeight: '700' as const,
-    color: '#1C1C1E',
-  },
-  resultScore: {
-    fontSize: 22,
-    fontWeight: '800' as const,
-    color: '#1C1C1E',
-    minWidth: 28,
-    textAlign: 'right' as const,
-    letterSpacing: -0.5,
-  },
-  resultDividerLine: {
-    height: 1,
-    backgroundColor: '#F2F2F7',
-    marginLeft: 42,
-  },
-  resultFooter: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    marginTop: 10,
-    paddingTop: 10,
-    borderTopWidth: 1,
-    borderTopColor: '#F2F2F7',
-  },
-  resultDateText: {
-    fontSize: 11,
-    fontWeight: '500' as const,
-    color: '#AEAEB2',
-  },
-  resultFTText: {
-    fontSize: 11,
-    fontWeight: '700' as const,
-    color: '#8E8E93',
-    letterSpacing: 0.5,
   },
 
   premiumEmptyState: {

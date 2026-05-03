@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef, useCallback, useMemo } from 'react';
 import { StyleSheet, View, Text, Modal, TouchableOpacity, ScrollView, ActivityIndicator, Image, Animated, Platform, Dimensions, Linking } from 'react-native';
-import { X, MapPin, Trophy, Users, BarChart3, History, AlertTriangle, Activity, Tv, Globe, Building2, Cloud, Thermometer, Wind, Droplets, Play, TrendingUp, Shield, Zap, Clock } from 'lucide-react-native';
+import { X, MapPin, Trophy, Users, BarChart3, History, AlertTriangle, Activity, Tv, Globe, Building2, Cloud, Thermometer, Wind, Droplets, Play, TrendingUp, Shield, Zap, Clock, Clapperboard } from 'lucide-react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import * as Haptics from 'expo-haptics';
 import { COLORS } from '@/constants/colors';
@@ -762,72 +762,103 @@ export default function MatchDetailsModal({
     return (
       <View style={styles.highlightsCard}>
         <View style={styles.highlightsHeader}>
-          <LinearGradient
-            colors={['#FF0000', '#CC0000']}
-            style={styles.highlightsYTBadge}
-            start={{ x: 0, y: 0 }}
-            end={{ x: 1, y: 0 }}
-          >
-            <Play size={10} color="#FFF" fill="#FFF" />
-            <Text style={styles.highlightsYTText}>Highlights</Text>
-          </LinearGradient>
-          <Text style={styles.highlightsDate}>{matchDate}</Text>
+          <View style={styles.highlightsTitleBlock}>
+            <View style={styles.highlightsIconBadge}>
+              <Clapperboard size={16} color={tokens.accent} strokeWidth={2} />
+            </View>
+            <View style={styles.highlightsTitleTextCol}>
+              <Text style={styles.highlightsKicker}>MATCH RECAP</Text>
+              <Text style={styles.highlightsHeadline}>Highlights & replay</Text>
+            </View>
+          </View>
+          {matchDate !== '' ? (
+            <View style={styles.highlightsDatePill}>
+              <Text style={styles.highlightsDate}>{matchDate}</Text>
+            </View>
+          ) : null}
         </View>
 
         <TouchableOpacity
-          style={styles.highlightsVideoArea}
+          style={styles.highlightsVideoTouch}
           onPress={handleOpenYouTube}
-          activeOpacity={0.85}
+          activeOpacity={0.88}
         >
           <LinearGradient
-            colors={['#0D1117', '#161B22', '#21262D']}
+            colors={['#050810', '#0c1220', '#121c2e']}
+            locations={[0, 0.45, 1]}
             style={styles.highlightsVideoBg}
-            start={{ x: 0, y: 0 }}
-            end={{ x: 1, y: 1 }}
+            start={{ x: 0.5, y: 0 }}
+            end={{ x: 0.5, y: 1 }}
           >
+            <LinearGradient
+              colors={['rgba(255,255,255,0.09)', 'rgba(255,255,255,0)']}
+              style={styles.highlightsVideoSheen}
+              start={{ x: 0.5, y: 0 }}
+              end={{ x: 0.5, y: 1 }}
+            />
             <View style={styles.highlightsTeamsDisplay}>
               <View style={styles.highlightsTeamCol}>
                 {homeTeamLogo ? (
-                  <Image source={{ uri: homeTeamLogo }} style={styles.highlightsTeamLogo} resizeMode="contain" />
+                  <View style={styles.highlightsLogoRing}>
+                    <Image source={{ uri: homeTeamLogo }} style={styles.highlightsTeamLogo} resizeMode="contain" />
+                  </View>
                 ) : (
-                  <View style={styles.highlightsTeamLogoFallback}>
+                  <View style={[styles.highlightsTeamLogoFallback, styles.highlightsLogoRing]}>
                     <Text style={styles.highlightsTeamInit}>{homeTeam.charAt(0)}</Text>
                   </View>
                 )}
-                <Text style={styles.highlightsTeamName} numberOfLines={1}>{homeTeam}</Text>
+                <Text style={styles.highlightsTeamNameOnDark} numberOfLines={2}>
+                  {homeTeam}
+                </Text>
               </View>
 
               <View style={styles.highlightsScoreCol}>
                 <View style={styles.highlightsScoreBox}>
-                  <Text style={styles.highlightsScoreText}>{homeScore}</Text>
-                  <View style={styles.highlightsScoreSep} />
-                  <Text style={styles.highlightsScoreText}>{awayScore}</Text>
+                  <Text style={styles.highlightsScoreText}>{homeScore ?? '–'}</Text>
+                  <Text style={styles.highlightsScoreDivider}>:</Text>
+                  <Text style={styles.highlightsScoreText}>{awayScore ?? '–'}</Text>
                 </View>
-                <Text style={styles.highlightsFTLabel}>FULL TIME</Text>
+                <View style={styles.highlightsFtRow}>
+                  <View style={styles.highlightsFtDot} />
+                  <Text style={styles.highlightsFTLabel}>FULL TIME</Text>
+                  <View style={styles.highlightsFtDot} />
+                </View>
               </View>
 
               <View style={styles.highlightsTeamCol}>
                 {awayTeamLogo ? (
-                  <Image source={{ uri: awayTeamLogo }} style={styles.highlightsTeamLogo} resizeMode="contain" />
+                  <View style={styles.highlightsLogoRing}>
+                    <Image source={{ uri: awayTeamLogo }} style={styles.highlightsTeamLogo} resizeMode="contain" />
+                  </View>
                 ) : (
-                  <View style={styles.highlightsTeamLogoFallback}>
+                  <View style={[styles.highlightsTeamLogoFallback, styles.highlightsLogoRing]}>
                     <Text style={styles.highlightsTeamInit}>{awayTeam.charAt(0)}</Text>
                   </View>
                 )}
-                <Text style={styles.highlightsTeamName} numberOfLines={1}>{awayTeam}</Text>
+                <Text style={styles.highlightsTeamNameOnDark} numberOfLines={2}>
+                  {awayTeam}
+                </Text>
               </View>
             </View>
 
-            <View style={styles.highlightsPlayBtn}>
-              <LinearGradient
-                colors={['#FF0000', '#CC0000']}
-                style={styles.highlightsPlayCircle}
-                start={{ x: 0, y: 0 }}
-                end={{ x: 1, y: 1 }}
-              >
-                <Play size={18} color="#FFF" fill="#FFF" />
-              </LinearGradient>
-              <Text style={styles.highlightsWatchText}>Watch on YouTube</Text>
+            <View style={styles.highlightsPlayColumn}>
+              <View style={styles.highlightsPlayGlass}>
+                <LinearGradient
+                  colors={['rgba(255,255,255,0.22)', 'rgba(255,255,255,0.06)']}
+                  style={styles.highlightsPlayCircle}
+                  start={{ x: 0.2, y: 0 }}
+                  end={{ x: 0.8, y: 1 }}
+                >
+                  <View style={styles.highlightsPlayIconNudge}>
+                    <Play size={22} color="#FFFFFF" fill="#FFFFFF" />
+                  </View>
+                </LinearGradient>
+              </View>
+              <Text style={styles.highlightsPlayPrimary}>Play full recap</Text>
+              <View style={styles.highlightsYtHint}>
+                <View style={styles.highlightsYtDot} />
+                <Text style={styles.highlightsPlaySecondary}>Opens in YouTube</Text>
+              </View>
             </View>
           </LinearGradient>
         </TouchableOpacity>
@@ -835,22 +866,37 @@ export default function MatchDetailsModal({
         {goalEvents.length > 0 && (
           <View style={styles.highlightsGoalsList}>
             <View style={styles.highlightsGoalsHeader}>
-              <Zap size={12} color={tokens.accent} />
-              <Text style={styles.highlightsGoalsTitle}>Goals</Text>
+              <View style={styles.highlightsGoalsTitleRow}>
+                <Zap size={13} color={tokens.accent} strokeWidth={2.5} />
+                <Text style={styles.highlightsGoalsTitle}>Scoring summary</Text>
+              </View>
+              <Text style={styles.highlightsGoalsCaption}>{goalEvents.length} goal{goalEvents.length === 1 ? '' : 's'}</Text>
             </View>
             {goalEvents.map((event: MatchEvent, idx: number) => {
               const isHome = event.team?.name === homeTeam;
+              const accent = isHome ? HOME_COLOR : AWAY_COLOR;
               return (
-                <View key={idx} style={[styles.highlightsGoalRow, isHome ? styles.highlightsGoalHome : styles.highlightsGoalAway]}>
-                  <Text style={styles.highlightsGoalIcon}>⚽</Text>
+                <View
+                  key={idx}
+                  style={[
+                    styles.highlightsGoalRow,
+                    { borderLeftColor: accent },
+                    isHome ? styles.highlightsGoalTintHome : styles.highlightsGoalTintAway,
+                  ]}
+                >
+                  <View style={[styles.highlightsGoalBadge, { backgroundColor: accent + '22' }]}>
+                    <Text style={styles.highlightsGoalIcon}>⚽</Text>
+                  </View>
                   <View style={styles.highlightsGoalInfo}>
                     <Text style={styles.highlightsGoalPlayer}>{event.player?.name}</Text>
-                    {event.assist?.name && (
-                      <Text style={styles.highlightsGoalAssist}>Assist: {event.assist.name}</Text>
-                    )}
+                    {event.assist?.name ? (
+                      <Text style={styles.highlightsGoalAssist}>
+                        Assist <Text style={styles.highlightsGoalAssistName}>{event.assist.name}</Text>
+                      </Text>
+                    ) : null}
                   </View>
-                  <View style={[styles.highlightsGoalTime, { backgroundColor: isHome ? HOME_COLOR + '18' : AWAY_COLOR + '18' }]}>
-                    <Text style={[styles.highlightsGoalTimeText, { color: isHome ? HOME_COLOR : AWAY_COLOR }]}>
+                  <View style={styles.highlightsGoalTimeShell}>
+                    <Text style={[styles.highlightsGoalTimeText, { color: accent }]}>
                       {event.time.elapsed}&apos;{event.time.extra ? `+${event.time.extra}` : ''}
                     </Text>
                   </View>
@@ -861,7 +907,10 @@ export default function MatchDetailsModal({
         )}
 
         <View style={styles.highlightsSources}>
-          <Text style={styles.highlightsSourcesLabel}>Also available on:</Text>
+          <View style={styles.highlightsSourcesHead}>
+            <Tv size={12} color={tokens.textMuted} strokeWidth={2} />
+            <Text style={styles.highlightsSourcesLabel}>Broadcast & streaming</Text>
+          </View>
           <View style={styles.highlightsSourcesRow}>
             {['Sky Sports', 'ESPN', 'beIN'].map((s) => (
               <View key={s} style={styles.highlightsSourceChip}>
@@ -1874,212 +1923,360 @@ function createMatchModalStyles(t: MatchModalTokens) {
   highlightsCard: {
     marginHorizontal: 16,
     marginBottom: 20,
-    backgroundColor: t.surfaceCard,
-    borderRadius: 16,
+    backgroundColor: t.surfaceMain,
+    borderRadius: 18,
     overflow: 'hidden',
     borderWidth: 1,
     borderColor: t.borderSubtle,
+    ...Platform.select({
+      ios: {
+        shadowColor: '#0f172a',
+        shadowOffset: { width: 0, height: 10 },
+        shadowOpacity: 0.08,
+        shadowRadius: 20,
+      },
+      android: { elevation: 4 },
+      default: {},
+    }),
   },
   highlightsHeader: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-    paddingHorizontal: 14,
-    paddingVertical: 10,
-    borderBottomWidth: 1,
+    paddingHorizontal: 16,
+    paddingTop: 14,
+    paddingBottom: 12,
+    borderBottomWidth: StyleSheet.hairlineWidth,
     borderBottomColor: t.borderSubtle,
+    backgroundColor: t.surfaceCard,
   },
-  highlightsYTBadge: {
+  highlightsTitleBlock: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 5,
-    paddingHorizontal: 10,
-    paddingVertical: 5,
-    borderRadius: 6,
+    gap: 12,
+    flex: 1,
   },
-  highlightsYTText: {
-    fontSize: 11,
+  highlightsIconBadge: {
+    width: 40,
+    height: 40,
+    borderRadius: 12,
+    backgroundColor: t.surfaceElevated,
+    borderWidth: 1,
+    borderColor: t.borderSubtle,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  highlightsTitleTextCol: {
+    gap: 2,
+    flexShrink: 1,
+  },
+  highlightsKicker: {
+    fontSize: 10,
     fontWeight: '700' as const,
-    color: '#FFF',
+    letterSpacing: 1.6,
+    color: t.textMuted,
+  },
+  highlightsHeadline: {
+    fontSize: 17,
+    fontWeight: '700' as const,
+    letterSpacing: -0.3,
+    color: t.textPrimary,
+  },
+  highlightsDatePill: {
+    paddingHorizontal: 11,
+    paddingVertical: 6,
+    borderRadius: 999,
+    backgroundColor: t.surfaceElevated,
+    borderWidth: 1,
+    borderColor: t.borderSubtle,
   },
   highlightsDate: {
     fontSize: 11,
-    color: t.textMuted,
-    fontWeight: '500' as const,
+    color: t.textSecondary,
+    fontWeight: '600' as const,
   },
-  highlightsVideoArea: {
-    borderRadius: 0,
+  highlightsVideoTouch: {
+    marginHorizontal: 12,
+    marginTop: 12,
+    marginBottom: 4,
+    borderRadius: 14,
     overflow: 'hidden',
   },
   highlightsVideoBg: {
-    paddingVertical: 28,
-    paddingHorizontal: 20,
+    paddingVertical: 22,
+    paddingHorizontal: 14,
     alignItems: 'center',
+    minHeight: 168,
+    justifyContent: 'space-between',
+  },
+  highlightsVideoSheen: {
+    position: 'absolute',
+    left: 0,
+    right: 0,
+    top: 0,
+    height: 72,
   },
   highlightsTeamsDisplay: {
     flexDirection: 'row',
-    alignItems: 'center',
+    alignItems: 'flex-start',
     justifyContent: 'center',
     width: '100%',
-    marginBottom: 20,
+    paddingTop: 4,
   },
   highlightsTeamCol: {
     flex: 1,
     alignItems: 'center',
-    gap: 6,
+    gap: 8,
+    paddingHorizontal: 4,
+  },
+  highlightsLogoRing: {
+    padding: 3,
+    borderRadius: 999,
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.14)',
+    backgroundColor: 'rgba(255,255,255,0.04)',
   },
   highlightsTeamLogo: {
-    width: 44,
-    height: 44,
-    borderRadius: 22,
+    width: 40,
+    height: 40,
+    borderRadius: 20,
   },
   highlightsTeamLogoFallback: {
-    width: 44,
-    height: 44,
-    borderRadius: 22,
-    backgroundColor: 'rgba(255,255,255,0.1)',
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    backgroundColor: 'rgba(255,255,255,0.08)',
     justifyContent: 'center',
     alignItems: 'center',
   },
   highlightsTeamInit: {
-    fontSize: 18,
+    fontSize: 16,
     fontWeight: '700' as const,
     color: '#FFF',
   },
-  highlightsTeamName: {
+  highlightsTeamNameOnDark: {
     fontSize: 11,
     fontWeight: '600' as const,
-    color: t.textSecondary,
+    color: 'rgba(255,255,255,0.78)',
     textAlign: 'center',
-    maxWidth: 80,
+    lineHeight: 14,
   },
   highlightsScoreCol: {
     alignItems: 'center',
-    paddingHorizontal: 16,
+    paddingHorizontal: 8,
+    minWidth: 96,
   },
   highlightsScoreBox: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 10,
+    justifyContent: 'center',
+    gap: 4,
   },
   highlightsScoreText: {
-    fontSize: 28,
-    fontWeight: '900' as const,
-    color: '#FFF',
+    fontSize: 32,
+    fontWeight: '800' as const,
+    color: '#FFFFFF',
+    fontVariant: ['tabular-nums'],
   },
-  highlightsScoreSep: {
-    width: 14,
-    height: 2,
-    borderRadius: 1,
-    backgroundColor: t.textMuted,
+  highlightsScoreDivider: {
+    fontSize: 26,
+    fontWeight: '300' as const,
+    color: 'rgba(255,255,255,0.35)',
+    marginBottom: 2,
+  },
+  highlightsFtRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    marginTop: 8,
+  },
+  highlightsFtDot: {
+    width: 12,
+    height: 1,
+    backgroundColor: 'rgba(255,255,255,0.2)',
   },
   highlightsFTLabel: {
     fontSize: 9,
     fontWeight: '700' as const,
-    color: t.textMuted,
-    letterSpacing: 1.5,
-    marginTop: 6,
+    color: 'rgba(255,255,255,0.45)',
+    letterSpacing: 2,
   },
-  highlightsPlayBtn: {
-    flexDirection: 'row',
+  highlightsPlayColumn: {
     alignItems: 'center',
     gap: 8,
+    marginTop: 6,
+    paddingBottom: 2,
+  },
+  highlightsPlayGlass: {
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 8 },
+    shadowOpacity: 0.35,
+    shadowRadius: 12,
+    elevation: 8,
   },
   highlightsPlayCircle: {
-    width: 40,
-    height: 40,
-    borderRadius: 20,
+    width: 56,
+    height: 56,
+    borderRadius: 28,
     justifyContent: 'center',
     alignItems: 'center',
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.25)',
   },
-  highlightsWatchText: {
-    fontSize: 13,
+  highlightsPlayIconNudge: {
+    marginLeft: 3,
+  },
+  highlightsPlayPrimary: {
+    fontSize: 15,
+    fontWeight: '700' as const,
+    color: '#FFFFFF',
+    letterSpacing: -0.2,
+  },
+  highlightsYtHint: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+  },
+  highlightsYtDot: {
+    width: 6,
+    height: 6,
+    borderRadius: 3,
+    backgroundColor: '#FF0033',
+  },
+  highlightsPlaySecondary: {
+    fontSize: 11,
     fontWeight: '600' as const,
-    color: t.textPrimary,
+    color: 'rgba(255,255,255,0.45)',
+    letterSpacing: 0.2,
   },
   highlightsGoalsList: {
-    paddingHorizontal: 14,
-    paddingVertical: 10,
-    borderTopWidth: 1,
+    paddingHorizontal: 16,
+    paddingTop: 14,
+    paddingBottom: 12,
+    borderTopWidth: StyleSheet.hairlineWidth,
     borderTopColor: t.borderSubtle,
+    backgroundColor: t.surfaceCard,
   },
   highlightsGoalsHeader: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 5,
-    marginBottom: 8,
+    justifyContent: 'space-between',
+    marginBottom: 12,
+  },
+  highlightsGoalsTitleRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 7,
   },
   highlightsGoalsTitle: {
-    fontSize: 12,
+    fontSize: 14,
     fontWeight: '700' as const,
-    color: t.accent,
+    color: t.textPrimary,
+    letterSpacing: -0.2,
+  },
+  highlightsGoalsCaption: {
+    fontSize: 11,
+    fontWeight: '600' as const,
+    color: t.textMuted,
   },
   highlightsGoalRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 8,
-    paddingVertical: 6,
-    paddingHorizontal: 8,
-    borderRadius: 8,
-    marginBottom: 4,
+    gap: 10,
+    paddingVertical: 10,
+    paddingHorizontal: 12,
+    paddingLeft: 10,
+    borderRadius: 12,
+    marginBottom: 8,
+    borderLeftWidth: 3,
+    borderLeftColor: 'transparent',
   },
-  highlightsGoalHome: {
-    backgroundColor: HOME_COLOR + '08',
+  highlightsGoalTintHome: {
+    backgroundColor: HOME_COLOR + '0D',
   },
-  highlightsGoalAway: {
-    backgroundColor: AWAY_COLOR + '08',
+  highlightsGoalTintAway: {
+    backgroundColor: AWAY_COLOR + '0D',
+  },
+  highlightsGoalBadge: {
+    width: 32,
+    height: 32,
+    borderRadius: 10,
+    justifyContent: 'center',
+    alignItems: 'center',
   },
   highlightsGoalIcon: {
-    fontSize: 14,
+    fontSize: 15,
   },
   highlightsGoalInfo: {
     flex: 1,
+    gap: 2,
   },
   highlightsGoalPlayer: {
-    fontSize: 13,
-    fontWeight: '600' as const,
+    fontSize: 14,
+    fontWeight: '700' as const,
     color: t.textPrimary,
+    letterSpacing: -0.2,
   },
   highlightsGoalAssist: {
-    fontSize: 11,
-    color: t.textMuted,
-    marginTop: 1,
-  },
-  highlightsGoalTime: {
-    paddingHorizontal: 8,
-    paddingVertical: 3,
-    borderRadius: 6,
-  },
-  highlightsGoalTimeText: {
-    fontSize: 11,
-    fontWeight: '700' as const,
-  },
-  highlightsSources: {
-    paddingHorizontal: 14,
-    paddingVertical: 10,
-    borderTopWidth: 1,
-    borderTopColor: t.borderSubtle,
-  },
-  highlightsSourcesLabel: {
-    fontSize: 10,
+    fontSize: 12,
     color: t.textMuted,
     fontWeight: '500' as const,
-    marginBottom: 6,
+  },
+  highlightsGoalAssistName: {
+    color: t.textSecondary,
+    fontWeight: '600' as const,
+  },
+  highlightsGoalTimeShell: {
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    borderRadius: 8,
+    backgroundColor: t.surfaceElevated,
+    borderWidth: 1,
+    borderColor: t.borderSubtle,
+  },
+  highlightsGoalTimeText: {
+    fontSize: 12,
+    fontWeight: '800' as const,
+    fontVariant: ['tabular-nums'],
+  },
+  highlightsSources: {
+    paddingHorizontal: 16,
+    paddingTop: 12,
+    paddingBottom: 14,
+    borderTopWidth: StyleSheet.hairlineWidth,
+    borderTopColor: t.borderSubtle,
+    backgroundColor: t.surfaceMain,
+    gap: 10,
+  },
+  highlightsSourcesHead: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+  },
+  highlightsSourcesLabel: {
+    fontSize: 11,
+    color: t.textSecondary,
+    fontWeight: '700' as const,
+    letterSpacing: 0.3,
   },
   highlightsSourcesRow: {
     flexDirection: 'row',
-    gap: 6,
+    flexWrap: 'wrap',
+    gap: 8,
   },
   highlightsSourceChip: {
-    backgroundColor: t.surfaceElevated,
-    paddingHorizontal: 10,
-    paddingVertical: 5,
-    borderRadius: 6,
+    backgroundColor: t.surfaceCard,
+    paddingHorizontal: 12,
+    paddingVertical: 7,
+    borderRadius: 999,
+    borderWidth: 1,
+    borderColor: t.borderSubtle,
   },
   highlightsSourceText: {
-    fontSize: 10,
-    fontWeight: '600' as const,
+    fontSize: 11,
+    fontWeight: '700' as const,
     color: t.textSecondary,
+    letterSpacing: -0.1,
   },
   eventsSection: {
     paddingBottom: 20,
