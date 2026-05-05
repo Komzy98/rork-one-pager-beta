@@ -135,7 +135,7 @@ export default function FootballPremiumHeroInner({
                   ) : (
                     <View style={[styles.featuredCrest, styles.crestPlaceholder]} />
                   )}
-                  <Text style={styles.featuredTeam} numberOfLines={1}>
+                  <Text style={styles.featuredTeam} numberOfLines={2}>
                     {featuredMatch.homeTeam}
                   </Text>
                 </View>
@@ -143,7 +143,7 @@ export default function FootballPremiumHeroInner({
                   <Text style={styles.vsDark}>VS</Text>
                 </View>
                 <View style={styles.featuredTeamRow}>
-                  <Text style={[styles.featuredTeam, { textAlign: 'right' }]} numberOfLines={1}>
+                  <Text style={[styles.featuredTeam, { textAlign: 'right' }]} numberOfLines={2}>
                     {featuredMatch.awayTeam}
                   </Text>
                   {featuredMatch.awayTeamLogo ? (
@@ -298,7 +298,8 @@ const styles = StyleSheet.create({
   },
   featuredTeam: {
     color: '#FFFFFF',
-    fontSize: 22,
+    fontSize: 18,
+    lineHeight: 20,
     fontWeight: '900',
     flexShrink: 1,
   },

@@ -317,10 +317,30 @@ function footballLeaderPortraitUri(row: {
     if (raw.startsWith('/') && /\/football\/players\//i.test(raw)) {
       return `https://media.api-sports.io${raw}`;
     }
+    if (/^media\.api-sports\.io\//i.test(raw)) return `https://${raw}`;
+    if (/^football\/players\/\d+/i.test(raw)) return `https://media.api-sports.io/${raw}`;
   }
   const id = coercePositivePlayerId(row);
   if (id != null) return `https://media.api-sports.io/football/players/${id}.png`;
   return null;
+}
+
+function footballLeaderPortraitFallbackUris(row: {
+  photo?: string | null;
+  playerId?: number | null;
+  id?: number | null;
+}): string[] {
+  const ordered: string[] = [];
+  const primary = footballLeaderPortraitUri(row);
+  if (primary) ordered.push(primary);
+  const id = coercePositivePlayerId(row);
+  if (id != null) {
+    ordered.push(
+      `https://media.api-sports.io/football/players/${id}.png`,
+      `https://media.api-sports.io/football/players/${id}.jpg`,
+    );
+  }
+  return [...new Set(ordered)];
 }
 
 const TrendingLeaderAvatar = React.memo(function TrendingLeaderAvatar({
@@ -332,20 +352,29 @@ const TrendingLeaderAvatar = React.memo(function TrendingLeaderAvatar({
   style: object;
   placeholderStyle: object;
 }) {
-  const id = coercePositivePlayerId(row);
-  const cdnFallback = id != null ? `https://media.api-sports.io/football/players/${id}.png` : null;
-  const primary = footballLeaderPortraitUri(row);
-  const [useCdnOnly, setUseCdnOnly] = useState(false);
+  const fallbackUris = useMemo(() => footballLeaderPortraitFallbackUris(row), [row.photo, row.playerId, row.id]);
+  const [uriIndex, setUriIndex] = useState(0);
 
   useEffect(() => {
-    setUseCdnOnly(false);
-  }, [row.photo, row.playerId, row.id]);
+    setUriIndex(0);
+  }, [fallbackUris.join('|')]);
 
-  const uri = useCdnOnly ? cdnFallback ?? primary : primary ?? cdnFallback;
+  const initial =
+    typeof row.playerName === 'string' && row.playerName.trim().length > 0
+      ? row.playerName.trim().charAt(0).toUpperCase()
+      : '?';
 
-  if (!uri) {
-    return <View style={[placeholderStyle]} />;
+  const initialBadge = (
+    <View style={[placeholderStyle, { alignItems: 'center', justifyContent: 'center' }]}>
+      <Text style={{ fontSize: 16, fontWeight: '700', color: 'rgba(255,255,255,0.85)' }}>{initial}</Text>
+    </View>
+  );
+
+  if (fallbackUris.length === 0 || uriIndex >= fallbackUris.length) {
+    return initialBadge;
   }
+
+  const uri = fallbackUris[uriIndex];
 
   return (
     <ExpoImage
@@ -354,11 +383,7 @@ const TrendingLeaderAvatar = React.memo(function TrendingLeaderAvatar({
       contentFit="cover"
       cachePolicy="memory-disk"
       transition={180}
-      onError={() => {
-        if (!useCdnOnly && cdnFallback != null && uri !== cdnFallback) {
-          setUseCdnOnly(true);
-        }
-      }}
+      onError={() => setUriIndex((i) => i + 1)}
     />
   );
 });
@@ -570,13 +595,20 @@ const LivePulse = ({ color = '#FF3B30', size = 8 }: { color?: string; size?: num
   );
 };
 
-const LiveTickerCard = React.memo(({ 
-  match, 
-  onPress, 
-}: { 
-  match: Match; 
-  onPress: () => void; 
+const LIVE_TICKER_H_PADDING = 20;
+/** Full-bleed width inside hero horizontal padding (`tickerList` uses the same inset). */
+const LIVE_TICKER_SOLO_CARD_WIDTH = SCREEN_WIDTH - LIVE_TICKER_H_PADDING * 2;
+
+const LiveTickerCard = React.memo(({
+  match,
+  onPress,
+  solo = false,
+}: {
+  match: Match;
+  onPress: () => void;
   index: number;
+  /** One live match: span the row like the featured match card instead of a narrow carousel chip. */
+  solo?: boolean;
 }) => {
   const handlePress = useCallback(async () => {
     if (Platform.OS !== 'web') {
@@ -590,7 +622,7 @@ const LiveTickerCard = React.memo(({
   const homeMomentum = ((homeScoreVal + 1) / (homeScoreVal + awayScoreVal + 2)) * 100;
 
   return (
-    <View style={styles.tickerCardWrapper}>
+    <View style={[styles.tickerCardWrapper, solo && styles.tickerCardWrapperSolo]}>
       <TouchableOpacity onPress={handlePress} activeOpacity={0.92}>
         <LinearGradient
           colors={[...LIVE_TICKER_GRADIENT]}
@@ -1513,14 +1545,27 @@ export default function SportsScreen() {
     return Array.from(ids);
   }, [countryInterestNamesLower]);
 
+  const forYouLeagueScope = useMemo(() => {
+    const preferredLeagueIds = Array.from(selectedProfileLeagueIds);
+    const merged = Array.from(new Set([...preferredLeagueIds, ...countryLeagueIds]));
+    if (merged.length > 0) {
+      return merged.slice(0, 24);
+    }
+    // Fallback only when no personalization signal exists yet.
+    return TOP_LEAGUE_BUNDLE_IDS.slice(0, 8);
+  }, [selectedProfileLeagueIds, countryLeagueIds]);
+
   const queryLeagueIds = useMemo(() => {
     if (selectedLeagues.length > 0) return selectedLeagues;
+    if (footballSmartFilter === 'for-you') {
+      return forYouLeagueScope.length > 0 ? forYouLeagueScope : undefined;
+    }
     if (footballSmartFilter === 'top-leagues') {
       if (contextTopLeagueIds != null && contextTopLeagueIds.length > 0) return contextTopLeagueIds;
       return TOP_LEAGUE_BUNDLE_IDS.length > 0 ? TOP_LEAGUE_BUNDLE_IDS : undefined;
     }
     return undefined;
-  }, [selectedLeagues, footballSmartFilter, contextTopLeagueIds]);
+  }, [selectedLeagues, footballSmartFilter, contextTopLeagueIds, forYouLeagueScope]);
 
   const queryTeamIds = useMemo(() => {
     if (footballSmartFilter !== 'following') return undefined;
@@ -1816,9 +1861,39 @@ export default function SportsScreen() {
     }
   );
 
-  const trendingLeagueId = insightMatchDetailsQuery.data?.fixture?.league?.id ?? aiInsightMatch?.leagueId ?? 0;
-  const trendingSeason =
-    insightMatchDetailsQuery.data?.fixture?.league?.season ?? footballSeasonYear;
+  const trendingLeagueId = useMemo(() => {
+    const raw = insightMatchDetailsQuery.data?.fixture?.league?.id ?? aiInsightMatch?.leagueId ?? 0;
+    const n = typeof raw === 'number' ? raw : Number(raw);
+    return Number.isFinite(n) && n > 0 ? Math.trunc(n) : 0;
+  }, [insightMatchDetailsQuery.data?.fixture?.league?.id, aiInsightMatch?.leagueId]);
+
+  const trendingSeason = useMemo(() => {
+    const raw = insightMatchDetailsQuery.data?.fixture?.league?.season ?? footballSeasonYear;
+    if (typeof raw === 'number' && Number.isFinite(raw)) {
+      return raw >= 1900 && raw <= 2100 ? Math.trunc(raw) : footballSeasonYear;
+    }
+    const n = parseInt(String(raw), 10);
+    return Number.isFinite(n) && n >= 1900 && n <= 2100 ? n : footballSeasonYear;
+  }, [insightMatchDetailsQuery.data?.fixture?.league?.season, footballSeasonYear]);
+
+  /** Polls when insight targets a league so we detect live fixtures even off the Live tab (bundle may not refresh live). */
+  const insightLiveProbeQuery = trpc.football.getMatches.useQuery(
+    { type: 'live' },
+    {
+      enabled: sportMode === 'football' && trendingLeagueId > 0,
+      staleTime: 15 * 1000,
+      refetchInterval: sportMode === 'football' && trendingLeagueId > 0 ? 45 * 1000 : false,
+    }
+  );
+
+  const insightLeagueHasLiveMatch = useMemo(() => {
+    if (trendingLeagueId <= 0) return false;
+    const rows = insightLiveProbeQuery.data?.response;
+    if (Array.isArray(rows) && rows.some((m: { league?: { id?: number } }) => m?.league?.id === trendingLeagueId)) {
+      return true;
+    }
+    return liveMatches.some((m) => m.leagueId === trendingLeagueId);
+  }, [trendingLeagueId, insightLiveProbeQuery.data?.response, liveMatches]);
 
   const leagueTopPlayersQuery = trpc.football.getLeagueTopPlayers.useQuery(
     { leagueId: trendingLeagueId, season: trendingSeason },
@@ -1832,7 +1907,8 @@ export default function SportsScreen() {
     { leagueId: trendingLeagueId, season: trendingSeason },
     {
       enabled: sportMode === 'football' && trendingLeagueId > 0,
-      staleTime: 5 * 60 * 1000,
+      staleTime: insightLeagueHasLiveMatch ? 0 : 5 * 60 * 1000,
+      refetchInterval: insightLeagueHasLiveMatch ? 45 * 1000 : false,
     },
   );
 
@@ -2713,134 +2789,142 @@ export default function SportsScreen() {
         >
           {enabledSports.includes('football') && (
             <TouchableOpacity style={[sportToggleStyles.option]} onPress={() => handleSportModeChange('football')} activeOpacity={0.7}>
-              <View
-                style={[
-                  sportToggleStyles.iconGlowWrap,
-                  sportMode === 'football' && {
-                    shadowColor: isDark ? '#32D74B' : '#1B6B34',
-                    shadowOpacity: isDark ? 0.55 : 0.35,
-                    shadowRadius: 8,
-                    shadowOffset: { width: 0, height: 0 },
-                    elevation: 5,
-                  },
-                ]}
-              >
-                <Trophy
-                  size={15}
-                  color={sportMode === 'football' ? (isDark ? '#32D74B' : '#1B6B34') : isDark ? '#8E8E93' : '#AEAEB2'}
-                />
+              <View style={sportToggleStyles.optionInner}>
+                <View
+                  style={[
+                    sportToggleStyles.iconGlowWrap,
+                    sportMode === 'football' && {
+                      shadowColor: isDark ? '#32D74B' : '#1B6B34',
+                      shadowOpacity: isDark ? 0.55 : 0.35,
+                      shadowRadius: 8,
+                      shadowOffset: { width: 0, height: 0 },
+                      elevation: 5,
+                    },
+                  ]}
+                >
+                  <Trophy
+                    size={15}
+                    color={sportMode === 'football' ? (isDark ? '#32D74B' : '#1B6B34') : isDark ? '#8E8E93' : '#AEAEB2'}
+                  />
+                </View>
+                <Text
+                  style={[
+                    sportToggleStyles.optionLabel,
+                    {
+                      color:
+                        sportMode === 'football' ? (isDark ? '#32D74B' : '#1B6B34') : isDark ? '#8E8E93' : '#AEAEB2',
+                    },
+                    sportMode === 'football' && { fontWeight: '700' as const },
+                  ]}
+                >
+                  Football
+                </Text>
               </View>
-              <Text
-                style={[
-                  sportToggleStyles.optionLabel,
-                  {
-                    color:
-                      sportMode === 'football' ? (isDark ? '#32D74B' : '#1B6B34') : isDark ? '#8E8E93' : '#AEAEB2',
-                  },
-                  sportMode === 'football' && { fontWeight: '700' as const },
-                ]}
-              >
-                Football
-              </Text>
             </TouchableOpacity>
           )}
           {enabledSports.includes('ufc') && (
             <TouchableOpacity style={[sportToggleStyles.option]} onPress={() => handleSportModeChange('ufc')} activeOpacity={0.7}>
-              <View
-                style={[
-                  sportToggleStyles.iconGlowWrap,
-                  sportMode === 'ufc' && {
-                    shadowColor: isDark ? '#FFD60A' : '#8B0000',
-                    shadowOpacity: isDark ? 0.55 : 0.35,
-                    shadowRadius: 8,
-                    shadowOffset: { width: 0, height: 0 },
-                    elevation: 5,
-                  },
-                ]}
-              >
-                <Swords
-                  size={15}
-                  color={sportMode === 'ufc' ? (isDark ? '#FFD60A' : '#8B0000') : isDark ? '#8E8E93' : '#AEAEB2'}
-                />
+              <View style={sportToggleStyles.optionInner}>
+                <View
+                  style={[
+                    sportToggleStyles.iconGlowWrap,
+                    sportMode === 'ufc' && {
+                      shadowColor: isDark ? '#FFD60A' : '#8B0000',
+                      shadowOpacity: isDark ? 0.55 : 0.35,
+                      shadowRadius: 8,
+                      shadowOffset: { width: 0, height: 0 },
+                      elevation: 5,
+                    },
+                  ]}
+                >
+                  <Swords
+                    size={15}
+                    color={sportMode === 'ufc' ? (isDark ? '#FFD60A' : '#8B0000') : isDark ? '#8E8E93' : '#AEAEB2'}
+                  />
+                </View>
+                <Text
+                  style={[
+                    sportToggleStyles.optionLabel,
+                    {
+                      color:
+                        sportMode === 'ufc' ? (isDark ? '#FFD60A' : '#8B0000') : isDark ? '#8E8E93' : '#AEAEB2',
+                    },
+                    sportMode === 'ufc' && { fontWeight: '700' as const },
+                  ]}
+                >
+                  UFC
+                </Text>
               </View>
-              <Text
-                style={[
-                  sportToggleStyles.optionLabel,
-                  {
-                    color:
-                      sportMode === 'ufc' ? (isDark ? '#FFD60A' : '#8B0000') : isDark ? '#8E8E93' : '#AEAEB2',
-                  },
-                  sportMode === 'ufc' && { fontWeight: '700' as const },
-                ]}
-              >
-                UFC
-              </Text>
             </TouchableOpacity>
           )}
           {enabledSports.includes('f1') && (
             <TouchableOpacity style={[sportToggleStyles.option]} onPress={() => handleSportModeChange('f1')} activeOpacity={0.7}>
-              <View
-                style={[
-                  sportToggleStyles.iconGlowWrap,
-                  sportMode === 'f1' && {
-                    shadowColor: isDark ? '#FF453A' : '#B80000',
-                    shadowOpacity: isDark ? 0.55 : 0.35,
-                    shadowRadius: 8,
-                    shadowOffset: { width: 0, height: 0 },
-                    elevation: 5,
-                  },
-                ]}
-              >
-                <Flag
-                  size={15}
-                  color={sportMode === 'f1' ? (isDark ? '#FF453A' : '#B80000') : isDark ? '#8E8E93' : '#AEAEB2'}
-                />
+              <View style={sportToggleStyles.optionInner}>
+                <View
+                  style={[
+                    sportToggleStyles.iconGlowWrap,
+                    sportMode === 'f1' && {
+                      shadowColor: isDark ? '#FF453A' : '#B80000',
+                      shadowOpacity: isDark ? 0.55 : 0.35,
+                      shadowRadius: 8,
+                      shadowOffset: { width: 0, height: 0 },
+                      elevation: 5,
+                    },
+                  ]}
+                >
+                  <Flag
+                    size={15}
+                    color={sportMode === 'f1' ? (isDark ? '#FF453A' : '#B80000') : isDark ? '#8E8E93' : '#AEAEB2'}
+                  />
+                </View>
+                <Text
+                  style={[
+                    sportToggleStyles.optionLabel,
+                    {
+                      color:
+                        sportMode === 'f1' ? (isDark ? '#FF453A' : '#B80000') : isDark ? '#8E8E93' : '#AEAEB2',
+                    },
+                    sportMode === 'f1' && { fontWeight: '700' as const },
+                  ]}
+                >
+                  F1
+                </Text>
               </View>
-              <Text
-                style={[
-                  sportToggleStyles.optionLabel,
-                  {
-                    color:
-                      sportMode === 'f1' ? (isDark ? '#FF453A' : '#B80000') : isDark ? '#8E8E93' : '#AEAEB2',
-                  },
-                  sportMode === 'f1' && { fontWeight: '700' as const },
-                ]}
-              >
-                F1
-              </Text>
             </TouchableOpacity>
           )}
           {enabledSports.includes('nba') && (
             <TouchableOpacity style={[sportToggleStyles.option]} onPress={() => handleSportModeChange('nba')} activeOpacity={0.7}>
-              <View
-                style={[
-                  sportToggleStyles.iconGlowWrap,
-                  sportMode === 'nba' && {
-                    shadowColor: isDark ? '#0A84FF' : '#1D428A',
-                    shadowOpacity: isDark ? 0.55 : 0.35,
-                    shadowRadius: 8,
-                    shadowOffset: { width: 0, height: 0 },
-                    elevation: 5,
-                  },
-                ]}
-              >
-                <Trophy
-                  size={15}
-                  color={sportMode === 'nba' ? (isDark ? '#0A84FF' : '#1D428A') : isDark ? '#8E8E93' : '#AEAEB2'}
-                />
+              <View style={sportToggleStyles.optionInner}>
+                <View
+                  style={[
+                    sportToggleStyles.iconGlowWrap,
+                    sportMode === 'nba' && {
+                      shadowColor: isDark ? '#0A84FF' : '#1D428A',
+                      shadowOpacity: isDark ? 0.55 : 0.35,
+                      shadowRadius: 8,
+                      shadowOffset: { width: 0, height: 0 },
+                      elevation: 5,
+                    },
+                  ]}
+                >
+                  <Trophy
+                    size={15}
+                    color={sportMode === 'nba' ? (isDark ? '#0A84FF' : '#1D428A') : isDark ? '#8E8E93' : '#AEAEB2'}
+                  />
+                </View>
+                <Text
+                  style={[
+                    sportToggleStyles.optionLabel,
+                    {
+                      color:
+                        sportMode === 'nba' ? (isDark ? '#0A84FF' : '#1D428A') : isDark ? '#8E8E93' : '#AEAEB2',
+                    },
+                    sportMode === 'nba' && { fontWeight: '700' as const },
+                  ]}
+                >
+                  NBA
+                </Text>
               </View>
-              <Text
-                style={[
-                  sportToggleStyles.optionLabel,
-                  {
-                    color:
-                      sportMode === 'nba' ? (isDark ? '#0A84FF' : '#1D428A') : isDark ? '#8E8E93' : '#AEAEB2',
-                  },
-                  sportMode === 'nba' && { fontWeight: '700' as const },
-                ]}
-              >
-                NBA
-              </Text>
             </TouchableOpacity>
           )}
         </View>
@@ -2867,51 +2951,6 @@ export default function SportsScreen() {
             }}
             onAddClub={() => router.push('/(tabs)/profile' as any)}
           />
-          {filteredLiveMatches.length > 0 && (
-            <View style={styles.tickerSection}>
-              <View style={styles.tickerHeader}>
-                <View style={styles.tickerHeaderLeft}>
-              <LinearGradient
-                    colors={['#FF3B30', '#FF6B6B']}
-                    start={{ x: 0, y: 0 }}
-                    end={{ x: 1, y: 1 }}
-                    style={styles.tickerLiveDot}
-                  >
-                <LivePulse color="#FFFFFF" size={5} />
-                  </LinearGradient>
-                  <Text style={[styles.tickerTitle, { color: '#FFFFFF' }]}>Live Now</Text>
-                  <View style={[styles.tickerCountBadge, { backgroundColor: 'rgba(255,59,48,0.18)' }]}>
-                    <Text style={[styles.tickerCountText, { color: '#FF8A80' }]}>{filteredLiveMatches.length}</Text>
-                  </View>
-                </View>
-                <TouchableOpacity
-                  onPress={() => setActiveTab('live')}
-                  activeOpacity={0.7}
-                  style={styles.tickerSeeAllBtn}
-                >
-                  <Text style={[styles.tickerSeeAll, { color: fc.accent }]}>SEE ALL</Text>
-                  <ChevronRight size={12} color={fc.accent} />
-                </TouchableOpacity>
-              </View>
-              <FlatList
-                data={filteredLiveMatches}
-                horizontal
-                showsHorizontalScrollIndicator={false}
-                contentContainerStyle={styles.tickerList}
-                keyExtractor={(item) => item.id}
-                renderItem={({ item, index }) => (
-                  <LiveTickerCard
-                    match={item}
-                    index={index}
-                    onPress={() => {
-                      setSelectedMatch(item);
-                      setShowMatchModal(true);
-                    }}
-                  />
-                )}
-              />
-            </View>
-          )}
         </>
       ) : (sportMode === 'f1' || sportMode === 'ufc') ? (
         <View style={styles.headerTop}>
@@ -3702,11 +3741,19 @@ const styles = StyleSheet.create({
     color: '#007AFF',
   },
   tickerList: {
-    paddingHorizontal: 20,
+    paddingHorizontal: LIVE_TICKER_H_PADDING,
     gap: 8,
+  },
+  /** Single live match fills the padded row so it aligns with hero width (no orphaned left chip). */
+  tickerListSolo: {
+    flexGrow: 1,
+    justifyContent: 'center',
   },
   tickerCardWrapper: {
     width: SCREEN_WIDTH * 0.4,
+  },
+  tickerCardWrapperSolo: {
+    width: LIVE_TICKER_SOLO_CARD_WIDTH,
   },
   tickerCard: {
     borderRadius: 13,
@@ -3982,13 +4029,12 @@ const styles = StyleSheet.create({
     alignItems: 'center' as const,
     gap: 12,
     paddingVertical: 12,
-    paddingHorizontal: 4,
+    paddingHorizontal: 20,
     borderBottomWidth: StyleSheet.hairlineWidth,
   },
   footballContextLogo: {
     width: 28,
     height: 28,
-    borderRadius: 14,
   },
   footballContextSheetFooter: {
     paddingTop: 14,
@@ -4825,21 +4871,36 @@ const styles = StyleSheet.create({
 const sportToggleStyles = StyleSheet.create({
   container: {
     marginTop: 0,
+    alignSelf: 'stretch',
+    width: '100%',
   },
   track: {
     flexDirection: 'row',
+    alignItems: 'stretch',
+    alignSelf: 'stretch',
+    width: '100%',
     borderRadius: 14,
     padding: 3,
-    gap: 3,
+    gap: 4,
   },
+  /** Equal-width segments: `flex: 1` alone can mis-measure on RN when only two children are shown. */
   option: {
-    flex: 1,
+    flexGrow: 1,
+    flexShrink: 1,
+    flexBasis: 0,
+    minWidth: 0,
+    justifyContent: 'center',
+    alignItems: 'center',
+    paddingVertical: 10,
+    paddingHorizontal: 6,
+    borderRadius: 11,
+  },
+  optionInner: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
     gap: 6,
-    paddingVertical: 10,
-    borderRadius: 11,
+    maxWidth: '100%',
   },
   iconGlowWrap: {
     width: 18,
@@ -4852,8 +4913,10 @@ const sportToggleStyles = StyleSheet.create({
   },
   optionLabel: {
     fontSize: 14,
+    lineHeight: 18,
     fontWeight: '600' as const,
     letterSpacing: -0.2,
+    ...(Platform.OS === 'android' ? { includeFontPadding: false } : {}),
   },
 });
 

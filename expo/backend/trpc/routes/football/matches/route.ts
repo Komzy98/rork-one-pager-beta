@@ -39,6 +39,8 @@ const CACHE_TTL: Record<string, number> = {
   today: 5 * 60 * 1000,
   results: 2 * 60 * 60 * 1000,
   standings: 60 * 60 * 1000,
+  /** Standings while this league has a live fixture — aligns with live score refresh cadence. */
+  standingsLive: 45 * 1000,
   matchDetails: 60 * 1000,
   topPlayers: 45 * 60 * 1000,
 };
@@ -167,6 +169,15 @@ async function cachedFetch(url: string, headers: Record<string, string>, cacheKe
 
   console.error(`❌ All retries exhausted for ${cacheKey.substring(0, 60)}:`, lastError?.message);
   return { response: [] };
+}
+
+/** Uses the same `live:all` cache as match feeds so standings checks do not fan out extra upstream calls. */
+async function leagueHasLiveFixture(leagueId: number, headers: Record<string, string>): Promise<boolean> {
+  const url = `${BASE_URL}/fixtures?live=all`;
+  const cacheKey = `live:all`;
+  const data = await cachedFetch(url, headers, cacheKey, CACHE_TTL.live);
+  const matches = data.response || [];
+  return matches.some((m: any) => m?.league?.id === leagueId);
 }
 
 const KEY_INTERNATIONAL_LEAGUES = [
@@ -512,8 +523,8 @@ export const getTeamLogosRoute = publicProcedure
 
 export const getLeagueStandingsRoute = publicProcedure
   .input(z.object({
-    leagueId: z.number().int().positive().max(99999),
-    season: z.number().int().min(1900).max(2100).optional(),
+    leagueId: z.coerce.number().int().positive().max(99999),
+    season: z.coerce.number().int().min(1900).max(2100).optional(),
   }))
   .query(async ({ input }) => {
     const { leagueId, season: inputSeason } = input;
@@ -539,8 +550,10 @@ export const getLeagueStandingsRoute = publicProcedure
     try {
       const url = `${BASE_URL}/standings?league=${leagueId}&season=${season}`;
       const cacheKey = `standings:${leagueId}:${season}`;
-      const data = await cachedFetch(url, headers, cacheKey, CACHE_TTL.standings);
-      
+      const hasLiveInLeague = await leagueHasLiveFixture(leagueId, headers);
+      const standingsTtl = hasLiveInLeague ? CACHE_TTL.standingsLive : CACHE_TTL.standings;
+      const data = await cachedFetch(url, headers, cacheKey, standingsTtl);
+
       return {
         response: data.response || [],
         errors: data.errors || {},
@@ -702,6 +715,13 @@ function normalizePlayerPhotoFromTopRow(row: any): string | null {
       if (t.startsWith('/') && /\/football\/players\//i.test(t)) {
         return `https://media.api-sports.io${t}`;
       }
+      // Bare host or path-only CDN URLs from some API payloads
+      if (/^media\.api-sports\.io\//i.test(t)) {
+        return `https://${t}`;
+      }
+      if (/^football\/players\/\d+/i.test(t)) {
+        return `https://media.api-sports.io/${t}`;
+      }
     }
   }
   return null;
@@ -716,10 +736,10 @@ function pickPrimaryStatistic(row: any): any {
 }
 
 function readPlayerId(row: any): number | null {
-  const raw = row?.player?.id;
+  const raw = row?.player?.id ?? row?.playerId ?? row?.id ?? row?.statistics?.[0]?.player?.id;
   if (raw == null) return null;
-  const n = Number(raw);
-  return Number.isFinite(n) && n > 0 ? n : null;
+  const n = typeof raw === 'string' ? parseInt(raw, 10) : Number(raw);
+  return Number.isFinite(n) && n > 0 ? Math.trunc(n) : null;
 }
 
 type TopPlayerBase = {
@@ -758,7 +778,7 @@ const topAssistRow = (row: any): TopPlayerBase & { assists: number } => {
 
 /** Ensure portrait URL when API omitted it (enrich may still replace with signed URLs). */
 function withDefaultPlayerPhoto<T extends TopPlayerBase>(row: T): T {
-  if (row.photo && row.photo.length > 8) return row;
+  if (row.photo && String(row.photo).trim().length > 8) return row;
   if (row.playerId != null && row.playerId > 0) {
     return { ...row, photo: apiSportsPlayerPhotoUrl(row.playerId) };
   }
@@ -771,7 +791,10 @@ async function enrichMissingPlayerPhotos<T extends TopPlayerBase>(
   headers: Record<string, string>,
   ttl: number,
 ): Promise<T[]> {
-  const missing = rows.filter((r) => !r.photo && r.playerId != null && r.playerId > 0);
+  const missing = rows.filter((r) => {
+    const ph = typeof r.photo === 'string' ? r.photo.trim() : '';
+    return !ph && r.playerId != null && r.playerId > 0;
+  });
   if (missing.length === 0) return rows;
 
   const ids = [...new Set(missing.map((r) => r.playerId!))].slice(0, 16);
@@ -786,7 +809,10 @@ async function enrichMissingPlayerPhotos<T extends TopPlayerBase>(
         const p = data.response?.[0]?.player;
         const u = p?.photo || p?.image;
         if (typeof u === 'string' && u.trim().length > 4) {
-          photoById.set(id, u.trim());
+          const normalized = normalizePlayerPhotoFromTopRow({ player: { photo: u } });
+          if (normalized) {
+            photoById.set(id, normalized);
+          }
         }
       } catch (e) {
         console.warn(`⚠️ Player photo enrich failed for id=${id}`, e);
@@ -804,12 +830,13 @@ async function enrichMissingPlayerPhotos<T extends TopPlayerBase>(
 export const getLeagueTopPlayersRoute = publicProcedure
   .input(
     z.object({
-      leagueId: z.number().int().positive().max(99999),
-      season: z.number().int().min(1900).max(2100).optional(),
+      leagueId: z.coerce.number().int().positive().max(99999),
+      season: z.coerce.number().int().min(1900).max(2100).optional(),
     }),
   )
   .query(async ({ input }) => {
-    const season = input.season ?? getCurrentSeason();
+    const season =
+      input.season != null && Number.isFinite(input.season) ? input.season : getCurrentSeason();
     const apiKey = getFootballApiKeyFromEnv();
 
     if (!apiKey) {
@@ -826,20 +853,29 @@ export const getLeagueTopPlayersRoute = publicProcedure
     };
 
     const ttl = CACHE_TTL.topPlayers;
-    const cacheScorers = `topscorers:${input.leagueId}:${season}`;
-    const cacheAssists = `topassists:${input.leagueId}:${season}`;
+
+    const fetchTopRowsForSeason = async (targetSeason: number) => {
+      const scorersUrl = `${BASE_URL}/players/topscorers?league=${input.leagueId}&season=${targetSeason}`;
+      const assistsUrl = `${BASE_URL}/players/topassists?league=${input.leagueId}&season=${targetSeason}`;
+      const [scorersData, assistsData] = await Promise.all([
+        cachedFetch(scorersUrl, headers, `topscorers:${input.leagueId}:${targetSeason}`, ttl),
+        cachedFetch(assistsUrl, headers, `topassists:${input.leagueId}:${targetSeason}`, ttl),
+      ]);
+      return {
+        scorers: (scorersData.response || []).slice(0, 12).map(topScorerRow),
+        assists: (assistsData.response || []).slice(0, 12).map(topAssistRow),
+      };
+    };
 
     try {
-      const scorersUrl = `${BASE_URL}/players/topscorers?league=${input.leagueId}&season=${season}`;
-      const assistsUrl = `${BASE_URL}/players/topassists?league=${input.leagueId}&season=${season}`;
+      let { scorers, assists } = await fetchTopRowsForSeason(season);
 
-      const [scorersData, assistsData] = await Promise.all([
-        cachedFetch(scorersUrl, headers, cacheScorers, ttl),
-        cachedFetch(assistsUrl, headers, cacheAssists, ttl),
-      ]);
-
-      let scorers = (scorersData.response || []).slice(0, 12).map(topScorerRow);
-      let assists = (assistsData.response || []).slice(0, 12).map(topAssistRow);
+      // Some competitions return no leaders for early/new seasons; fall back one season for UI continuity.
+      if (scorers.length === 0 && assists.length === 0 && season > 1900) {
+        const previous = await fetchTopRowsForSeason(season - 1);
+        scorers = previous.scorers;
+        assists = previous.assists;
+      }
 
       scorers = await enrichMissingPlayerPhotos(scorers, headers, ttl);
       assists = await enrichMissingPlayerPhotos(assists, headers, ttl);

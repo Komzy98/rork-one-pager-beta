@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useMemo, useState } from 'react';
 import {
   Modal,
   View,
@@ -32,9 +32,28 @@ export default function LeagueStandingsModal({
   const { colors } = useTheme();
   const [selectedGroup, setSelectedGroup] = useState<string>('all');
 
+  const liveFootballQuery = trpc.football.getMatches.useQuery(
+    { type: 'live' },
+    {
+      enabled: visible,
+      staleTime: 15 * 1000,
+      refetchInterval: visible ? 30 * 1000 : false,
+    }
+  );
+
+  const leagueHasLiveFixture = useMemo(() => {
+    const rows = liveFootballQuery.data?.response;
+    if (!Array.isArray(rows)) return false;
+    return rows.some((m: { league?: { id?: number } }) => m?.league?.id === leagueId);
+  }, [liveFootballQuery.data?.response, leagueId]);
+
   const standingsQuery = trpc.football.getLeagueStandings.useQuery(
     { leagueId },
-    { enabled: visible }
+    {
+      enabled: visible,
+      staleTime: leagueHasLiveFixture ? 0 : 5 * 60 * 1000,
+      refetchInterval: visible && leagueHasLiveFixture ? 45 * 1000 : false,
+    }
   );
 
   const handleClose = async () => {

@@ -78,7 +78,7 @@ import { MOCK_CHALLENGES } from '@/mocks/socialData';
 import { ThemeSettings } from '@/components/ThemeSettings';
 
 import { UserTeam, UserCountry, NBAFavoriteTeam } from '@/types/habit';
-import { FOOTBALL_COUNTRIES, FOOTBALL_TEAMS, searchTeams as searchAllTeams } from '@/constants/footballData';
+import { FOOTBALL_COUNTRIES, FOOTBALL_TEAMS, getFootballTeamLogoUrl, searchTeams as searchAllTeams } from '@/constants/footballData';
 import { ALL_NBA_TEAMS, searchNBATeams, NBATeamInfo } from '@/constants/nbaData';
 import TabWalkthrough from '@/components/TabWalkthrough';
 import { useWalkthrough } from '@/hooks/useWalkthrough';
@@ -1615,6 +1615,7 @@ export default function ProfileScreen() {
             <ScrollView style={styles.modalList}>
               {filteredTeams.map((team) => {
                 const isAdded = profile.favoriteTeams.some(t => t.id === team.id);
+                const logoUri = getFootballTeamLogoUrl(team);
                 return (
                   <TouchableOpacity
                     key={team.id}
@@ -1623,7 +1624,15 @@ export default function ProfileScreen() {
                     disabled={isAdded}
                   >
                     <View style={[styles.modalOptionIcon, { backgroundColor: colors.surfaceSecondary }]}>
-                      <Trophy size={18} color={isAdded ? colors.textTertiary : '#34C759'} />
+                      {logoUri ? (
+                        <Image
+                          source={{ uri: logoUri }}
+                          style={styles.modalOptionTeamLogo}
+                          contentFit="contain"
+                        />
+                      ) : (
+                        <Trophy size={18} color={isAdded ? colors.textTertiary : '#34C759'} />
+                      )}
                     </View>
                     <View style={styles.modalOptionInfo}>
                       <Text style={[styles.modalOptionName, { color: isAdded ? colors.textTertiary : colors.text }]}>{team.name}</Text>
@@ -2437,6 +2446,10 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     alignItems: 'center',
     marginRight: 12,
+  },
+  modalOptionTeamLogo: {
+    width: 26,
+    height: 26,
   },
   modalFlag: {
     fontSize: 22,

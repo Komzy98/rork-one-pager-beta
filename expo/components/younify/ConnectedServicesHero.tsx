@@ -1,5 +1,6 @@
 import React, { useCallback, useMemo, useRef } from "react";
 import {
+  ActivityIndicator,
   Animated as RNAnimated,
   FlatList,
   Platform,
@@ -91,7 +92,10 @@ export default function ConnectedServicesHero({
     return (
       <View style={styles.section}>
         <View style={[styles.slideFrame, { width: HERO_CARD_WIDTH, height: HERO_HEIGHT, alignSelf: "center" }]}>
-          <View style={styles.skeletonInner} />
+          <View style={styles.skeletonInner}>
+            <ActivityIndicator size="small" color="#8E8E9A" />
+            <Text style={styles.skeletonText}>Loading your streaming picks...</Text>
+          </View>
         </View>
       </View>
     );
@@ -403,6 +407,14 @@ const styles = StyleSheet.create({
   skeletonInner: {
     flex: 1,
     backgroundColor: "#1A1A22",
+    alignItems: "center",
+    justifyContent: "center",
+    gap: 12,
+  },
+  skeletonText: {
+    color: "#8E8E9A",
+    fontSize: 13,
+    fontWeight: "600",
   },
   emptyInner: {
     flex: 1,

@@ -16,7 +16,15 @@ const AWAY_COLOR = '#FF5C8A';
 /** api-sports CDN portraits (same host as team logos). Lineup payloads often omit `photo`; id-based URL still works. */
 function footballPlayerPortraitUri(player: { id?: number; photo?: string | null }): string | null {
   const raw = typeof player.photo === 'string' ? player.photo.trim() : '';
-  if (raw.length > 8 && (raw.startsWith('http://') || raw.startsWith('https://'))) return raw;
+  if (raw.length > 4) {
+    if (raw.startsWith('http://') || raw.startsWith('https://')) return raw;
+    if (raw.startsWith('//') && /\./.test(raw)) return `https:${raw}`;
+    if (raw.startsWith('/') && /\/football\/players\//i.test(raw)) {
+      return `https://media.api-sports.io${raw}`;
+    }
+    if (/^media\.api-sports\.io\//i.test(raw)) return `https://${raw}`;
+    if (/^football\/players\/\d+/i.test(raw)) return `https://media.api-sports.io/${raw}`;
+  }
   const id = player.id;
   if (typeof id === 'number' && id > 0) return `https://media.api-sports.io/football/players/${id}.png`;
   return null;

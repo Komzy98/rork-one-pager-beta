@@ -886,50 +886,88 @@ export default function ShowsScreen() {
   const [streamingInitialized, setStreamingInitialized] = useState(false);
   const [streamingRefreshing, setStreamingRefreshing] = useState(false);
   const [younifyRuntimeBanner, setYounifyRuntimeBanner] = useState<string | null>(null);
+  const younifyFetchInFlightRef = useRef<Promise<void> | null>(null);
+  const lastYounifyFetchAtRef = useRef(0);
+  const YOUNIFY_REFETCH_COOLDOWN_MS = 2 * 60 * 1000;
   const younifyEpisodeIndex = useMemo(
     () => buildYounifyProviderIndex(streamingSections, linkedProviderIds),
     [streamingSections, linkedProviderIds],
   );
 
   /** Single SDK round-trip: one linked fetch + hero & browse `fetchContent` in parallel (see `loadYounifyStreamingBundle`). */
-  const refetchYounifyStreamingUnified = useCallback(async () => {
-    try {
-      setYounifyLoading(true);
-      setStreamingLoading(true);
-      const bundle = await loadYounifyStreamingBundle();
-      const linkedList = bundle.linkedServices;
-      setLinkedStreamingCount(linkedList.length);
-      setHasLinkedServices(linkedList.length > 0);
-      const ids = Array.from(
-        new Set(
-          linkedList
-            .map((service: any) =>
-              younifySourceToTmdbProviderId({
-                id: String(service?.id ?? ''),
-                name: String(service?.name ?? ''),
-              }),
-            )
-            .filter((id: number | null): id is number => id != null),
-        ),
-      );
-      setLinkedProviderIds(ids);
-      setYounifyContent(Array.isArray(bundle.heroContent) ? bundle.heroContent : []);
-      setStreamingSections(Array.isArray(bundle.browseSections) ? bundle.browseSections : []);
-    } catch (error) {
-      if (__DEV__) {
-        console.warn('Failed to load Younify streaming bundle:', error);
+  const refetchYounifyStreamingUnified = useCallback(
+    async (opts?: { force?: boolean; silent?: boolean }) => {
+      const force = opts?.force === true;
+      const silent = opts?.silent === true;
+      const now = Date.now();
+      const hasLocalContent =
+        younifyContent.length > 0 ||
+        streamingSections.some((s) => Array.isArray(s.items) && s.items.length > 0);
+
+      // Cool down repeated focus events unless explicitly forced.
+      if (
+        !force &&
+        streamingInitialized &&
+        hasLocalContent &&
+        now - lastYounifyFetchAtRef.current < YOUNIFY_REFETCH_COOLDOWN_MS
+      ) {
+        return;
       }
-    } finally {
-      setYounifyLoading(false);
-      setStreamingLoading(false);
-      setStreamingInitialized(true);
-    }
-  }, []);
+
+      // Deduplicate concurrent calls from tab-change + focus + auth effects.
+      if (younifyFetchInFlightRef.current) {
+        return younifyFetchInFlightRef.current;
+      }
+
+      const task = (async () => {
+        const shouldShowBlockingLoader = !silent && !hasLocalContent;
+        try {
+          if (shouldShowBlockingLoader) {
+            setYounifyLoading(true);
+            setStreamingLoading(true);
+          }
+          const bundle = await loadYounifyStreamingBundle();
+          const linkedList = bundle.linkedServices;
+          setLinkedStreamingCount(linkedList.length);
+          setHasLinkedServices(linkedList.length > 0);
+          const ids = Array.from(
+            new Set(
+              linkedList
+                .map((service: any) =>
+                  younifySourceToTmdbProviderId({
+                    id: String(service?.id ?? ''),
+                    name: String(service?.name ?? ''),
+                  }),
+                )
+                .filter((id: number | null): id is number => id != null),
+            ),
+          );
+          setLinkedProviderIds(ids);
+          setYounifyContent(Array.isArray(bundle.heroContent) ? bundle.heroContent : []);
+          setStreamingSections(Array.isArray(bundle.browseSections) ? bundle.browseSections : []);
+          lastYounifyFetchAtRef.current = Date.now();
+        } catch (error) {
+          if (__DEV__) {
+            console.warn('Failed to load Younify streaming bundle:', error);
+          }
+        } finally {
+          setYounifyLoading(false);
+          setStreamingLoading(false);
+          setStreamingInitialized(true);
+          younifyFetchInFlightRef.current = null;
+        }
+      })();
+
+      younifyFetchInFlightRef.current = task;
+      return task;
+    },
+    [streamingInitialized, streamingSections, younifyContent.length],
+  );
 
   const onStreamingPullRefresh = useCallback(async () => {
     setStreamingRefreshing(true);
     try {
-      await refetchYounifyStreamingUnified();
+      await refetchYounifyStreamingUnified({ force: true });
     } finally {
       setStreamingRefreshing(false);
     }
@@ -939,7 +977,7 @@ export default function ShowsScreen() {
   useFocusEffect(
     useCallback(() => {
       if (selectedTab === 'streaming' || selectedTab === 'watchlist') {
-        void refetchYounifyStreamingUnified();
+        void refetchYounifyStreamingUnified({ silent: true });
       }
     }, [selectedTab, refetchYounifyStreamingUnified]),
   );
@@ -948,7 +986,7 @@ export default function ShowsScreen() {
   useEffect(() => {
     if (!authInitialized) return;
     if (selectedTab === 'streaming' || selectedTab === 'watchlist') {
-      void refetchYounifyStreamingUnified();
+      void refetchYounifyStreamingUnified({ force: true, silent: true });
     }
   }, [authInitialized, user?.id, selectedTab, refetchYounifyStreamingUnified]);
 
