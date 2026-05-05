@@ -302,14 +302,14 @@ export default function CompleteScreen() {
 
     if (profile?.favoriteCountries && profile.favoriteCountries.length > 0) {
       rows.push({
-        key: 'leagues',
+        key: 'countries',
         node: (
           <View style={styles.summaryItem}>
             <View style={styles.summaryIconWrap}>
               <Text style={styles.summaryEmoji}>🌍</Text>
             </View>
             <View style={styles.summaryTextWrap}>
-              <Text style={styles.summaryLabel}>Leagues</Text>
+              <Text style={styles.summaryLabel}>Countries</Text>
               <Text style={styles.summaryValue}>
                 {profile.favoriteCountries.slice(0, 2).map(c => c.name).join(', ')}
                 {profile.favoriteCountries.length > 2 && ` +${profile.favoriteCountries.length - 2}`}
@@ -320,8 +320,68 @@ export default function CompleteScreen() {
       });
     }
 
+    if (profile?.favoriteLeagues && profile.favoriteLeagues.length > 0) {
+      rows.push({
+        key: 'favorite-leagues',
+        node: (
+          <View style={styles.summaryItem}>
+            <View style={styles.summaryIconWrap}>
+              <Text style={styles.summaryEmoji}>🏆</Text>
+            </View>
+            <View style={styles.summaryTextWrap}>
+              <Text style={styles.summaryLabel}>Favorite leagues</Text>
+              <Text style={styles.summaryValue}>
+                {profile.favoriteLeagues.length} selected for your Sports feed
+              </Text>
+            </View>
+          </View>
+        ),
+      });
+    }
+
+    const hasFollowedTeams = Boolean(profile?.favoriteTeams?.length);
+    const hasLeagues = Boolean(profile?.favoriteLeagues?.length);
+    const priorityBlurb = hasFollowedTeams
+      ? hasLeagues
+        ? 'Following clubs first, then your selected leagues.'
+        : 'Following clubs first, with broad match discovery.'
+      : hasLeagues
+        ? 'Your selected leagues first, then relevant discovery picks.'
+        : 'Balanced discovery feed until you add clubs or leagues.';
+
+    rows.push({
+      key: 'feed-priorities',
+      node: (
+        <View style={[styles.summaryItem, styles.feedPriorityCard]}>
+          <View style={styles.summaryIconWrap}>
+            <Sparkles size={14} color={COLORS.primary} strokeWidth={2.2} />
+          </View>
+          <View style={styles.summaryTextWrap}>
+            <Text style={styles.summaryLabel}>Feed priorities</Text>
+            <Text style={styles.summaryValue}>{priorityBlurb}</Text>
+            <View style={styles.feedEditRow}>
+              <TouchableOpacity
+                style={styles.feedEditBtn}
+                activeOpacity={0.8}
+                onPress={() => router.push('/(onboarding)/leagues' as any)}
+              >
+                <Text style={styles.feedEditBtnText}>Edit leagues</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={styles.feedEditBtn}
+                activeOpacity={0.8}
+                onPress={() => router.push('/(onboarding)/feed-tuning' as any)}
+              >
+                <Text style={styles.feedEditBtnText}>Edit tuning</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        </View>
+      ),
+    });
+
     return rows;
-  }, [profile, selectedInterests, hasFootball]);
+  }, [profile, selectedInterests, hasFootball, router]);
 
   const staggerBase = reduceMotion ? 0 : 920;
 
@@ -633,6 +693,32 @@ const styles = StyleSheet.create({
   summaryItem: {
     flexDirection: 'row',
     alignItems: 'center',
+  },
+  feedPriorityCard: {
+    marginTop: 2,
+    padding: 10,
+    borderRadius: 12,
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: ONBOARDING_PREMIUM.hairlineBorder,
+    backgroundColor: 'rgba(0,122,255,0.04)',
+  },
+  feedEditRow: {
+    flexDirection: 'row',
+    gap: 8,
+    marginTop: 8,
+  },
+  feedEditBtn: {
+    borderRadius: 999,
+    borderWidth: 1,
+    borderColor: COLORS.primary,
+    backgroundColor: 'rgba(0,122,255,0.08)',
+    paddingHorizontal: 10,
+    paddingVertical: 5,
+  },
+  feedEditBtnText: {
+    color: COLORS.primary,
+    fontSize: 11,
+    fontWeight: '700' as const,
   },
   summaryIconWrap: {
     width: 38,

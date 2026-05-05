@@ -386,6 +386,12 @@ export interface UserProfile {
   favoriteNBATeams?: NBAFavoriteTeam[];
   favoriteCountries: UserCountry[];
   favoriteLeagues: number[];
+  sportsFeedPrefs?: {
+    strictFollowing: boolean;
+    includeFollowedLeagues: boolean;
+    discoveryLevel: 'low' | 'med' | 'high';
+    prioritizeDomesticLeagues: boolean;
+  };
   favoriteBooks: Book[];
   interests: string[];
   chronotype?: Chronotype;

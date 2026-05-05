@@ -83,11 +83,7 @@ export default function InterestsScreen() {
   const handleContinue = useCallback(() => {
     void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
     updateInterests(selectedInterests);
-    if (selectedInterests.includes('movies')) {
-      router.push('/(onboarding)/streaming' as any);
-    } else {
-      router.push('/(onboarding)/chronotype' as any);
-    }
+    router.push('/(onboarding)/leagues' as any);
   }, [selectedInterests, updateInterests, router]);
 
   const handleBack = useCallback(() => {
@@ -103,7 +99,7 @@ export default function InterestsScreen() {
         <View style={styles.progressWrap}>
           <OnboardingProgress
             currentStep={1}
-            totalSteps={selectedInterests.includes('movies') ? 6 : 5}
+            totalSteps={selectedInterests.includes('movies') ? 7 : 6}
           />
         </View>
         <View style={styles.headerSpacer} />
@@ -181,7 +177,9 @@ export default function InterestsScreen() {
             </Text>
           </View>
           <Text style={styles.selectionLabel}>
-            {selectedInterests.length === 0 ? 'Select at least one' : 'selected'}
+            {selectedInterests.length === 0
+              ? 'Select at least one'
+              : 'selected · you can refine later in Sports settings'}
           </Text>
         </View>
 

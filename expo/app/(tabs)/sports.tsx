@@ -1509,6 +1509,7 @@ export default function SportsScreen() {
   const selectedProfileLeagueIds = useMemo(() => {
     return new Set((profile?.favoriteLeagues ?? []).filter((id): id is number => typeof id === 'number' && id > 0));
   }, [profile?.favoriteLeagues]);
+  const sportsFeedPrefs = profile?.sportsFeedPrefs;
 
   // Self-heal: Following needs at least one followed club in the app.
   useEffect(() => {
@@ -1528,6 +1529,7 @@ export default function SportsScreen() {
 
 
   const countryLeagueIds = useMemo(() => {
+    if (sportsFeedPrefs?.prioritizeDomesticLeagues === false) return [];
     if (countryInterestNamesLower.length === 0) return [];
     const ids = new Set<number>();
     COMPETITIONS_DATA.forEach((continent) => {
@@ -1543,17 +1545,19 @@ export default function SportsScreen() {
       });
     });
     return Array.from(ids);
-  }, [countryInterestNamesLower]);
+  }, [countryInterestNamesLower, sportsFeedPrefs?.prioritizeDomesticLeagues]);
 
   const forYouLeagueScope = useMemo(() => {
-    const preferredLeagueIds = Array.from(selectedProfileLeagueIds);
+    const preferredLeagueIds = sportsFeedPrefs?.includeFollowedLeagues === false ? [] : Array.from(selectedProfileLeagueIds);
     const merged = Array.from(new Set([...preferredLeagueIds, ...countryLeagueIds]));
     if (merged.length > 0) {
       return merged.slice(0, 24);
     }
     // Fallback only when no personalization signal exists yet.
-    return TOP_LEAGUE_BUNDLE_IDS.slice(0, 8);
-  }, [selectedProfileLeagueIds, countryLeagueIds]);
+    const discoveryLevel = sportsFeedPrefs?.discoveryLevel ?? 'med';
+    const fallbackSize = discoveryLevel === 'low' ? 4 : discoveryLevel === 'high' ? 12 : 8;
+    return TOP_LEAGUE_BUNDLE_IDS.slice(0, fallbackSize);
+  }, [selectedProfileLeagueIds, countryLeagueIds, sportsFeedPrefs?.includeFollowedLeagues, sportsFeedPrefs?.discoveryLevel]);
 
   const queryLeagueIds = useMemo(() => {
     if (selectedLeagues.length > 0) return selectedLeagues;
@@ -1568,11 +1572,16 @@ export default function SportsScreen() {
   }, [selectedLeagues, footballSmartFilter, contextTopLeagueIds, forYouLeagueScope]);
 
   const queryTeamIds = useMemo(() => {
+    if (footballSmartFilter === 'for-you' && sportsFeedPrefs?.strictFollowing) {
+      if (teamApiIds.length === 0) return undefined;
+      if (contextFollowingTeamIds != null && contextFollowingTeamIds.length > 0) return contextFollowingTeamIds;
+      return teamApiIds;
+    }
     if (footballSmartFilter !== 'following') return undefined;
     if (teamApiIds.length === 0) return undefined;
     if (contextFollowingTeamIds != null && contextFollowingTeamIds.length > 0) return contextFollowingTeamIds;
     return teamApiIds;
-  }, [footballSmartFilter, teamApiIds, contextFollowingTeamIds]);
+  }, [footballSmartFilter, teamApiIds, contextFollowingTeamIds, sportsFeedPrefs?.strictFollowing]);
 
   const [hasViewedLive, setHasViewedLive] = useState(false);
   const [hasViewedResults, setHasViewedResults] = useState(false);

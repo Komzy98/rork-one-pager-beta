@@ -26,6 +26,9 @@ export default function CountriesScreen() {
   const { totalSteps, stepSportsPick } = useOnboardingStepMeta();
   const [selectedCountries, setSelectedCountries] = useState<UserCountry[]>([]);
   const [searchQuery, setSearchQuery] = useState<string>('');
+  const [prioritizeDomesticLeagues, setPrioritizeDomesticLeagues] = useState<boolean>(
+    profile?.sportsFeedPrefs?.prioritizeDomesticLeagues ?? true,
+  );
 
   const fadeAnim = useRef(new Animated.Value(0)).current;
   const titleSlide = useRef(new Animated.Value(24)).current;
@@ -69,10 +72,27 @@ export default function CountriesScreen() {
         !existingCountries.some(existing => existing.id === country.id)
       );
       const updatedCountries = [...existingCountries, ...newCountries];
-      updateProfile({ favoriteCountries: updatedCountries });
+      updateProfile({
+        favoriteCountries: updatedCountries,
+        sportsFeedPrefs: {
+          strictFollowing: profile?.sportsFeedPrefs?.strictFollowing ?? false,
+          includeFollowedLeagues: profile?.sportsFeedPrefs?.includeFollowedLeagues ?? true,
+          discoveryLevel: profile?.sportsFeedPrefs?.discoveryLevel ?? 'med',
+          prioritizeDomesticLeagues,
+        },
+      });
+    } else {
+      updateProfile({
+        sportsFeedPrefs: {
+          strictFollowing: profile?.sportsFeedPrefs?.strictFollowing ?? false,
+          includeFollowedLeagues: profile?.sportsFeedPrefs?.includeFollowedLeagues ?? true,
+          discoveryLevel: profile?.sportsFeedPrefs?.discoveryLevel ?? 'med',
+          prioritizeDomesticLeagues,
+        },
+      });
     }
     router.push('/(onboarding)/teams' as any);
-  }, [selectedCountries, profile, updateProfile, router]);
+  }, [selectedCountries, profile, updateProfile, router, prioritizeDomesticLeagues]);
 
   const handleSkip = useCallback(() => {
     router.push('/(onboarding)/teams' as any);
@@ -114,6 +134,31 @@ export default function CountriesScreen() {
       </Animated.View>
 
       <Animated.View style={{ flex: 1, opacity: listOpacity }}>
+        {selectedCountries.length > 0 ? (
+          <View style={styles.domesticPrefCard}>
+            <Text style={styles.domesticPrefTitle}>Prioritize domestic leagues from these countries?</Text>
+            <View style={styles.domesticPrefRow}>
+              <TouchableOpacity
+                style={[styles.domesticPrefChip, prioritizeDomesticLeagues && styles.domesticPrefChipActive]}
+                onPress={() => setPrioritizeDomesticLeagues(true)}
+                activeOpacity={0.8}
+              >
+                <Text style={[styles.domesticPrefChipText, prioritizeDomesticLeagues && styles.domesticPrefChipTextActive]}>
+                  Yes
+                </Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={[styles.domesticPrefChip, !prioritizeDomesticLeagues && styles.domesticPrefChipActive]}
+                onPress={() => setPrioritizeDomesticLeagues(false)}
+                activeOpacity={0.8}
+              >
+                <Text style={[styles.domesticPrefChipText, !prioritizeDomesticLeagues && styles.domesticPrefChipTextActive]}>
+                  No
+                </Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        ) : null}
         <ScrollView
           style={styles.list}
           showsVerticalScrollIndicator={false}
@@ -249,6 +294,47 @@ const styles = StyleSheet.create({
   list: {
     flex: 1,
     paddingHorizontal: 32,
+  },
+  domesticPrefCard: {
+    marginHorizontal: 32,
+    marginBottom: 10,
+    borderRadius: 14,
+    borderWidth: 1,
+    borderColor: COLORS.border,
+    backgroundColor: COLORS.surface,
+    padding: 12,
+  },
+  domesticPrefTitle: {
+    fontSize: 13,
+    fontWeight: '700' as const,
+    color: COLORS.text,
+    marginBottom: 10,
+  },
+  domesticPrefRow: {
+    flexDirection: 'row',
+    gap: 8,
+  },
+  domesticPrefChip: {
+    flex: 1,
+    borderWidth: 1,
+    borderColor: COLORS.border,
+    backgroundColor: COLORS.surfaceSecondary,
+    borderRadius: 10,
+    alignItems: 'center' as const,
+    justifyContent: 'center' as const,
+    paddingVertical: 9,
+  },
+  domesticPrefChipActive: {
+    borderColor: COLORS.primary,
+    backgroundColor: `${COLORS.primary}18`,
+  },
+  domesticPrefChipText: {
+    fontSize: 13,
+    fontWeight: '700' as const,
+    color: COLORS.textSecondary,
+  },
+  domesticPrefChipTextActive: {
+    color: COLORS.primary,
   },
   listContent: {
     paddingBottom: 16,

@@ -87,11 +87,11 @@ export default function NBATeamsScreen() {
       );
       updateProfile({ favoriteNBATeams: [...existing, ...newTeams] });
     }
-    router.push('/(onboarding)/complete' as any);
+    router.push('/(onboarding)/feed-tuning' as any);
   }, [selectedTeams, profile, updateProfile, router]);
 
   const handleSkip = useCallback(() => {
-    router.push('/(onboarding)/complete' as any);
+    router.push('/(onboarding)/feed-tuning' as any);
   }, [router]);
 
   const handleBack = useCallback(() => {
@@ -105,7 +105,7 @@ export default function NBATeamsScreen() {
           <ArrowLeft size={20} color={COLORS.textMuted} />
         </TouchableOpacity>
         <View style={styles.progressWrap}>
-          <OnboardingProgress currentStep={5} totalSteps={6} />
+          <OnboardingProgress currentStep={stepSportsPick} totalSteps={totalSteps} />
         </View>
         <TouchableOpacity onPress={handleSkip} activeOpacity={0.7}>
           <Text style={styles.skipText}>Skip</Text>

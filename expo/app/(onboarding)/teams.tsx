@@ -53,6 +53,7 @@ export default function TeamsScreen() {
   const { totalSteps, stepSportsPick } = useOnboardingStepMeta();
   const [selectedTeams, setSelectedTeams] = useState<UserTeam[]>([]);
   const [searchQuery, setSearchQuery] = useState<string>('');
+  const quickPickTeams = useMemo(() => getPopularTeams().slice(0, 8), []);
 
   const fadeAnim = useRef(new Animated.Value(0)).current;
   const titleSlide = useRef(new Animated.Value(24)).current;
@@ -101,7 +102,7 @@ export default function TeamsScreen() {
     if (profile?.interests?.includes('nba')) {
       return '/(onboarding)/nba-teams' as any;
     }
-    return '/(onboarding)/complete' as any;
+    return '/(onboarding)/feed-tuning' as any;
   }, [profile?.interests]);
 
   const handleContinue = useCallback(() => {
@@ -170,6 +171,29 @@ export default function TeamsScreen() {
           </Text>
         </View>
       )}
+
+      {!searchQuery ? (
+        <View style={styles.quickPickWrap}>
+          <Text style={styles.quickPickLabel}>Must-follow quick picks (2-5)</Text>
+          <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.quickPickRow}>
+            {quickPickTeams.map((team) => {
+              const selected = selectedTeams.some((t) => t.id === team.id);
+              return (
+                <TouchableOpacity
+                  key={`qp-${team.id}`}
+                  style={[styles.quickPickChip, selected && styles.quickPickChipActive]}
+                  activeOpacity={0.8}
+                  onPress={() => toggleTeam(team)}
+                >
+                  <Text style={[styles.quickPickChipText, selected && styles.quickPickChipTextActive]} numberOfLines={1}>
+                    {team.name}
+                  </Text>
+                </TouchableOpacity>
+              );
+            })}
+          </ScrollView>
+        </View>
+      ) : null}
 
       <Animated.View style={{ flex: 1, opacity: listOpacity }}>
         <ScrollView
@@ -322,6 +346,42 @@ const styles = StyleSheet.create({
     fontSize: 12,
     fontWeight: '600' as const,
     color: COLORS.textMuted,
+  },
+  quickPickWrap: {
+    paddingHorizontal: 32,
+    marginBottom: 8,
+  },
+  quickPickLabel: {
+    fontSize: 12,
+    color: COLORS.textMuted,
+    fontWeight: '700' as const,
+    letterSpacing: 0.4,
+    marginBottom: 8,
+  },
+  quickPickRow: {
+    gap: 8,
+    paddingRight: 8,
+  },
+  quickPickChip: {
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    borderRadius: 999,
+    backgroundColor: COLORS.surfaceSecondary,
+    borderWidth: 1,
+    borderColor: COLORS.border,
+    maxWidth: 170,
+  },
+  quickPickChipActive: {
+    backgroundColor: `${COLORS.primary}18`,
+    borderColor: COLORS.primary,
+  },
+  quickPickChipText: {
+    fontSize: 12,
+    color: COLORS.text,
+    fontWeight: '600' as const,
+  },
+  quickPickChipTextActive: {
+    color: COLORS.primary,
   },
   list: {
     flex: 1,

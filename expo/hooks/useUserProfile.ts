@@ -46,6 +46,12 @@ const createDefaultProfile = (userId: string, email: string, name: string): User
     favoriteTeams: [],
     favoriteCountries: [],
     favoriteLeagues: [],
+    sportsFeedPrefs: {
+      strictFollowing: false,
+      includeFollowedLeagues: true,
+      discoveryLevel: 'med',
+      prioritizeDomesticLeagues: true,
+    },
     favoriteBooks: [],
     interests: [],
     notificationSettings: {
@@ -140,6 +146,13 @@ export const [UserProfileProvider, useUserProfile] = createContextHook(() => {
           ...sessionCore,
           interests: parsedProfile.interests || [],
           favoriteCountries: parsedProfile.favoriteCountries || [],
+          favoriteLeagues: parsedProfile.favoriteLeagues || [],
+          sportsFeedPrefs: {
+            strictFollowing: parsedProfile.sportsFeedPrefs?.strictFollowing ?? false,
+            includeFollowedLeagues: parsedProfile.sportsFeedPrefs?.includeFollowedLeagues ?? true,
+            discoveryLevel: parsedProfile.sportsFeedPrefs?.discoveryLevel ?? 'med',
+            prioritizeDomesticLeagues: parsedProfile.sportsFeedPrefs?.prioritizeDomesticLeagues ?? true,
+          },
           notificationSettings: {
             liveMatches: parsedProfile.notificationSettings?.liveMatches ?? true,
             matchReminders: parsedProfile.notificationSettings?.matchReminders ?? true,

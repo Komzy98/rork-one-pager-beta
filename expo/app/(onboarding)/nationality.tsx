@@ -30,7 +30,7 @@ export default function NationalityScreen() {
     } else if (profile?.interests?.includes('nba')) {
       router.push('/(onboarding)/nba-teams' as any);
     } else {
-      router.push('/(onboarding)/complete' as any);
+      router.push('/(onboarding)/feed-tuning' as any);
     }
   }, [profile?.interests, router]);
 
