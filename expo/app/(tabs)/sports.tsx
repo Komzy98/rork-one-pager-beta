@@ -2404,6 +2404,43 @@ export default function SportsScreen() {
 
   const ufcFlatListKeyExtractor = useCallback((item: UFCFlatListItem) => item.key, []);
 
+  type UFCEventListItem = { type: 'eventCard'; event: string; mainFight: UFCFight; fightCount: number; eventDate: string; eventNumber: string; key: string };
+
+  const ufcEventListData = useMemo<UFCEventListItem[]>(() => {
+    return ufcGroupedByEvent.map((group, idx) => {
+      // Headliner is typically the LAST fight on the card (main event order).
+      const fights = group.fights;
+      const headliner = fights[fights.length - 1] || fights[0];
+      // Try to pull "UFC 328" / event number from event name.
+      const numMatch = group.event.match(/UFC\s*(\w+\s*)?(\d{2,4})/i);
+      const eventNumber = numMatch?.[2] ? numMatch[2] : (numMatch?.[0] || '').replace(/UFC\s*/i, '').trim() || '—';
+      return {
+        type: 'eventCard' as const,
+        event: group.event,
+        mainFight: headliner,
+        fightCount: fights.length,
+        eventDate: group.date,
+        eventNumber,
+        key: `ufc-event-card-${group.event}-${idx}`,
+      };
+    });
+  }, [ufcGroupedByEvent]);
+
+  const renderUfcEventListItem = useCallback(({ item }: { item: UFCEventListItem }) => {
+    return (
+      <UFCNewEventCard
+        event={item.event}
+        eventNumber={item.eventNumber}
+        mainFight={item.mainFight}
+        fightCount={item.fightCount}
+        eventDate={item.eventDate}
+        onPress={() => handleFightCardPress(item.mainFight)}
+      />
+    );
+  }, [handleFightCardPress]);
+
+  const ufcEventListKeyExtractor = useCallback((item: UFCEventListItem) => item.key, []);
+
   const enabledSports = useMemo((): SportMode[] => {
     const interests = profile?.interests || [];
     const sports: SportMode[] = [];
@@ -3114,22 +3151,14 @@ export default function SportsScreen() {
         <View style={styles.ufcHeroStack}>
           <View style={[styles.headerTop, styles.ufcHeroHeaderTop]}>
             <View style={styles.titleArea}>
-              <Text style={[styles.ufcHeaderEyebrow, { color: 'rgba(245, 220, 150, 0.95)' }]}>
-                FIGHT CENTER
-              </Text>
-              <Text style={[styles.headerTitle, styles.ufcHeaderTitle, { color: '#FFFFFF' }]}>
+              <Text style={styles.ufcBrandLogo} accessibilityRole="header">
                 UFC
               </Text>
-              <LinearGradient
-                colors={['#E8C547', 'rgba(232, 197, 71, 0.12)']}
-                start={{ x: 0, y: 0.5 }}
-                end={{ x: 1, y: 0.5 }}
-                style={styles.ufcHeaderGoldRule}
-              />
-              <Text style={[styles.headerSubtitle, styles.ufcHeaderSubtitle, { color: 'rgba(255,255,255,0.82)' }]}>
-                {ufcUpcomingFights.length > 0
-                  ? `${ufcUpcomingFights.length} bout${ufcUpcomingFights.length === 1 ? '' : 's'} lined up · Cards & results`
-                  : 'Cards, countdowns & official results'}
+              <Text style={styles.ufcBrandBigTitle} numberOfLines={1} adjustsFontSizeToFit>
+                FIGHT CENTER
+              </Text>
+              <Text style={styles.ufcBrandSubtitle}>
+                Cards, countdowns & official results
               </Text>
             </View>
             <TouchableOpacity
@@ -3218,12 +3247,10 @@ export default function SportsScreen() {
 
       {sportMode === 'ufc' && (
         <View style={[styles.tabWrapper, styles.tabWrapperUfc]}>
-          <TabPill
-            tabs={ufcTabs}
+          <UFCSegmentToggle
             activeTab={ufcTab}
             onTabChange={(tab) => setUfcTab(tab as 'upcoming' | 'results')}
             counts={ufcCounts}
-            variant="ufc"
           />
         </View>
       )}
@@ -3471,98 +3498,35 @@ export default function SportsScreen() {
         </ScrollView>
       ) : sportMode === 'ufc' ? (
         <View style={{ flex: 1 }}>
-          <LinearGradient
-            colors={
-              isDark
-                ? ['rgba(201, 162, 39, 0.07)', 'rgba(8, 5, 16, 0)']
-                : ['rgba(201, 162, 39, 0.09)', 'rgba(255, 253, 249, 0)']
-            }
-            start={{ x: 0, y: 0 }}
-            end={{ x: 1, y: 1 }}
-            style={ufcStyles.ufcStatsBarOuter}
-          >
-            <ScrollView
-              horizontal
-              showsHorizontalScrollIndicator={false}
-              contentContainerStyle={ufcStyles.ufcStatsScrollInner}
-            >
-              <View style={[ufcStyles.ufcStatItem, { backgroundColor: sf.card }]}>
-                <Text style={[ufcStyles.ufcStatValue, { color: '#D4AF37' }]}>
-                  {ufcTab === 'upcoming' ? ufcUpcomingFights.length : ufcResultsFights.length}
-                </Text>
-                <Text style={[ufcStyles.ufcStatLabel, { color: sf.textSecondary }]}>
-                  {ufcTab === 'upcoming' ? 'FIGHTS' : 'RESULTS'}
-                </Text>
-              </View>
-              <View style={[ufcStyles.ufcStatItem, { backgroundColor: sf.card }]}>
-                <Text style={[ufcStyles.ufcStatValue, { color: '#D4AF37' }]}>
-                  {ufcGroupedByEvent.length}
-                </Text>
-                <Text style={[ufcStyles.ufcStatLabel, { color: sf.textSecondary }]}>
-                  EVENTS
-                </Text>
-              </View>
-              {ufcTab === 'results' && (
-                <View style={[ufcStyles.ufcStatItem, { backgroundColor: sf.card }]}>
-                  <Text style={[ufcStyles.ufcStatValue, { color: '#FF6B6B' }]}>
-                    {ufcResultsFights.filter(f => f.result?.method?.toLowerCase().includes('ko') || f.result?.method?.toLowerCase().includes('tko')).length}
-                  </Text>
-                  <Text style={[ufcStyles.ufcStatLabel, { color: sf.textSecondary }]}>
-                    KO/TKO
-                  </Text>
-                </View>
-              )}
-              {ufcTab === 'results' && (
-                <View style={[ufcStyles.ufcStatItem, { backgroundColor: sf.card }]}>
-                  <Text style={[ufcStyles.ufcStatValue, { color: '#7C3AED' }]}>
-                    {ufcResultsFights.filter(f => f.result?.method?.toLowerCase().includes('sub')).length}
-                  </Text>
-                  <Text style={[ufcStyles.ufcStatLabel, { color: sf.textSecondary }]}>
-                    SUB
-                  </Text>
-                </View>
-              )}
-              {ufcTab === 'upcoming' && ufcUpcomingFights.length > 0 && (
-                <View style={[ufcStyles.ufcStatItem, { backgroundColor: sf.card }]}>
-                  <Text style={[ufcStyles.ufcStatValue, { color: '#2563EB' }]}>
-                    {(() => {
-                      const next = ufcUpcomingFights[0];
-                      const d = new Date(next.date);
-                      const now = new Date();
-                      const diff = Math.ceil((d.getTime() - now.getTime()) / (1000 * 60 * 60 * 24));
-                      return diff > 0 ? `${diff}d` : 'Today';
-                    })()}
-                  </Text>
-                  <Text style={[ufcStyles.ufcStatLabel, { color: sf.textSecondary }]}>
-                    NEXT
-                  </Text>
-                </View>
-              )}
-              {ufcTab === 'upcoming' && ufcGroupedByEvent.length > 0 && (
-                <View style={[ufcStyles.ufcStatItem, { backgroundColor: sf.card }]}>
-                  <Text style={[ufcStyles.ufcStatValue, { color: '#34C759' }]}>
-                    {ufcUpcomingFights.filter(f => f.fighter1.name !== 'TBA' && f.fighter2.name !== 'TBA').length}
-                  </Text>
-                  <Text style={[ufcStyles.ufcStatLabel, { color: sf.textSecondary }]}>
-                    CONFIRMED
-                  </Text>
-                </View>
-              )}
-            </ScrollView>
-          </LinearGradient>
           <FlatList
-            data={ufcFlatListData}
-            renderItem={renderUfcItem}
-            keyExtractor={ufcFlatListKeyExtractor}
+            data={ufcEventListData}
+            renderItem={renderUfcEventListItem}
+            keyExtractor={ufcEventListKeyExtractor}
             style={styles.scrollView}
-            contentContainerStyle={[styles.scrollContent, { paddingBottom: insets.bottom + 120 }]}
+            contentContainerStyle={[styles.scrollContent, { paddingBottom: insets.bottom + 120, paddingTop: 4 }]}
             showsVerticalScrollIndicator={false}
-            initialNumToRender={10}
-            maxToRenderPerBatch={8}
+            ListHeaderComponent={
+              <View>
+                <UFCStatsRow
+                  ufcTab={ufcTab}
+                  fightsCount={ufcDisplayFights.length}
+                  eventsCount={ufcGroupedByEvent.length}
+                  koTkoCount={ufcResultsFights.filter(f => /ko|tko/i.test(f.result?.method || '')).length}
+                  subCount={ufcResultsFights.filter(f => /sub/i.test(f.result?.method || '')).length}
+                />
+                <View style={ufcStyles.sectionHeaderRow}>
+                  <Text style={ufcStyles.sectionHeaderTitle}>
+                    {ufcTab === 'results' ? 'LATEST RESULTS' : 'UPCOMING FIGHTS'}
+                  </Text>
+                </View>
+              </View>
+            }
+            initialNumToRender={6}
+            maxToRenderPerBatch={4}
             windowSize={5}
             removeClippedSubviews={Platform.OS !== 'web'}
             refreshControl={
-              <RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor="#D4AF37" colors={['#D4AF37']} />
+              <RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor="#E10600" colors={['#E10600']} />
             }
           />
         </View>
@@ -3936,6 +3900,32 @@ const styles = StyleSheet.create({
     letterSpacing: -0.15,
     lineHeight: 18,
     marginTop: 0,
+  },
+  ufcBrandLogo: {
+    fontSize: 34,
+    fontWeight: '900' as const,
+    color: '#E10600',
+    letterSpacing: -1.4,
+    fontStyle: 'italic' as const,
+    textShadowColor: 'rgba(225, 6, 0, 0.45)',
+    textShadowOffset: { width: 0, height: 0 },
+    textShadowRadius: 14,
+    marginBottom: 4,
+  },
+  ufcBrandBigTitle: {
+    fontSize: 38,
+    fontWeight: '900' as const,
+    color: '#FFFFFF',
+    letterSpacing: -1.4,
+    lineHeight: 42,
+    marginBottom: 8,
+  },
+  ufcBrandSubtitle: {
+    fontSize: 13,
+    fontWeight: '500' as const,
+    color: 'rgba(255, 255, 255, 0.72)',
+    letterSpacing: -0.1,
+    lineHeight: 18,
   },
   headerInfoLabel: {
     fontSize: 11,
@@ -5241,6 +5231,331 @@ const sportToggleStyles = StyleSheet.create({
   },
 });
 
+/** Brand red used across the new UFC tab redesign. */
+const UFC_RED = '#E10600';
+const UFC_WIN_GREEN = '#00C853';
+const UFC_LOSS_DIM = 'rgba(255, 59, 48, 0.55)';
+
+const UFCSegmentToggle = React.memo(({
+  activeTab,
+  onTabChange,
+  counts,
+}: {
+  activeTab: 'upcoming' | 'results';
+  onTabChange: (tab: 'upcoming' | 'results') => void;
+  counts: Record<string, number>;
+}) => {
+  const handlePress = useCallback(async (tab: 'upcoming' | 'results') => {
+    if (Platform.OS !== 'web') {
+      await Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+    }
+    onTabChange(tab);
+  }, [onTabChange]);
+
+  return (
+    <View style={ufcStyles.segmentRow}>
+      {([
+        { key: 'upcoming' as const, label: 'Upcoming', Icon: Calendar },
+        { key: 'results' as const, label: 'Results', Icon: Trophy },
+      ]).map((tab) => {
+        const isActive = activeTab === tab.key;
+        const Icon = tab.Icon;
+        const count = counts[tab.key] || 0;
+        return (
+          <TouchableOpacity
+            key={tab.key}
+            activeOpacity={0.85}
+            onPress={() => handlePress(tab.key)}
+            style={[
+              ufcStyles.segmentPill,
+              isActive ? ufcStyles.segmentPillActive : ufcStyles.segmentPillInactive,
+            ]}
+          >
+            <Icon size={15} color={isActive ? UFC_RED : 'rgba(235, 235, 245, 0.55)'} strokeWidth={isActive ? 2.6 : 2} />
+            <Text style={[ufcStyles.segmentLabel, isActive ? ufcStyles.segmentLabelActive : ufcStyles.segmentLabelInactive]}>
+              {tab.label}
+            </Text>
+            {isActive && count > 0 ? (
+              <View style={ufcStyles.segmentCountBadge}>
+                <Text style={ufcStyles.segmentCountText}>{count}</Text>
+              </View>
+            ) : null}
+          </TouchableOpacity>
+        );
+      })}
+    </View>
+  );
+});
+
+const UFCStatsRow = React.memo(({
+  ufcTab,
+  fightsCount,
+  eventsCount,
+  koTkoCount,
+  subCount,
+}: {
+  ufcTab: 'upcoming' | 'results';
+  fightsCount: number;
+  eventsCount: number;
+  koTkoCount: number;
+  subCount: number;
+}) => {
+  const stats =
+    ufcTab === 'results'
+      ? [
+          { label: 'RESULTS', value: fightsCount, active: true },
+          { label: 'EVENTS', value: eventsCount, active: false },
+          { label: 'KO/TKO', value: koTkoCount, active: false },
+          { label: 'SUB', value: subCount, active: false },
+        ]
+      : [
+          { label: 'FIGHTS', value: fightsCount, active: true },
+          { label: 'EVENTS', value: eventsCount, active: false },
+          { label: 'CARDS', value: eventsCount, active: false },
+          { label: 'NEXT', value: fightsCount > 0 ? 1 : 0, active: false },
+        ];
+  return (
+    <View style={ufcStyles.statsRowOuter}>
+      <View style={ufcStyles.statsRow}>
+        {stats.map((s, i) => (
+          <React.Fragment key={s.label}>
+            {i > 0 ? <View style={ufcStyles.statsDivider} /> : null}
+            <View style={ufcStyles.statsCell}>
+              <Text style={[ufcStyles.statsValue, s.active && { color: UFC_RED }]}>{s.value}</Text>
+              <Text style={ufcStyles.statsLabel}>{s.label}</Text>
+              {s.active ? <View style={ufcStyles.statsUnderline} /> : <View style={ufcStyles.statsUnderlineSpacer} />}
+            </View>
+          </React.Fragment>
+        ))}
+      </View>
+    </View>
+  );
+});
+
+function surnameUpper(name: string): string {
+  if (!name) return '';
+  const parts = name.trim().split(/\s+/);
+  if (parts.length === 1) return parts[0].toUpperCase();
+  return parts[parts.length - 1].toUpperCase();
+}
+
+function firstNameUpper(name: string): string {
+  if (!name) return '';
+  const parts = name.trim().split(/\s+/);
+  if (parts.length === 1) return '';
+  return parts[0].toUpperCase();
+}
+
+function methodLineFor(fight: UFCFight): { primary: string; secondary: string } {
+  if (fight.status !== 'Completed') {
+    const d = new Date(fight.date);
+    const datePart = d.toLocaleDateString('en-GB', { day: 'numeric', month: 'short' });
+    return { primary: fight.time?.trim() || 'TBA', secondary: datePart.toUpperCase() };
+  }
+  const method = (fight.result?.method || '').trim();
+  const lower = method.toLowerCase();
+  let primary = 'FINAL';
+  let secondary = method ? method.toUpperCase() : 'DECISION';
+  if (lower.includes('ko') || lower.includes('tko')) {
+    secondary = method.toUpperCase();
+  } else if (lower.includes('sub')) {
+    secondary = method.toUpperCase();
+  } else if (lower.includes('dec') || lower.includes('unanimous') || lower.includes('split') || lower.includes('majority')) {
+    secondary = 'DECISION';
+    const variant = lower.includes('split') ? '(SPLIT)' : lower.includes('majority') ? '(MAJORITY)' : '(UNANIMOUS)';
+    return { primary: 'FINAL', secondary: `${secondary}\n${variant}` };
+  }
+  if (fight.result?.round) {
+    secondary = `${secondary}\nRD ${fight.result.round}`;
+  }
+  return { primary, secondary };
+}
+
+const UFCNewEventCard = React.memo(({
+  event,
+  eventNumber,
+  mainFight,
+  fightCount,
+  eventDate,
+  onPress,
+}: {
+  event: string;
+  eventNumber: string;
+  mainFight: UFCFight;
+  fightCount: number;
+  eventDate: string;
+  onPress: () => void;
+}) => {
+  const isCompleted = mainFight.status === 'Completed';
+  const f1Winner = !!mainFight.fighter1.winner;
+  const f2Winner = !!mainFight.fighter2.winner;
+
+  const handlePress = useCallback(async () => {
+    if (Platform.OS !== 'web') {
+      await Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+    }
+    onPress();
+  }, [onPress]);
+
+  const dateLabel = useMemo(() => {
+    const d = new Date(eventDate);
+    return d
+      .toLocaleDateString('en-GB', { day: 'numeric', month: 'short' })
+      .toUpperCase();
+  }, [eventDate]);
+
+  const headlineMatchup = useMemo(() => {
+    const a = surnameUpper(mainFight.fighter1.name);
+    const b = surnameUpper(mainFight.fighter2.name);
+    return `${a} vs ${b}`;
+  }, [mainFight.fighter1.name, mainFight.fighter2.name]);
+
+  const methodLine = useMemo(() => methodLineFor(mainFight), [mainFight]);
+
+  const fighter1FirstName = firstNameUpper(mainFight.fighter1.name);
+  const fighter2FirstName = firstNameUpper(mainFight.fighter2.name);
+  const fighter1LastName = surnameUpper(mainFight.fighter1.name);
+  const fighter2LastName = surnameUpper(mainFight.fighter2.name);
+
+  return (
+    <TouchableOpacity activeOpacity={0.92} onPress={handlePress} style={ufcStyles.eventCardWrap}>
+      <View style={ufcStyles.eventCard}>
+        {/* Top row: UFC chip + event title + meta + CARD pill */}
+        <View style={ufcStyles.eventCardTopRow}>
+          <View style={ufcStyles.ufcChip}>
+            <Text style={ufcStyles.ufcChipBrand}>UFC</Text>
+            <Text style={ufcStyles.ufcChipNumber} numberOfLines={1}>
+              {eventNumber}
+            </Text>
+          </View>
+          <View style={ufcStyles.eventCardTitleWrap}>
+            <Text style={ufcStyles.eventCardTitle} numberOfLines={1}>
+              {headlineMatchup}
+            </Text>
+            <Text style={ufcStyles.eventCardMeta} numberOfLines={1}>
+              {fightCount} BOUT{fightCount === 1 ? '' : 'S'} · {dateLabel}
+            </Text>
+          </View>
+          <View style={ufcStyles.cardActionPill}>
+            <Text style={ufcStyles.cardActionPillText}>CARD</Text>
+          </View>
+        </View>
+
+        <View style={ufcStyles.eventCardDivider} />
+
+        {/* Bottom row: fighter1 | center status | fighter2 */}
+        <View style={ufcStyles.matchupRow}>
+          <View style={ufcStyles.fighterColumnLeft}>
+            <View style={[
+              ufcStyles.fighterAvatarRing,
+              isCompleted && f1Winner ? { borderColor: UFC_WIN_GREEN } : null,
+              isCompleted && f2Winner ? { borderColor: UFC_LOSS_DIM } : null,
+              !isCompleted ? { borderColor: 'rgba(255,255,255,0.18)' } : null,
+            ]}>
+              <View style={ufcStyles.fighterAvatarInner}>
+                {mainFight.fighter1.photo ? (
+                  <ExpoImage
+                    source={{ uri: mainFight.fighter1.photo }}
+                    style={ufcStyles.fighterAvatarImg}
+                    contentFit="cover"
+                    cachePolicy="memory-disk"
+                  />
+                ) : (
+                  <Text style={ufcStyles.fighterInitialFallback}>
+                    {(mainFight.fighter1.name || '?').charAt(0)}
+                  </Text>
+                )}
+              </View>
+            </View>
+            <View style={ufcStyles.fighterNameWrap}>
+              {fighter1FirstName ? (
+                <Text style={ufcStyles.fighterFirstName} numberOfLines={1}>
+                  {fighter1FirstName}
+                </Text>
+              ) : null}
+              <Text style={ufcStyles.fighterLastName} numberOfLines={1}>
+                {fighter1LastName}
+              </Text>
+              {isCompleted ? (
+                <View style={[
+                  ufcStyles.outcomeBadge,
+                  f1Winner ? ufcStyles.outcomeBadgeWin : ufcStyles.outcomeBadgeLoss,
+                ]}>
+                  <Text style={[
+                    ufcStyles.outcomeBadgeText,
+                    f1Winner ? { color: '#FFFFFF' } : { color: 'rgba(235,235,245,0.7)' },
+                  ]}>
+                    {f1Winner ? 'WIN' : 'LOSS'}
+                  </Text>
+                </View>
+              ) : null}
+            </View>
+          </View>
+
+          <View style={ufcStyles.centerStatusCol}>
+            <Text style={[
+              ufcStyles.centerStatusPrimary,
+              isCompleted ? { color: UFC_WIN_GREEN } : { color: 'rgba(235,235,245,0.85)' },
+            ]}>
+              {methodLine.primary}
+            </Text>
+            <Text style={ufcStyles.centerStatusSecondary} numberOfLines={3}>
+              {methodLine.secondary}
+            </Text>
+          </View>
+
+          <View style={ufcStyles.fighterColumnRight}>
+            <View style={[
+              ufcStyles.fighterAvatarRing,
+              isCompleted && f2Winner ? { borderColor: UFC_WIN_GREEN } : null,
+              isCompleted && f1Winner ? { borderColor: UFC_LOSS_DIM } : null,
+              !isCompleted ? { borderColor: 'rgba(255,255,255,0.18)' } : null,
+            ]}>
+              <View style={ufcStyles.fighterAvatarInner}>
+                {mainFight.fighter2.photo ? (
+                  <ExpoImage
+                    source={{ uri: mainFight.fighter2.photo }}
+                    style={ufcStyles.fighterAvatarImg}
+                    contentFit="cover"
+                    cachePolicy="memory-disk"
+                  />
+                ) : (
+                  <Text style={ufcStyles.fighterInitialFallback}>
+                    {(mainFight.fighter2.name || '?').charAt(0)}
+                  </Text>
+                )}
+              </View>
+            </View>
+            <View style={ufcStyles.fighterNameWrap}>
+              {fighter2FirstName ? (
+                <Text style={ufcStyles.fighterFirstName} numberOfLines={1}>
+                  {fighter2FirstName}
+                </Text>
+              ) : null}
+              <Text style={ufcStyles.fighterLastName} numberOfLines={1}>
+                {fighter2LastName}
+              </Text>
+              {isCompleted ? (
+                <View style={[
+                  ufcStyles.outcomeBadge,
+                  f2Winner ? ufcStyles.outcomeBadgeWin : ufcStyles.outcomeBadgeLoss,
+                ]}>
+                  <Text style={[
+                    ufcStyles.outcomeBadgeText,
+                    f2Winner ? { color: '#FFFFFF' } : { color: 'rgba(235,235,245,0.7)' },
+                  ]}>
+                    {f2Winner ? 'WIN' : 'LOSS'}
+                  </Text>
+                </View>
+              ) : null}
+            </View>
+          </View>
+        </View>
+      </View>
+    </TouchableOpacity>
+  );
+});
+
 const ufcStyles = StyleSheet.create({
   eventBanner: {
     marginBottom: 10,
@@ -5836,5 +6151,323 @@ const ufcStyles = StyleSheet.create({
     fontSize: 12,
     color: '#5A5A7A',
     flex: 1,
+  },
+
+  // --- New UFC tab styles (segment toggle, stats row, section header, event card) ---
+  segmentRow: {
+    flexDirection: 'row',
+    gap: 10,
+  },
+  segmentPill: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 8,
+    paddingVertical: 14,
+    paddingHorizontal: 16,
+    borderRadius: 14,
+    borderWidth: 1,
+  },
+  segmentPillInactive: {
+    backgroundColor: 'rgba(20, 16, 24, 0.55)',
+    borderColor: 'rgba(255, 255, 255, 0.08)',
+  },
+  segmentPillActive: {
+    backgroundColor: 'rgba(225, 6, 0, 0.10)',
+    borderColor: 'rgba(225, 6, 0, 0.55)',
+    shadowColor: '#E10600',
+    shadowOpacity: 0.25,
+    shadowRadius: 14,
+    shadowOffset: { width: 0, height: 6 },
+    elevation: 6,
+  },
+  segmentLabel: {
+    fontSize: 14,
+    fontWeight: '700' as const,
+    letterSpacing: -0.1,
+  },
+  segmentLabelInactive: {
+    color: 'rgba(235, 235, 245, 0.6)',
+  },
+  segmentLabelActive: {
+    color: '#E10600',
+  },
+  segmentCountBadge: {
+    backgroundColor: '#E10600',
+    borderRadius: 10,
+    minWidth: 22,
+    height: 20,
+    paddingHorizontal: 7,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginLeft: 4,
+  },
+  segmentCountText: {
+    fontSize: 11,
+    fontWeight: '800' as const,
+    color: '#FFFFFF',
+    letterSpacing: 0.2,
+  },
+
+  statsRowOuter: {
+    marginHorizontal: 20,
+    marginTop: 6,
+    marginBottom: 16,
+    borderRadius: 16,
+    backgroundColor: 'rgba(20, 16, 24, 0.55)',
+    borderWidth: 1,
+    borderColor: 'rgba(255, 255, 255, 0.06)',
+    paddingVertical: 18,
+    paddingHorizontal: 12,
+  },
+  statsRow: {
+    flexDirection: 'row',
+    alignItems: 'stretch',
+  },
+  statsCell: {
+    flex: 1,
+    alignItems: 'center',
+    justifyContent: 'flex-start',
+  },
+  statsValue: {
+    fontSize: 26,
+    fontWeight: '800' as const,
+    color: '#FFFFFF',
+    letterSpacing: -0.6,
+    lineHeight: 30,
+  },
+  statsLabel: {
+    fontSize: 11,
+    fontWeight: '700' as const,
+    color: 'rgba(235, 235, 245, 0.55)',
+    letterSpacing: 0.8,
+    marginTop: 4,
+  },
+  statsUnderline: {
+    width: 32,
+    height: 3,
+    borderRadius: 2,
+    backgroundColor: '#E10600',
+    marginTop: 8,
+  },
+  statsUnderlineSpacer: {
+    width: 32,
+    height: 3,
+    marginTop: 8,
+  },
+  statsDivider: {
+    width: StyleSheet.hairlineWidth,
+    backgroundColor: 'rgba(255, 255, 255, 0.08)',
+    marginVertical: 4,
+  },
+
+  sectionHeaderRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingHorizontal: 20,
+    marginTop: 4,
+    marginBottom: 12,
+  },
+  sectionHeaderTitle: {
+    fontSize: 15,
+    fontWeight: '900' as const,
+    color: '#FFFFFF',
+    letterSpacing: 1.4,
+  },
+  sectionHeaderAction: {
+    fontSize: 13,
+    fontWeight: '700' as const,
+    color: '#E10600',
+    letterSpacing: -0.1,
+  },
+
+  eventCardWrap: {
+    marginHorizontal: 20,
+    marginBottom: 14,
+  },
+  eventCard: {
+    borderRadius: 18,
+    backgroundColor: 'rgba(20, 16, 24, 0.7)',
+    borderWidth: 1,
+    borderColor: 'rgba(255, 255, 255, 0.06)',
+    overflow: 'hidden' as const,
+  },
+  eventCardTopRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingVertical: 12,
+    paddingHorizontal: 12,
+    gap: 12,
+  },
+  ufcChip: {
+    width: 54,
+    height: 48,
+    borderRadius: 10,
+    backgroundColor: 'rgba(0, 0, 0, 0.6)',
+    borderWidth: 1,
+    borderColor: 'rgba(225, 6, 0, 0.25)',
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: 4,
+  },
+  ufcChipBrand: {
+    fontSize: 13,
+    fontWeight: '900' as const,
+    color: '#E10600',
+    fontStyle: 'italic' as const,
+    letterSpacing: -0.4,
+    lineHeight: 14,
+  },
+  ufcChipNumber: {
+    fontSize: 13,
+    fontWeight: '900' as const,
+    color: '#E10600',
+    letterSpacing: -0.2,
+    lineHeight: 14,
+    marginTop: 2,
+  },
+  eventCardTitleWrap: {
+    flex: 1,
+    minWidth: 0,
+  },
+  eventCardTitle: {
+    fontSize: 14,
+    fontWeight: '900' as const,
+    color: '#FFFFFF',
+    letterSpacing: -0.2,
+  },
+  eventCardMeta: {
+    fontSize: 11,
+    fontWeight: '600' as const,
+    color: 'rgba(235, 235, 245, 0.5)',
+    letterSpacing: 0.4,
+    marginTop: 4,
+  },
+  cardActionPill: {
+    paddingHorizontal: 14,
+    paddingVertical: 8,
+    borderRadius: 10,
+    borderWidth: 1.5,
+    borderColor: 'rgba(225, 6, 0, 0.7)',
+    backgroundColor: 'rgba(225, 6, 0, 0.06)',
+  },
+  cardActionPillText: {
+    fontSize: 11,
+    fontWeight: '800' as const,
+    color: '#E10600',
+    letterSpacing: 1,
+  },
+  eventCardDivider: {
+    height: StyleSheet.hairlineWidth,
+    backgroundColor: 'rgba(255, 255, 255, 0.06)',
+    marginHorizontal: 14,
+  },
+  matchupRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingVertical: 16,
+    paddingHorizontal: 12,
+    gap: 8,
+  },
+  fighterColumnLeft: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+  },
+  fighterColumnRight: {
+    flex: 1,
+    flexDirection: 'row-reverse',
+    alignItems: 'center',
+    gap: 12,
+  },
+  fighterAvatarRing: {
+    width: 58,
+    height: 58,
+    borderRadius: 29,
+    borderWidth: 2.5,
+    borderColor: 'rgba(255,255,255,0.18)',
+    padding: 2,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  fighterAvatarInner: {
+    width: '100%',
+    height: '100%',
+    borderRadius: 28,
+    backgroundColor: '#1A1A2E',
+    overflow: 'hidden' as const,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  fighterAvatarImg: {
+    width: '100%',
+    height: '100%',
+  },
+  fighterInitialFallback: {
+    fontSize: 20,
+    fontWeight: '800' as const,
+    color: 'rgba(235,235,245,0.7)',
+  },
+  fighterNameWrap: {
+    flex: 1,
+    minWidth: 0,
+    alignItems: 'flex-start',
+  },
+  fighterFirstName: {
+    fontSize: 13,
+    fontWeight: '800' as const,
+    color: '#FFFFFF',
+    letterSpacing: -0.1,
+    lineHeight: 16,
+  },
+  fighterLastName: {
+    fontSize: 13,
+    fontWeight: '800' as const,
+    color: '#FFFFFF',
+    letterSpacing: -0.1,
+    lineHeight: 16,
+  },
+  outcomeBadge: {
+    marginTop: 6,
+    paddingHorizontal: 10,
+    paddingVertical: 3,
+    borderRadius: 8,
+    alignSelf: 'flex-start',
+  },
+  outcomeBadgeWin: {
+    backgroundColor: UFC_WIN_GREEN,
+  },
+  outcomeBadgeLoss: {
+    backgroundColor: 'rgba(255,255,255,0.06)',
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.12)',
+  },
+  outcomeBadgeText: {
+    fontSize: 10,
+    fontWeight: '900' as const,
+    letterSpacing: 0.6,
+  },
+  centerStatusCol: {
+    alignItems: 'center',
+    justifyContent: 'center',
+    minWidth: 84,
+    paddingHorizontal: 4,
+  },
+  centerStatusPrimary: {
+    fontSize: 13,
+    fontWeight: '900' as const,
+    letterSpacing: 0.6,
+  },
+  centerStatusSecondary: {
+    fontSize: 10,
+    fontWeight: '700' as const,
+    color: 'rgba(235,235,245,0.55)',
+    letterSpacing: 0.4,
+    marginTop: 4,
+    textAlign: 'center' as const,
+    lineHeight: 13,
   },
 });
