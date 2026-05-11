@@ -56,6 +56,7 @@ import { COLORS } from '@/constants/colors';
 import { trpc } from '@/lib/trpc';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { FootballSmartFilter } from '@/components/SportsSmartFilter';
+import { ErrorBoundary } from '@/components/ErrorBoundary';
 import { getCompetitionById } from '@/constants/competitions';
 import MatchDetailsModal from '@/components/MatchDetailsModal';
 import LeagueStandingsModal from '@/components/LeagueStandingsModal';
@@ -1495,7 +1496,7 @@ const EmptyState = React.memo(({ type }: { type: 'live' | 'upcoming' | 'results'
   );
 });
 
-export default function SportsScreen() {
+function SportsScreenInner() {
   const insets = useSafeAreaInsets();
   const { isFavoriteTeam, profile } = useUserProfile();
   const { user } = useAuth();
@@ -3815,6 +3816,14 @@ export default function SportsScreen() {
         </View>
       </Modal>
     </View>
+  );
+}
+
+export default function SportsScreen() {
+  return (
+    <ErrorBoundary>
+      <SportsScreenInner />
+    </ErrorBoundary>
   );
 }
 
