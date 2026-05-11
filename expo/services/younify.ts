@@ -440,6 +440,32 @@ export function getYounifyStreamingServiceLogoUrl(service: unknown): string | nu
   );
 }
 
+/** Best-effort title for eligibility (native bridges sometimes send PascalCase or only `path`). */
+function getYounifyRowTitleHint(item: any): string {
+  if (!item || typeof item !== "object") return "";
+  const candidates = [
+    item.title,
+    item.name,
+    item.showTitle,
+    item.show_title,
+    item.Title,
+    item.Name,
+  ];
+  for (const c of candidates) {
+    if (typeof c === "string") {
+      const t = c.trim();
+      if (t.length >= 2) return t;
+    }
+  }
+  if (Array.isArray(item.path) && item.path.length > 0) {
+    const last = item.path[item.path.length - 1];
+    const first = item.path[0];
+    if (typeof last === "string" && last.trim().length >= 2) return last.trim();
+    if (typeof first === "string" && first.trim().length >= 2) return first.trim();
+  }
+  return "";
+}
+
 /** Normalizes `fetchContent` / nested SDK trees into flat content rows. */
 function flattenYounifyFetchContentNodes(input: any): any[] {
   if (!input) return [];
@@ -471,7 +497,23 @@ function flattenYounifyFetchContentNodes(input: any): any[] {
     if (Array.isArray(input.items)) return flattenYounifyFetchContentNodes(input.items);
     if (Array.isArray(input.results)) return flattenYounifyFetchContentNodes(input.results);
     if (Array.isArray(input.data)) return flattenYounifyFetchContentNodes(input.data);
-    if ((input.title || input.name || input.id) && !input.content && !input.items) {
+    /** Leaf content row — include PascalCase keys from some native serializers + item ids without camel title */
+    const looksLikeLeaf =
+      !input.content &&
+      !input.items &&
+      !input.services &&
+      Boolean(
+        input.title ||
+          input.name ||
+          input.Title ||
+          input.Name ||
+          input.showTitle ||
+          input.itemID ||
+          input.itemId ||
+          input.id ||
+          (Array.isArray(input.path) && input.path.length > 0),
+      );
+    if (looksLikeLeaf) {
       return [input];
     }
   }
@@ -480,8 +522,12 @@ function flattenYounifyFetchContentNodes(input: any): any[] {
 
 /** Row can show a poster via Younify URLs or TMDB-by-title (Younify recommends TMDB for artwork). */
 function eligibleYounifyContentRow(item: any): boolean {
-  const title = String(item?.title ?? item?.name ?? "").trim();
-  return title.length >= 2;
+  const title = getYounifyRowTitleHint(item);
+  if (title.length >= 2) return true;
+  /** Provider-only id — still show tile so user can resume (posters come from TMDB lookup elsewhere). */
+  const id =
+    String(item?.itemID ?? item?.itemId ?? item?.id ?? "").trim();
+  return id.length >= 4;
 }
 
 function scoreAndTrimYounifyItems(items: any[], limit: number): any[] {
@@ -539,7 +585,7 @@ function scoreAndTrimYounifyItemsBalanced(items: any[], totalLimit: number): any
 }
 
 function categoryKey(cat: any): string {
-  return String(cat?.name ?? cat?.title ?? "").trim().toLowerCase();
+  return String(cat?.name ?? cat?.title ?? cat?.Name ?? "").trim().toLowerCase();
 }
 
 function categoriesMatch(a: any, b: any): boolean {
@@ -561,6 +607,18 @@ function categoriesMatch(a: any, b: any): boolean {
   const na = categoryKey(a);
   const nb = categoryKey(b);
   return na.length > 0 && na === nb;
+}
+
+/** When strict well-known category equality fails (provider-specific category instances). */
+function categoryLooksLikeContinueWatching(cat: any): boolean {
+  const n = categoryKey(cat);
+  if (!n) return false;
+  return (
+    n.includes("continue") ||
+    n.includes("resume") ||
+    (n.includes("watch") && n.includes("keep")) ||
+    n === "keep watching"
+  );
 }
 
 const YOUNIFY_BROWSE_ROWS: { id: string; title: string; category: (typeof StreamingCategories)["ContinueWatching"] }[] =
@@ -599,7 +657,11 @@ async function fetchBrowseSectionsWithLinked(
   }
 
   return YOUNIFY_BROWSE_ROWS.map((row) => {
-    const block = contentResult.find((cr: any) => categoriesMatch(cr?.category, row.category));
+    const block =
+      contentResult.find((cr: any) => categoriesMatch(cr?.category, row.category)) ??
+      (row.id === "continue"
+        ? contentResult.find((cr: any) => categoryLooksLikeContinueWatching(cr?.category))
+        : undefined);
     const flat = block ? flattenYounifyFetchContentNodes(block) : [];
     return {
       id: row.id,

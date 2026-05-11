@@ -17,30 +17,27 @@ export default function FeedTuningScreen() {
   const [strictFollowing, setStrictFollowing] = useState(
     profile?.sportsFeedPrefs?.strictFollowing ?? false,
   );
-  const [includeFollowedLeagues, setIncludeFollowedLeagues] = useState(
-    profile?.sportsFeedPrefs?.includeFollowedLeagues ?? true,
-  );
   const [bigMatchesDiscovery, setBigMatchesDiscovery] = useState(
     (profile?.sportsFeedPrefs?.discoveryLevel ?? 'med') !== 'low',
   );
 
-  const discoveryLevel = useMemo<'low' | 'med' | 'high'>(() => {
-    if (!bigMatchesDiscovery) return 'low';
-    return includeFollowedLeagues ? 'high' : 'med';
-  }, [bigMatchesDiscovery, includeFollowedLeagues]);
+  const discoveryLevel = useMemo<'low' | 'med' | 'high'>(
+    () => (bigMatchesDiscovery ? 'high' : 'low'),
+    [bigMatchesDiscovery],
+  );
 
   const handleContinue = useCallback(() => {
     void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
     updateProfile({
       sportsFeedPrefs: {
         strictFollowing,
-        includeFollowedLeagues,
+        includeFollowedLeagues: true,
         discoveryLevel,
         prioritizeDomesticLeagues: profile?.sportsFeedPrefs?.prioritizeDomesticLeagues ?? true,
       },
     });
     router.push('/(onboarding)/complete' as any);
-  }, [updateProfile, strictFollowing, includeFollowedLeagues, discoveryLevel, profile?.sportsFeedPrefs?.prioritizeDomesticLeagues, router]);
+  }, [updateProfile, strictFollowing, discoveryLevel, profile?.sportsFeedPrefs?.prioritizeDomesticLeagues, router]);
 
   const handleSkip = useCallback(() => {
     router.push('/(onboarding)/complete' as any);
@@ -75,14 +72,6 @@ export default function FeedTuningScreen() {
       </View>
 
       <View style={styles.card}>
-        <Text style={styles.cardTitle}>Leagues I follow</Text>
-        <Text style={styles.cardSub}>Prioritize leagues picked during onboarding and profile setup.</Text>
-        <TouchableOpacity style={[styles.toggle, includeFollowedLeagues && styles.toggleOn]} onPress={() => setIncludeFollowedLeagues((v) => !v)} activeOpacity={0.85}>
-          <Text style={[styles.toggleText, includeFollowedLeagues && styles.toggleTextOn]}>{includeFollowedLeagues ? 'On' : 'Off'}</Text>
-        </TouchableOpacity>
-      </View>
-
-      <View style={styles.card}>
         <Text style={styles.cardTitle}>Big matches discovery</Text>
         <Text style={styles.cardSub}>Include marquee fixtures to keep your feed lively.</Text>
         <TouchableOpacity style={[styles.toggle, bigMatchesDiscovery && styles.toggleOn]} onPress={() => setBigMatchesDiscovery((v) => !v)} activeOpacity={0.85}>
@@ -93,7 +82,7 @@ export default function FeedTuningScreen() {
       <View style={styles.previewCard}>
         <Sparkles size={14} color={COLORS.primary} />
         <Text style={styles.previewText}>
-          Your Sports Feed will prioritize: {strictFollowing ? 'clubs you follow' : 'personalized leagues'}{includeFollowedLeagues ? ', followed leagues' : ''}{bigMatchesDiscovery ? ', big-match discovery' : ''}.
+          Your Sports Feed will prioritize: {strictFollowing ? 'clubs you follow' : 'your selected leagues'}{bigMatchesDiscovery ? ', plus big-match discovery' : ''}.
         </Text>
       </View>
 

@@ -59,6 +59,7 @@ import {
   younifySourceToTmdbProviderId,
 } from '@/utils/streamingLinks';
 import { buildYounifyProviderIndex, pickBestYounifyRowForEpisode } from '@/utils/younifyProviderIndex';
+import { SHOWS_HREF } from '@/constants/showsNavigation';
 
 type AvailableSpeechVoice = Awaited<ReturnType<typeof Speech.getAvailableVoicesAsync>>[number];
 
@@ -1297,6 +1298,30 @@ export default function ActivitiesScreen() {
     });
   };
 
+  /** Must be declared before `rankedUpNextShows` / handlers that call it (avoid TDZ during sync useMemo). */
+  const platformNameToProviderId = (platform: string): number | null => {
+    const p = String(platform || '').toLowerCase();
+    if (!p) return null;
+    if (p.includes('netflix')) return 8;
+    if (p.includes('disney')) return 337;
+    if (p.includes('prime')) return 9;
+    if (p.includes('amazon')) return 9;
+    if (p.includes('hbo') || p.includes('max')) return 1899;
+    if (p.includes('hulu')) return 15;
+    if (p.includes('peacock')) return 386;
+    if (p.includes('paramount')) return 531;
+    if (p.includes('apple')) return 350;
+    if (p.includes('crunchyroll')) return 283;
+    if (p.includes('youtube')) return 192;
+    if (p.includes('fubo')) return 257;
+    if (p.includes('tubi')) return 73;
+    if (p.includes('plex')) return 1770;
+    if (p.includes('amc')) return 526;
+    if (p.includes('pluto')) return 300;
+    if (p.includes('viki') || p.includes('rakuten')) return 582;
+    return null;
+  };
+
   const handleContinueWatching = async (show: Show & { posterUrl?: string | null }) => {
     if (Platform.OS !== 'web') {
       await Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
@@ -1330,7 +1355,7 @@ export default function ActivitiesScreen() {
       setShowInfoModal({ visible: true, tmdbId: show.tmdbId, mediaType: show.mediaType, title: show.title, platform: show.platform });
       return;
     }
-    router.push('/shows' as any);
+    router.push(SHOWS_HREF.streaming as any);
   };
 
   const rankedUpNextShows = useMemo(() => {
@@ -1485,29 +1510,6 @@ export default function ActivitiesScreen() {
     }
   };
 
-  const platformNameToProviderId = (platform: string): number | null => {
-    const p = String(platform || '').toLowerCase();
-    if (!p) return null;
-    if (p.includes('netflix')) return 8;
-    if (p.includes('disney')) return 337;
-    if (p.includes('prime')) return 9;
-    if (p.includes('amazon')) return 9;
-    if (p.includes('hbo') || p.includes('max')) return 1899;
-    if (p.includes('hulu')) return 15;
-    if (p.includes('peacock')) return 386;
-    if (p.includes('paramount')) return 531;
-    if (p.includes('apple')) return 350;
-    if (p.includes('crunchyroll')) return 283;
-    if (p.includes('youtube')) return 192;
-    if (p.includes('fubo')) return 257;
-    if (p.includes('tubi')) return 73;
-    if (p.includes('plex')) return 1770;
-    if (p.includes('amc')) return 526;
-    if (p.includes('pluto')) return 300;
-    if (p.includes('viki') || p.includes('rakuten')) return 582;
-    return null;
-  };
-
   const handleOpenNewEpisode = useCallback(
     async (item: TrackedShowEpisode) => {
       const isRecentRelease =
@@ -1529,7 +1531,7 @@ export default function ActivitiesScreen() {
             platform: item.platform,
           });
         } else {
-          router.push('/shows' as any);
+          router.push(SHOWS_HREF.streaming as any);
         }
         return;
       }
@@ -1568,7 +1570,7 @@ export default function ActivitiesScreen() {
           platform: item.platform,
         });
       } else {
-        router.push('/shows' as any);
+        router.push(SHOWS_HREF.streaming as any);
       }
     },
     [linkedStreamingCount, younifyEpisodeIndex, router],
@@ -2149,7 +2151,7 @@ export default function ActivitiesScreen() {
                 </TouchableOpacity>
 
                 {hasShowsInterest && (
-                  <TouchableOpacity style={styles.hubCardTouchable} onPress={() => router.push('/shows' as any)} activeOpacity={0.9}>
+                  <TouchableOpacity style={styles.hubCardTouchable} onPress={() => router.push(SHOWS_HREF.streaming as any)} activeOpacity={0.9}>
                     <LinearGradient
                       colors={isDark ? ['#2B2242', '#1A2138'] : ['#3D2A58', '#252F50']}
                       start={{ x: 0, y: 0 }}
@@ -2432,7 +2434,7 @@ export default function ActivitiesScreen() {
                       <Text style={styles.newEpisodesCountText}>{visibleNewEpisodes.length}</Text>
                     </View>
                   </View>
-                  <TouchableOpacity onPress={() => router.push('/shows' as any)} hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}>
+                  <TouchableOpacity onPress={() => router.push(SHOWS_HREF.streaming as any)} hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}>
                     <Text style={styles.newEpisodesSeeAll}>See All</Text>
                   </TouchableOpacity>
                 </View>
@@ -2531,7 +2533,7 @@ export default function ActivitiesScreen() {
                     </View>
                   )}
                 </View>
-                <TouchableOpacity onPress={() => router.push('/shows' as any)} hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}>
+                <TouchableOpacity onPress={() => router.push(SHOWS_HREF.streaming as any)} hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}>
                   <Text style={styles.cwSeeAll}>See All</Text>
                 </TouchableOpacity>
               </View>
@@ -2552,7 +2554,7 @@ export default function ActivitiesScreen() {
                   ListFooterComponent={
                     <TouchableOpacity
                       style={[styles.cwAddCard, { backgroundColor: colors.surfaceSecondary }]}
-                      onPress={() => router.push('/shows' as any)}
+                      onPress={() => router.push(SHOWS_HREF.watchlist as any)}
                       activeOpacity={0.7}
                     >
                       <View style={styles.cwAddInner}>
@@ -2570,7 +2572,7 @@ export default function ActivitiesScreen() {
                     styles.cwEmptyCard,
                     { backgroundColor: colors.card, borderColor: colors.border },
                   ]}
-                  onPress={() => router.push('/shows' as any)}
+                  onPress={() => router.push(SHOWS_HREF.watchlist as any)}
                   activeOpacity={0.8}
                 >
                   <View style={styles.cwEmptyInner}>
@@ -2598,7 +2600,7 @@ export default function ActivitiesScreen() {
                       <Text style={styles.upNextCountText}>{rankedUpNextShows.length}</Text>
                     </View>
                   </View>
-                  <TouchableOpacity onPress={() => router.push('/shows' as any)} hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}>
+                  <TouchableOpacity onPress={() => router.push(SHOWS_HREF.watchlist as any)} hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}>
                     <Text style={styles.upNextSeeAll}>View All</Text>
                   </TouchableOpacity>
                 </View>

@@ -8,20 +8,45 @@ import { useUserProfile } from '@/hooks/useUserProfile';
 export function useOnboardingStepMeta() {
   const { profile } = useUserProfile();
   const hasMoviesInterest = Boolean(profile?.interests?.includes('movies'));
+  const hasFootballInterest = Boolean(profile?.interests?.includes('football'));
 
   return useMemo(() => {
-    const totalSteps = hasMoviesInterest ? 7 : 6;
+    const totalSteps = hasFootballInterest
+      ? hasMoviesInterest
+        ? 6
+        : 5
+      : hasMoviesInterest
+        ? 7
+        : 6;
+    const stepStreaming = hasMoviesInterest ? 3 : 0;
+    const stepChronotype = hasMoviesInterest ? 4 : 3;
+    const stepNationality = hasFootballInterest ? 0 : hasMoviesInterest ? 5 : 4;
+    const stepSportsPick = hasFootballInterest
+      ? hasMoviesInterest
+        ? 5
+        : 4
+      : hasMoviesInterest
+        ? 6
+        : 5;
+    const stepFeedTuning = hasFootballInterest
+      ? hasMoviesInterest
+        ? 6
+        : 5
+      : hasMoviesInterest
+        ? 7
+        : 6;
     return {
       totalSteps,
       hasMoviesInterest,
+      hasFootballInterest,
       stepInterests: 1,
       stepFavoriteLeagues: 2,
-      stepStreaming: hasMoviesInterest ? 3 : 0,
-      stepChronotype: hasMoviesInterest ? 4 : 3,
-      stepNationality: hasMoviesInterest ? 5 : 4,
+      stepStreaming,
+      stepChronotype,
+      stepNationality,
       /** Countries, football teams, NBA teams (same conceptual step in different branches) */
-      stepSportsPick: hasMoviesInterest ? 6 : 5,
-      stepFeedTuning: hasMoviesInterest ? 7 : 6,
+      stepSportsPick,
+      stepFeedTuning,
     };
-  }, [hasMoviesInterest]);
+  }, [hasMoviesInterest, hasFootballInterest]);
 }

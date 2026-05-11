@@ -18,6 +18,7 @@ import {
   RefreshControl,
   StatusBar,
   Share,
+  InteractionManager,
 } from 'react-native';
 import * as Haptics from 'expo-haptics';
 import { LinearGradient } from 'expo-linear-gradient';
@@ -82,7 +83,7 @@ import YounifyBrowseSectionRow from '@/components/younify/YounifyBrowseSectionRo
 import AroundYouTab from '@/components/shows/AroundYouTab';
 
 import TabWalkthrough from '@/components/TabWalkthrough';
-import { useRouter, useFocusEffect } from 'expo-router';
+import { useRouter, useFocusEffect, useLocalSearchParams } from 'expo-router';
 
 
 
@@ -114,6 +115,16 @@ const THEME = {
 };
 
 
+
+type ShowsSubtab = 'for-you' | 'streaming' | 'watchlist' | 'around-you';
+
+const SHOW_SUBTAB_KEYS = new Set<ShowsSubtab>(['for-you', 'streaming', 'watchlist', 'around-you']);
+
+function parseShowsSubtabParam(raw: string | string[] | undefined): ShowsSubtab | null {
+  const v = Array.isArray(raw) ? raw[0] : raw;
+  if (typeof v !== 'string') return null;
+  return SHOW_SUBTAB_KEYS.has(v as ShowsSubtab) ? (v as ShowsSubtab) : null;
+}
 
 const PLATFORMS = [
   { id: 'Netflix', label: 'Netflix', color: '#E50914' },
@@ -850,11 +861,24 @@ export default function ShowsScreen() {
   const { user, isInitialized: authInitialized } = useAuth();
   const insets = useSafeAreaInsets();
   const router = useRouter();
+  const params = useLocalSearchParams<{ tab?: string | string[] }>();
   const [showAddModal, setShowAddModal] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
-  const [selectedTab, setSelectedTab] = useState<
-    'for-you' | 'streaming' | 'watchlist' | 'around-you'
-  >('for-you');
+  const [selectedTab, setSelectedTab] = useState<ShowsSubtab>(
+    () => parseShowsSubtabParam(params.tab) ?? 'for-you',
+  );
+
+  /** Hand off from My Activity (and deep links): open Streaming / My List / etc. instead of always landing on For You. */
+  useFocusEffect(
+    useCallback(() => {
+      const next = parseShowsSubtabParam(params.tab);
+      if (!next) return;
+      setSelectedTab(next);
+      requestAnimationFrame(() => {
+        router.setParams({ tab: undefined });
+      });
+    }, [params.tab, router]),
+  );
   const [selectedStatus, setSelectedStatus] = useState<'all' | Show['status']>('all');
 
   const [showThumbnails, setShowThumbnails] = useState<Record<string, string>>({});
@@ -888,81 +912,92 @@ export default function ShowsScreen() {
   const [younifyRuntimeBanner, setYounifyRuntimeBanner] = useState<string | null>(null);
   const younifyFetchInFlightRef = useRef<Promise<void> | null>(null);
   const lastYounifyFetchAtRef = useRef(0);
+  /** Refs keep `refetchYounifyStreamingUnified` stable so focus effects do not re-fire on every SDK payload update. */
+  const younifyContentRef = useRef<unknown[]>([]);
+  const streamingSectionsRef = useRef<YounifyBrowseSection[]>([]);
+  const streamingInitializedRef = useRef(false);
   const YOUNIFY_REFETCH_COOLDOWN_MS = 2 * 60 * 1000;
   const younifyEpisodeIndex = useMemo(
     () => buildYounifyProviderIndex(streamingSections, linkedProviderIds),
     [streamingSections, linkedProviderIds],
   );
 
+  useEffect(() => {
+    younifyContentRef.current = younifyContent;
+  }, [younifyContent]);
+  useEffect(() => {
+    streamingSectionsRef.current = streamingSections;
+  }, [streamingSections]);
+  useEffect(() => {
+    streamingInitializedRef.current = streamingInitialized;
+  }, [streamingInitialized]);
+
   /** Single SDK round-trip: one linked fetch + hero & browse `fetchContent` in parallel (see `loadYounifyStreamingBundle`). */
-  const refetchYounifyStreamingUnified = useCallback(
-    async (opts?: { force?: boolean; silent?: boolean }) => {
-      const force = opts?.force === true;
-      const silent = opts?.silent === true;
-      const now = Date.now();
-      const hasLocalContent =
-        younifyContent.length > 0 ||
-        streamingSections.some((s) => Array.isArray(s.items) && s.items.length > 0);
+  const refetchYounifyStreamingUnified = useCallback(async (opts?: { force?: boolean; silent?: boolean }) => {
+    const force = opts?.force === true;
+    const silent = opts?.silent === true;
+    const now = Date.now();
+    const hasLocalContent =
+      younifyContentRef.current.length > 0 ||
+      streamingSectionsRef.current.some((s) => Array.isArray(s.items) && s.items.length > 0);
 
-      // Cool down repeated focus events unless explicitly forced.
-      if (
-        !force &&
-        streamingInitialized &&
-        hasLocalContent &&
-        now - lastYounifyFetchAtRef.current < YOUNIFY_REFETCH_COOLDOWN_MS
-      ) {
-        return;
-      }
+    // Cool down repeated focus events unless explicitly forced.
+    if (
+      !force &&
+      streamingInitializedRef.current &&
+      hasLocalContent &&
+      now - lastYounifyFetchAtRef.current < YOUNIFY_REFETCH_COOLDOWN_MS
+    ) {
+      return;
+    }
 
-      // Deduplicate concurrent calls from tab-change + focus + auth effects.
-      if (younifyFetchInFlightRef.current) {
-        return younifyFetchInFlightRef.current;
-      }
+    // Deduplicate concurrent calls from tab-change + focus + auth effects.
+    if (younifyFetchInFlightRef.current) {
+      return younifyFetchInFlightRef.current;
+    }
 
-      const task = (async () => {
-        const shouldShowBlockingLoader = !silent && !hasLocalContent;
-        try {
-          if (shouldShowBlockingLoader) {
-            setYounifyLoading(true);
-            setStreamingLoading(true);
-          }
-          const bundle = await loadYounifyStreamingBundle();
-          const linkedList = bundle.linkedServices;
-          setLinkedStreamingCount(linkedList.length);
-          setHasLinkedServices(linkedList.length > 0);
-          const ids = Array.from(
-            new Set(
-              linkedList
-                .map((service: any) =>
-                  younifySourceToTmdbProviderId({
-                    id: String(service?.id ?? ''),
-                    name: String(service?.name ?? ''),
-                  }),
-                )
-                .filter((id: number | null): id is number => id != null),
-            ),
-          );
-          setLinkedProviderIds(ids);
-          setYounifyContent(Array.isArray(bundle.heroContent) ? bundle.heroContent : []);
-          setStreamingSections(Array.isArray(bundle.browseSections) ? bundle.browseSections : []);
-          lastYounifyFetchAtRef.current = Date.now();
-        } catch (error) {
-          if (__DEV__) {
-            console.warn('Failed to load Younify streaming bundle:', error);
-          }
-        } finally {
-          setYounifyLoading(false);
-          setStreamingLoading(false);
-          setStreamingInitialized(true);
-          younifyFetchInFlightRef.current = null;
+    const task = (async () => {
+      const shouldShowBlockingLoader = !silent && !hasLocalContent;
+      try {
+        if (shouldShowBlockingLoader) {
+          setYounifyLoading(true);
+          setStreamingLoading(true);
         }
-      })();
+        const bundle = await loadYounifyStreamingBundle();
+        const linkedList = bundle.linkedServices;
+        setLinkedStreamingCount(linkedList.length);
+        setHasLinkedServices(linkedList.length > 0);
+        const ids = Array.from(
+          new Set(
+            linkedList
+              .map((service: any) =>
+                younifySourceToTmdbProviderId({
+                  id: String(service?.id ?? ''),
+                  name: String(service?.name ?? ''),
+                }),
+              )
+              .filter((id: number | null): id is number => id != null),
+          ),
+        );
+        setLinkedProviderIds(ids);
+        setYounifyContent(Array.isArray(bundle.heroContent) ? bundle.heroContent : []);
+        setStreamingSections(Array.isArray(bundle.browseSections) ? bundle.browseSections : []);
+        lastYounifyFetchAtRef.current = Date.now();
+      } catch (error) {
+        if (__DEV__) {
+          console.warn('Failed to load Younify streaming bundle:', error);
+        }
+      } finally {
+        setYounifyLoading(false);
+        setStreamingLoading(false);
+        setStreamingInitialized(true);
+        younifyFetchInFlightRef.current = null;
+      }
+    })();
 
-      younifyFetchInFlightRef.current = task;
-      return task;
-    },
-    [streamingInitialized, streamingSections, younifyContent.length],
-  );
+    younifyFetchInFlightRef.current = task;
+    return task;
+  }, []);
 
   const onStreamingPullRefresh = useCallback(async () => {
     setStreamingRefreshing(true);
@@ -973,22 +1008,30 @@ export default function ShowsScreen() {
     }
   }, [refetchYounifyStreamingUnified]);
 
-  /** Heavy Younify work only when Streaming / Watchlist sub-tab is active — avoids duplicate SDK calls while browsing For You. */
+  /**
+   * Warm the Younify bundle whenever Movies & TV is visible — including on For You — so opening Streaming
+   * usually hits cached rows instead of waiting on configure + fetchLinkedServices + fetchContent.
+   * Deferred past transitions so the tab bar stays responsive.
+   */
   useFocusEffect(
     useCallback(() => {
-      if (selectedTab === 'streaming' || selectedTab === 'watchlist') {
+      let cancelled = false;
+      const interactionTask = InteractionManager.runAfterInteractions(() => {
+        if (cancelled) return;
         void refetchYounifyStreamingUnified({ silent: true });
-      }
-    }, [selectedTab, refetchYounifyStreamingUnified]),
+      });
+      return () => {
+        cancelled = true;
+        interactionTask.cancel?.();
+      };
+    }, [refetchYounifyStreamingUnified]),
   );
 
-  /** Account switch: refresh Younify only if Streaming/Watchlist is visible (avoids full SDK load on For You). */
+  /** Account switch: force-refresh linked streaming data for the signed-in user. */
   useEffect(() => {
     if (!authInitialized) return;
-    if (selectedTab === 'streaming' || selectedTab === 'watchlist') {
-      void refetchYounifyStreamingUnified({ force: true, silent: true });
-    }
-  }, [authInitialized, user?.id, selectedTab, refetchYounifyStreamingUnified]);
+    void refetchYounifyStreamingUnified({ force: true, silent: true });
+  }, [authInitialized, user?.id, refetchYounifyStreamingUnified]);
 
   useEffect(() => {
     setYounifyRuntimeBanner(getYounifyRuntimeIssue());
@@ -1321,8 +1364,21 @@ export default function ShowsScreen() {
 
   const handleAddFromTMDB = useCallback((item: any, type: 'movie' | 'tv', startWatching: boolean = false) => {
     if (!addShow) return;
+
+    const tmdbId =
+      typeof item?.id === 'number' && Number.isFinite(item.id)
+        ? item.id
+        : Number(item?.id);
+    if (!Number.isFinite(tmdbId) || tmdbId <= 0) {
+      Alert.alert('Cannot add title', 'Missing catalog id for this title. Try opening it again or add it from search.');
+      return;
+    }
+
+    const rawTitle = type === 'movie' ? item?.title : item?.name;
+    const title =
+      typeof rawTitle === 'string' && rawTitle.trim().length > 0 ? rawTitle.trim() : 'Untitled';
     
-    const exists = shows.some(show => show.tmdbId === item.id && show.mediaType === type);
+    const exists = shows.some(show => show.tmdbId === tmdbId && show.mediaType === type);
     
     if (exists) {
       if (Platform.OS !== 'web') {
@@ -1333,12 +1389,12 @@ export default function ShowsScreen() {
     }
     
     const showData: NewShowFormData = {
-      title: type === 'movie' ? item.title : item.name,
+      title,
       platform: 'Other',
       type: type === 'movie' ? 'Movie' : 'Series',
       currentSeason: type === 'tv' ? 1 : undefined,
       currentEpisode: type === 'tv' ? 1 : undefined,
-      tmdbId: item.id,
+      tmdbId,
       mediaType: type,
       status: startWatching ? 'Watching' : 'Plan to Watch',
     };

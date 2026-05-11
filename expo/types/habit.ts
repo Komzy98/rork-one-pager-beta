@@ -101,6 +101,10 @@ export interface Habit {
   adaptiveDifficulty?: boolean; // Auto-adjust task difficulty based on performance
   minimumDailyTasks?: number; // Minimum tasks to complete per day
   maximumDailyTasks?: number; // Maximum tasks per day to prevent burnout
+
+  /** Copied from community programs that pair with the Cooking tab */
+  dietTags?: string[];
+  dietLabel?: string;
 }
 
 export type HabitWithStats = Habit & {

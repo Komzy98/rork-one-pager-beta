@@ -63,6 +63,12 @@ function friendlyMessageForAuthNetworkError(error: unknown): string | null {
   return null;
 }
 
+function isRetryableAuthNetworkMessage(message: string): boolean {
+  return /network request failed|failed to fetch|load failed|network connection was lost|timed out|econnreset|etimedout/i.test(
+    message,
+  );
+}
+
 const googleDiscovery = {
   authorizationEndpoint: 'https://accounts.google.com/o/oauth2/v2/auth',
   tokenEndpoint: 'https://oauth2.googleapis.com/token',
@@ -522,10 +528,23 @@ export const [AuthProvider, useAuth] = createContextHook(() => {
       setIsLoading(true);
 
       if (supabaseConfigured) {
-        const { data, error } = await supabase.auth.signInWithPassword({
-          email: credentials.email.trim().toLowerCase(),
-          password: credentials.password,
-        });
+        let data: Awaited<ReturnType<typeof supabase.auth.signInWithPassword>>['data'] | null = null;
+        let error: Awaited<ReturnType<typeof supabase.auth.signInWithPassword>>['error'] | null = null;
+        const normalizedEmail = credentials.email.trim().toLowerCase();
+
+        for (let attempt = 0; attempt < 3; attempt++) {
+          const res = await supabase.auth.signInWithPassword({
+            email: normalizedEmail,
+            password: credentials.password,
+          });
+          data = res.data;
+          error = res.error;
+          const msg = error?.message ?? '';
+          const shouldRetry = !!error && isRetryableAuthNetworkMessage(msg) && attempt < 2;
+          if (!shouldRetry) break;
+          await new Promise((r) => setTimeout(r, 450 * (attempt + 1)));
+        }
+
         if (error || !data.user) {
           const msg = error?.message || 'Invalid email or password';
           console.warn('Supabase login failed:', msg);
@@ -628,18 +647,31 @@ export const [AuthProvider, useAuth] = createContextHook(() => {
       const displayName = `${credentials.firstName} ${credentials.lastName}`.trim();
 
       if (supabaseConfigured) {
-        const { data, error } = await supabase.auth.signUp({
-          email: credentials.email.trim().toLowerCase(),
-          password: credentials.password,
-          options: {
-            data: {
-              firstName: credentials.firstName,
-              lastName: credentials.lastName,
-              name: displayName,
-              full_name: displayName,
+        let data: Awaited<ReturnType<typeof supabase.auth.signUp>>['data'] | null = null;
+        let error: Awaited<ReturnType<typeof supabase.auth.signUp>>['error'] | null = null;
+        const normalizedEmail = credentials.email.trim().toLowerCase();
+
+        for (let attempt = 0; attempt < 3; attempt++) {
+          const res = await supabase.auth.signUp({
+            email: normalizedEmail,
+            password: credentials.password,
+            options: {
+              data: {
+                firstName: credentials.firstName,
+                lastName: credentials.lastName,
+                name: displayName,
+                full_name: displayName,
+              },
             },
-          },
-        });
+          });
+          data = res.data;
+          error = res.error;
+          const msg = error?.message ?? '';
+          const shouldRetry = !!error && isRetryableAuthNetworkMessage(msg) && attempt < 2;
+          if (!shouldRetry) break;
+          await new Promise((r) => setTimeout(r, 450 * (attempt + 1)));
+        }
+
         if (error || !data.user) {
           const msg = error?.message || 'Signup failed';
           console.warn('Supabase signup failed:', msg);

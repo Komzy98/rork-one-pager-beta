@@ -6,10 +6,10 @@ import {
   TouchableOpacity,
   Modal,
   ScrollView,
-  Image,
   Animated,
   Platform,
 } from 'react-native';
+import { Image } from 'expo-image';
 import {
   X,
   Calendar,
@@ -97,7 +97,7 @@ const LivePulse = ({ color = '#FF3B30', size = 8 }: { color?: string; size?: num
 };
 
 export default function UFCFightDetailModal({ visible, onClose, fight }: UFCFightDetailModalProps) {
-  const { colors } = useTheme();
+  const { colors, isDark } = useTheme();
   const slideAnim = useRef(new Animated.Value(0)).current;
   const fadeAnim = useRef(new Animated.Value(0)).current;
   const fighter1Anim = useRef(new Animated.Value(-50)).current;
@@ -270,7 +270,12 @@ export default function UFCFightDetailModal({ visible, onClose, fight }: UFCFigh
                     ]}>
                       <View style={s.fighterAvatar}>
                         {fight.fighter1.photo ? (
-                          <Image source={{ uri: fight.fighter1.photo }} style={s.fighterPhoto} />
+                          <Image
+                            source={{ uri: fight.fighter1.photo }}
+                            style={s.fighterPhoto}
+                            contentFit="cover"
+                            cachePolicy="memory-disk"
+                          />
                         ) : (
                           <LinearGradient colors={['#1E1E3A', '#2A2A50']} style={s.fighterAvatarFallback}>
                             <Text style={s.fighterInitials}>{getFighterInitial(fight.fighter1.name)}</Text>
@@ -316,7 +321,12 @@ export default function UFCFightDetailModal({ visible, onClose, fight }: UFCFigh
                     ]}>
                       <View style={s.fighterAvatar}>
                         {fight.fighter2.photo ? (
-                          <Image source={{ uri: fight.fighter2.photo }} style={s.fighterPhoto} />
+                          <Image
+                            source={{ uri: fight.fighter2.photo }}
+                            style={s.fighterPhoto}
+                            contentFit="cover"
+                            cachePolicy="memory-disk"
+                          />
                         ) : (
                           <LinearGradient colors={['#1E1E3A', '#2A2A50']} style={s.fighterAvatarFallback}>
                             <Text style={s.fighterInitials}>{getFighterInitial(fight.fighter2.name)}</Text>

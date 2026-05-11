@@ -23,6 +23,7 @@ import {
 import * as Haptics from 'expo-haptics';
 import { router } from 'expo-router';
 import { HABIT_COLORS } from '@/constants/colors';
+import { SHOWS_HREF } from '@/constants/showsNavigation';
 import { useTheme } from '@/hooks/useTheme';
 import { useApp } from '@/hooks/useHabitsStore';
 import { useTasks } from '@/hooks/useTasksStore';
@@ -123,7 +124,7 @@ export default function ActivitiesAIView({ onRequestPeakScheduler }: Props) {
         return;
       }
       if (screen === 'shows') {
-        router.push('/shows' as any);
+        router.push(SHOWS_HREF.streaming as any);
         return;
       }
       if (screen === 'activities') {
@@ -590,7 +591,7 @@ export default function ActivitiesAIView({ onRequestPeakScheduler }: Props) {
               } else if (activity.type === 'task') {
                 router.push('/tasks' as any);
               } else if (activity.type === 'show') {
-                router.push('/shows' as any);
+                router.push(SHOWS_HREF.streaming as any);
               }
             }}
             onInsightPress={() => {}}

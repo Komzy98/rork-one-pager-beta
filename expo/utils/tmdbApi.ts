@@ -494,6 +494,7 @@ export function formatReleaseDate(dateString: string): string {
   return date.getFullYear().toString();
 }
 
-export function formatRating(rating: number): string {
-  return rating.toFixed(1);
+export function formatRating(rating: number | null | undefined): string {
+  const n = typeof rating === 'number' && Number.isFinite(rating) ? rating : 0;
+  return n.toFixed(1);
 }

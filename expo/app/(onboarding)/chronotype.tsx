@@ -21,7 +21,7 @@ import { Chronotype, ChronotypeInfo } from '@/types/habit';
 export default function ChronotypeScreen() {
   const router = useRouter();
   const insets = useSafeAreaInsets();
-  const { updateProfile } = useUserProfile();
+  const { profile, updateProfile } = useUserProfile();
   const { totalSteps, stepChronotype } = useOnboardingStepMeta();
   const [selected, setSelected] = useState<Chronotype | null>(null);
   const [expandedId, setExpandedId] = useState<Chronotype | null>(null);
@@ -84,8 +84,12 @@ export default function ChronotypeScreen() {
     if (!selected) return;
     void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
     updateProfile({ chronotype: selected });
+    if (profile?.interests?.includes('football')) {
+      router.push('/(onboarding)/teams' as any);
+      return;
+    }
     router.push('/(onboarding)/nationality' as any);
-  }, [selected, updateProfile, router]);
+  }, [selected, updateProfile, router, profile?.interests]);
 
   const handleBack = useCallback(() => {
     router.back();
@@ -93,8 +97,12 @@ export default function ChronotypeScreen() {
 
   const handleSkip = useCallback(() => {
     void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+    if (profile?.interests?.includes('football')) {
+      router.push('/(onboarding)/teams' as any);
+      return;
+    }
     router.push('/(onboarding)/nationality' as any);
-  }, [router]);
+  }, [router, profile?.interests]);
 
   const getIconForChronotype = (id: Chronotype) => {
     switch (id) {

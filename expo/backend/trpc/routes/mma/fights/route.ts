@@ -1,6 +1,6 @@
 import { z } from 'zod';
 import { publicProcedure } from '@/backend/trpc/create-context';
-import { getFootballApiKeyFromEnv } from '@/backend/utils/footballApiKey';
+import { getMmaApiKeyFromEnv } from '@/backend/utils/footballApiKey';
 
 const MMA_BASE_URL = 'https://v1.mma.api-sports.io';
 
@@ -27,7 +27,9 @@ function getMmaCacheKey(type: string, params: Record<string, any>): string {
     if (val !== undefined && val !== null) acc[key] = val;
     return acc;
   }, {} as Record<string, any>);
-  return `mma:${type}:${JSON.stringify(sorted)}`;
+  /** Bump when upcoming fetch logic changes so stale empty caches are not reused forever. */
+  const upcomingRev = type === 'upcoming' ? ':scan-v4' : '';
+  return `mma:${type}${upcomingRev}:${JSON.stringify(sorted)}`;
 }
 
 function getFromMmaCache(key: string, ttl: number): any {
@@ -88,7 +90,15 @@ async function mmaFetch(url: string, headers: Record<string, string>, cacheKey: 
           await new Promise(resolve => setTimeout(resolve, 3000 * (attempt + 1)));
           continue;
         }
-        return { response: [], _rateLimited: true };
+        return {
+          response: [],
+          results: 0,
+          errors: {
+            rateLimit:
+              'MMA API rate limit (429). Too many requests — wait a few minutes, restart the server after cooldown, or upgrade api-sports.io plan.',
+          },
+          _rateLimited: true,
+        };
       }
 
       if (response.status === 403 || response.status === 401) {
@@ -187,20 +197,58 @@ async function checkMmaApiStatus(headers: Record<string, string>): Promise<{ ava
   }
 }
 
-async function fetchSeasonFights(season: string, headers: Record<string, string>): Promise<any[]> {
+async function fetchSeasonFights(
+  season: string,
+  headers: Record<string, string>,
+  errOut?: { rateLimit?: string },
+): Promise<any[]> {
   const cacheKey = `mma:season:${season}`;
   const cached = getFromMmaCache(cacheKey, MMA_CACHE_TTL.season);
   if (cached) return cached;
 
-  const url = `${MMA_BASE_URL}/fights?season=${season}`;
-  const data = await mmaFetch(url, headers, `mma:season-raw:${season}`, MMA_CACHE_TTL.season);
-  const fights = data.response || [];
+  const allFights: any[] = [];
+  let page = 1;
+  const maxPages = 60;
 
-  console.log(`🥊 Season ${season}: ${fights.length} fights`);
-  if (fights.length > 0) {
-    setMmaCache(cacheKey, fights);
+  while (page <= maxPages) {
+    const url =
+      page === 1
+        ? `${MMA_BASE_URL}/fights?season=${season}`
+        : `${MMA_BASE_URL}/fights?season=${season}&page=${page}`;
+    const data = await mmaFetch(url, headers, `mma:season-raw:${season}:p${page}`, MMA_CACHE_TTL.season);
+
+    if (data._rateLimited || data.errors?.rateLimit) {
+      console.warn(`🥊 Season ${season} stopped early (rate limit)`);
+      if (errOut && !errOut.rateLimit) {
+        const msg = data.errors?.rateLimit;
+        errOut.rateLimit = typeof msg === 'string' ? msg : 'MMA API rate limit exceeded.';
+      }
+      break;
+    }
+
+    const chunk = data.response || [];
+    allFights.push(...chunk);
+
+    const paging = data.paging as { current?: number; total?: number } | undefined;
+    if (paging && typeof paging.current === 'number' && typeof paging.total === 'number') {
+      if (paging.current >= paging.total || chunk.length === 0) break;
+      page += 1;
+      continue;
+    }
+
+    /** No `paging`: assume single page unless we might have more (common API-Sports page size 100). */
+    if (chunk.length >= 100) {
+      page += 1;
+      continue;
+    }
+    break;
   }
-  return fights;
+
+  console.log(`🥊 Season ${season}: ${allFights.length} fights (${page} page(s) examined)`);
+  if (allFights.length > 0) {
+    setMmaCache(cacheKey, allFights);
+  }
+  return allFights;
 }
 
 async function fetchFightsByDate(dateStr: string, headers: Record<string, string>): Promise<any[]> {
@@ -217,29 +265,84 @@ async function fetchFightsByDate(dateStr: string, headers: Record<string, string
   return fights;
 }
 
-function isUpcomingStatus(status: string | undefined): boolean {
-  return status === 'NS' || status === 'PF' || status === 'TBD' || !status;
+function isCompletedStatus(status: string | undefined): boolean {
+  /** FT/AW finished; EOR is mid-fight (round break), not a final result. */
+  return status === 'FT' || status === 'AW';
 }
 
-function isCompletedStatus(status: string | undefined): boolean {
-  return status === 'FT' || status === 'EOR' || status === 'AW';
+function isLiveStatus(status: string | undefined): boolean {
+  /** API: IN=Intros, EOR=End of round (still in progress) — exclude from “upcoming” tab. */
+  return status === 'LIVE' || status === 'IN' || status === 'EOR';
+}
+
+/** Scheduled/upcoming: api-sports uses several shorts (NS, PF, TBD, SCH, …) — exclude only terminal/live states. */
+function isLikelyUpcomingFight(f: any): boolean {
+  const status = f?.status?.short as string | undefined;
+  if (!status) return true;
+  if (isCompletedStatus(status)) return false;
+  if (isLiveStatus(status)) return false;
+  const u = status.toUpperCase();
+  if (
+    u === 'CANC' ||
+    u === 'POST' ||
+    u === 'PST' ||
+    u === 'ABD' ||
+    u === 'ABN' ||
+    u === 'CANCELLED' ||
+    u === 'POSTPONED'
+  ) {
+    return false;
+  }
+  return true;
+}
+
+/** Align with app `getMmaFighterPair` so dedupe keys stay unique when API uses home/away, etc. */
+function mmaFighterNamesForDedupe(fight: any): { n1: string; n2: string } {
+  const F = fight?.fighters;
+  if (F && typeof F === 'object' && !Array.isArray(F)) {
+    return {
+      n1: String(F.first?.name ?? ''),
+      n2: String(F.second?.name ?? ''),
+    };
+  }
+  if (Array.isArray(F) && F.length >= 2) {
+    return { n1: String(F[0]?.name ?? ''), n2: String(F[1]?.name ?? '') };
+  }
+  if (fight?.fighter1 != null || fight?.fighter2 != null) {
+    return { n1: String(fight.fighter1?.name ?? ''), n2: String(fight.fighter2?.name ?? '') };
+  }
+  if (fight?.home != null || fight?.away != null) {
+    return { n1: String(fight.home?.name ?? ''), n2: String(fight.away?.name ?? '') };
+  }
+  if (fight?.first != null || fight?.second != null) {
+    return { n1: String(fight.first?.name ?? ''), n2: String(fight.second?.name ?? '') };
+  }
+  return { n1: '', n2: '' };
+}
+
+function fightDedupeKey(fight: any): string {
+  if (typeof fight?.id === 'number' && fight.id > 0) return `id:${fight.id}`;
+  const d = fight?.date || '';
+  const { n1, n2 } = mmaFighterNamesForDedupe(fight);
+  return `k:${d}:${n1}:${n2}`;
 }
 
 async function fetchFightsMultipleStrategies(
   type: 'upcoming' | 'results',
   headers: Record<string, string>,
   currentYear: number,
-  now: Date
+  now: Date,
+  errOut?: { rateLimit?: string },
 ): Promise<any[]> {
   const allFights: any[] = [];
-  const seenIds = new Set<number>();
+  const seenIds = new Set<string>();
 
   const addFights = (fights: any[]) => {
     let added = 0;
     for (const fight of fights) {
-      const fightId = fight.id;
-      if (fightId && !seenIds.has(fightId)) {
-        seenIds.add(fightId);
+      const key = fightDedupeKey(fight);
+      if (!seenIds.has(key)) {
+        seenIds.add(key);
         allFights.push(fight);
         added++;
       }
@@ -249,15 +352,17 @@ async function fetchFightsMultipleStrategies(
 
   const filterFn = type === 'upcoming'
     ? (f: any) => {
-        const status = f.status?.short;
-        if (!isUpcomingStatus(status)) return false;
+        if (!isLikelyUpcomingFight(f)) return false;
+        if (!f?.date) return true;
         const fightDate = new Date(f.date);
-        return fightDate.getTime() >= now.getTime() - (24 * 60 * 60 * 1000);
+        const t = fightDate.getTime();
+        if (Number.isNaN(t)) return true;
+        return t >= now.getTime() - 24 * 60 * 60 * 1000;
       }
     : (f: any) => isCompletedStatus(f.status?.short);
 
   console.log(`🥊 Strategy 1: Season ${currentYear} query...`);
-  const seasonFights = await fetchSeasonFights(String(currentYear), headers);
+  const seasonFights = await fetchSeasonFights(String(currentYear), headers, errOut);
   const seasonFiltered = seasonFights.filter(filterFn);
   addFights(seasonFiltered);
   console.log(`🥊 Season ${currentYear} ${type}: ${seasonFiltered.length}/${seasonFights.length}`);
@@ -265,7 +370,7 @@ async function fetchFightsMultipleStrategies(
   const altYear = type === 'upcoming' ? currentYear + 1 : currentYear - 1;
   if (allFights.length < 10) {
     console.log(`🥊 Strategy 1b: Alt year ${altYear} season query...`);
-    const altFights = await fetchSeasonFights(String(altYear), headers);
+    const altFights = await fetchSeasonFights(String(altYear), headers, errOut);
     const altFiltered = altFights.filter(filterFn);
     const altAdded = addFights(altFiltered);
     console.log(`🥊 Alt year ${altYear}: ${altAdded} added (${altFiltered.length} filtered/${altFights.length} total)`);
@@ -276,7 +381,8 @@ async function fetchFightsMultipleStrategies(
     const datesToCheck: string[] = [];
 
     if (type === 'upcoming') {
-      for (let i = 0; i <= 90; i++) {
+      /** Cover ~3 weeks; burst-requesting 60+ days caused 429 rate limits on api-sports free tier. */
+      for (let i = 0; i <= 21; i++) {
         const d = new Date(now);
         d.setDate(d.getDate() + i);
         datesToCheck.push(formatDate(d));
@@ -289,25 +395,22 @@ async function fetchFightsMultipleStrategies(
       }
     }
 
-    const weekends = datesToCheck.filter(dateStr => {
-      const d = new Date(dateStr + 'T12:00:00Z');
-      const day = d.getUTCDay();
-      return day === 5 || day === 6 || day === 0;
-    });
+    /** UFC cards land on any weekday — scan consecutive days (old logic sampled weekends + 10 weekdays and often missed real card dates). */
+    const uniqueSampled =
+      type === 'upcoming' ? datesToCheck : [...new Set(datesToCheck)];
 
-    const sampled = [
-      ...weekends.slice(0, 20),
-      ...datesToCheck.filter(d => !weekends.includes(d)).slice(0, 10),
-    ];
-    const uniqueSampled = [...new Set(sampled)];
-    console.log(`🥊 Checking ${uniqueSampled.length} dates (${weekends.length} weekends + extras)...`);
+    console.log(`🥊 Checking ${uniqueSampled.length} calendar dates (consecutive ${type === 'upcoming' ? 'forward' : 'backward'})...`);
 
-    for (const dateStr of uniqueSampled) {
+    for (let i = 0; i < uniqueSampled.length; i++) {
+      const dateStr = uniqueSampled[i];
+      if (type === 'upcoming' && i > 0) {
+        await new Promise((r) => setTimeout(r, 400));
+      }
       const fights = await fetchFightsByDate(dateStr, headers);
       const filtered = fights.filter(filterFn);
       addFights(filtered);
 
-      if (allFights.length >= 30) {
+      if (allFights.length >= 40) {
         console.log(`🥊 Found ${allFights.length} fights, stopping date queries early`);
         break;
       }
@@ -318,7 +421,7 @@ async function fetchFightsMultipleStrategies(
   if (type === 'results' && allFights.length < 5) {
     const moreYear = currentYear - 2;
     console.log(`🥊 Strategy 3: Even older year ${moreYear}...`);
-    const moreFights = await fetchSeasonFights(String(moreYear), headers);
+    const moreFights = await fetchSeasonFights(String(moreYear), headers, errOut);
     const moreFiltered = moreFights.filter(filterFn);
     addFights(moreFiltered);
     console.log(`🥊 Year ${moreYear}: added to total ${allFights.length}`);
@@ -344,12 +447,14 @@ export const getMmaFightsRoute = publicProcedure
       return cachedResult;
     }
 
-    const apiKey = getFootballApiKeyFromEnv();
+    const apiKey = getMmaApiKeyFromEnv();
 
     console.log(`🥊 MMA API Request - Type: ${type}, API Key present: ${!!apiKey}, Key length: ${apiKey?.length || 0}`);
 
     if (!apiKey) {
-      console.error('❌ No API-Sports key for MMA: set FOOTBALL_API_KEY or EXPO_PUBLIC_FOOTBALL_API_KEY on the server');
+      console.error(
+        '❌ No API-Sports key for MMA: set MMA_API_KEY or FOOTBALL_API_KEY / EXPO_PUBLIC_FOOTBALL_API_KEY on the server'
+      );
       return { response: [], results: 0, errors: { config: 'API key not configured' } };
     }
 
@@ -359,12 +464,9 @@ export const getMmaFightsRoute = publicProcedure
     console.log(`🥊 MMA API Status: available=${apiStatus.available}, message=${apiStatus.message}`);
 
     if (!apiStatus.available) {
-      console.error(`❌ MMA API not available: ${apiStatus.message}`);
-      return {
-        response: [],
-        results: 0,
-        errors: { config: apiStatus.message },
-      };
+      console.warn(
+        `⚠️ MMA /status reports unavailable (${apiStatus.message}) — still fetching fights (status can be a false negative). Enable MMA at https://dashboard.api-sports.io if results stay empty.`
+      );
     }
 
     const now = new Date();
@@ -393,7 +495,8 @@ export const getMmaFightsRoute = publicProcedure
       return result;
     }
 
-    const allFights = await fetchFightsMultipleStrategies(type, headers, currentYear, now);
+    const errOut: { rateLimit?: string } = {};
+    const allFights = await fetchFightsMultipleStrategies(type, headers, currentYear, now, errOut);
 
     if (type === 'upcoming') {
       allFights.sort((a, b) => new Date(a.date || 0).getTime() - new Date(b.date || 0).getTime());
@@ -414,7 +517,7 @@ export const getMmaFightsRoute = publicProcedure
     const result = {
       response: allFights,
       results: allFights.length,
-      errors: {},
+      errors: errOut.rateLimit ? { rateLimit: errOut.rateLimit } : {},
     };
 
     setMmaCache(topLevelCacheKey, result);

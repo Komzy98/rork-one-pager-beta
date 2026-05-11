@@ -12,3 +12,15 @@ export function getFootballApiKeyFromEnv(): string {
     ""
   );
 }
+
+/**
+ * MMA uses `v1.mma.api-sports.io`. Dashboard must enable the MMA API for your key.
+ * Optional dedicated key; otherwise the football API-Sports key is used (same account).
+ */
+export function getMmaApiKeyFromEnv(): string {
+  return (
+    process.env.MMA_API_KEY?.trim() ||
+    process.env.EXPO_PUBLIC_MMA_API_KEY?.trim() ||
+    getFootballApiKeyFromEnv()
+  );
+}
