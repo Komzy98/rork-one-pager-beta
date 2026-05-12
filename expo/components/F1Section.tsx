@@ -17,14 +17,15 @@ import {
   ChevronRight,
   MapPin,
   Calendar,
+  CalendarDays,
   X,
   CheckCircle2,
   Gauge,
   CircleDot,
-  Timer,
+  Clock3,
   TrendingUp,
   BarChart3,
-  Crown,
+  Users,
 } from 'lucide-react-native';
 import { Image } from 'expo-image';
 import { LinearGradient } from 'expo-linear-gradient';
@@ -39,6 +40,7 @@ import {
   getDriverStandings,
   getConstructorStandings,
 } from '@/constants/f1Data';
+import { HERO_SECONDARY_GAP_BELOW_SPORT_STRIP } from '@/constants/sportsHeroLayout';
 
 const { width: SCREEN_WIDTH } = Dimensions.get('window');
 
@@ -47,32 +49,35 @@ interface F1SectionProps {
   insets: { top: number; bottom: number };
 }
 
-const BG = '#F4F5F7';
-const CARD = '#FFFFFF';
-const CARD_BORDER = '#E8EAF0';
-const DIVIDER = '#ECEDF2';
-const F1_RED = '#E10600';
-const F1_RED_BG = '#FEF2F2';
+/** Race Center redesign (`F1TabRedesign.tsx`) — dark shell + brand red. */
+const BG = '#050506';
+const CARD = '#101113';
+const CARD_2 = '#17181B';
+const CARD_BORDER = 'rgba(255,255,255,0.10)';
+const DIVIDER = 'rgba(255,255,255,0.10)';
+const F1_RED = '#F20D18';
+const F1_RED_BG = 'rgba(242,13,24,0.10)';
+const F1_RED_BORDER = 'rgba(242,13,24,0.45)';
 const GOLD = '#D4A017';
-const GOLD_BG = '#FFFBEB';
-const SILVER = '#6B7280';
-const SILVER_BG = '#F3F4F6';
+const GOLD_BG = 'rgba(212,160,23,0.12)';
+const SILVER = '#9EA3AD';
+const SILVER_BG = 'rgba(158,163,173,0.12)';
 const BRONZE = '#B45309';
-const BRONZE_BG = '#FFF7ED';
-const GREEN = '#16A34A';
-const GREEN_BG = '#F0FDF4';
-const TXT = '#111827';
-const TXT_2 = '#4B5563';
-const TXT_3 = '#9CA3AF';
-const TXT_4 = '#D1D5DB';
+const BRONZE_BG = 'rgba(180,83,9,0.12)';
+const GREEN = '#22C55E';
+const GREEN_BG = 'rgba(34,197,94,0.12)';
+const TXT = '#F6F7F9';
+const TXT_2 = '#9EA3AD';
+const TXT_3 = '#9EA3AD';
+const TXT_4 = 'rgba(255,255,255,0.35)';
 const SHADOW_COLOR = '#000';
 
 type F1Tab = 'schedule' | 'championship' | 'constructors';
 
 const CountdownUnit = React.memo(({ value, label }: { value: number; label: string }) => (
-  <View style={s.cdUnit}>
-    <Text style={s.cdValue}>{String(value).padStart(2, '0')}</Text>
-    <Text style={s.cdLabel}>{label}</Text>
+  <View style={s.timeBox}>
+    <Text style={s.timeValue}>{String(value).padStart(2, '0')}</Text>
+    <Text style={s.timeLabel}>{label}</Text>
   </View>
 ));
 
@@ -80,7 +85,6 @@ const NextRaceHero = React.memo(({ race }: { race: F1Race }) => {
   const [timeLeft, setTimeLeft] = useState({ d: 0, h: 0, m: 0, s: 0 });
   const fadeAnim = useRef(new Animated.Value(0)).current;
   const scaleAnim = useRef(new Animated.Value(0.97)).current;
-  const pulseAnim = useRef(new Animated.Value(1)).current;
 
   useEffect(() => {
     const calc = () => {
@@ -104,85 +108,77 @@ const NextRaceHero = React.memo(({ race }: { race: F1Race }) => {
       Animated.timing(fadeAnim, { toValue: 1, duration: 600, useNativeDriver: true }),
       Animated.spring(scaleAnim, { toValue: 1, tension: 50, friction: 9, useNativeDriver: true }),
     ]).start();
-    const pulse = Animated.loop(
-      Animated.sequence([
-        Animated.timing(pulseAnim, { toValue: 1.15, duration: 1200, useNativeDriver: true }),
-        Animated.timing(pulseAnim, { toValue: 1, duration: 1200, useNativeDriver: true }),
-      ])
-    );
-    pulse.start();
-    return () => pulse.stop();
-  }, [fadeAnim, scaleAnim, pulseAnim]);
+  }, [fadeAnim, scaleAnim]);
 
   const seasonProg = useMemo(() => getCompletedRaces().length / F1_CALENDAR_2026.length, []);
+  const dateLabel = useMemo(
+    () =>
+      new Date(race.date).toLocaleDateString('en-GB', {
+        day: 'numeric',
+        month: 'short',
+      }).toUpperCase(),
+    [race.date]
+  );
 
   return (
-    <Animated.View style={[s.heroCard, { opacity: fadeAnim, transform: [{ scale: scaleAnim }] }]}>
-      <LinearGradient
-        colors={[F1_RED, '#B80500']}
-        start={{ x: 0, y: 0 }}
-        end={{ x: 1, y: 1 }}
-        style={s.heroBanner}
-      >
-        <View style={s.heroBannerContent}>
-          <View style={s.heroBadgeRow}>
-            <Animated.View style={[s.liveDotOuter, { transform: [{ scale: pulseAnim }] }]}>
-              <View style={s.liveDotInner} />
-            </Animated.View>
-            <Text style={s.heroBadgeText}>NEXT RACE</Text>
-            <View style={s.heroRoundPill}>
-              <Text style={s.heroRoundText}>R{race.round}/{F1_CALENDAR_2026.length}</Text>
-            </View>
-          </View>
-          <Text style={s.heroFlag}>{race.flag}</Text>
+    <Animated.View
+      style={[s.featuredCard, { opacity: fadeAnim, transform: [{ scale: scaleAnim }] }]}
+    >
+      <View style={s.featuredTopRow}>
+        <View style={{ flex: 1, minWidth: 0 }}>
+          <Text style={s.roundLabel}>ROUND {race.round}</Text>
+          <Text style={s.raceTitleFeatured} numberOfLines={2}>
+            {race.name}
+          </Text>
+          <Text style={s.circuitFeatured} numberOfLines={2}>
+            {race.flag} {race.circuit}
+          </Text>
         </View>
-      </LinearGradient>
+        <View style={s.trackBadge}>
+          <Flag size={22} color={F1_RED} strokeWidth={2.2} />
+        </View>
+      </View>
 
-      <View style={s.heroBody}>
-        <Text style={s.heroTitle}>{race.name}</Text>
-        <View style={s.heroLocRow}>
-          <MapPin size={12} color={TXT_3} />
-          <Text style={s.heroCircuit}>{race.circuit}</Text>
-        </View>
+      <View style={s.countdownRow}>
+        <CountdownUnit value={timeLeft.d} label="DAYS" />
+        <CountdownUnit value={timeLeft.h} label="HRS" />
+        <CountdownUnit value={timeLeft.m} label="MIN" />
+        <CountdownUnit value={timeLeft.s} label="SEC" />
+      </View>
 
-        <View style={s.cdRow}>
-          <CountdownUnit value={timeLeft.d} label="DAYS" />
-          <Text style={s.cdSep}>:</Text>
-          <CountdownUnit value={timeLeft.h} label="HRS" />
-          <Text style={s.cdSep}>:</Text>
-          <CountdownUnit value={timeLeft.m} label="MIN" />
-          <Text style={s.cdSep}>:</Text>
-          <CountdownUnit value={timeLeft.s} label="SEC" />
+      <View style={s.statRowFeatured}>
+        <View style={s.statBox}>
+          <CircleDot size={17} color={F1_RED} />
+          <Text style={s.statValueBox}>{race.laps} laps</Text>
+          <Text style={s.statLabelBox}>LAPS</Text>
         </View>
+        <View style={s.statBox}>
+          <Gauge size={17} color={F1_RED} />
+          <Text style={s.statValueBox} numberOfLines={1}>
+            {race.circuitLength}
+          </Text>
+          <Text style={s.statLabelBox}>LENGTH</Text>
+        </View>
+        <View style={s.statBox}>
+          <CalendarDays size={17} color={F1_RED} />
+          <Text style={s.statValueBox} numberOfLines={1}>
+            {dateLabel}
+          </Text>
+          <Text style={s.statLabelBox}>DATE</Text>
+        </View>
+      </View>
 
-        <View style={s.heroStatsRow}>
-          {[
-            { icon: CircleDot, val: `${race.laps} laps`, label: 'LAPS' },
-            { icon: Gauge, val: race.circuitLength, label: 'LENGTH' },
-            { icon: Calendar, val: new Date(race.date).toLocaleDateString('en-GB', { month: 'short', day: 'numeric' }), label: 'DATE' },
-          ].map((st, i) => (
-            <View key={i} style={s.heroStatCard}>
-              <st.icon size={14} color={F1_RED} />
-              <Text style={s.heroStatVal}>{st.val}</Text>
-              <Text style={s.heroStatLabel}>{st.label}</Text>
-            </View>
-          ))}
-        </View>
-
-        <View style={s.seasonBar}>
-          <View style={s.seasonBarHeader}>
-            <Text style={s.seasonBarLabel}>SEASON PROGRESS</Text>
-            <Text style={s.seasonBarPct}>{Math.round(seasonProg * 100)}%</Text>
-          </View>
-          <View style={s.seasonTrack}>
-            <LinearGradient
-              colors={[F1_RED, '#FF4040']}
-              start={{ x: 0, y: 0 }}
-              end={{ x: 1, y: 0 }}
-              style={[s.seasonFill, { width: `${seasonProg * 100}%` as any }]}
-            />
-          </View>
-        </View>
+      <View style={s.progressRow}>
+        <Text style={s.progressLabel}>SEASON PROGRESS</Text>
+        <Text style={s.progressPercent}>{Math.round(seasonProg * 100)}%</Text>
+      </View>
+      <View style={s.progressTrack}>
+        <LinearGradient
+          colors={[F1_RED, '#FF4040']}
+          start={{ x: 0, y: 0 }}
+          end={{ x: 1, y: 0 }}
+          style={[s.progressFill, { width: `${seasonProg * 100}%` as any }]}
+        />
       </View>
     </Animated.View>
   );
@@ -215,29 +211,26 @@ const RaceCard = React.memo(({ race, onPress }: { race: F1Race; onPress: () => v
         onPressIn={() => Animated.spring(pressAnim, { toValue: 0.97, tension: 300, friction: 20, useNativeDriver: true }).start()}
         onPressOut={() => Animated.spring(pressAnim, { toValue: 1, tension: 300, friction: 20, useNativeDriver: true }).start()}
         activeOpacity={1}
-        style={s.raceCard}
+        style={s.raceListCard}
       >
-        <View style={s.raceCardLeft}>
-          <View style={[s.raceDateBlock, done ? s.raceDateBlockDone : s.raceDateBlockUpcoming]}>
-            <Text style={[s.raceDateDay, { color: done ? GREEN : F1_RED }]}>{dayStr}</Text>
-            <Text style={[s.raceDateMonth, { color: done ? GREEN : TXT_3 }]}>{monthStr}</Text>
-          </View>
+        <View style={[s.dateBlock, done && s.dateBlockDone]}>
+          <Text style={[s.dateText, done && s.dateTextDone]}>{dayStr}</Text>
+          <Text style={s.monthText}>{monthStr}</Text>
         </View>
 
-        <View style={s.raceCardBody}>
-          <View style={s.raceCardTopRow}>
-            <Text style={s.raceCardFlag}>{race.flag}</Text>
-            <Text style={s.raceCardCountry}>{race.country}</Text>
-            {done && <CheckCircle2 size={14} color={GREEN} style={{ marginLeft: 'auto' as any }} />}
-            {!done && daysAway !== '' && (
-              <View style={s.raceUrgencyPill}>
-                <Text style={s.raceUrgencyText}>{daysAway}</Text>
-              </View>
-            )}
+        <View style={s.raceListInfo}>
+          <View style={s.countryMetaRow}>
+            <Text style={s.countryRow} numberOfLines={1}>
+              {race.flag} ROUND {race.round}
+            </Text>
+            {done ? <CheckCircle2 size={16} color={GREEN} strokeWidth={2.2} /> : null}
           </View>
-          <Text style={s.raceCardName} numberOfLines={1}>{race.name}</Text>
-          <Text style={s.raceCardCircuit} numberOfLines={1}>{race.circuit}</Text>
-
+          <Text style={s.raceListTitle} numberOfLines={1}>
+            {race.name}
+          </Text>
+          <Text style={s.raceListCircuit} numberOfLines={1}>
+            {race.circuit}
+          </Text>
           {done && race.podium && (
             <View style={s.racePodiumStrip}>
               {race.podium.map((name, idx) => {
@@ -245,102 +238,24 @@ const RaceCard = React.memo(({ race, onPress }: { race: F1Race; onPress: () => v
                 return (
                   <View key={name} style={s.racePodiumItem}>
                     <View style={[s.racePodiumDot, { backgroundColor: medalColors[idx] }]} />
-                    <Text style={s.racePodiumName} numberOfLines={1}>{name.split(' ').pop()}</Text>
+                    <Text style={s.racePodiumName} numberOfLines={1}>
+                      {name.split(' ').pop()}
+                    </Text>
                   </View>
                 );
               })}
             </View>
           )}
-        </View>
-
-        <ChevronRight size={16} color={TXT_4} />
-      </TouchableOpacity>
-    </Animated.View>
-  );
-});
-
-const ChampLeaderBanner = React.memo(({ driver }: { driver: F1Driver }) => (
-  <View style={s.leaderBanner}>
-    <View style={[s.leaderAccent, { backgroundColor: driver.teamColor }]} />
-    <View style={s.leaderContent}>
-      <View style={s.leaderTopRow}>
-        <Crown size={14} color={GOLD} />
-        <Text style={s.leaderLabel}>CHAMPIONSHIP LEADER</Text>
-      </View>
-      <View style={s.leaderMainRow}>
-        <View style={[s.leaderAvatarWrap, { borderColor: driver.teamColor }]}>
-          {driver.photo ? (
-            <Image
-              source={{ uri: driver.photo }}
-              style={s.leaderAvatar}
-              contentFit="cover"
-              cachePolicy="memory-disk"
-            />
-          ) : (
-            <View style={[s.leaderAvatarFallback, { backgroundColor: driver.teamColor + '15' }]}>
-              <Text style={[s.leaderAvatarNum, { color: driver.teamColor }]}>{driver.number}</Text>
+          {!done && daysAway !== '' && (
+            <View style={s.raceUrgencyPill}>
+              <Text style={s.raceUrgencyText}>{daysAway}</Text>
             </View>
           )}
         </View>
-        <View style={s.leaderInfo}>
-          <Text style={s.leaderName}>{driver.name}</Text>
-          <View style={s.leaderTeamRow}>
-            <View style={[s.leaderTeamDot, { backgroundColor: driver.teamColor }]} />
-            <Text style={s.leaderTeamName}>{driver.team}</Text>
-          </View>
-        </View>
-        <View style={s.leaderPtsWrap}>
-          <Text style={[s.leaderPtsNum, { color: driver.teamColor }]}>{driver.points}</Text>
-          <Text style={s.leaderPtsUnit}>PTS</Text>
-        </View>
-      </View>
-    </View>
-  </View>
-));
 
-const PodiumVisual = React.memo(({ drivers }: { drivers: F1Driver[] }) => {
-  if (drivers.length < 3) return null;
-  const podiumOrder = [drivers[1], drivers[0], drivers[2]];
-  const heights = [68, 92, 52];
-  const medals = [SILVER, GOLD, BRONZE];
-  const medalBgs = [SILVER_BG, GOLD_BG, BRONZE_BG];
-  const avatarSizes = [40, 52, 36];
-
-  return (
-    <View style={s.podiumContainer}>
-      {podiumOrder.map((d, i) => (
-        <View key={d.id} style={s.podiumCol}>
-          <View style={[s.podiumAvatarRing, { borderColor: medals[i] }]}>
-            {d.photo ? (
-              <Image
-                source={{ uri: d.photo }}
-                style={{ width: avatarSizes[i], height: avatarSizes[i], borderRadius: avatarSizes[i] / 2 }}
-                contentFit="cover"
-                cachePolicy="memory-disk"
-              />
-            ) : (
-              <View style={{
-                width: avatarSizes[i], height: avatarSizes[i], borderRadius: avatarSizes[i] / 2,
-                backgroundColor: d.teamColor + '15', justifyContent: 'center' as const, alignItems: 'center' as const,
-              }}>
-                <Text style={{ color: d.teamColor, fontWeight: '900' as const, fontSize: avatarSizes[i] * 0.35 }}>{d.number}</Text>
-              </View>
-            )}
-          </View>
-          <Text style={s.podiumDriverLast} numberOfLines={1}>{d.name.split(' ').pop()}</Text>
-          <Text style={s.podiumDriverPts}>{d.points} pts</Text>
-          <View style={[s.podiumPillar, { height: heights[i], backgroundColor: medalBgs[i], borderColor: medals[i] + '30' }]}>
-            <Text style={[s.podiumPos, { color: medals[i] }]}>{[2, 1, 3][i]}</Text>
-            {d.wins > 0 && (
-              <View style={s.podiumWinBadge}>
-                <Trophy size={9} color={GOLD} />
-                <Text style={s.podiumWinNum}>{d.wins}</Text>
-              </View>
-            )}
-          </View>
-        </View>
-      ))}
-    </View>
+        <ChevronRight size={22} color={TXT_3} />
+      </TouchableOpacity>
+    </Animated.View>
   );
 });
 
@@ -348,19 +263,20 @@ const DriverStandingRow = React.memo(({ driver, pos, maxPts }: { driver: F1Drive
   const barPct = maxPts > 0 ? (driver.points / maxPts) * 100 : 0;
 
   return (
-    <View style={s.dRow}>
-      <Text style={s.dPos}>{pos}</Text>
+    <View style={s.standingCard}>
+      <View style={[s.teamStripe, { backgroundColor: driver.teamColor }]} />
+      <Text style={s.positionCol}>{pos}</Text>
       <View style={[s.dAvatarWrap, { borderColor: driver.teamColor }]}>
         {driver.photo ? (
           <Image
             source={{ uri: driver.photo }}
-            style={{ width: 34, height: 34, borderRadius: 17 }}
+            style={{ width: 42, height: 42, borderRadius: 21 }}
             contentFit="cover"
             cachePolicy="memory-disk"
           />
         ) : (
-          <View style={{ width: 34, height: 34, borderRadius: 17, backgroundColor: driver.teamColor + '12', justifyContent: 'center' as const, alignItems: 'center' as const }}>
-            <Text style={{ color: driver.teamColor, fontWeight: '800' as const, fontSize: 13 }}>{driver.number}</Text>
+          <View style={{ width: 42, height: 42, borderRadius: 21, backgroundColor: driver.teamColor + '18', justifyContent: 'center' as const, alignItems: 'center' as const }}>
+            <Text style={{ color: driver.teamColor, fontWeight: '800' as const, fontSize: 15 }}>{driver.number}</Text>
           </View>
         )}
       </View>
@@ -485,20 +401,13 @@ export default function F1Section({ insets }: F1SectionProps) {
   const [selectedRace, setSelectedRace] = useState<F1Race | null>(null);
   const [showModal, setShowModal] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
-  const tabUnderlineAnim = useRef(new Animated.Value(0)).current;
+  const listScrollRef = useRef<ScrollView>(null);
 
-  const tabs: { key: F1Tab; label: string; icon: any }[] = [
-    { key: 'schedule', label: 'Schedule', icon: Calendar },
+  const tabs: { key: F1Tab; label: string; icon: typeof CalendarDays }[] = [
+    { key: 'schedule', label: 'Schedule', icon: CalendarDays },
     { key: 'championship', label: 'Drivers', icon: TrendingUp },
-    { key: 'constructors', label: 'Teams', icon: BarChart3 },
+    { key: 'constructors', label: 'Teams', icon: Users },
   ];
-
-  const tabIdx = tabs.findIndex(t => t.key === activeTab);
-  const tabW = (SCREEN_WIDTH - 32) / tabs.length;
-
-  useEffect(() => {
-    Animated.spring(tabUnderlineAnim, { toValue: tabIdx, tension: 120, friction: 16, useNativeDriver: true }).start();
-  }, [tabIdx, tabUnderlineAnim]);
 
   const nextRace = useMemo(() => getNextRace(), []);
   const upcoming = useMemo(() => getUpcomingRaces(), []);
@@ -508,6 +417,13 @@ export default function F1Section({ insets }: F1SectionProps) {
   const maxDPts = useMemo(() => Math.max(...driverStandings.map(d => d.points), 1), [driverStandings]);
   const maxCPts = useMemo(() => Math.max(...ctorStandings.map(t => t.points), 1), [ctorStandings]);
   const shownRaces = scheduleFilter === 'upcoming' ? upcoming : completed;
+
+  const calendarRaces = useMemo(() => {
+    if (scheduleFilter === 'upcoming' && nextRace) {
+      return shownRaces.filter(r => r.id !== nextRace.id);
+    }
+    return shownRaces;
+  }, [scheduleFilter, nextRace, shownRaces]);
 
   const handleTabPress = useCallback((tab: F1Tab) => {
     if (Platform.OS !== 'web') Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
@@ -530,28 +446,19 @@ export default function F1Section({ insets }: F1SectionProps) {
   return (
     <View style={s.root}>
 
-      <View style={s.tabBar}>
-        <Animated.View
-          style={[
-            s.tabIndicator,
-            {
-              width: tabW - 8,
-              transform: [{ translateX: Animated.add(Animated.multiply(tabUnderlineAnim, tabW), 4) }],
-            },
-          ]}
-        />
+      <View style={s.segmented}>
         {tabs.map((tab) => {
           const active = activeTab === tab.key;
           const Icon = tab.icon;
           return (
             <TouchableOpacity
               key={tab.key}
-              style={s.tabItem}
+              style={[s.segment, active && s.segmentActive]}
               onPress={() => handleTabPress(tab.key)}
-              activeOpacity={0.6}
+              activeOpacity={0.85}
             >
-              <Icon size={14} color={active ? F1_RED : TXT_3} strokeWidth={active ? 2.5 : 1.8} />
-              <Text style={[s.tabLabel, active && s.tabLabelActive]}>{tab.label}</Text>
+              <Icon size={17} color={active ? F1_RED : TXT_3} strokeWidth={active ? 2.4 : 2} />
+              <Text style={[s.segmentText, active && s.segmentTextActive]}>{tab.label}</Text>
             </TouchableOpacity>
           );
         })}
@@ -569,9 +476,9 @@ export default function F1Section({ insets }: F1SectionProps) {
                   if (Platform.OS !== 'web') Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
                   setScheduleFilter(f);
                 }}
-                activeOpacity={0.7}
+                activeOpacity={0.85}
               >
-                {f === 'upcoming' ? <Timer size={12} color={active ? '#FFF' : TXT_3} /> : <Trophy size={12} color={active ? '#FFF' : TXT_3} />}
+                {f === 'upcoming' ? <Clock3 size={16} color={active ? '#FFF' : TXT_3} /> : <Trophy size={16} color={active ? '#FFF' : TXT_3} />}
                 <Text style={[s.filterChipText, active && s.filterChipTextActive]}>
                   {f === 'upcoming' ? `Upcoming (${upcoming.length})` : `Results (${completed.length})`}
                 </Text>
@@ -582,6 +489,7 @@ export default function F1Section({ insets }: F1SectionProps) {
       )}
 
       <ScrollView
+        ref={listScrollRef}
         style={{ flex: 1 }}
         contentContainerStyle={{ paddingBottom: insets.bottom + 110, paddingHorizontal: 16 }}
         showsVerticalScrollIndicator={false}
@@ -590,7 +498,20 @@ export default function F1Section({ insets }: F1SectionProps) {
         {activeTab === 'schedule' && (
           <>
             {scheduleFilter === 'upcoming' && nextRace && <NextRaceHero race={nextRace} />}
-            {shownRaces.map(race => (
+            {((scheduleFilter === 'upcoming' && calendarRaces.length > 0) ||
+              (scheduleFilter === 'results' && shownRaces.length > 0)) && (
+              <View style={s.sectionHeadingRow}>
+                <Text style={s.sectionCalendarTitle}>Race Calendar</Text>
+                <TouchableOpacity
+                  onPress={() => listScrollRef.current?.scrollToEnd({ animated: true })}
+                  hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}
+                  activeOpacity={0.75}
+                >
+                  <Text style={s.viewAllLink}>View all</Text>
+                </TouchableOpacity>
+              </View>
+            )}
+            {calendarRaces.map(race => (
               <RaceCard key={race.id} race={race} onPress={() => handleRacePress(race)} />
             ))}
             {shownRaces.length === 0 && (
@@ -605,30 +526,26 @@ export default function F1Section({ insets }: F1SectionProps) {
 
         {activeTab === 'championship' && (
           <>
-            {driverStandings.length > 0 && <ChampLeaderBanner driver={driverStandings[0]} />}
-            {driverStandings.length >= 3 && <PodiumVisual drivers={driverStandings} />}
-
-            <View style={s.sectionTitleRow}>
-              <Text style={s.sectionTitle}>Full Standings</Text>
-              <Text style={s.sectionSub}>{completed.length}/{F1_CALENDAR_2026.length} races</Text>
+            <View style={s.standingsHeader}>
+              <Text style={s.sectionCalendarTitle}>Driver Standings</Text>
+              <Text style={s.raceCount}>
+                {completed.length}/{F1_CALENDAR_2026.length} races
+              </Text>
             </View>
 
-            {driverStandings.slice(3).map((d, i) => (
-              <DriverStandingRow key={d.id} driver={d} pos={i + 4} maxPts={maxDPts} />
+            {driverStandings.map((d, i) => (
+              <DriverStandingRow key={d.id} driver={d} pos={i + 1} maxPts={maxDPts} />
             ))}
           </>
         )}
 
         {activeTab === 'constructors' && (
           <>
-            <View style={s.sectionTitleRow}>
-              <View>
-                <Text style={s.sectionTitle}>Constructor Championship</Text>
-                <Text style={s.sectionSub}>{completed.length}/{F1_CALENDAR_2026.length} races completed</Text>
-              </View>
-              <View style={s.yearBadge}>
-                <Text style={s.yearBadgeText}>2026</Text>
-              </View>
+            <View style={s.standingsHeader}>
+              <Text style={s.sectionCalendarTitle}>Team Standings</Text>
+              <Text style={s.raceCount}>
+                {completed.length}/{F1_CALENDAR_2026.length} races
+              </Text>
             </View>
             {ctorStandings.map((team, idx) => (
               <ConstructorRow key={team.name} team={team} pos={idx + 1} maxPts={maxCPts} />
@@ -734,64 +651,56 @@ const s = StyleSheet.create({
     backgroundColor: BG,
   },
 
-  tabBar: {
+  segmented: {
     flexDirection: 'row',
     marginHorizontal: 16,
-    marginBottom: 14,
-    borderRadius: 14,
+    marginTop: HERO_SECONDARY_GAP_BELOW_SPORT_STRIP,
+    marginBottom: 16,
     backgroundColor: CARD,
+    borderRadius: 18,
+    padding: 6,
     borderWidth: 1,
     borderColor: CARD_BORDER,
-    position: 'relative' as const,
-    overflow: 'hidden' as const,
-    shadowColor: SHADOW_COLOR,
-    shadowOffset: { width: 0, height: 1 },
-    shadowOpacity: 0.04,
-    shadowRadius: 3,
-    elevation: 1,
+    gap: 4,
   },
-  tabIndicator: {
-    position: 'absolute' as const,
-    top: 3,
-    bottom: 3,
-    borderRadius: 11,
-    backgroundColor: F1_RED_BG,
-    borderWidth: 1,
-    borderColor: F1_RED + '15',
-  },
-  tabItem: {
+  segment: {
     flex: 1,
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    paddingVertical: 12,
-    gap: 6,
-    zIndex: 1,
+    height: 48,
+    borderRadius: 14,
+    alignItems: 'center' as const,
+    justifyContent: 'center' as const,
+    flexDirection: 'row' as const,
+    gap: 8,
   },
-  tabLabel: {
-    fontSize: 12,
-    fontWeight: '600' as const,
+  segmentActive: {
+    backgroundColor: 'rgba(242,13,24,0.10)',
+    borderWidth: 1,
+    borderColor: F1_RED_BORDER,
+  },
+  segmentText: {
     color: TXT_3,
-    letterSpacing: -0.1,
+    fontWeight: '800' as const,
+    fontSize: 14,
   },
-  tabLabelActive: {
+  segmentTextActive: {
     color: F1_RED,
-    fontWeight: '700' as const,
   },
 
   filterRow: {
     flexDirection: 'row',
     paddingHorizontal: 16,
-    gap: 8,
+    gap: 10,
     marginBottom: 14,
   },
   filterChip: {
+    flex: 1,
+    height: 46,
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 6,
+    justifyContent: 'center',
+    gap: 8,
     paddingHorizontal: 14,
-    paddingVertical: 8,
-    borderRadius: 10,
+    borderRadius: 15,
     backgroundColor: CARD,
     borderWidth: 1,
     borderColor: CARD_BORDER,
@@ -801,278 +710,259 @@ const s = StyleSheet.create({
     borderColor: F1_RED,
   },
   filterChipText: {
-    fontSize: 12,
-    fontWeight: '600' as const,
-    color: TXT_2,
+    fontSize: 15,
+    fontWeight: '800' as const,
+    color: TXT_3,
   },
   filterChipTextActive: {
     color: '#FFF',
   },
 
-  heroCard: {
-    borderRadius: 20,
-    overflow: 'hidden' as const,
-    marginBottom: 18,
+  featuredCard: {
     backgroundColor: CARD,
-    borderWidth: 1,
-    borderColor: CARD_BORDER,
-    shadowColor: F1_RED,
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.08,
-    shadowRadius: 16,
-    elevation: 4,
-  },
-  heroBanner: {
-    paddingHorizontal: 18,
-    paddingVertical: 16,
-  },
-  heroBannerContent: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-  },
-  heroBadgeRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 8,
-    flex: 1,
-  },
-  liveDotOuter: {
-    width: 10,
-    height: 10,
-    borderRadius: 5,
-    backgroundColor: 'rgba(255,255,255,0.25)',
-    justifyContent: 'center' as const,
-    alignItems: 'center' as const,
-  },
-  liveDotInner: {
-    width: 6,
-    height: 6,
-    borderRadius: 3,
-    backgroundColor: '#FFF',
-  },
-  heroBadgeText: {
-    fontSize: 11,
-    fontWeight: '800' as const,
-    color: '#FFF',
-    letterSpacing: 2,
-  },
-  heroRoundPill: {
-    backgroundColor: 'rgba(255,255,255,0.2)',
-    paddingHorizontal: 10,
-    paddingVertical: 4,
-    borderRadius: 6,
-  },
-  heroRoundText: {
-    fontSize: 10,
-    fontWeight: '800' as const,
-    color: '#FFF',
-    letterSpacing: 0.5,
-  },
-  heroFlag: {
-    fontSize: 30,
-  },
-  heroBody: {
+    borderRadius: 24,
     padding: 18,
-  },
-  heroTitle: {
-    fontSize: 20,
-    fontWeight: '800' as const,
-    color: TXT,
-    letterSpacing: -0.6,
-    marginBottom: 4,
-  },
-  heroLocRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 5,
-    marginBottom: 18,
-  },
-  heroCircuit: {
-    fontSize: 13,
-    fontWeight: '500' as const,
-    color: TXT_2,
-  },
-
-  cdRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    gap: 6,
-    marginBottom: 18,
-  },
-  cdUnit: {
-    minWidth: 62,
-    paddingVertical: 12,
-    paddingHorizontal: 6,
-    borderRadius: 14,
-    backgroundColor: BG,
-    alignItems: 'center' as const,
     borderWidth: 1,
     borderColor: CARD_BORDER,
+    marginBottom: 20,
+    shadowColor: F1_RED,
+    shadowOpacity: 0.22,
+    shadowRadius: 22,
+    shadowOffset: { width: 0, height: 8 },
+    elevation: 6,
   },
-  cdValue: {
-    fontSize: 24,
+  featuredTopRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    gap: 12,
+    alignItems: 'flex-start' as const,
+  },
+  roundLabel: {
+    color: F1_RED,
+    fontSize: 12,
     fontWeight: '900' as const,
+    letterSpacing: 1,
+  },
+  raceTitleFeatured: {
     color: TXT,
-    letterSpacing: -1,
+    fontSize: 25,
+    lineHeight: 31,
+    fontWeight: '900' as const,
+    marginTop: 8,
+    letterSpacing: -0.5,
+  },
+  circuitFeatured: {
+    color: TXT_3,
+    fontSize: 14,
+    marginTop: 8,
+    fontWeight: '600' as const,
+  },
+  trackBadge: {
+    width: 58,
+    height: 58,
+    borderRadius: 18,
+    backgroundColor: F1_RED_BG,
+    alignItems: 'center' as const,
+    justifyContent: 'center' as const,
+  },
+  countdownRow: {
+    flexDirection: 'row',
+    gap: 9,
+    marginTop: 22,
+  },
+  timeBox: {
+    flex: 1,
+    height: 74,
+    borderRadius: 16,
+    backgroundColor: CARD_2,
+    borderWidth: 1,
+    borderColor: CARD_BORDER,
+    alignItems: 'center' as const,
+    justifyContent: 'center' as const,
+  },
+  timeValue: {
+    color: TXT,
+    fontSize: 30,
+    fontWeight: '900' as const,
     fontVariant: ['tabular-nums'] as any,
   },
-  cdLabel: {
-    fontSize: 8,
-    fontWeight: '700' as const,
+  timeLabel: {
     color: TXT_3,
-    letterSpacing: 1.5,
-    marginTop: 2,
+    fontSize: 11,
+    fontWeight: '900' as const,
+    letterSpacing: 2,
+    marginTop: 4,
   },
-  cdSep: {
-    fontSize: 20,
-    fontWeight: '300' as const,
-    color: TXT_4,
-    marginTop: -8,
-  },
-
-  heroStatsRow: {
+  statRowFeatured: {
     flexDirection: 'row',
-    gap: 8,
-    marginBottom: 16,
+    gap: 9,
+    marginTop: 12,
   },
-  heroStatCard: {
+  statBox: {
     flex: 1,
-    backgroundColor: BG,
-    borderRadius: 12,
-    padding: 10,
-    alignItems: 'center' as const,
-    gap: 4,
+    minHeight: 86,
+    borderRadius: 16,
+    backgroundColor: CARD_2,
     borderWidth: 1,
     borderColor: CARD_BORDER,
+    alignItems: 'center' as const,
+    justifyContent: 'center' as const,
+    paddingVertical: 10,
+    paddingHorizontal: 4,
   },
-  heroStatVal: {
-    fontSize: 12,
-    fontWeight: '700' as const,
+  statValueBox: {
     color: TXT,
+    fontSize: 14,
+    fontWeight: '900' as const,
+    marginTop: 8,
+    textAlign: 'center' as const,
   },
-  heroStatLabel: {
-    fontSize: 8,
-    fontWeight: '600' as const,
+  statLabelBox: {
     color: TXT_3,
-    letterSpacing: 0.5,
+    fontSize: 10,
+    fontWeight: '900' as const,
+    letterSpacing: 1.5,
+    marginTop: 5,
   },
-
-  seasonBar: {},
-  seasonBarHeader: {
+  progressRow: {
     flexDirection: 'row',
     justifyContent: 'space-between',
-    marginBottom: 6,
+    marginTop: 20,
   },
-  seasonBarLabel: {
-    fontSize: 9,
-    fontWeight: '700' as const,
+  progressLabel: {
     color: TXT_3,
-    letterSpacing: 1.5,
+    fontSize: 12,
+    fontWeight: '900' as const,
+    letterSpacing: 3,
   },
-  seasonBarPct: {
-    fontSize: 10,
-    fontWeight: '800' as const,
+  progressPercent: {
     color: F1_RED,
+    fontSize: 14,
+    fontWeight: '900' as const,
   },
-  seasonTrack: {
-    height: 5,
-    borderRadius: 3,
-    backgroundColor: DIVIDER,
+  progressTrack: {
+    height: 7,
+    borderRadius: 99,
+    backgroundColor: 'rgba(255,255,255,0.10)',
+    marginTop: 10,
     overflow: 'hidden' as const,
   },
-  seasonFill: {
+  progressFill: {
     height: '100%' as any,
-    borderRadius: 3,
+    borderRadius: 99,
   },
 
-  raceCard: {
+  sectionHeadingRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    padding: 14,
-    borderRadius: 16,
-    backgroundColor: CARD,
-    borderWidth: 1,
-    borderColor: CARD_BORDER,
-    gap: 12,
-    marginBottom: 8,
-    shadowColor: SHADOW_COLOR,
-    shadowOffset: { width: 0, height: 1 },
-    shadowOpacity: 0.03,
-    shadowRadius: 4,
-    elevation: 1,
+    justifyContent: 'space-between',
+    marginBottom: 12,
   },
-  raceCardLeft: {
-    alignItems: 'center' as const,
-  },
-  raceDateBlock: {
-    width: 48,
-    height: 54,
-    borderRadius: 12,
-    justifyContent: 'center' as const,
-    alignItems: 'center' as const,
-  },
-  raceDateBlockUpcoming: {
-    backgroundColor: F1_RED_BG,
-  },
-  raceDateBlockDone: {
-    backgroundColor: GREEN_BG,
-  },
-  raceDateDay: {
-    fontSize: 20,
+  sectionCalendarTitle: {
+    color: TXT,
+    fontSize: 22,
     fontWeight: '900' as const,
     letterSpacing: -0.5,
   },
-  raceDateMonth: {
-    fontSize: 9,
-    fontWeight: '700' as const,
-    letterSpacing: 0.8,
-    marginTop: 1,
+  viewAllLink: {
+    color: F1_RED,
+    fontSize: 13,
+    fontWeight: '900' as const,
+    textTransform: 'uppercase' as const,
+    letterSpacing: 1.2,
   },
-  raceCardBody: {
-    flex: 1,
+  standingsHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 14,
+    marginTop: 4,
   },
-  raceCardTopRow: {
+  raceCount: {
+    color: TXT_3,
+    fontSize: 15,
+    fontWeight: '800' as const,
+  },
+
+  raceListCard: {
+    minHeight: 88,
+    borderRadius: 20,
+    backgroundColor: CARD,
+    borderWidth: 1,
+    borderColor: CARD_BORDER,
+    padding: 14,
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 5,
-    marginBottom: 3,
+    gap: 14,
+    marginBottom: 12,
   },
-  raceCardFlag: {
-    fontSize: 14,
+  dateBlock: {
+    width: 62,
+    height: 62,
+    borderRadius: 18,
+    backgroundColor: F1_RED_BG,
+    alignItems: 'center' as const,
+    justifyContent: 'center' as const,
   },
-  raceCardCountry: {
-    fontSize: 10,
-    fontWeight: '700' as const,
+  dateBlockDone: {
+    backgroundColor: GREEN_BG,
+  },
+  dateText: {
+    color: F1_RED,
+    fontSize: 26,
+    fontWeight: '900' as const,
+  },
+  dateTextDone: {
+    color: GREEN,
+  },
+  monthText: {
     color: TXT_3,
-    letterSpacing: 0.5,
-    textTransform: 'uppercase' as const,
+    fontSize: 12,
+    fontWeight: '900' as const,
+    letterSpacing: 2,
+  },
+  raceListInfo: {
+    flex: 1,
+    minWidth: 0,
+  },
+  countryMetaRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    gap: 8,
+  },
+  countryRow: {
+    flex: 1,
+    color: TXT_3,
+    fontSize: 12,
+    fontWeight: '900' as const,
+    letterSpacing: 1.5,
+  },
+  raceListTitle: {
+    color: TXT,
+    fontSize: 17,
+    fontWeight: '900' as const,
+    marginTop: 4,
+  },
+  raceListCircuit: {
+    color: TXT_3,
+    fontSize: 13,
+    marginTop: 4,
+    fontWeight: '600' as const,
   },
   raceUrgencyPill: {
-    marginLeft: 'auto' as any,
+    alignSelf: 'flex-start' as const,
+    marginTop: 8,
     backgroundColor: F1_RED_BG,
-    paddingHorizontal: 8,
-    paddingVertical: 3,
-    borderRadius: 6,
+    paddingHorizontal: 10,
+    paddingVertical: 4,
+    borderRadius: 8,
   },
   raceUrgencyText: {
-    fontSize: 9,
+    fontSize: 10,
     fontWeight: '800' as const,
     color: F1_RED,
     letterSpacing: 0.5,
-  },
-  raceCardName: {
-    fontSize: 15,
-    fontWeight: '700' as const,
-    color: TXT,
-    letterSpacing: -0.3,
-    marginBottom: 2,
-  },
-  raceCardCircuit: {
-    fontSize: 12,
-    fontWeight: '500' as const,
-    color: TXT_3,
   },
   racePodiumStrip: {
     flexDirection: 'row',
@@ -1098,161 +988,35 @@ const s = StyleSheet.create({
     color: TXT_2,
   },
 
-  leaderBanner: {
-    borderRadius: 18,
+  standingCard: {
+    minHeight: 78,
     backgroundColor: CARD,
+    borderRadius: 18,
     borderWidth: 1,
     borderColor: CARD_BORDER,
-    marginBottom: 16,
-    overflow: 'hidden' as const,
-    shadowColor: SHADOW_COLOR,
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.05,
-    shadowRadius: 8,
-    elevation: 2,
-  },
-  leaderAccent: {
-    height: 4,
-  },
-  leaderContent: {
-    padding: 16,
-  },
-  leaderTopRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 6,
-    marginBottom: 12,
-  },
-  leaderLabel: {
-    fontSize: 10,
-    fontWeight: '800' as const,
-    color: GOLD,
-    letterSpacing: 1.5,
-  },
-  leaderMainRow: {
+    marginBottom: 10,
+    padding: 12,
+    paddingLeft: 16,
     flexDirection: 'row',
     alignItems: 'center',
     gap: 12,
-  },
-  leaderAvatarWrap: {
-    width: 52,
-    height: 52,
-    borderRadius: 26,
-    borderWidth: 2,
     overflow: 'hidden' as const,
+    position: 'relative' as const,
   },
-  leaderAvatar: {
-    width: 48,
-    height: 48,
-    borderRadius: 24,
+  teamStripe: {
+    position: 'absolute' as const,
+    left: 0,
+    top: 12,
+    bottom: 12,
+    width: 4,
+    borderRadius: 99,
   },
-  leaderAvatarFallback: {
-    width: 48,
-    height: 48,
-    borderRadius: 24,
-    justifyContent: 'center' as const,
-    alignItems: 'center' as const,
-  },
-  leaderAvatarNum: {
-    fontWeight: '900' as const,
-    fontSize: 18,
-  },
-  leaderInfo: {
-    flex: 1,
-  },
-  leaderName: {
-    fontSize: 18,
-    fontWeight: '800' as const,
-    color: TXT,
-    letterSpacing: -0.4,
-  },
-  leaderTeamRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 5,
-    marginTop: 3,
-  },
-  leaderTeamDot: {
-    width: 10,
-    height: 3,
-    borderRadius: 1.5,
-  },
-  leaderTeamName: {
-    fontSize: 12,
-    fontWeight: '500' as const,
+  positionCol: {
     color: TXT_3,
-  },
-  leaderPtsWrap: {
-    alignItems: 'center' as const,
-  },
-  leaderPtsNum: {
-    fontSize: 26,
-    fontWeight: '900' as const,
-    letterSpacing: -1,
-    fontVariant: ['tabular-nums'] as any,
-  },
-  leaderPtsUnit: {
-    fontSize: 9,
-    fontWeight: '700' as const,
-    color: TXT_3,
-    letterSpacing: 1,
-    marginTop: -2,
-  },
-
-  podiumContainer: {
-    flexDirection: 'row',
-    alignItems: 'flex-end',
-    justifyContent: 'center',
-    marginBottom: 24,
-    paddingTop: 10,
-    gap: 8,
-  },
-  podiumCol: {
-    flex: 1,
-    alignItems: 'center' as const,
-  },
-  podiumAvatarRing: {
-    borderRadius: 35,
-    borderWidth: 2.5,
-    overflow: 'hidden' as const,
-  },
-  podiumDriverLast: {
-    fontSize: 12,
-    fontWeight: '700' as const,
-    color: TXT,
-    marginTop: 6,
+    width: 28,
     textAlign: 'center' as const,
-  },
-  podiumDriverPts: {
-    fontSize: 10,
-    fontWeight: '600' as const,
-    color: TXT_3,
-    marginTop: 1,
-    marginBottom: 6,
-  },
-  podiumPillar: {
-    width: '100%' as any,
-    borderRadius: 12,
-    borderWidth: 1,
-    alignItems: 'center' as const,
-    justifyContent: 'center' as const,
-    paddingVertical: 6,
-    gap: 3,
-    overflow: 'hidden' as const,
-  },
-  podiumPos: {
-    fontSize: 24,
+    fontSize: 18,
     fontWeight: '900' as const,
-  },
-  podiumWinBadge: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 2,
-  },
-  podiumWinNum: {
-    fontSize: 10,
-    fontWeight: '700' as const,
-    color: GOLD,
   },
 
   sectionTitleRow: {
@@ -1289,33 +1053,11 @@ const s = StyleSheet.create({
     letterSpacing: 0.5,
   },
 
-  dRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    padding: 12,
-    borderRadius: 14,
-    marginBottom: 6,
-    backgroundColor: CARD,
-    borderWidth: 1,
-    borderColor: CARD_BORDER,
-    gap: 10,
-    shadowColor: SHADOW_COLOR,
-    shadowOffset: { width: 0, height: 1 },
-    shadowOpacity: 0.02,
-    shadowRadius: 3,
-    elevation: 1,
-  },
-  dPos: {
-    width: 22,
-    textAlign: 'center' as const,
-    fontSize: 14,
-    fontWeight: '800' as const,
-    color: TXT_3,
-    fontVariant: ['tabular-nums'] as any,
-  },
   dAvatarWrap: {
-    borderRadius: 18,
-    borderWidth: 1.5,
+    width: 46,
+    height: 46,
+    borderRadius: 23,
+    borderWidth: 2,
     overflow: 'hidden' as const,
   },
   dInfo: {
@@ -1327,8 +1069,8 @@ const s = StyleSheet.create({
     gap: 5,
   },
   dName: {
-    fontSize: 14,
-    fontWeight: '700' as const,
+    fontSize: 16,
+    fontWeight: '900' as const,
     color: TXT,
     letterSpacing: -0.2,
   },
@@ -1352,11 +1094,12 @@ const s = StyleSheet.create({
     color: TXT_3,
   },
   dBarTrack: {
-    height: 3,
-    borderRadius: 1.5,
-    backgroundColor: DIVIDER,
+    height: 5,
+    borderRadius: 99,
+    backgroundColor: 'rgba(255,255,255,0.10)',
     overflow: 'hidden' as const,
-    marginTop: 6,
+    marginTop: 9,
+    width: '88%' as any,
   },
   dBarFill: {
     height: '100%' as any,
@@ -1367,17 +1110,17 @@ const s = StyleSheet.create({
     minWidth: 40,
   },
   dPts: {
-    fontSize: 17,
-    fontWeight: '800' as const,
+    fontSize: 25,
+    fontWeight: '900' as const,
     color: TXT,
     letterSpacing: -0.5,
     fontVariant: ['tabular-nums'] as any,
   },
   dPtsLabel: {
-    fontSize: 8,
-    fontWeight: '700' as const,
+    fontSize: 10,
+    fontWeight: '900' as const,
     color: TXT_3,
-    letterSpacing: 0.5,
+    letterSpacing: 1.5,
   },
 
   ctorCard: {
@@ -1431,7 +1174,7 @@ const s = StyleSheet.create({
     overflow: 'hidden' as const,
     justifyContent: 'center' as const,
     alignItems: 'center' as const,
-    backgroundColor: '#FFF',
+    backgroundColor: CARD_2,
   },
   ctorLogoImg: {
     width: 28,
@@ -1639,7 +1382,7 @@ const s = StyleSheet.create({
     borderRadius: 17,
     justifyContent: 'center' as const,
     alignItems: 'center' as const,
-    backgroundColor: BG,
+    backgroundColor: CARD_2,
     borderWidth: 1,
     borderColor: CARD_BORDER,
     marginLeft: 12,
@@ -1657,7 +1400,7 @@ const s = StyleSheet.create({
     width: (SCREEN_WIDTH - 40 - 28) / 2,
     padding: 14,
     borderRadius: 14,
-    backgroundColor: BG,
+    backgroundColor: CARD_2,
     gap: 7,
     borderWidth: 1,
     borderColor: CARD_BORDER,

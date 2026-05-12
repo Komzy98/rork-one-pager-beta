@@ -204,7 +204,7 @@ const styles = StyleSheet.create({
   heroContent: {
     paddingTop: 0,
     paddingHorizontal: 0,
-    paddingBottom: 16,
+    paddingBottom: 8,
   },
   heroTitle: {
     fontSize: 32,
@@ -263,7 +263,7 @@ const styles = StyleSheet.create({
     fontWeight: '800',
   },
   featuredMatch: {
-    marginTop: 12,
+    marginTop: 8,
     borderRadius: 18,
     overflow: 'hidden',
     paddingHorizontal: 16,

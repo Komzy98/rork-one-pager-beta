@@ -39,6 +39,7 @@ import {
   NBA_EASTERN_STANDINGS,
   NBA_WESTERN_STANDINGS,
 } from '@/constants/nbaData';
+import { HERO_SECONDARY_GAP_BELOW_SPORT_STRIP, HERO_SPORT_STRIP_OVERLAP_HERO_PX } from '@/constants/sportsHeroLayout';
 import { fetchNBAGamesMultipleDays, fetchNBAStandings } from '@/utils/nbaApi';
 import NBAGameDetailsModal from './NBAGameDetailsModal';
 import NBAPremiumHeroInner from './NBAPremiumHeroInner';
@@ -742,56 +743,62 @@ export default function NBASection({ isDark, insets, sportToggleSlot }: NBASecti
   const listHeaderComponent = useMemo(
     () => (
       <>
-        <ImageBackground
-          source={NBA_HERO_BACKGROUND}
-          style={[s.nbaHeroRoot, { paddingTop: insets.top, paddingBottom: 14 }]}
-          imageStyle={s.nbaHeroImage}
-        >
-          <View style={s.nbaHeroForeground}>
-            <NBAPremiumHeroInner
-              liveCount={liveGames.length}
-              teamAbbreviations={heroTeamAbbreviations}
-              featuredGame={nextGame}
-              onRefresh={onRefresh}
-              onFeaturedPress={() => {
-                if (nextGame) handleGamePress(nextGame);
-              }}
-            />
-            {liveGames.length > 0 ? (
-              <View style={s.heroTickerSection}>
-                <View style={s.heroTickerHeader}>
-                  <View style={s.heroTickerHeaderLeft}>
-                    <LinearGradient colors={['#FF3B30', '#FF6B6B']} style={s.heroTickerLiveDot}>
-                      <Radio size={10} color="#FFFFFF" />
-                    </LinearGradient>
-                    <Text style={s.heroTickerTitle}>Live Now</Text>
-                    <View style={s.heroTickerBadge}>
-                      <Text style={s.heroTickerBadgeText}>{liveGames.length}</Text>
-                    </View>
-                  </View>
-                </View>
-                <FlatList
-                  horizontal
-                  data={liveGames}
-                  keyExtractor={(g) => `nba-live-ticker-${g.id}`}
-                  showsHorizontalScrollIndicator={false}
-                  nestedScrollEnabled
-                  contentContainerStyle={s.heroTickerListContent}
-                  renderItem={({ item: g }) => (
-                    <TouchableOpacity style={s.heroTickerChip} onPress={() => handleGamePress(g)} activeOpacity={0.88}>
-                      <Image source={{ uri: getTeamLogo(g.team1.abbreviation) }} style={s.heroTickerLogo} resizeMode="contain" />
-                      <Text style={s.heroTickerScore} numberOfLines={1}>
-                        {g.team1.score ?? '—'} : {g.team2.score ?? '—'}
-                      </Text>
-                      <Image source={{ uri: getTeamLogo(g.team2.abbreviation) }} style={s.heroTickerLogo} resizeMode="contain" />
-                    </TouchableOpacity>
-                  )}
+        <View style={s.heroStackWithSportStrip}>
+          <ImageBackground
+            source={NBA_HERO_BACKGROUND}
+            style={[s.nbaHeroRoot, { paddingTop: insets.top, paddingBottom: 4 }]}
+            imageStyle={s.nbaHeroImage}
+          >
+            <View style={s.nbaHeroForeground}>
+              <View style={s.nbaHeroUpper}>
+                <NBAPremiumHeroInner
+                  liveCount={liveGames.length}
+                  teamAbbreviations={heroTeamAbbreviations}
+                  featuredGame={nextGame}
+                  onRefresh={onRefresh}
+                  onFeaturedPress={() => {
+                    if (nextGame) handleGamePress(nextGame);
+                  }}
                 />
+                {liveGames.length > 0 ? (
+                  <View style={s.heroTickerSection}>
+                    <View style={s.heroTickerHeader}>
+                      <View style={s.heroTickerHeaderLeft}>
+                        <LinearGradient colors={['#FF3B30', '#FF6B6B']} style={s.heroTickerLiveDot}>
+                          <Radio size={10} color="#FFFFFF" />
+                        </LinearGradient>
+                        <Text style={s.heroTickerTitle}>Live Now</Text>
+                        <View style={s.heroTickerBadge}>
+                          <Text style={s.heroTickerBadgeText}>{liveGames.length}</Text>
+                        </View>
+                      </View>
+                    </View>
+                    <FlatList
+                      horizontal
+                      data={liveGames}
+                      keyExtractor={(g) => `nba-live-ticker-${g.id}`}
+                      showsHorizontalScrollIndicator={false}
+                      nestedScrollEnabled
+                      contentContainerStyle={s.heroTickerListContent}
+                      renderItem={({ item: g }) => (
+                        <TouchableOpacity style={s.heroTickerChip} onPress={() => handleGamePress(g)} activeOpacity={0.88}>
+                          <Image source={{ uri: getTeamLogo(g.team1.abbreviation) }} style={s.heroTickerLogo} resizeMode="contain" />
+                          <Text style={s.heroTickerScore} numberOfLines={1}>
+                            {g.team1.score ?? '—'} : {g.team2.score ?? '—'}
+                          </Text>
+                          <Image source={{ uri: getTeamLogo(g.team2.abbreviation) }} style={s.heroTickerLogo} resizeMode="contain" />
+                        </TouchableOpacity>
+                      )}
+                    />
+                  </View>
+                ) : null}
               </View>
-            ) : null}
-            {sportToggleSlot}
-          </View>
-        </ImageBackground>
+            </View>
+          </ImageBackground>
+          {sportToggleSlot ? (
+            <View style={s.heroSportStripOverlapSlot}>{sportToggleSlot}</View>
+          ) : null}
+        </View>
         <View style={s.tabWrapper}>
           <TabPill activeTab={activeTab} onTabChange={setActiveTab} isDark={isDark} counts={counts} />
         </View>
@@ -842,18 +849,38 @@ export default function NBASection({ isDark, insets, sportToggleSlot }: NBASecti
 }
 
 const s = StyleSheet.create({
+  heroStackWithSportStrip: {
+    position: 'relative' as const,
+    zIndex: 1,
+  },
+  heroSportStripOverlapSlot: {
+    marginTop: -HERO_SPORT_STRIP_OVERLAP_HERO_PX,
+    paddingHorizontal: 20,
+    zIndex: 20,
+    elevation: 12,
+  },
   nbaHeroRoot: {
     overflow: 'hidden' as const,
     minHeight: 470,
     justifyContent: 'flex-start' as const,
     paddingHorizontal: 20,
+    flexDirection: 'column' as const,
   },
   nbaHeroImage: {
     resizeMode: 'cover' as const,
   },
   nbaHeroForeground: {
+    flex: 1,
+    width: '100%',
+    minHeight: 0,
     position: 'relative' as const,
     zIndex: 1,
+    justifyContent: 'space-between' as const,
+  },
+  nbaHeroUpper: {
+    flex: 1,
+    width: '100%',
+    minHeight: 0,
   },
   heroTickerSection: {
     paddingTop: 5,
@@ -922,7 +949,10 @@ const s = StyleSheet.create({
   },
   tabWrapper: {
     paddingHorizontal: 20,
+    marginTop: HERO_SECONDARY_GAP_BELOW_SPORT_STRIP,
     marginBottom: 12,
+    zIndex: 12,
+    elevation: 6,
   },
   pillContainer: {
     flexDirection: 'row',
