@@ -238,7 +238,7 @@ export default function SportsSmartFilter({
               <View style={[styles.stripDivider, { backgroundColor: borderTrack }]} />
               <TouchableOpacity
                 accessibilityRole="button"
-                accessibilityLabel="League tables"
+                accessibilityLabel="League tables and stats"
                 style={[
                   styles.chip,
                   {
@@ -256,7 +256,7 @@ export default function SportsSmartFilter({
                   style={[styles.chipText, { color: isDark ? '#6EE7B7' : '#15803D' }]}
                   numberOfLines={1}
                 >
-                  Tables
+                  Tables · stats
                 </Text>
               </TouchableOpacity>
             </>

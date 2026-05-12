@@ -1,11 +1,13 @@
-import React from 'react';
+import React, { useMemo } from 'react';
 import {
   View,
   Text,
   StyleSheet,
   TouchableOpacity,
   Image,
+  useWindowDimensions,
 } from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { BlurView } from 'expo-blur';
 import {
   Search,
@@ -13,10 +15,13 @@ import {
   Plus,
   CalendarDays,
   MapPin,
-  Bookmark,
 } from 'lucide-react-native';
 
 const BRIGHT_GREEN = '#34D157';
+
+/** Same min height as `FOOTBALL_HERO_MIN_HEIGHT_PX` in `sports.tsx` — used to nudge the club strip down by 3%. */
+const FOOTBALL_HERO_MIN_HEIGHT_PX = 470;
+const MY_CLUBS_DROP_PX = Math.round(FOOTBALL_HERO_MIN_HEIGHT_PX * 0.03);
 
 export type FeaturedMatchFields = {
   homeTeam: string;
@@ -29,16 +34,26 @@ export type FeaturedMatchFields = {
   venueCity?: string;
 };
 
+/** Up to four favourite clubs shown on the hero — tap opens club profile when `onClubAvatarPress` is set. */
+export type FootballHeroFavoriteClub = {
+  apiId?: number | null;
+  name: string;
+  logoUri: string;
+};
+
 type Props = {
   liveCount: number;
-  clubLogoUris: (string | undefined)[];
+  /** First-row club crests (max 4). Prefer over legacy `clubLogoUris`. */
+  clubSlots?: FootballHeroFavoriteClub[];
+  /** @deprecated Use `clubSlots` with structured teams. */
+  clubLogoUris?: (string | undefined)[];
   featuredMatch: FeaturedMatchFields | null;
   onSearch: () => void;
   onRefresh: () => void;
   onMyClubs: () => void;
   onFeaturedPress: () => void;
   onAddClub: () => void;
-  onSavedPress?: () => void;
+  onClubAvatarPress?: (club: FootballHeroFavoriteClub) => void;
 };
 
 function formatFeaturedTimeLine(match: FeaturedMatchFields): string {
@@ -62,11 +77,11 @@ function formatFeaturedTimeLine(match: FeaturedMatchFields): string {
 }
 
 /**
- * Premium hero copy: title, live line, “My clubs” row, and “Next featured match” Blur card.
- * Render inside the stadium ImageBackground; parent supplies gradients and image.
+ * Overlays actions, club row, and featured match on the Football Center hero (title is in the asset).
  */
 export default function FootballPremiumHeroInner({
-  liveCount,
+  liveCount: _liveCount,
+  clubSlots,
   clubLogoUris,
   featuredMatch,
   onSearch,
@@ -74,43 +89,75 @@ export default function FootballPremiumHeroInner({
   onMyClubs,
   onFeaturedPress,
   onAddClub,
-  onSavedPress,
+  onClubAvatarPress,
 }: Props) {
+  const { width: windowWidth } = useWindowDimensions();
+  const insets = useSafeAreaInsets();
+  const edgePad = useMemo(() => {
+    const base = windowWidth <= 360 ? 12 : windowWidth <= 400 ? 14 : 20;
+    return Math.max(base, Math.ceil(insets.left), Math.ceil(insets.right));
+  }, [windowWidth, insets.left, insets.right]);
+  const compactHero = windowWidth < 390;
+
   const venueLine =
     [featuredMatch?.venue, featuredMatch?.venueCity].filter(Boolean).join(', ') || 'Venue TBA';
   const timeLine = featuredMatch ? formatFeaturedTimeLine(featuredMatch) : '';
 
+  const slots: FootballHeroFavoriteClub[] =
+    clubSlots ??
+    (clubLogoUris ?? []).map((uri, i) => ({
+      apiId: null,
+      name: `club-${i}`,
+      logoUri: uri ?? '',
+    }));
+
   return (
     <View style={styles.root}>
-      <View style={styles.heroTopActions}>
-        <TouchableOpacity style={styles.heroAction} onPress={onSearch} activeOpacity={0.85}>
-          <Search size={22} color="#FFFFFF" strokeWidth={2.3} />
-        </TouchableOpacity>
-        {onSavedPress ? (
-          <TouchableOpacity style={styles.heroAction} onPress={onSavedPress} activeOpacity={0.85}>
-            <Bookmark size={21} color="#FFFFFF" strokeWidth={2.3} />
-          </TouchableOpacity>
-        ) : null}
+      <View style={[styles.heroTopActions, { right: edgePad }]}>
         <TouchableOpacity style={[styles.heroAction, styles.refreshAction]} onPress={onRefresh} activeOpacity={0.85}>
           <RefreshCw size={21} color={BRIGHT_GREEN} strokeWidth={2.4} />
+        </TouchableOpacity>
+        <TouchableOpacity style={styles.heroAction} onPress={onSearch} activeOpacity={0.85}>
+          <Search size={22} color="#FFFFFF" strokeWidth={2.3} />
         </TouchableOpacity>
       </View>
 
       <View style={styles.heroContent}>
-        <Text style={styles.heroTitle}>Football</Text>
-        <Text style={styles.heroLive}>● {liveCount} matches live</Text>
-        <Text style={styles.heroSub}>Stay tuned for upcoming action</Text>
+        <View style={styles.heroArtSpacer} />
 
         <View style={styles.clubRow}>
-          {clubLogoUris.slice(0, 4).map((uri, i) => (
-            <View key={`${uri ?? 't'}-${i}`} style={styles.clubAvatar}>
-              {uri ? (
-                <Image source={{ uri }} style={styles.clubLogo} resizeMode="contain" />
-              ) : (
-                <View style={styles.clubLogoPlaceholder} />
-              )}
-            </View>
-          ))}
+          {slots.slice(0, 4).map((club, i) => {
+            const uri = club.logoUri;
+            const inner = (
+              <>
+                {uri ? (
+                  <Image source={{ uri }} style={styles.clubLogo} resizeMode="contain" />
+                ) : (
+                  <View style={styles.clubLogoPlaceholder} />
+                )}
+              </>
+            );
+            const key = `${club.name}-${club.apiId ?? i}-${i}`;
+            if (onClubAvatarPress && clubSlots != null) {
+              return (
+                <TouchableOpacity
+                  key={key}
+                  style={styles.clubAvatar}
+                  onPress={() => onClubAvatarPress(club)}
+                  activeOpacity={0.85}
+                  accessibilityRole="button"
+                  accessibilityLabel={`Open ${club.name} club profile`}
+                >
+                  {inner}
+                </TouchableOpacity>
+              );
+            }
+            return (
+              <View key={key} style={styles.clubAvatar}>
+                {inner}
+              </View>
+            );
+          })}
           <TouchableOpacity style={styles.addClub} onPress={onAddClub} activeOpacity={0.85}>
             <Plus size={18} color="#FFFFFF" strokeWidth={2.2} />
           </TouchableOpacity>
@@ -135,15 +182,25 @@ export default function FootballPremiumHeroInner({
                   ) : (
                     <View style={[styles.featuredCrest, styles.crestPlaceholder]} />
                   )}
-                  <Text style={styles.featuredTeam} numberOfLines={2}>
+                  <Text
+                    style={[styles.featuredTeam, compactHero && styles.featuredTeamCompact]}
+                    numberOfLines={2}
+                    adjustsFontSizeToFit
+                    minimumFontScale={0.82}
+                  >
                     {featuredMatch.homeTeam}
                   </Text>
                 </View>
-                <View style={styles.vsBubbleDark}>
+                <View style={[styles.vsBubbleDark, compactHero && styles.vsBubbleCompact]}>
                   <Text style={styles.vsDark}>VS</Text>
                 </View>
                 <View style={styles.featuredTeamRow}>
-                  <Text style={[styles.featuredTeam, { textAlign: 'right' }]} numberOfLines={2}>
+                  <Text
+                    style={[styles.featuredTeam, { textAlign: 'right' }, compactHero && styles.featuredTeamCompact]}
+                    numberOfLines={2}
+                    adjustsFontSizeToFit
+                    minimumFontScale={0.82}
+                  >
                     {featuredMatch.awayTeam}
                   </Text>
                   {featuredMatch.awayTeamLogo ? (
@@ -202,32 +259,20 @@ const styles = StyleSheet.create({
     borderColor: 'rgba(52,209,87,0.45)',
   },
   heroContent: {
-    paddingTop: 0,
+    paddingTop: 8,
     paddingHorizontal: 0,
     paddingBottom: 8,
   },
-  heroTitle: {
-    fontSize: 32,
-    fontWeight: '800',
-    color: '#FFFFFF',
-    letterSpacing: -1,
-  },
-  heroLive: {
-    marginTop: 8,
-    fontSize: 17,
-    fontWeight: '800',
-    color: BRIGHT_GREEN,
-  },
-  heroSub: {
-    marginTop: 3,
-    fontSize: 14,
-    color: 'rgba(255,255,255,0.88)',
+  /** Reserve space for baked-in “FOOTBALL CENTER” artwork. */
+  heroArtSpacer: {
+    height: 112,
+    width: '100%',
   },
   clubRow: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: 7,
-    marginTop: 16,
+    marginTop: 16 + MY_CLUBS_DROP_PX,
   },
   clubAvatar: {
     width: 34,
@@ -283,12 +328,15 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
+    width: '100%',
+    minWidth: 0,
   },
   featuredTeamRow: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: 8,
     flex: 1,
+    minWidth: 0,
     justifyContent: 'center',
   },
   featuredCrest: { width: 26, height: 30 },
@@ -303,6 +351,10 @@ const styles = StyleSheet.create({
     fontWeight: '900',
     flexShrink: 1,
   },
+  featuredTeamCompact: {
+    fontSize: 15,
+    lineHeight: 18,
+  },
   vsBubbleDark: {
     width: 44,
     height: 34,
@@ -313,6 +365,12 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
     marginHorizontal: 8,
+    flexShrink: 0,
+  },
+  vsBubbleCompact: {
+    width: 36,
+    height: 30,
+    marginHorizontal: 4,
   },
   vsDark: { color: '#FFFFFF', fontSize: 12, fontWeight: '900' },
   featuredMetaRow: {

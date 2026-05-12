@@ -47,6 +47,8 @@ const { width: SCREEN_WIDTH } = Dimensions.get('window');
 interface F1SectionProps {
   isDark: boolean;
   insets: { top: number; bottom: number };
+  /** Hero + sport strip — scrolls with the rest of the page (Race Center tab body). */
+  stackHeader?: React.ReactNode;
 }
 
 /** Race Center redesign (`F1TabRedesign.tsx`) — dark shell + brand red. */
@@ -395,7 +397,7 @@ const ConstructorRow = React.memo(({ team, pos, maxPts }: {
   );
 });
 
-export default function F1Section({ insets }: F1SectionProps) {
+export default function F1Section({ insets, stackHeader }: F1SectionProps) {
   const [activeTab, setActiveTab] = useState<F1Tab>('schedule');
   const [scheduleFilter, setScheduleFilter] = useState<'upcoming' | 'results'>('upcoming');
   const [selectedRace, setSelectedRace] = useState<F1Race | null>(null);
@@ -445,113 +447,116 @@ export default function F1Section({ insets }: F1SectionProps) {
 
   return (
     <View style={s.root}>
-
-      <View style={s.segmented}>
-        {tabs.map((tab) => {
-          const active = activeTab === tab.key;
-          const Icon = tab.icon;
-          return (
-            <TouchableOpacity
-              key={tab.key}
-              style={[s.segment, active && s.segmentActive]}
-              onPress={() => handleTabPress(tab.key)}
-              activeOpacity={0.85}
-            >
-              <Icon size={17} color={active ? F1_RED : TXT_3} strokeWidth={active ? 2.4 : 2} />
-              <Text style={[s.segmentText, active && s.segmentTextActive]}>{tab.label}</Text>
-            </TouchableOpacity>
-          );
-        })}
-      </View>
-
-      {activeTab === 'schedule' && (
-        <View style={s.filterRow}>
-          {(['upcoming', 'results'] as const).map(f => {
-            const active = scheduleFilter === f;
-            return (
-              <TouchableOpacity
-                key={f}
-                style={[s.filterChip, active && s.filterChipActive]}
-                onPress={() => {
-                  if (Platform.OS !== 'web') Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-                  setScheduleFilter(f);
-                }}
-                activeOpacity={0.85}
-              >
-                {f === 'upcoming' ? <Clock3 size={16} color={active ? '#FFF' : TXT_3} /> : <Trophy size={16} color={active ? '#FFF' : TXT_3} />}
-                <Text style={[s.filterChipText, active && s.filterChipTextActive]}>
-                  {f === 'upcoming' ? `Upcoming (${upcoming.length})` : `Results (${completed.length})`}
-                </Text>
-              </TouchableOpacity>
-            );
-          })}
-        </View>
-      )}
-
       <ScrollView
         ref={listScrollRef}
         style={{ flex: 1 }}
-        contentContainerStyle={{ paddingBottom: insets.bottom + 110, paddingHorizontal: 16 }}
+        contentContainerStyle={{ paddingBottom: insets.bottom + 110 }}
         showsVerticalScrollIndicator={false}
         refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={F1_RED} colors={[F1_RED]} />}
       >
-        {activeTab === 'schedule' && (
-          <>
-            {scheduleFilter === 'upcoming' && nextRace && <NextRaceHero race={nextRace} />}
-            {((scheduleFilter === 'upcoming' && calendarRaces.length > 0) ||
-              (scheduleFilter === 'results' && shownRaces.length > 0)) && (
-              <View style={s.sectionHeadingRow}>
-                <Text style={s.sectionCalendarTitle}>Race Calendar</Text>
+        {stackHeader}
+
+        <View style={s.scrollInner}>
+          <View style={s.segmented}>
+            {tabs.map((tab) => {
+              const active = activeTab === tab.key;
+              const Icon = tab.icon;
+              return (
                 <TouchableOpacity
-                  onPress={() => listScrollRef.current?.scrollToEnd({ animated: true })}
-                  hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}
-                  activeOpacity={0.75}
+                  key={tab.key}
+                  style={[s.segment, active && s.segmentActive]}
+                  onPress={() => handleTabPress(tab.key)}
+                  activeOpacity={0.85}
                 >
-                  <Text style={s.viewAllLink}>View all</Text>
+                  <Icon size={14} color={active ? F1_RED : TXT_3} strokeWidth={active ? 2.2 : 2} />
+                  <Text style={[s.segmentText, active && s.segmentTextActive]}>{tab.label}</Text>
                 </TouchableOpacity>
-              </View>
-            )}
-            {calendarRaces.map(race => (
-              <RaceCard key={race.id} race={race} onPress={() => handleRacePress(race)} />
-            ))}
-            {shownRaces.length === 0 && (
-              <View style={s.emptyState}>
-                <View style={s.emptyIconWrap}><Flag size={24} color={F1_RED} /></View>
-                <Text style={s.emptyTitle}>No {scheduleFilter === 'upcoming' ? 'Upcoming' : 'Completed'} Races</Text>
-                <Text style={s.emptySub}>Check back soon</Text>
-              </View>
-            )}
-          </>
-        )}
+              );
+            })}
+          </View>
 
-        {activeTab === 'championship' && (
-          <>
-            <View style={s.standingsHeader}>
-              <Text style={s.sectionCalendarTitle}>Driver Standings</Text>
-              <Text style={s.raceCount}>
-                {completed.length}/{F1_CALENDAR_2026.length} races
-              </Text>
+          {activeTab === 'schedule' && (
+            <View style={s.filterRow}>
+              {(['upcoming', 'results'] as const).map(f => {
+                const active = scheduleFilter === f;
+                return (
+                  <TouchableOpacity
+                    key={f}
+                    style={[s.filterChip, active && s.filterChipActive]}
+                    onPress={() => {
+                      if (Platform.OS !== 'web') Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+                      setScheduleFilter(f);
+                    }}
+                    activeOpacity={0.85}
+                  >
+                    {f === 'upcoming' ? <Clock3 size={13} color={active ? '#FFF' : TXT_3} /> : <Trophy size={13} color={active ? '#FFF' : TXT_3} />}
+                    <Text style={[s.filterChipText, active && s.filterChipTextActive]}>
+                      {f === 'upcoming' ? `Upcoming (${upcoming.length})` : `Results (${completed.length})`}
+                    </Text>
+                  </TouchableOpacity>
+                );
+              })}
             </View>
+          )}
 
-            {driverStandings.map((d, i) => (
-              <DriverStandingRow key={d.id} driver={d} pos={i + 1} maxPts={maxDPts} />
-            ))}
-          </>
-        )}
+          {activeTab === 'schedule' && (
+            <>
+              {scheduleFilter === 'upcoming' && nextRace && <NextRaceHero race={nextRace} />}
+              {((scheduleFilter === 'upcoming' && calendarRaces.length > 0) ||
+                (scheduleFilter === 'results' && shownRaces.length > 0)) && (
+                <View style={s.sectionHeadingRow}>
+                  <Text style={s.sectionCalendarTitle}>Race Calendar</Text>
+                  <TouchableOpacity
+                    onPress={() => listScrollRef.current?.scrollToEnd({ animated: true })}
+                    hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}
+                    activeOpacity={0.75}
+                  >
+                    <Text style={s.viewAllLink}>View all</Text>
+                  </TouchableOpacity>
+                </View>
+              )}
+              {calendarRaces.map(race => (
+                <RaceCard key={race.id} race={race} onPress={() => handleRacePress(race)} />
+              ))}
+              {shownRaces.length === 0 && (
+                <View style={s.emptyState}>
+                  <View style={s.emptyIconWrap}><Flag size={24} color={F1_RED} /></View>
+                  <Text style={s.emptyTitle}>No {scheduleFilter === 'upcoming' ? 'Upcoming' : 'Completed'} Races</Text>
+                  <Text style={s.emptySub}>Check back soon</Text>
+                </View>
+              )}
+            </>
+          )}
 
-        {activeTab === 'constructors' && (
-          <>
-            <View style={s.standingsHeader}>
-              <Text style={s.sectionCalendarTitle}>Team Standings</Text>
-              <Text style={s.raceCount}>
-                {completed.length}/{F1_CALENDAR_2026.length} races
-              </Text>
-            </View>
-            {ctorStandings.map((team, idx) => (
-              <ConstructorRow key={team.name} team={team} pos={idx + 1} maxPts={maxCPts} />
-            ))}
-          </>
-        )}
+          {activeTab === 'championship' && (
+            <>
+              <View style={s.standingsHeader}>
+                <Text style={s.sectionCalendarTitle}>Driver Standings</Text>
+                <Text style={s.raceCount}>
+                  {completed.length}/{F1_CALENDAR_2026.length} races
+                </Text>
+              </View>
+
+              {driverStandings.map((d, i) => (
+                <DriverStandingRow key={d.id} driver={d} pos={i + 1} maxPts={maxDPts} />
+              ))}
+            </>
+          )}
+
+          {activeTab === 'constructors' && (
+            <>
+              <View style={s.standingsHeader}>
+                <Text style={s.sectionCalendarTitle}>Team Standings</Text>
+                <Text style={s.raceCount}>
+                  {completed.length}/{F1_CALENDAR_2026.length} races
+                </Text>
+              </View>
+              {ctorStandings.map((team, idx) => (
+                <ConstructorRow key={team.name} team={team} pos={idx + 1} maxPts={maxCPts} />
+              ))}
+            </>
+          )}
+        </View>
       </ScrollView>
 
       <Modal visible={showModal} animationType="slide" transparent onRequestClose={() => setShowModal(false)}>
@@ -651,26 +656,30 @@ const s = StyleSheet.create({
     backgroundColor: BG,
   },
 
+  scrollInner: {
+    paddingHorizontal: 16,
+  },
+
   segmented: {
     flexDirection: 'row',
-    marginHorizontal: 16,
+    marginHorizontal: 0,
     marginTop: HERO_SECONDARY_GAP_BELOW_SPORT_STRIP,
-    marginBottom: 16,
+    marginBottom: 12,
     backgroundColor: CARD,
-    borderRadius: 18,
-    padding: 6,
+    borderRadius: 14,
+    padding: 4,
     borderWidth: 1,
     borderColor: CARD_BORDER,
-    gap: 4,
+    gap: 3,
   },
   segment: {
     flex: 1,
-    height: 48,
-    borderRadius: 14,
+    height: 38,
+    borderRadius: 10,
     alignItems: 'center' as const,
     justifyContent: 'center' as const,
     flexDirection: 'row' as const,
-    gap: 8,
+    gap: 5,
   },
   segmentActive: {
     backgroundColor: 'rgba(242,13,24,0.10)',
@@ -679,8 +688,8 @@ const s = StyleSheet.create({
   },
   segmentText: {
     color: TXT_3,
-    fontWeight: '800' as const,
-    fontSize: 14,
+    fontWeight: '700' as const,
+    fontSize: 12,
   },
   segmentTextActive: {
     color: F1_RED,
@@ -688,19 +697,19 @@ const s = StyleSheet.create({
 
   filterRow: {
     flexDirection: 'row',
-    paddingHorizontal: 16,
-    gap: 10,
-    marginBottom: 14,
+    paddingHorizontal: 0,
+    gap: 8,
+    marginBottom: 10,
   },
   filterChip: {
     flex: 1,
-    height: 46,
+    height: 36,
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
-    gap: 8,
-    paddingHorizontal: 14,
-    borderRadius: 15,
+    gap: 5,
+    paddingHorizontal: 10,
+    borderRadius: 11,
     backgroundColor: CARD,
     borderWidth: 1,
     borderColor: CARD_BORDER,
@@ -710,8 +719,8 @@ const s = StyleSheet.create({
     borderColor: F1_RED,
   },
   filterChipText: {
-    fontSize: 15,
-    fontWeight: '800' as const,
+    fontSize: 12,
+    fontWeight: '700' as const,
     color: TXT_3,
   },
   filterChipTextActive: {

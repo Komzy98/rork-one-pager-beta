@@ -1,4 +1,4 @@
-import React, { useCallback, useMemo, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import {
   View,
   Text,
@@ -58,6 +58,7 @@ import {
   pickTonightRecipe,
   scoreRecipeForUser,
   confidenceLabelFromCompletions,
+  getCurrentMealPeriod,
 } from '@/utils/cookingContext';
 import { getStepTimerDefault, formatCountdown } from '@/utils/cookingTimers';
 import GuidedCookingSession from '@/components/cooking/GuidedCookingSession';
@@ -368,6 +369,13 @@ export default function CookingScreen() {
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [browseOpen, setBrowseOpen] = useState(false);
   const [recipeSearchQuery, setRecipeSearchQuery] = useState('');
+  /** Re-resolve meal period + top pick when the clock crosses breakfast / lunch / dinner bands. */
+  const [mealClockTick, setMealClockTick] = useState(() => Date.now());
+
+  useEffect(() => {
+    const id = setInterval(() => setMealClockTick(Date.now()), 60_000);
+    return () => clearInterval(id);
+  }, []);
 
   const routeDiet = typeof params.diet === 'string' ? params.diet : undefined;
   const routeHabitName = typeof params.habitName === 'string' ? params.habitName : undefined;
@@ -395,20 +403,34 @@ export default function CookingScreen() {
     return filteredRecipes.filter((r) => recipeMatchesSearchQuery(r, q));
   }, [filteredRecipes, recipeSearchQuery]);
 
+  const mealPeriod = useMemo(() => getCurrentMealPeriod(new Date(mealClockTick)), [mealClockTick]);
+
+  const mealHeroLabel = useMemo(() => {
+    switch (mealPeriod) {
+      case 'breakfast':
+        return 'Breakfast';
+      case 'lunch':
+        return 'Lunch';
+      case 'dinner':
+        return 'Dinner';
+    }
+  }, [mealPeriod]);
+
   const tonightPick = useMemo(() => {
     const pool = filteredRecipes.length > 0 ? filteredRecipes : COOKING_RECIPES;
-    return pickTonightRecipe(pool, userTags, routeDiet);
-  }, [filteredRecipes, userTags, routeDiet]);
+    return pickTonightRecipe(pool, userTags, routeDiet, new Date(mealClockTick));
+  }, [filteredRecipes, userTags, routeDiet, mealClockTick]);
 
   const suggestPick = useMemo(() => {
     const pool = filteredRecipes.length > 0 ? filteredRecipes : COOKING_RECIPES;
     const sorted = [...pool].sort(
       (a, b) =>
-        scoreRecipeForUser(b, userTags, routeDiet) - scoreRecipeForUser(a, userTags, routeDiet) ||
+        scoreRecipeForUser(b, userTags, routeDiet, mealPeriod) -
+          scoreRecipeForUser(a, userTags, routeDiet, mealPeriod) ||
         a.title.localeCompare(b.title),
     );
     return sorted.find((r) => r.id !== tonightPick.id) ?? sorted[1] ?? sorted[0];
-  }, [filteredRecipes, userTags, routeDiet, tonightPick.id]);
+  }, [filteredRecipes, userTags, routeDiet, mealPeriod, tonightPick.id]);
 
   const bookmarkedRecipes = useMemo(
     () => COOKING_RECIPES.filter((r) => bookmarks.includes(r.id)),
@@ -568,7 +590,8 @@ export default function CookingScreen() {
               <Text style={styles.aiPillText}>TOP PICK</Text>
             </View>
             <Text style={styles.heroTitle}>
-              Tonight&apos;s{'\n'}
+              {mealHeroLabel}
+              {'\n'}
               <Text style={styles.heroTitleAccent}>Best match</Text>
             </Text>
             <Text style={styles.heroMeal}>{tonightPick.title}</Text>
@@ -617,7 +640,9 @@ export default function CookingScreen() {
         <View style={[styles.whyStrip, { backgroundColor: cardBg, borderColor: border }]}>
           <View style={styles.whyItem}>
             <CheckCircle2 size={16} color={GREEN} />
-            <Text style={[styles.whyText, { color: text }]}>Ranked using your habits & interests</Text>
+            <Text style={[styles.whyText, { color: text }]}>
+              Ranked using your habits, interests & meal time (breakfast · lunch · dinner)
+            </Text>
           </View>
           <View style={styles.whyItem}>
             <CalendarClock size={16} color={BLUE} />
@@ -838,7 +863,7 @@ export default function CookingScreen() {
             </View>
             <View style={{ flex: 1 }}>
               <Text style={styles.ctaTitle}>Guided cooking</Text>
-              <Text style={styles.ctaSub}>Step-by-step for tonight&apos;s pick</Text>
+              <Text style={styles.ctaSub}>Step-by-step for your {mealHeroLabel.toLowerCase()} pick</Text>
             </View>
             <ChevronRight size={20} color="#FFF" />
           </LinearGradient>

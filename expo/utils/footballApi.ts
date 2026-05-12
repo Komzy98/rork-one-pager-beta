@@ -11,6 +11,65 @@ const headers = {
   'x-apisports-key': API_KEY
 };
 
+/** European club season year for API-Football (e.g. 2024 → 2024/25 campaign). */
+export function getFootballCurrentSeason(now: Date = new Date()): number {
+  const month = now.getMonth();
+  const year = now.getFullYear();
+  if (month < 7) return year - 1;
+  return year;
+}
+
+export type TeamLeagueEntry = {
+  id: number;
+  name: string;
+  logo?: string;
+  type?: string;
+};
+
+/** Prefer domestic league table over cups for season stats. */
+export function pickPrimaryLeagueForTeam(leagues: TeamLeagueEntry[]): TeamLeagueEntry | null {
+  if (!leagues.length) return null;
+  const byType = leagues.find((l) => l.type === 'League');
+  if (byType) return byType;
+  const majorIds = new Set([39, 140, 78, 135, 61, 88, 94, 253]);
+  const major = leagues.find((l) => majorIds.has(l.id));
+  return major ?? leagues[0];
+}
+
+export type SquadPlayerLite = {
+  id: number;
+  name: string;
+  photo?: string;
+  position?: string;
+  number?: number | null;
+};
+
+export type CoachLite = {
+  name: string;
+  photo?: string;
+};
+
+export type ApiStandingRow = {
+  rank?: number;
+  points?: number;
+  goalsDiff?: number;
+  form?: string;
+  all?: { played?: number; win?: number; draw?: number; lose?: number };
+  team?: { id: number; name?: string; logo?: string };
+};
+
+/** Find one team's row in API-Football standings `response` array. */
+export function findTeamStandingRow(standingsResponse: unknown, teamId: number): ApiStandingRow | null {
+  const standings = (standingsResponse as { league?: { standings?: unknown[] } }[])?.[0]?.league?.standings;
+  if (!Array.isArray(standings)) return null;
+  for (const group of standings) {
+    if (!Array.isArray(group)) continue;
+    const row = group.find((t: { team?: { id?: number } }) => t?.team?.id === teamId);
+    if (row) return row as ApiStandingRow;
+  }
+  return null;
+}
+
 // Check if API key is configured
 function isApiConfigured(): boolean {
   const configured = !!API_KEY && API_KEY.length > 0;
@@ -283,7 +342,8 @@ export const footballApi = {
     }
   },
 
-  async searchTeams(teamName: string): Promise<{id: number, name: string, logo: string}[]> {
+  async searchTeams(teamName: string): Promise<{ id: number; name: string; logo: string }[]> {
+    if (!isApiConfigured()) return [];
     try {
       const url = `${BASE_URL}/teams?search=${encodeURIComponent(teamName)}`;
       const response = await fetch(url, {
@@ -313,7 +373,14 @@ export const footballApi = {
     }
   },
 
-  async getTeamInfo(teamId: number): Promise<{id: number, name: string, logo: string, country: string, venue?: string} | null> {
+  async getTeamInfo(teamId: number): Promise<{
+    id: number;
+    name: string;
+    logo: string;
+    country: string;
+    venue?: string;
+    founded?: number;
+  } | null> {
     if (!isApiConfigured()) {
       console.log('⚠️ API key not configured');
       return null;
@@ -343,7 +410,8 @@ export const footballApi = {
           name: team.team.name,
           logo: team.team.logo || '',
           country: team.team.country || '',
-          venue: team.venue?.name
+          venue: team.venue?.name,
+          founded: typeof team.team.founded === 'number' ? team.team.founded : undefined,
         };
       }
       
@@ -351,6 +419,113 @@ export const footballApi = {
     } catch (error) {
       console.error('Error fetching team info:', error);
       return null;
+    }
+  },
+
+  /** Current-season competitions for this team (`current=true`). */
+  async getTeamLeaguesCurrent(teamId: number): Promise<TeamLeagueEntry[]> {
+    if (!isApiConfigured()) return [];
+    try {
+      const url = `${BASE_URL}/leagues?team=${teamId}&current=true`;
+      const response = await fetch(url, { method: 'GET', headers });
+      if (!response.ok) return [];
+      const data = await response.json();
+      const rows = data.response ?? [];
+      return rows
+        .map((item: any) => ({
+          id: item.league?.id as number | undefined,
+          name: item.league?.name ?? '',
+          logo: item.league?.logo,
+          type: item.league?.type,
+        }))
+        .filter((l: TeamLeagueEntry): l is TeamLeagueEntry => typeof l.id === 'number' && Boolean(l.name));
+    } catch {
+      return [];
+    }
+  },
+
+  async getLeagueStandingsRaw(leagueId: number, season?: number): Promise<unknown | null> {
+    if (!isApiConfigured()) return null;
+    const s = season ?? getFootballCurrentSeason();
+    try {
+      const url = `${BASE_URL}/standings?league=${leagueId}&season=${s}`;
+      const response = await fetch(url, { method: 'GET', headers });
+      if (!response.ok) return null;
+      const data = await response.json();
+      return data.response ?? null;
+    } catch {
+      return null;
+    }
+  },
+
+  /** Per-team season stats (form, goals, cards) for a league campaign. */
+  async getTeamSeasonStatistics(teamId: number, leagueId: number, season?: number): Promise<Record<string, unknown> | null> {
+    if (!isApiConfigured()) return null;
+    const s = season ?? getFootballCurrentSeason();
+    try {
+      const url = `${BASE_URL}/teams/statistics?team=${teamId}&league=${leagueId}&season=${s}`;
+      const response = await fetch(url, { method: 'GET', headers });
+      if (!response.ok) return null;
+      const data = await response.json();
+      const r = data.response;
+      return r && typeof r === 'object' ? (r as Record<string, unknown>) : null;
+    } catch {
+      return null;
+    }
+  },
+
+  /** Full squad with photos (`/players/squads`). */
+  async getTeamSquadPlayers(teamId: number): Promise<SquadPlayerLite[]> {
+    if (!isApiConfigured()) return [];
+    try {
+      const url = `${BASE_URL}/players/squads?team=${teamId}`;
+      const response = await fetch(url, { method: 'GET', headers });
+      if (!response.ok) return [];
+      const data = await response.json();
+      const block = Array.isArray(data.response) ? data.response[0] : null;
+      const rawPlayers = block?.players ?? [];
+      const out: SquadPlayerLite[] = [];
+      for (const entry of rawPlayers) {
+        const pl = entry?.player ?? entry;
+        const id = Number(pl?.id ?? entry?.id);
+        const name = String(pl?.name ?? '').trim();
+        if (!Number.isFinite(id) || !name) continue;
+        out.push({
+          id,
+          name,
+          photo: typeof pl.photo === 'string' ? pl.photo : undefined,
+          position: pl.position ?? entry?.position,
+          number: entry?.number ?? pl.number ?? null,
+        });
+      }
+      return out;
+    } catch {
+      return [];
+    }
+  },
+
+  /** Coaching staff with photos (`/coachs` — API spelling). */
+  async getTeamCoaches(teamId: number): Promise<CoachLite[]> {
+    if (!isApiConfigured()) return [];
+    try {
+      const url = `${BASE_URL}/coachs?team=${teamId}`;
+      const response = await fetch(url, { method: 'GET', headers });
+      if (!response.ok) return [];
+      const data = await response.json();
+      const rows = data.response ?? [];
+      return rows
+        .map((c: any) => {
+          const name =
+            String(c?.name ?? '').trim() ||
+            `${String(c?.firstname ?? '').trim()} ${String(c?.lastname ?? '').trim()}`.trim();
+          return {
+            name,
+            photo: typeof c?.photo === 'string' ? c.photo : undefined,
+          };
+        })
+        .filter((c: CoachLite) => c.name.length > 0);
+    } catch {
+      return [];
     }
   },
 

@@ -12,6 +12,7 @@ import {
   Image,
   ActivityIndicator,
   ImageBackground,
+  useWindowDimensions,
 } from 'react-native';
 import {
   Calendar,
@@ -29,6 +30,7 @@ import {
 } from 'lucide-react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import * as Haptics from 'expo-haptics';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import {
   NBAGame,
@@ -39,14 +41,23 @@ import {
   NBA_EASTERN_STANDINGS,
   NBA_WESTERN_STANDINGS,
 } from '@/constants/nbaData';
-import { HERO_SECONDARY_GAP_BELOW_SPORT_STRIP, HERO_SPORT_STRIP_OVERLAP_HERO_PX } from '@/constants/sportsHeroLayout';
+import {
+  HERO_SECONDARY_GAP_BELOW_SPORT_STRIP,
+  HERO_SPORT_STRIP_OVERLAP_HERO_PX,
+  getSportsHeroEdgePad,
+  getSportsHeroImageScale,
+} from '@/constants/sportsHeroLayout';
 import { fetchNBAGamesMultipleDays, fetchNBAStandings } from '@/utils/nbaApi';
 import NBAGameDetailsModal from './NBAGameDetailsModal';
 import NBAPremiumHeroInner from './NBAPremiumHeroInner';
 
 const { width: SCREEN_WIDTH } = Dimensions.get('window');
 
-/** User-provided NBA arena hero (blue/red court); no gradient overlay on top. */
+/** Aligns with `nbaHeroRoot.minHeight` — bottom crop uses 3% for consistent clip vs Football/F1 tall heroes. */
+const NBA_HERO_MIN_HEIGHT_PX = 470;
+const NBA_HERO_BOTTOM_CROP_PX = Math.round(NBA_HERO_MIN_HEIGHT_PX * 0.03);
+
+/** NBA Center hero art (baked title + tagline); keep overlays minimal. */
 const NBA_HERO_BACKGROUND = require('../assets/images/nba-hero-premium.png');
 
 interface NBASectionProps {
@@ -526,6 +537,14 @@ const TabPill = React.memo(({ activeTab, onTabChange, isDark, counts }: {
 });
 
 export default function NBASection({ isDark, insets, sportToggleSlot }: NBASectionProps) {
+  const { width: windowWidth } = useWindowDimensions();
+  const safeInsets = useSafeAreaInsets();
+  const heroEdgePad = useMemo(
+    () => getSportsHeroEdgePad(windowWidth, safeInsets.left, safeInsets.right),
+    [windowWidth, safeInsets.left, safeInsets.right],
+  );
+  const heroArtScale = useMemo(() => getSportsHeroImageScale(windowWidth), [windowWidth]);
+
   const [activeTab, setActiveTab] = useState<NBATab>('upcoming');
   const [selectedGame, setSelectedGame] = useState<NBAGame | null>(null);
   const [showGameModal, setShowGameModal] = useState<boolean>(false);
@@ -746,13 +765,20 @@ export default function NBASection({ isDark, insets, sportToggleSlot }: NBASecti
         <View style={s.heroStackWithSportStrip}>
           <ImageBackground
             source={NBA_HERO_BACKGROUND}
-            style={[s.nbaHeroRoot, { paddingTop: insets.top, paddingBottom: 4 }]}
-            imageStyle={s.nbaHeroImage}
+            style={[s.nbaHeroRoot, { paddingHorizontal: heroEdgePad, paddingTop: insets.top, paddingBottom: 4 }]}
+            imageStyle={[
+              s.nbaHeroImage,
+              {
+                transform: [
+                  { translateY: -NBA_HERO_BOTTOM_CROP_PX },
+                  ...(heroArtScale < 1 ? [{ scale: heroArtScale } as const] : []),
+                ],
+              },
+            ]}
           >
             <View style={s.nbaHeroForeground}>
               <View style={s.nbaHeroUpper}>
                 <NBAPremiumHeroInner
-                  liveCount={liveGames.length}
                   teamAbbreviations={heroTeamAbbreviations}
                   featuredGame={nextGame}
                   onRefresh={onRefresh}
@@ -760,53 +786,22 @@ export default function NBASection({ isDark, insets, sportToggleSlot }: NBASecti
                     if (nextGame) handleGamePress(nextGame);
                   }}
                 />
-                {liveGames.length > 0 ? (
-                  <View style={s.heroTickerSection}>
-                    <View style={s.heroTickerHeader}>
-                      <View style={s.heroTickerHeaderLeft}>
-                        <LinearGradient colors={['#FF3B30', '#FF6B6B']} style={s.heroTickerLiveDot}>
-                          <Radio size={10} color="#FFFFFF" />
-                        </LinearGradient>
-                        <Text style={s.heroTickerTitle}>Live Now</Text>
-                        <View style={s.heroTickerBadge}>
-                          <Text style={s.heroTickerBadgeText}>{liveGames.length}</Text>
-                        </View>
-                      </View>
-                    </View>
-                    <FlatList
-                      horizontal
-                      data={liveGames}
-                      keyExtractor={(g) => `nba-live-ticker-${g.id}`}
-                      showsHorizontalScrollIndicator={false}
-                      nestedScrollEnabled
-                      contentContainerStyle={s.heroTickerListContent}
-                      renderItem={({ item: g }) => (
-                        <TouchableOpacity style={s.heroTickerChip} onPress={() => handleGamePress(g)} activeOpacity={0.88}>
-                          <Image source={{ uri: getTeamLogo(g.team1.abbreviation) }} style={s.heroTickerLogo} resizeMode="contain" />
-                          <Text style={s.heroTickerScore} numberOfLines={1}>
-                            {g.team1.score ?? '—'} : {g.team2.score ?? '—'}
-                          </Text>
-                          <Image source={{ uri: getTeamLogo(g.team2.abbreviation) }} style={s.heroTickerLogo} resizeMode="contain" />
-                        </TouchableOpacity>
-                      )}
-                    />
-                  </View>
-                ) : null}
               </View>
             </View>
           </ImageBackground>
           {sportToggleSlot ? (
-            <View style={s.heroSportStripOverlapSlot}>{sportToggleSlot}</View>
+            <View style={[s.heroSportStripOverlapSlot, { paddingHorizontal: heroEdgePad }]}>{sportToggleSlot}</View>
           ) : null}
         </View>
-        <View style={s.tabWrapper}>
+        <View style={[s.tabWrapper, { paddingHorizontal: heroEdgePad }]}>
           <TabPill activeTab={activeTab} onTabChange={setActiveTab} isDark={isDark} counts={counts} />
         </View>
       </>
     ),
     [
       insets.top,
-      liveGames,
+      heroEdgePad,
+      heroArtScale,
       heroTeamAbbreviations,
       nextGame,
       onRefresh,
@@ -855,15 +850,13 @@ const s = StyleSheet.create({
   },
   heroSportStripOverlapSlot: {
     marginTop: -HERO_SPORT_STRIP_OVERLAP_HERO_PX,
-    paddingHorizontal: 20,
     zIndex: 20,
     elevation: 12,
   },
   nbaHeroRoot: {
     overflow: 'hidden' as const,
-    minHeight: 470,
+    minHeight: NBA_HERO_MIN_HEIGHT_PX,
     justifyContent: 'flex-start' as const,
-    paddingHorizontal: 20,
     flexDirection: 'column' as const,
   },
   nbaHeroImage: {
@@ -882,73 +875,7 @@ const s = StyleSheet.create({
     width: '100%',
     minHeight: 0,
   },
-  heroTickerSection: {
-    paddingTop: 5,
-    paddingBottom: 4,
-  },
-  heroTickerHeader: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    marginBottom: 8,
-  },
-  heroTickerHeaderLeft: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 6,
-  },
-  heroTickerLiveDot: {
-    width: 16,
-    height: 16,
-    borderRadius: 8,
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  heroTickerTitle: {
-    fontSize: 10,
-    fontWeight: '700' as const,
-    letterSpacing: -0.15,
-    color: '#FFFFFF',
-  },
-  heroTickerBadge: {
-    paddingHorizontal: 6,
-    paddingVertical: 2,
-    borderRadius: 6,
-    backgroundColor: 'rgba(255,59,48,0.22)',
-  },
-  heroTickerBadgeText: {
-    fontSize: 9,
-    fontWeight: '800' as const,
-    color: '#FF8A80',
-  },
-  heroTickerListContent: {
-    gap: 8,
-    paddingBottom: 4,
-  },
-  heroTickerChip: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 8,
-    paddingHorizontal: 12,
-    paddingVertical: 10,
-    borderRadius: 14,
-    backgroundColor: 'rgba(10,12,22,0.55)',
-    borderWidth: 1,
-    borderColor: 'rgba(255,255,255,0.18)',
-    marginRight: 10,
-  },
-  heroTickerLogo: {
-    width: 28,
-    height: 28,
-  },
-  heroTickerScore: {
-    fontSize: 14,
-    fontWeight: '800' as const,
-    color: '#FFFFFF',
-    minWidth: 52,
-    textAlign: 'center' as const,
-  },
   tabWrapper: {
-    paddingHorizontal: 20,
     marginTop: HERO_SECONDARY_GAP_BELOW_SPORT_STRIP,
     marginBottom: 12,
     zIndex: 12,

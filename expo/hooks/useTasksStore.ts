@@ -265,6 +265,13 @@ const migrateTaskDataToUserKeys = async (userId: string) => {
   }
 };
 
+/** Do not replace local tasks with cloud [] when this device already has tasks (empty cloud row / race after add). */
+function shouldApplyCloudTasks(cloudTasks: unknown, localTasks: Task[] | undefined): cloudTasks is Task[] {
+  if (!Array.isArray(cloudTasks)) return false;
+  if (cloudTasks.length > 0) return true;
+  return !(localTasks && localTasks.length > 0);
+}
+
 export const [TaskProvider, useTasks] = createContextHook(() => {
   const queryClient = useQueryClient();
   const { user } = useAuth();
@@ -352,7 +359,8 @@ export const [TaskProvider, useTasks] = createContextHook(() => {
         }
         if (!cloudData || cancelled) return;
 
-        if (Array.isArray(cloudData.tasks)) {
+        const localTasksHydrate = queryClient.getQueryData<Task[]>(['tasks', userId]);
+        if (shouldApplyCloudTasks(cloudData.tasks, localTasksHydrate)) {
           queryClient.setQueryData(['tasks', userId], cloudData.tasks);
           await unifiedStorage.setItem(TASKS_STORAGE_KEY, JSON.stringify(cloudData.tasks));
         }
@@ -389,7 +397,8 @@ export const [TaskProvider, useTasks] = createContextHook(() => {
   useEffect(() => {
     if (!userId || !supabaseSync.setupRealtimeSync) return;
     const unsubscribe = supabaseSync.setupRealtimeSync((cloudData) => {
-      if (Array.isArray(cloudData.tasks)) {
+      const localTasksRt = queryClient.getQueryData<Task[]>(['tasks', userId]);
+      if (shouldApplyCloudTasks(cloudData.tasks, localTasksRt)) {
         queryClient.setQueryData(['tasks', userId], cloudData.tasks);
         void unifiedStorage.setItem(TASKS_STORAGE_KEY, JSON.stringify(cloudData.tasks));
       }

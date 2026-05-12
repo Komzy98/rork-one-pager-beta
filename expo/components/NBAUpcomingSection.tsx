@@ -8,13 +8,15 @@ import {
   ScrollView,
   Platform,
   Dimensions,
+  ActivityIndicator,
 } from 'react-native';
 
 const { width: SCREEN_WIDTH } = Dimensions.get('window');
 const CARD_WIDTH = SCREEN_WIDTH - 40;
-import { ChevronRight, Calendar, MapPin, Tv } from 'lucide-react-native';
+import { ChevronRight, Calendar, MapPin, Tv, Radio } from 'lucide-react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import { router } from 'expo-router';
+import { useQuery } from '@tanstack/react-query';
 import {
   NBAGame,
   getUpcomingGames,
@@ -24,6 +26,7 @@ import {
 import { NBAFavoriteTeam } from '@/types/habit';
 import { useTheme } from '@/hooks/useTheme';
 import NBAGameDetailsModal from './NBAGameDetailsModal';
+import { fetchNBAGamesMultipleDays } from '@/utils/nbaApi';
 
 const NBA_ORANGE = '#F26522';
 
@@ -31,10 +34,28 @@ interface NBAUpcomingSectionProps {
   favoriteNBATeams: NBAFavoriteTeam[];
 }
 
+function filterGamesByFavorites(games: NBAGame[], favoriteAbbreviations: Set<string>, limit: number): NBAGame[] {
+  if (favoriteAbbreviations.size === 0) return games.slice(0, limit);
+  return games
+    .filter(
+      g =>
+        favoriteAbbreviations.has(g.team1.abbreviation) ||
+        favoriteAbbreviations.has(g.team2.abbreviation)
+    )
+    .slice(0, limit);
+}
+
 export default function NBAUpcomingSection({ favoriteNBATeams }: NBAUpcomingSectionProps) {
   const { colors, isDark } = useTheme();
   const [selectedGame, setSelectedGame] = useState<NBAGame | null>(null);
   const [showGameModal, setShowGameModal] = useState<boolean>(false);
+
+  const nbaQuery = useQuery({
+    queryKey: ['nba-games'],
+    queryFn: () => fetchNBAGamesMultipleDays(5, 7),
+    staleTime: 15_000,
+    refetchInterval: 30_000,
+  });
 
   const handleGamePress = useCallback((game: NBAGame) => {
     setSelectedGame(game);
@@ -45,25 +66,38 @@ export default function NBAUpcomingSection({ favoriteNBATeams }: NBAUpcomingSect
     return new Set(favoriteNBATeams.map(t => t.abbreviation));
   }, [favoriteNBATeams]);
 
-  const upcomingGames = useMemo(() => {
+  const fallbackUpcoming = useMemo(() => {
     const all = getUpcomingGames();
-    if (favoriteAbbreviations.size === 0) return all.slice(0, 4);
-    return all.filter(game =>
-      favoriteAbbreviations.has(game.team1.abbreviation) ||
-      favoriteAbbreviations.has(game.team2.abbreviation)
-    ).slice(0, 6);
+    return filterGamesByFavorites(all, favoriteAbbreviations, favoriteAbbreviations.size === 0 ? 4 : 6);
   }, [favoriteAbbreviations]);
+
+  const fallbackResults = useMemo(() => {
+    const all = getCompletedGames();
+    return filterGamesByFavorites(all, favoriteAbbreviations, 3);
+  }, [favoriteAbbreviations]);
+
+  const liveGames = useMemo(() => {
+    if (!nbaQuery.isSuccess || !nbaQuery.data?.live?.length) return [];
+    return filterGamesByFavorites(nbaQuery.data.live, favoriteAbbreviations, 6);
+  }, [nbaQuery.isSuccess, nbaQuery.data?.live, favoriteAbbreviations]);
+
+  const upcomingGames = useMemo(() => {
+    if (nbaQuery.isSuccess && nbaQuery.data) {
+      const u = filterGamesByFavorites(nbaQuery.data.upcoming, favoriteAbbreviations, 6);
+      if (u.length > 0) return u;
+    }
+    return fallbackUpcoming;
+  }, [nbaQuery.isSuccess, nbaQuery.data?.upcoming, favoriteAbbreviations, fallbackUpcoming]);
 
   const recentResults = useMemo(() => {
-    const all = getCompletedGames();
-    if (favoriteAbbreviations.size === 0) return all.slice(0, 3);
-    return all.filter(game =>
-      favoriteAbbreviations.has(game.team1.abbreviation) ||
-      favoriteAbbreviations.has(game.team2.abbreviation)
-    ).slice(0, 3);
-  }, [favoriteAbbreviations]);
+    if (nbaQuery.isSuccess && nbaQuery.data) {
+      const c = filterGamesByFavorites(nbaQuery.data.completed, favoriteAbbreviations, 3);
+      if (c.length > 0) return c;
+    }
+    return fallbackResults;
+  }, [nbaQuery.isSuccess, nbaQuery.data?.completed, favoriteAbbreviations, fallbackResults]);
 
-  if (upcomingGames.length === 0 && recentResults.length === 0) return null;
+  if (liveGames.length === 0 && upcomingGames.length === 0 && recentResults.length === 0) return null;
 
   const formatGameDate = (dateStr: string): string => {
     const date = new Date(dateStr);
@@ -81,21 +115,30 @@ export default function NBAUpcomingSection({ favoriteNBATeams }: NBAUpcomingSect
     return date.toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit', hour12: true });
   };
 
+  const tipOrStartTime = (game: NBAGame): string => {
+    if (game.startTime) return game.startTime;
+    return formatGameTime(game.date);
+  };
+
   const isFavorite = (abbr: string): boolean => favoriteAbbreviations.has(abbr);
 
-  const renderUpcomingGame = (game: NBAGame, index: number) => {
+  const renderUpcomingGame = (game: NBAGame, index: number, variant: 'live' | 'upcoming') => {
     const team1Fav = isFavorite(game.team1.abbreviation);
     const team2Fav = isFavorite(game.team2.abbreviation);
+    const isLive = variant === 'live' && game.status === 'live';
+    const s1 = game.team1.score;
+    const s2 = game.team2.score;
+    const hasScores = s1 != null && s2 != null;
 
     return (
       <TouchableOpacity
-        key={game.id}
+        key={`${variant}-${game.id}-${index}`}
         activeOpacity={0.85}
         onPress={() => handleGamePress(game)}
-        style={[styles.gameCard, index === 0 && { marginLeft: 0 }]}
+        style={[styles.gameCard, index === 0 && { marginLeft: 0 }, isLive && styles.gameCardLive]}
       >
         <LinearGradient
-          colors={['#1A1A2E', '#16213E']}
+          colors={isLive ? ['#2A1518', '#1A1A2E'] : ['#1A1A2E', '#16213E']}
           start={{ x: 0, y: 0 }}
           end={{ x: 1, y: 1 }}
           style={styles.gameCardGradient}
@@ -105,29 +148,61 @@ export default function NBAUpcomingSection({ favoriteNBATeams }: NBAUpcomingSect
               <Calendar size={10} color="#F26522" />
               <Text style={styles.dateText}>{formatGameDate(game.date)}</Text>
             </View>
-            {!!game.broadcast && (
-              <View style={styles.broadcastBadge}>
-                <Tv size={9} color="#94A3B8" />
-                <Text style={styles.broadcastText}>{game.broadcast}</Text>
+            {isLive ? (
+              <View style={styles.liveHeaderBadge}>
+                <Radio size={10} color="#F87171" />
+                <Text style={styles.liveHeaderText}>LIVE</Text>
+                {game.quarter != null && (
+                  <Text style={styles.liveQuarterText}>
+                    Q{game.quarter}
+                    {game.timeRemaining ? ` ${game.timeRemaining}` : ''}
+                  </Text>
+                )}
               </View>
+            ) : (
+              !!game.broadcast && (
+                <View style={styles.broadcastBadge}>
+                  <Tv size={9} color="#94A3B8" />
+                  <Text style={styles.broadcastText}>{game.broadcast}</Text>
+                </View>
+              )
             )}
           </View>
 
           <View style={styles.matchupRow}>
             <View style={styles.teamColumn}>
-                <Image source={{ uri: getTeamLogo(game.team1.abbreviation) }} style={styles.teamLogoImg} resizeMode="contain" />
+              <Image source={{ uri: getTeamLogo(game.team1.abbreviation) }} style={styles.teamLogoImg} resizeMode="contain" />
               <Text style={[styles.teamAbbr, team1Fav && { color: '#fff', fontWeight: '800' as const }]}>{game.team1.abbreviation}</Text>
               {!!game.team1.record && <Text style={styles.teamRecord}>{game.team1.record}</Text>}
             </View>
 
             <View style={styles.vsColumn}>
-              <Text style={styles.timeText}>{formatGameTime(game.date)}</Text>
-              <Text style={styles.vsText}>VS</Text>
-              {!!game.series && <Text style={styles.seriesText}>{game.series}</Text>}
+              {isLive && hasScores ? (
+                <>
+                  <View style={styles.scoreRow}>
+                    <Text style={styles.scoreNum}>{s1}</Text>
+                    <Text style={styles.scoreDash}>-</Text>
+                    <Text style={styles.scoreNum}>{s2}</Text>
+                  </View>
+                  {!!game.series && <Text style={styles.seriesText}>{game.series}</Text>}
+                </>
+              ) : isLive ? (
+                <>
+                  <Text style={styles.timeText}>{tipOrStartTime(game)}</Text>
+                  <Text style={styles.vsText}>VS</Text>
+                  {!!game.series && <Text style={styles.seriesText}>{game.series}</Text>}
+                </>
+              ) : (
+                <>
+                  <Text style={styles.timeText}>{tipOrStartTime(game)}</Text>
+                  <Text style={styles.vsText}>VS</Text>
+                  {!!game.series && <Text style={styles.seriesText}>{game.series}</Text>}
+                </>
+              )}
             </View>
 
             <View style={styles.teamColumn}>
-                <Image source={{ uri: getTeamLogo(game.team2.abbreviation) }} style={styles.teamLogoImg} resizeMode="contain" />
+              <Image source={{ uri: getTeamLogo(game.team2.abbreviation) }} style={styles.teamLogoImg} resizeMode="contain" />
               <Text style={[styles.teamAbbr, team2Fav && { color: '#fff', fontWeight: '800' as const }]}>{game.team2.abbreviation}</Text>
               {!!game.team2.record && <Text style={styles.teamRecord}>{game.team2.record}</Text>}
             </View>
@@ -219,9 +294,12 @@ export default function NBAUpcomingSection({ favoriteNBATeams }: NBAUpcomingSect
         <View style={styles.headerLeft}>
           <Text style={styles.headerEmoji}>🏀</Text>
           <Text style={[styles.headerTitle, { color: colors.text }]}>NBA</Text>
-          {upcomingGames.length > 0 && (
+          {nbaQuery.isFetching && !nbaQuery.isPending ? (
+            <ActivityIndicator size="small" color={NBA_ORANGE} style={styles.headerSpinner} />
+          ) : null}
+          {liveGames.length + upcomingGames.length > 0 && (
             <View style={[styles.countPill, { backgroundColor: isDark ? 'rgba(242, 101, 34, 0.18)' : '#FFF2EB' }]}>
-              <Text style={styles.countPillText}>{upcomingGames.length}</Text>
+              <Text style={styles.countPillText}>{liveGames.length + upcomingGames.length}</Text>
             </View>
           )}
         </View>
@@ -255,15 +333,36 @@ export default function NBAUpcomingSection({ favoriteNBATeams }: NBAUpcomingSect
         </ScrollView>
       )}
 
-      {upcomingGames.length > 0 && (
+      {liveGames.length > 0 && (
         <>
-          <Text style={[styles.subSectionTitle, { color: colors.textMuted }]}>Upcoming Games</Text>
+          <Text style={[styles.subSectionTitle, { color: '#F87171' }]}>Live</Text>
           <ScrollView
             horizontal
             showsHorizontalScrollIndicator={false}
             contentContainerStyle={styles.gamesScroll}
           >
-            {upcomingGames.map((game, idx) => renderUpcomingGame(game, idx))}
+            {liveGames.map((game, idx) => renderUpcomingGame(game, idx, 'live'))}
+          </ScrollView>
+        </>
+      )}
+
+      {upcomingGames.length > 0 && (
+        <>
+          <Text
+            style={[
+              styles.subSectionTitle,
+              { color: colors.textMuted },
+              liveGames.length > 0 && { marginTop: 16 },
+            ]}
+          >
+            Upcoming Games
+          </Text>
+          <ScrollView
+            horizontal
+            showsHorizontalScrollIndicator={false}
+            contentContainerStyle={styles.gamesScroll}
+          >
+            {upcomingGames.map((game, idx) => renderUpcomingGame(game, idx, 'upcoming'))}
           </ScrollView>
         </>
       )}
@@ -310,6 +409,9 @@ const styles = StyleSheet.create({
     fontSize: 20,
     fontWeight: '700' as const,
     letterSpacing: -0.4,
+  },
+  headerSpinner: {
+    marginLeft: 4,
   },
   countPill: {
     backgroundColor: '#FFF2EB',
@@ -383,6 +485,10 @@ const styles = StyleSheet.create({
       android: { elevation: 6 },
     }),
   },
+  gameCardLive: {
+    borderWidth: 1,
+    borderColor: 'rgba(248, 113, 113, 0.35)',
+  },
   gameCardGradient: {
     padding: 20,
     borderRadius: 18,
@@ -421,6 +527,29 @@ const styles = StyleSheet.create({
     fontWeight: '600' as const,
     color: '#94A3B8',
   },
+  liveHeaderBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 5,
+    flexWrap: 'wrap',
+    justifyContent: 'flex-end',
+    maxWidth: '55%',
+    backgroundColor: 'rgba(248, 113, 113, 0.12)',
+    paddingHorizontal: 8,
+    paddingVertical: 5,
+    borderRadius: 10,
+  },
+  liveHeaderText: {
+    fontSize: 11,
+    fontWeight: '800' as const,
+    color: '#F87171',
+    letterSpacing: 0.5,
+  },
+  liveQuarterText: {
+    fontSize: 10,
+    fontWeight: '600' as const,
+    color: '#FCA5A5',
+  },
   matchupRow: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -451,6 +580,23 @@ const styles = StyleSheet.create({
   vsColumn: {
     alignItems: 'center',
     paddingHorizontal: 8,
+  },
+  scoreRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    marginBottom: 4,
+  },
+  scoreNum: {
+    fontSize: 22,
+    fontWeight: '800' as const,
+    color: '#F8FAFC',
+    fontVariant: ['tabular-nums'] as const,
+  },
+  scoreDash: {
+    fontSize: 18,
+    fontWeight: '700' as const,
+    color: '#64748B',
   },
   timeText: {
     fontSize: 15,

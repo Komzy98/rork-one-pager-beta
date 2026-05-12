@@ -16,3 +16,35 @@ export const HERO_SECONDARY_GAP_BELOW_SPORT_STRIP = 12;
  * negative margin so it sits tight on the stadium art (larger = less gap above the strip).
  */
 export const HERO_SPORT_STRIP_OVERLAP_HERO_PX = 72;
+
+/**
+ * Horizontal inset for hero overlays / sport strip on sports tabs.
+ * Tighter on small iPhones so glass strips and labels are not clipped by `overflow: hidden` heroes.
+ */
+export function getSportsHeroEdgePad(
+  windowWidth: number,
+  insetLeft: number,
+  insetRight: number,
+): number {
+  const base =
+    windowWidth <= 320
+      ? 10
+      : windowWidth <= 360
+        ? 11
+        : windowWidth <= 375
+          ? 12
+          : windowWidth <= 400
+            ? 14
+            : 20;
+  return Math.max(base, Math.ceil(insetLeft), Math.ceil(insetRight));
+}
+
+/**
+ * Zoom-out for `resizeMode: 'cover'` hero art on narrow screens — otherwise wide PNGs lose left/right edges.
+ */
+export function getSportsHeroImageScale(windowWidth: number): number {
+  if (windowWidth <= 340) return 0.82;
+  if (windowWidth <= 375) return 0.88;
+  if (windowWidth <= 390) return 0.93;
+  return 1;
+}

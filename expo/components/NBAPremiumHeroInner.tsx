@@ -7,7 +7,6 @@ import type { NBAGame } from '@/constants/nbaData';
 import { getTeamLogo } from '@/constants/nbaData';
 
 const NBA_ORANGE = '#F26522';
-const NBA_BLUE = '#5B8DEF';
 
 function formatFeaturedTipOff(game: NBAGame): string {
   const d = new Date(game.date);
@@ -26,7 +25,6 @@ function formatFeaturedTipOff(game: NBAGame): string {
 }
 
 type Props = {
-  liveCount: number;
   teamAbbreviations: string[];
   featuredGame: NBAGame | null;
   onRefresh: () => void;
@@ -34,11 +32,9 @@ type Props = {
 };
 
 /**
- * Premium NBA hero aligned with FootballPremiumHeroInner: stadium hero actions, title stack,
- * team crest row, and blurred “next game” card.
+ * Overlays actions, crest row, and next-game card on the NBA hero image (title/art is in the asset).
  */
 export default function NBAPremiumHeroInner({
-  liveCount,
   teamAbbreviations,
   featuredGame,
   onRefresh,
@@ -64,9 +60,7 @@ export default function NBAPremiumHeroInner({
       </View>
 
       <View style={styles.heroContent}>
-        <Text style={styles.heroTitle}>NBA</Text>
-        <Text style={styles.heroLive}>● {liveCount} games live</Text>
-        <Text style={styles.heroSub}>Scores, schedules & conference tables</Text>
+        <View style={styles.heroArtSpacer} />
 
         <View style={styles.clubRow}>
           {teamAbbreviations.slice(0, 4).map((abbr, i) => (
@@ -94,15 +88,15 @@ export default function NBAPremiumHeroInner({
                     style={styles.featuredCrest}
                     resizeMode="contain"
                   />
-                  <Text style={styles.featuredTeam} numberOfLines={1}>
+                  <Text style={styles.featuredTeam} numberOfLines={2}>
                     {featuredGame.team1.name}
                   </Text>
                 </View>
                 <View style={styles.vsBubbleDark}>
                   <Text style={styles.vsDark}>VS</Text>
                 </View>
-                <View style={styles.featuredTeamRow}>
-                  <Text style={[styles.featuredTeam, { textAlign: 'right' }]} numberOfLines={1}>
+                <View style={[styles.featuredTeamRow, styles.featuredTeamRowAway]}>
+                  <Text style={[styles.featuredTeam, styles.featuredTeamAway]} numberOfLines={2}>
                     {featuredGame.team2.name}
                   </Text>
                   <Image
@@ -157,26 +151,14 @@ const styles = StyleSheet.create({
     borderColor: 'rgba(242,101,34,0.45)',
   },
   heroContent: {
-    paddingTop: 0,
+    paddingTop: 8,
     paddingHorizontal: 0,
     paddingBottom: 16,
   },
-  heroTitle: {
-    fontSize: 32,
-    fontWeight: '800',
-    color: '#FFFFFF',
-    letterSpacing: -1,
-  },
-  heroLive: {
-    marginTop: 8,
-    fontSize: 17,
-    fontWeight: '800',
-    color: NBA_ORANGE,
-  },
-  heroSub: {
-    marginTop: 3,
-    fontSize: 14,
-    color: 'rgba(255,255,255,0.88)',
+  /** Clears baked-in “NBA CENTER” / tagline in the hero artwork. */
+  heroArtSpacer: {
+    height: 108,
+    width: '100%',
   },
   clubRow: {
     flexDirection: 'row',
@@ -232,20 +214,31 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
+    width: '100%',
+    minWidth: 0,
   },
   featuredTeamRow: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: 8,
     flex: 1,
-    justifyContent: 'center',
+    minWidth: 0,
+    justifyContent: 'flex-start',
   },
-  featuredCrest: { width: 26, height: 30 },
+  /** Away name + crest: align multi-line name to the right next to the crest. */
+  featuredTeamRowAway: {
+    justifyContent: 'flex-end',
+  },
+  featuredCrest: { width: 26, height: 30, flexShrink: 0 },
   featuredTeam: {
     color: '#FFFFFF',
     fontSize: 15,
+    lineHeight: 19,
     fontWeight: '900',
     flexShrink: 1,
+  },
+  featuredTeamAway: {
+    textAlign: 'right',
   },
   vsBubbleDark: {
     width: 44,
@@ -257,6 +250,8 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
     marginHorizontal: 8,
+    flexShrink: 0,
+    alignSelf: 'center',
   },
   vsDark: { color: '#FFFFFF', fontSize: 12, fontWeight: '900' },
   featuredMetaRow: {

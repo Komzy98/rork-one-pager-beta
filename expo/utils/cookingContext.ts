@@ -76,7 +76,32 @@ export function collectUserRecipeTags(
   return Array.from(set).filter(Boolean);
 }
 
-export function scoreRecipeForUser(recipe: CookingRecipe, userTags: string[], routeDiet?: string): number {
+export type MealPeriod = 'breakfast' | 'lunch' | 'dinner';
+
+/** Local clock — breakfast / lunch / dinner bands for top-pick personalization. */
+export function getCurrentMealPeriod(now: Date = new Date()): MealPeriod {
+  const h = now.getHours();
+  if (h >= 5 && h < 11) return 'breakfast';
+  if (h >= 11 && h < 16) return 'lunch';
+  if (h >= 16 && h < 22) return 'dinner';
+  if (h >= 22) return 'dinner';
+  return 'breakfast';
+}
+
+export function recipeMatchesMealPeriod(recipe: CookingRecipe, period: MealPeriod): boolean {
+  const cat = recipe.category?.toLowerCase();
+  if (cat === period) return true;
+  return recipe.tags.some((t) => t.toLowerCase() === period);
+}
+
+const MEAL_PERIOD_SCORE_BONUS = 14;
+
+export function scoreRecipeForUser(
+  recipe: CookingRecipe,
+  userTags: string[],
+  routeDiet?: string,
+  mealPeriod?: MealPeriod,
+): number {
   const rtags = recipe.tags.map((t) => t.toLowerCase());
   let score = 0;
   for (const ut of userTags) {
@@ -88,6 +113,9 @@ export function scoreRecipeForUser(recipe: CookingRecipe, userTags: string[], ro
     if (rtags.some((t) => t.includes(d) || d.includes(t))) score += 5;
   }
   if (recipe.minutes <= 25) score += 1;
+  if (mealPeriod && recipeMatchesMealPeriod(recipe, mealPeriod)) {
+    score += MEAL_PERIOD_SCORE_BONUS;
+  }
   return score;
 }
 
@@ -95,11 +123,13 @@ export function pickTonightRecipe(
   recipes: CookingRecipe[],
   userTags: string[],
   routeDiet?: string,
+  at?: Date,
 ): CookingRecipe {
   if (recipes.length === 0) return COOKING_RECIPES[0];
+  const mealPeriod = getCurrentMealPeriod(at ?? new Date());
   const scored = recipes.map((r) => ({
     r,
-    s: scoreRecipeForUser(r, userTags, routeDiet),
+    s: scoreRecipeForUser(r, userTags, routeDiet, mealPeriod),
   }));
   scored.sort((a, b) => b.s - a.s || a.r.title.localeCompare(b.r.title));
   return scored[0]?.r ?? recipes[0];

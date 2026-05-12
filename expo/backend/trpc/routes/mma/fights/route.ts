@@ -1,6 +1,11 @@
 import { z } from 'zod';
 import { publicProcedure } from '@/backend/trpc/create-context';
 import { getMmaApiKeyFromEnv } from '@/backend/utils/footballApiKey';
+import {
+  isMmaCompletedFightPayload,
+  isMmaLiveStatusShort,
+  normalizeMmaStatusShort,
+} from '@/utils/mmaFightStatus';
 
 const MMA_BASE_URL = 'https://v1.mma.api-sports.io';
 
@@ -14,7 +19,8 @@ const mmaCache = new Map<string, CacheEntry>();
 const MMA_CACHE_TTL: Record<string, number> = {
   fights: 5 * 60 * 1000,
   upcoming: 10 * 60 * 1000,
-  results: 15 * 60 * 1000,
+  /** Shorter than upcoming — results feed should pick up last card nights after weekends. */
+  results: 8 * 60 * 1000,
   season: 20 * 60 * 1000,
   date: 10 * 60 * 1000,
   status: 10 * 60 * 1000,
@@ -27,9 +33,10 @@ function getMmaCacheKey(type: string, params: Record<string, any>): string {
     if (val !== undefined && val !== null) acc[key] = val;
     return acc;
   }, {} as Record<string, any>);
-  /** Bump when upcoming fetch logic changes so stale empty caches are not reused forever. */
-  const upcomingRev = type === 'upcoming' ? ':scan-v4' : '';
-  return `mma:${type}${upcomingRev}:${JSON.stringify(sorted)}`;
+  /** Bump when fetch logic changes so stale caches are not reused forever. */
+  const upcomingRev = type === 'upcoming' ? ':scan-v6' : '';
+  const resultsRev = type === 'results' ? ':recent-cal-v2' : '';
+  return `mma:${type}${upcomingRev}${resultsRev}:${JSON.stringify(sorted)}`;
 }
 
 function getFromMmaCache(key: string, ttl: number): any {
@@ -265,22 +272,29 @@ async function fetchFightsByDate(dateStr: string, headers: Record<string, string
   return fights;
 }
 
-function isCompletedStatus(status: string | undefined): boolean {
-  /** FT/AW finished; EOR is mid-fight (round break), not a final result. */
-  return status === 'FT' || status === 'AW';
+/** Normalize status short from api-sports MMA payloads (shape varies by endpoint). */
+function statusShortOf(f: any): string | undefined {
+  return normalizeMmaStatusShort(f);
 }
 
-function isLiveStatus(status: string | undefined): boolean {
-  /** API: IN=Intros, EOR=End of round (still in progress) — exclude from “upcoming” tab. */
-  return status === 'LIVE' || status === 'IN' || status === 'EOR';
+/** Parse fight instant for filtering/sorting (`date` string, `datetime`, or unix `timestamp`). */
+function rawFightDateMs(f: any): number {
+  if (f?.timestamp != null && typeof f.timestamp === 'number') {
+    const ts = f.timestamp as number;
+    return ts < 1e12 ? ts * 1000 : ts;
+  }
+  const s = f?.date ?? f?.datetime;
+  if (s == null || s === '') return Number.NaN;
+  const t = new Date(s).getTime();
+  return t;
 }
 
 /** Scheduled/upcoming: api-sports uses several shorts (NS, PF, TBD, SCH, …) — exclude only terminal/live states. */
 function isLikelyUpcomingFight(f: any): boolean {
-  const status = f?.status?.short as string | undefined;
+  if (isMmaCompletedFightPayload(f)) return false;
+  const status = statusShortOf(f) as string | undefined;
   if (!status) return true;
-  if (isCompletedStatus(status)) return false;
-  if (isLiveStatus(status)) return false;
+  if (isMmaLiveStatusShort(status)) return false;
   const u = status.toUpperCase();
   if (
     u === 'CANC' ||
@@ -353,13 +367,11 @@ async function fetchFightsMultipleStrategies(
   const filterFn = type === 'upcoming'
     ? (f: any) => {
         if (!isLikelyUpcomingFight(f)) return false;
-        if (!f?.date) return true;
-        const fightDate = new Date(f.date);
-        const t = fightDate.getTime();
+        const t = rawFightDateMs(f);
         if (Number.isNaN(t)) return true;
         return t >= now.getTime() - 24 * 60 * 60 * 1000;
       }
-    : (f: any) => isCompletedStatus(f.status?.short);
+    : (f: any) => isMmaCompletedFightPayload(f);
 
   console.log(`🥊 Strategy 1: Season ${currentYear} query...`);
   const seasonFights = await fetchSeasonFights(String(currentYear), headers, errOut);
@@ -376,46 +388,54 @@ async function fetchFightsMultipleStrategies(
     console.log(`🥊 Alt year ${altYear}: ${altAdded} added (${altFiltered.length} filtered/${altFights.length} total)`);
   }
 
-  if (allFights.length < 5) {
-    console.log(`🥊 Strategy 2: Date-based queries (found only ${allFights.length} so far)...`);
-    const datesToCheck: string[] = [];
-
-    if (type === 'upcoming') {
-      /** Cover ~3 weeks; burst-requesting 60+ days caused 429 rate limits on api-sports free tier. */
-      for (let i = 0; i <= 21; i++) {
+  /**
+   * Upcoming: only scan forward calendar days when the season dump looks thin (saves API calls).
+   * Results: ALWAYS merge the last N calendar days. Season `/fights?season=` often returns many old FT rows first;
+   * we used to skip date scans whenever count ≥ 5, which hid **last weekend’s** card until cache expiry.
+   */
+  if (type === 'upcoming') {
+    const dateScanThreshold = 15;
+    if (allFights.length < dateScanThreshold) {
+      console.log(`🥊 Strategy 2 (upcoming): date scan — had only ${allFights.length} fights...`);
+      const datesToCheck: string[] = [];
+      for (let i = 0; i <= 35; i++) {
         const d = new Date(now);
         d.setDate(d.getDate() + i);
         datesToCheck.push(formatDate(d));
       }
-    } else {
-      for (let i = 0; i <= 60; i++) {
-        const d = new Date(now);
-        d.setDate(d.getDate() - i);
-        datesToCheck.push(formatDate(d));
+      console.log(`🥊 Checking ${datesToCheck.length} upcoming calendar dates forward...`);
+      for (let i = 0; i < datesToCheck.length; i++) {
+        const dateStr = datesToCheck[i];
+        if (i > 0) {
+          await new Promise((r) => setTimeout(r, 400));
+        }
+        const fights = await fetchFightsByDate(dateStr, headers);
+        const filtered = fights.filter(filterFn);
+        addFights(filtered);
+        if (allFights.length >= 40) {
+          console.log(`🥊 Found ${allFights.length} fights, stopping date queries early`);
+          break;
+        }
       }
+      console.log(`🥊 Upcoming date-scan total: ${allFights.length} fights`);
     }
-
-    /** UFC cards land on any weekday — scan consecutive days (old logic sampled weekends + 10 weekdays and often missed real card dates). */
-    const uniqueSampled =
-      type === 'upcoming' ? datesToCheck : [...new Set(datesToCheck)];
-
-    console.log(`🥊 Checking ${uniqueSampled.length} calendar dates (consecutive ${type === 'upcoming' ? 'forward' : 'backward'})...`);
-
-    for (let i = 0; i < uniqueSampled.length; i++) {
-      const dateStr = uniqueSampled[i];
-      if (type === 'upcoming' && i > 0) {
-        await new Promise((r) => setTimeout(r, 400));
+  } else {
+    const RECENT_RESULTS_DAYS = 45;
+    console.log(
+      `🥊 Strategy 2 (results): merging last ${RECENT_RESULTS_DAYS} calendar days (recent fight nights / weekends)...`,
+    );
+    for (let i = 0; i <= RECENT_RESULTS_DAYS; i++) {
+      if (i > 0) {
+        await new Promise((r) => setTimeout(r, 130));
       }
+      const d = new Date(now);
+      d.setDate(d.getDate() - i);
+      const dateStr = formatDate(d);
       const fights = await fetchFightsByDate(dateStr, headers);
       const filtered = fights.filter(filterFn);
       addFights(filtered);
-
-      if (allFights.length >= 40) {
-        console.log(`🥊 Found ${allFights.length} fights, stopping date queries early`);
-        break;
-      }
     }
-    console.log(`🥊 Date-based strategy total: ${allFights.length} fights`);
+    console.log(`🥊 Results after recent calendar merge: ${allFights.length} fights`);
   }
 
   if (type === 'results' && allFights.length < 5) {
@@ -480,10 +500,7 @@ export const getMmaFightsRoute = publicProcedure
       const data = await mmaFetch(url, headers, ck, 30 * 1000);
       const fights = data.response || [];
       console.log(`🥊 Live query for ${targetDate}: ${fights.length} total`);
-      const live = fights.filter((f: any) => {
-        const status = f.status?.short;
-        return status === 'LIVE' || status === 'IN' || status === 'EOR';
-      });
+      const live = fights.filter((f: any) => isMmaLiveStatusShort(statusShortOf(f)));
       console.log(`🥊 Live fights after filter: ${live.length}`);
 
       const result = {
@@ -498,10 +515,16 @@ export const getMmaFightsRoute = publicProcedure
     const errOut: { rateLimit?: string } = {};
     const allFights = await fetchFightsMultipleStrategies(type, headers, currentYear, now, errOut);
 
+    const sortKey = (f: any, upcoming: boolean) => {
+      const t = rawFightDateMs(f);
+      if (Number.isNaN(t)) return upcoming ? Number.POSITIVE_INFINITY : Number.NEGATIVE_INFINITY;
+      return t;
+    };
+
     if (type === 'upcoming') {
-      allFights.sort((a, b) => new Date(a.date || 0).getTime() - new Date(b.date || 0).getTime());
+      allFights.sort((a, b) => sortKey(a, true) - sortKey(b, true));
     } else {
-      allFights.sort((a, b) => new Date(b.date || 0).getTime() - new Date(a.date || 0).getTime());
+      allFights.sort((a, b) => sortKey(b, false) - sortKey(a, false));
       if (allFights.length > 100) {
         allFights.length = 100;
       }

@@ -3,6 +3,7 @@
   "main": "index.js",
   "version": "1.0.0",
   "scripts": {
+    "postinstall": "node scripts/ensure-younify-ios-framework.cjs",
     "start": "bunx rork start -p ys290igcrg72o48csk4or --tunnel",
     "start-web": "bunx rork start -p ys290igcrg72o48csk4or --web --tunnel",
     "start-web-dev": "DEBUG=expo* bunx rork start -p ys290igcrg72o48csk4or --web --tunnel",

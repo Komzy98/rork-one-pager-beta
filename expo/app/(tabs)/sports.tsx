@@ -12,6 +12,7 @@ import {
   Platform,
   Animated,
   Dimensions,
+  useWindowDimensions,
   StatusBar,
   Modal,
   FlatList,
@@ -66,21 +67,37 @@ import TabWalkthrough from '@/components/TabWalkthrough';
 import UFCFightDetailModal from '@/components/UFCFightDetailModal';
 import F1Section from '@/components/F1Section';
 import NBASection from '@/components/NBASection';
-import FootballPremiumHeroInner from '@/components/FootballPremiumHeroInner';
+import FootballPremiumHeroInner, {
+  type FootballHeroFavoriteClub,
+} from '@/components/FootballPremiumHeroInner';
+import FootballTeamSearchModal, {
+  type FootballClubProfilePreset,
+} from '@/components/FootballTeamSearchModal';
 import { getFootballTeamLogoUrl } from '@/constants/footballData';
 import { PremiumSportsMatchCard } from '@/components/PremiumSportsMatchCard';
 import { sportsFixedPalette } from '@/utils/sportsPalette';
+import { isMmaCompletedFightPayload, isMmaLiveStatusShort } from '@/utils/mmaFightStatus';
 import {
   TOP_LEAGUE_BUNDLE_IDS,
   applyFootballVisibilityRules,
   buildFootballQueryContext,
 } from '@/utils/footballQueryContext';
+import { getTeamIdFromName } from '@/utils/footballApi';
 import {
   HERO_SPORT_STRIP_OVERLAP_HERO_PX,
   HERO_SECONDARY_GAP_BELOW_SPORT_STRIP,
+  getSportsHeroEdgePad,
+  getSportsHeroImageScale,
 } from '@/constants/sportsHeroLayout';
 
 const { width: SCREEN_WIDTH } = Dimensions.get('window');
+
+/** Tall stadium heroes (Football / F1 use `stadiumHeroRootFootball`). */
+const FOOTBALL_HERO_MIN_HEIGHT_PX = 470;
+/** Football hero: bottom crop ~4% of min height (parent overflow clips; was 3%). */
+const FOOTBALL_HERO_BOTTOM_CROP_PX = Math.round(FOOTBALL_HERO_MIN_HEIGHT_PX * 0.04);
+/** F1 hero: bottom crop 3% (was 5%; reduced by 2pp — same scale as football). */
+const F1_HERO_BOTTOM_CROP_PX = Math.round(FOOTBALL_HERO_MIN_HEIGHT_PX * 0.03);
 
 /** UFC Fight Center hero — bundled promotional artwork. */
 const UFC_HERO_IMAGE = require('../../assets/images/ufc-hero.png');
@@ -133,12 +150,12 @@ const LIVE_TICKER_TEXT = {
   elapsedText: '#FFFFFF',
 } as const;
 
-/** Stadium hero + neon green chrome for Football tab (light / dark). */
+/** Stadium hero + neon green chrome for Football tab (light / dark hero art). */
 const FOOTBALL_CHROME = {
   accentDark: '#32D74B',
   accentLight: '#15803D',
-  stadiumLightImage: require('../../assets/images/sports-stadium-light-premium.png'),
-  stadiumDarkImage: require('../../assets/images/sports-stadium-dark-premium.png'),
+  stadiumLightImage: require('../../assets/images/football-center-hero-light.png'),
+  stadiumDarkImage: require('../../assets/images/football-center-hero.png'),
 } as const;
 
 function footballChrome(isDark: boolean) {
@@ -260,19 +277,45 @@ function getMmaFighterPair(fight: any): { first: any; second: any } {
   return { first: {}, second: {} };
 }
 
+/** Unwrap tRPC / MMA procedure payloads — shape varies by client version. */
+function extractMmaFightArray(payload: unknown): any[] {
+  if (payload == null) return [];
+  if (Array.isArray(payload)) return payload;
+  if (typeof payload !== 'object') return [];
+  const p = payload as Record<string, unknown>;
+  if (Array.isArray(p.response)) return p.response as any[];
+  const json = p.json;
+  if (json && typeof json === 'object') {
+    const j = json as Record<string, unknown>;
+    if (Array.isArray(j.response)) return j.response as any[];
+  }
+  return [];
+}
+
 function transformMmaFightData(fights: any[]): UFCFight[] {
   if (!Array.isArray(fights)) return [];
 
-  return fights.map((fight: any, _index: number) => {
-    const statusShort = fight.status?.short || 'NS';
+  return fights.filter(Boolean).map((fight: any, _index: number) => {
+    const rawShort =
+      fight.status?.short || fight.status?.code || (typeof fight.status === 'string' ? fight.status : null);
+    const statusShort =
+      rawShort != null && String(rawShort).trim() !== ''
+        ? String(rawShort).trim().toUpperCase()
+        : 'NS';
     let fightStatus: 'Upcoming' | 'Live' | 'Completed' = 'Upcoming';
-    if (statusShort === 'FT' || statusShort === 'AW') {
+    if (isMmaCompletedFightPayload(fight)) {
       fightStatus = 'Completed';
-    } else if (statusShort === 'LIVE' || statusShort === 'IN' || statusShort === 'EOR') {
+    } else if (isMmaLiveStatusShort(statusShort)) {
       fightStatus = 'Live';
     }
 
-    const date = new Date(fight.date || Date.now());
+    const rawDate =
+      fight.date ??
+      fight.datetime ??
+      (typeof fight.timestamp === 'number'
+        ? new Date(fight.timestamp < 1e12 ? fight.timestamp * 1000 : fight.timestamp).toISOString()
+        : undefined);
+    const date = new Date(rawDate ?? Date.now());
     const timeString = Number.isNaN(date.getTime())
       ? ''
       : date.toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit', hour12: true });
@@ -299,7 +342,7 @@ function transformMmaFightData(fights: any[]): UFCFight[] {
 
     return {
       id: typeof fight.id === 'number' && fight.id > 0 ? fight.id : -(++mmaIdCounter),
-      date: fight.date || new Date().toISOString(),
+      date: (typeof rawDate === 'string' && rawDate.length > 0 ? rawDate : null) ?? fight.date ?? new Date().toISOString(),
       time: timeString,
       status: fightStatus,
       statusShort,
@@ -1524,6 +1567,14 @@ const EmptyState = React.memo(({ type }: { type: 'live' | 'upcoming' | 'results'
 
 function SportsScreenInner() {
   const insets = useSafeAreaInsets();
+  const { width: windowWidth } = useWindowDimensions();
+  /** Edge inset for hero strip / tabs: tight phones need smaller padding so flex rows are not clipped by overflow:hidden. */
+  const sportsEdgePad = useMemo(
+    () => getSportsHeroEdgePad(windowWidth, insets.left, insets.right),
+    [windowWidth, insets.left, insets.right],
+  );
+  /** `cover` hero PNGs crop sides on narrow screens — slight zoom-out preserves artwork. */
+  const narrowHeroArtScale = useMemo(() => getSportsHeroImageScale(windowWidth), [windowWidth]);
   const { isFavoriteTeam, profile } = useUserProfile();
   const { user } = useAuth();
   const { colors, isDark } = useTheme();
@@ -1555,8 +1606,12 @@ function SportsScreenInner() {
   const [notifiedMatches, setNotifiedMatches] = useState<Set<string>>(new Set());
   const [selectedFight, setSelectedFight] = useState<UFCFight | null>(null);
   const [showFightModal, setShowFightModal] = useState(false);
+  const [footballTeamSearchOpen, setFootballTeamSearchOpen] = useState(false);
+  const [footballClubProfilePreset, setFootballClubProfilePreset] =
+    useState<FootballClubProfilePreset | null>(null);
+  /** Local hour — football hero art switches between day / evening assets. */
   const [localHour, setLocalHour] = useState(() => new Date().getHours());
-  
+
   const headerAnim = useRef(new Animated.Value(0)).current;
   const ufcEventsFlatListRef = useRef<FlatList>(null);
   
@@ -2340,7 +2395,7 @@ function SportsScreenInner() {
     { type: 'results' },
     {
       enabled: sportMode === 'ufc',
-      staleTime: 15 * 60 * 1000,
+      staleTime: 3 * 60 * 1000,
       gcTime: 60 * 60 * 1000,
       retry: 3,
       retryDelay: (attemptIndex) => Math.min(1000 * Math.pow(2, attemptIndex), 8000),
@@ -2349,15 +2404,11 @@ function SportsScreenInner() {
   );
 
   const ufcUpcomingFights = useMemo(() => {
-    const data = ufcUpcomingQuery.data?.response;
-    if (!data || !Array.isArray(data)) return [];
-    return transformMmaFightData(data);
+    return transformMmaFightData(extractMmaFightArray(ufcUpcomingQuery.data as unknown));
   }, [ufcUpcomingQuery.data]);
 
   const ufcResultsFights = useMemo(() => {
-    const data = ufcResultsQuery.data?.response;
-    if (!data || !Array.isArray(data)) return [];
-    return transformMmaFightData(data);
+    return transformMmaFightData(extractMmaFightArray(ufcResultsQuery.data as unknown));
   }, [ufcResultsQuery.data]);
 
   const ufcDisplayFights = useMemo(() => {
@@ -2385,6 +2436,29 @@ function SportsScreenInner() {
   useEffect(() => {
     if (sportMode !== 'ufc') setUfcShowStatsRankings(false);
   }, [sportMode]);
+
+  useEffect(() => {
+    if (!showFightModal || sportMode !== 'ufc') return;
+    void Promise.all([ufcUpcomingQuery.refetch(), ufcResultsQuery.refetch()]);
+  }, [showFightModal, sportMode, ufcUpcomingQuery, ufcResultsQuery]);
+
+  useEffect(() => {
+    if (!showFightModal) return;
+    setSelectedFight((prev) => {
+      if (!prev) return prev;
+      const merged = [...ufcUpcomingFights, ...ufcResultsFights];
+      const next = merged.find((f) => f.id === prev.id);
+      if (!next) return prev;
+      const changed =
+        next.date !== prev.date ||
+        next.time !== prev.time ||
+        next.status !== prev.status ||
+        next.result?.method !== prev.result?.method ||
+        next.result?.round !== prev.result?.round ||
+        next.result?.time !== prev.result?.time;
+      return changed ? next : prev;
+    });
+  }, [ufcUpcomingFights, ufcResultsFights, showFightModal]);
 
   const ufcGroupedByEvent = useMemo(() => {
     const eventMap = new Map<string, { event: string; date: string; fights: UFCFight[] }>();
@@ -2529,7 +2603,7 @@ function SportsScreenInner() {
     sportMode === 'football'
       ? footballBundleQuery.isLoading
       : sportMode === 'ufc'
-        ? ufcUpcomingQuery.isLoading || ufcResultsQuery.isLoading
+        ? ufcUpcomingQuery.isPending || ufcResultsQuery.isPending
         : false;
   const hasAnyFootballData = (footballBundleQuery.data?.live?.response?.length ?? 0) > 0
     || (footballBundleQuery.data?.upcoming?.response?.length ?? 0) > 0
@@ -2604,8 +2678,13 @@ function SportsScreenInner() {
     results: ufcResultsFights.length,
   };
 
-  const footballHeroClubLogos = useMemo(
-    () => (profile?.favoriteTeams?.slice(0, 4) ?? []).map((t) => getFootballTeamLogoUrl(t)),
+  const footballHeroClubSlots = useMemo<FootballHeroFavoriteClub[]>(
+    () =>
+      (profile?.favoriteTeams?.slice(0, 4) ?? []).map((t) => ({
+        apiId: t.apiId ?? getTeamIdFromName(t.name) ?? null,
+        name: t.name,
+        logoUri: getFootballTeamLogoUrl(t) ?? '',
+      })),
     [profile?.favoriteTeams],
   );
   const competitionQuickPicks = useMemo(() => {
@@ -2702,29 +2781,39 @@ function SportsScreenInner() {
     },
     [contextTopLeagueIds],
   );
-  const useDarkHeroImage = localHour >= 18;
+
+  /** After 18:00 local: darker hero; before then: bright daytime hero (`football-center-hero-light.png`). */
+  const footballHeroUseDarkArt = localHour >= 18;
 
   const renderFootballHeader = () => {
     return (
     <View>
       <View style={styles.heroStackWithSportStrip}>
       <ImageBackground
-        source={useDarkHeroImage ? FOOTBALL_CHROME.stadiumDarkImage : FOOTBALL_CHROME.stadiumLightImage}
+        source={footballHeroUseDarkArt ? FOOTBALL_CHROME.stadiumDarkImage : FOOTBALL_CHROME.stadiumLightImage}
         style={[
           styles.headerGradient,
+          styles.headerGradientFootballBleed,
           styles.stadiumHeroRoot,
           styles.stadiumHeroRootFootball,
           { paddingTop: insets.top, paddingBottom: 4 },
         ]}
-        imageStyle={[styles.stadiumHeroImage, styles.stadiumHeroImageCropBottom]}
+        imageStyle={[styles.stadiumHeroImage, styles.stadiumHeroImageCropBottomFootball]}
       >
-        <View style={[styles.stadiumHeroForeground, styles.ufcHeroContentWrap]}>
+        <View
+          style={[
+            styles.stadiumHeroForeground,
+            styles.ufcHeroContentWrap,
+            styles.stadiumHeroForegroundFootballInset,
+            { paddingHorizontal: sportsEdgePad },
+          ]}
+        >
           {sportsMainHeaderInner}
         </View>
       </ImageBackground>
       {sportStripOverlapSlot}
       </View>
-      <View style={styles.tabWrapperFootball}>
+      <View style={[styles.tabWrapperFootball, { paddingHorizontal: sportsEdgePad }]}>
         <TabPill
           variant="football"
           tabs={footballTabs}
@@ -2733,8 +2822,14 @@ function SportsScreenInner() {
           counts={counts}
         />
       </View>
-      <View style={styles.filterArea}>
-        <Text style={[styles.footballSmartSectionLabel, { color: sf.textMuted }]}>Smart filters</Text>
+      <View style={[styles.filterArea, { paddingHorizontal: sportsEdgePad }]}>
+        <TouchableOpacity
+          onPress={() => setShowFootballFilterPicker(true)}
+          activeOpacity={0.75}
+          hitSlop={{ top: 8, bottom: 8, left: 0, right: 8 }}
+        >
+          <Text style={[styles.footballSmartSectionLabel, { color: sf.textMuted }]}>Smart filters</Text>
+        </TouchableOpacity>
         <View style={styles.footballSmartPillsRow}>
           {FOOTBALL_SMART_FILTER_OPTIONS.map((opt) => {
             const Icon = opt.Icon;
@@ -2775,51 +2870,92 @@ function SportsScreenInner() {
           </Text>
         ) : null}
 
-        <View style={styles.footballContextRow}>
-          {footballSmartFilter === 'following' ? (
-            <TouchableOpacity
-              activeOpacity={0.85}
-              onPress={() => setShowFootballContextSheet(true)}
-              style={[styles.footballContextChip, { backgroundColor: sf.surfaceSecondary, borderColor: sf.border }]}
-            >
-              <Text style={[styles.footballContextChipTitle, { color: sf.text }]} numberOfLines={1}>
-                {followingContextLabel}
-              </Text>
-              <ChevronDown size={16} color={sf.textSecondary} />
-            </TouchableOpacity>
-          ) : footballSmartFilter === 'top-leagues' ? (
-            <TouchableOpacity
-              activeOpacity={0.85}
-              onPress={() => setShowFootballContextSheet(true)}
-              style={[styles.footballContextChip, { backgroundColor: sf.surfaceSecondary, borderColor: sf.border }]}
-            >
-              <Text style={[styles.footballContextChipTitle, { color: sf.text }]} numberOfLines={1}>
-                {topLeagueContextLabel}
-              </Text>
-              <ChevronDown size={16} color={sf.textSecondary} />
-            </TouchableOpacity>
-          ) : (
-            <View style={styles.footballContextSpacer} />
-          )}
-          <TouchableOpacity
-            accessibilityRole="button"
-            accessibilityLabel="League tables"
-            accessibilityState={{ disabled: availableLeaguesForStandings.length === 0 }}
-            activeOpacity={0.85}
-            disabled={availableLeaguesForStandings.length === 0}
-            onPress={handleLeagueTablesPress}
+        {(footballSmartFilter === 'following' || footballSmartFilter === 'top-leagues') ? (
+          <View style={styles.footballContextRow}>
+            {footballSmartFilter === 'following' ? (
+              <TouchableOpacity
+                activeOpacity={0.85}
+                onPress={() => setShowFootballContextSheet(true)}
+                style={[styles.footballContextChip, { backgroundColor: sf.surfaceSecondary, borderColor: sf.border }]}
+              >
+                <Text style={[styles.footballContextChipTitle, { color: sf.text }]} numberOfLines={1}>
+                  {followingContextLabel}
+                </Text>
+                <ChevronDown size={16} color={sf.textSecondary} />
+              </TouchableOpacity>
+            ) : (
+              <TouchableOpacity
+                activeOpacity={0.85}
+                onPress={() => setShowFootballContextSheet(true)}
+                style={[styles.footballContextChip, { backgroundColor: sf.surfaceSecondary, borderColor: sf.border }]}
+              >
+                <Text style={[styles.footballContextChipTitle, { color: sf.text }]} numberOfLines={1}>
+                  {topLeagueContextLabel}
+                </Text>
+                <ChevronDown size={16} color={sf.textSecondary} />
+              </TouchableOpacity>
+            )}
+          </View>
+        ) : null}
+
+        <TouchableOpacity
+          accessibilityRole="button"
+          accessibilityLabel="League tables and stats"
+          accessibilityHint="Opens standings, top scorers, and assists"
+          accessibilityState={{ disabled: availableLeaguesForStandings.length === 0 }}
+          activeOpacity={0.88}
+          disabled={availableLeaguesForStandings.length === 0}
+          onPress={handleLeagueTablesPress}
+          style={[
+            styles.footballLeagueTablesCta,
+            {
+              backgroundColor:
+                availableLeaguesForStandings.length === 0
+                  ? sf.surfaceSecondary
+                  : isDark
+                    ? 'rgba(52, 199, 89, 0.14)'
+                    : 'rgba(52, 199, 89, 0.1)',
+              borderColor:
+                availableLeaguesForStandings.length === 0 ? sf.border : fc.accent,
+              opacity: availableLeaguesForStandings.length === 0 ? 0.55 : 1,
+            },
+          ]}
+        >
+          <View
             style={[
-              styles.footballRefineBtn,
+              styles.footballLeagueTablesIconWrap,
               {
-                backgroundColor: sf.surfaceSecondary,
-                borderColor: sf.border,
-                opacity: availableLeaguesForStandings.length === 0 ? 0.38 : 1,
+                backgroundColor:
+                  availableLeaguesForStandings.length === 0
+                    ? sf.border
+                    : isDark
+                      ? 'rgba(52, 199, 89, 0.22)'
+                      : 'rgba(52, 199, 89, 0.18)',
               },
             ]}
           >
-            <BarChart3 size={18} color="#34C759" />
-          </TouchableOpacity>
-        </View>
+            <BarChart3
+              size={22}
+              color={availableLeaguesForStandings.length === 0 ? sf.textMuted : fc.accent}
+              strokeWidth={2.4}
+            />
+          </View>
+          <View style={styles.footballLeagueTablesTextCol}>
+            <Text style={[styles.footballLeagueTablesTitle, { color: sf.text }]}>League tables & stats</Text>
+            <Text style={[styles.footballLeagueTablesSub, { color: sf.textMuted }]} numberOfLines={1}>
+              {availableLeaguesForStandings.length === 0
+                ? 'Follow clubs or pick leagues to unlock standings'
+                : `Table, scorers & assists · ${availableLeaguesForStandings.length} competition${
+                    availableLeaguesForStandings.length === 1 ? '' : 's'
+                  }`}
+            </Text>
+          </View>
+          <ChevronRight
+            size={20}
+            color={availableLeaguesForStandings.length === 0 ? sf.textMuted : fc.accent}
+            strokeWidth={2.5}
+          />
+        </TouchableOpacity>
       </View>
       {sportMode === 'football' && aiInsightMatch && footballTrendingPreview ? (
         <View style={styles.insightCarouselShell}>
@@ -2992,53 +3128,40 @@ function SportsScreenInner() {
     );
   };
 
-  const sportModeToggleEl =
-    enabledSports.length > 1 ? (
-      <View style={sportToggleStyles.container}>
-        <ScrollView
-          horizontal
-          showsHorizontalScrollIndicator={false}
-          bounces={false}
-          style={sportToggleStyles.trackScroll}
-          contentContainerStyle={sportToggleStyles.trackScrollContent}
-        >
-        <View
-          style={[
-            sportToggleStyles.track,
-            sportMode === 'ufc'
-              ? {
-                  backgroundColor: 'rgba(255,255,255,0.06)',
-                  borderWidth: 1,
-                  borderColor: UFC_BORDER,
-                  minWidth: SCREEN_WIDTH - 40,
-                  minHeight: 56,
-                }
-              : {
-                  backgroundColor: sf.surfaceSecondary,
-                  borderWidth: 1,
-                  borderColor: sf.border,
-                  minWidth: SCREEN_WIDTH - 40,
-                },
-          ]}
-        >
+  const heroGlassSportStrip =
+    sportMode === 'football' || sportMode === 'ufc' || sportMode === 'f1' || sportMode === 'nba';
+  const sportToggleGlassBorder =
+    sportMode === 'ufc'
+      ? UFC_BORDER
+      : sportMode === 'nba'
+        ? 'rgba(90, 141, 239, 0.30)'
+        : sportMode === 'football'
+          ? 'rgba(52, 209, 87, 0.28)'
+          : 'rgba(255,255,255,0.12)';
+
+  const sportToggleRow = useMemo(
+    () => (
+      <>
           {enabledSports.includes('football') && (
-            <TouchableOpacity style={[sportToggleStyles.option]} onPress={() => handleSportModeChange('football')} activeOpacity={0.7}>
+            <TouchableOpacity
+              style={[
+                sportToggleStyles.option,
+                sportMode === 'football' && sportToggleStyles.optionFootballActive,
+              ]}
+              onPress={() => handleSportModeChange('football')}
+              activeOpacity={0.7}
+            >
               <View style={sportToggleStyles.optionInner}>
-                <View
-                  style={[
-                    sportToggleStyles.iconGlowWrap,
-                    sportMode === 'football' && {
-                      shadowColor: isDark ? '#32D74B' : '#1B6B34',
-                      shadowOpacity: isDark ? 0.55 : 0.35,
-                      shadowRadius: 8,
-                      shadowOffset: { width: 0, height: 0 },
-                      elevation: 5,
-                    },
-                  ]}
-                >
+                <View style={sportToggleStyles.iconGlowWrap}>
                   <Trophy
                     size={15}
-                    color={sportMode === 'football' ? (isDark ? '#32D74B' : '#1B6B34') : isDark ? '#8E8E93' : '#AEAEB2'}
+                    color={
+                      sportMode === 'football'
+                        ? '#FFFFFF'
+                        : isDark
+                          ? '#8E8E93'
+                          : '#AEAEB2'
+                    }
                   />
                 </View>
                 <Text
@@ -3046,7 +3169,11 @@ function SportsScreenInner() {
                     sportToggleStyles.optionLabel,
                     {
                       color:
-                        sportMode === 'football' ? (isDark ? '#32D74B' : '#1B6B34') : isDark ? '#8E8E93' : '#AEAEB2',
+                        sportMode === 'football'
+                          ? '#FFFFFF'
+                          : isDark
+                            ? '#8E8E93'
+                            : '#AEAEB2',
                     },
                     sportMode === 'football' && { fontWeight: '700' as const },
                   ]}
@@ -3161,15 +3288,163 @@ function SportsScreenInner() {
               </View>
             </TouchableOpacity>
           )}
-        </View>
+      </>
+    ),
+    [enabledSports, sportMode, isDark, handleSportModeChange],
+  );
+
+  const sportModeToggleEl =
+    enabledSports.length > 1 ? (
+      <View style={sportToggleStyles.container}>
+        <ScrollView
+          horizontal
+          showsHorizontalScrollIndicator={false}
+          bounces={false}
+          scrollEnabled={enabledSports.length > 4}
+          {...(Platform.OS === 'ios'
+            ? { contentInsetAdjustmentBehavior: 'never' as const }
+            : {})}
+          style={sportToggleStyles.trackScroll}
+          contentContainerStyle={sportToggleStyles.trackScrollContent}
+        >
+        {heroGlassSportStrip && Platform.OS !== 'web' ? (
+          <View style={sportToggleStyles.trackShell}>
+            <BlurView
+              pointerEvents="none"
+              intensity={isDark ? 52 : 78}
+              tint={isDark ? 'dark' : 'light'}
+              style={StyleSheet.absoluteFillObject}
+            />
+            <View
+              style={[
+                sportToggleStyles.track,
+                {
+                  zIndex: 1,
+                  backgroundColor: 'transparent',
+                  borderWidth: 1,
+                  borderColor: sportToggleGlassBorder,
+                  minHeight: 52,
+                },
+              ]}
+            >
+              {sportToggleRow}
+            </View>
+          </View>
+        ) : (
+          <View
+            style={[
+              sportToggleStyles.track,
+              heroGlassSportStrip
+                ? {
+                    backgroundColor: Platform.OS === 'web' ? 'rgba(255,255,255,0.08)' : 'rgba(255,255,255,0.06)',
+                    borderWidth: 1,
+                    borderColor: sportToggleGlassBorder,
+                    minHeight: 52,
+                  }
+                : {
+                    backgroundColor: sf.surfaceSecondary,
+                    borderWidth: 1,
+                    borderColor: sf.border,
+                  },
+            ]}
+          >
+            {sportToggleRow}
+          </View>
+        )}
         </ScrollView>
       </View>
     ) : null;
 
   const sportStripOverlapSlot =
     enabledSports.length > 1 ? (
-      <View style={styles.heroSportStripOverlapSlot}>{sportModeToggleEl}</View>
+      <View style={[styles.heroSportStripOverlapSlot, { paddingHorizontal: sportsEdgePad }]}>
+        {sportModeToggleEl}
+      </View>
     ) : null;
+
+  const renderUfcChromeHeader = () => (
+    <View>
+      <View style={styles.heroStackWithSportStrip}>
+        <ImageBackground
+          source={UFC_HERO_IMAGE}
+          style={[
+            styles.headerGradient,
+            styles.headerGradientFootballBleed,
+            styles.stadiumHeroRoot,
+            styles.stadiumHeroRootFootball,
+            { paddingTop: insets.top, paddingBottom: 4 },
+          ]}
+          imageStyle={
+            narrowHeroArtScale < 1
+              ? [styles.ufcHeroBackgroundImage, { transform: [{ scale: narrowHeroArtScale }] }]
+              : styles.ufcHeroBackgroundImage
+          }
+        >
+          <View style={[styles.stadiumHeroForeground, styles.ufcHeroContentWrap]}>
+            <View style={[styles.nonFootballHeroAnchor, { flex: 1, minHeight: 0 }]}>
+              <View style={styles.ufcHeroTopFill} />
+            </View>
+          </View>
+        </ImageBackground>
+        {sportStripOverlapSlot}
+      </View>
+      <View style={[styles.tabWrapper, styles.tabWrapperUfc, { paddingHorizontal: sportsEdgePad }]}>
+        <UFCSegmentToggle
+          activeTab={ufcTab}
+          onTabChange={(tab) => {
+            setUfcShowStatsRankings(false);
+            setUfcTab(tab as 'upcoming' | 'results');
+          }}
+          counts={ufcCounts}
+        />
+      </View>
+      <View style={[styles.ufcQuickLinksBelowTabs, { paddingHorizontal: sportsEdgePad }]}>
+        <UFCFeatureRow
+          onUpcoming={() => {
+            setUfcShowStatsRankings(false);
+            setUfcTab('upcoming');
+          }}
+          onResults={() => {
+            setUfcShowStatsRankings(false);
+            setUfcTab('results');
+          }}
+          onRankings={() => setUfcShowStatsRankings(true)}
+          onFavorites={() => router.push('/(tabs)/profile' as any)}
+        />
+      </View>
+    </View>
+  );
+
+  const renderF1ChromeHeader = () => (
+    <View style={styles.heroStackWithSportStrip}>
+      <ImageBackground
+        source={F1_HERO_IMAGE}
+        style={[
+          styles.headerGradient,
+          styles.headerGradientFootballBleed,
+          styles.stadiumHeroRoot,
+          styles.stadiumHeroRootFootball,
+          { paddingTop: insets.top, paddingBottom: 4 },
+        ]}
+        imageStyle={[
+          styles.f1HeroBackgroundImage,
+          {
+            transform: [
+              { translateY: -F1_HERO_BOTTOM_CROP_PX },
+              ...(narrowHeroArtScale < 1 ? [{ scale: narrowHeroArtScale } as const] : []),
+            ],
+          },
+        ]}
+      >
+        <View style={[styles.stadiumHeroForeground, styles.ufcHeroContentWrap]}>
+          <View style={[styles.nonFootballHeroAnchor, { flex: 1, minHeight: 0 }]}>
+            <View style={styles.ufcHeroTopFill} />
+          </View>
+        </View>
+      </ImageBackground>
+      {sportStripOverlapSlot}
+    </View>
+  );
 
   const sportsMainHeaderInner = (
     <>
@@ -3178,15 +3453,25 @@ function SportsScreenInner() {
           <View style={styles.ufcHeroTopFill}>
             <FootballPremiumHeroInner
               liveCount={filteredLiveMatches.length}
-              clubLogoUris={footballHeroClubLogos}
+              clubSlots={footballHeroClubSlots}
               featuredMatch={featuredUpcomingMatch}
-              onSearch={() => router.push('/(tabs)/discover' as any)}
+              onSearch={() => {
+                setFootballClubProfilePreset(null);
+                setFootballTeamSearchOpen(true);
+              }}
+              onClubAvatarPress={(club) => {
+                setFootballClubProfilePreset({
+                  apiId: club.apiId != null && club.apiId > 0 ? club.apiId : undefined,
+                  name: club.name,
+                  logo: club.logoUri,
+                });
+                setFootballTeamSearchOpen(true);
+              }}
               onRefresh={onRefresh}
               onMyClubs={() => {
                 setFootballSmartFilter('following');
                 setActiveTab('upcoming');
               }}
-              onSavedPress={() => setShowFootballFilterPicker(true)}
               onFeaturedPress={() => {
                 if (featuredUpcomingMatch) handleMatchCardPress(featuredUpcomingMatch);
               }}
@@ -3221,7 +3506,7 @@ function SportsScreenInner() {
       <TabWalkthrough tabName="sports" />
       <StatusBar barStyle={sportMode === 'ufc' || sportMode === 'f1' || isDark ? 'light-content' : 'dark-content'} />
 
-      {sportMode !== 'football' && sportMode !== 'nba' && (
+      {sportMode !== 'football' && sportMode !== 'nba' && sportMode !== 'ufc' && sportMode !== 'f1' && (
         <Animated.View style={[
           styles.header,
           {
@@ -3234,37 +3519,6 @@ function SportsScreenInner() {
           }
         ]}>
           <View style={styles.heroStackWithSportStrip}>
-          {sportMode === 'ufc' ? (
-              <ImageBackground
-                source={UFC_HERO_IMAGE}
-                style={[
-                  styles.headerGradient,
-                  styles.stadiumHeroRoot,
-                  styles.stadiumHeroRootFootball,
-                  { paddingTop: insets.top, paddingBottom: 4 },
-                ]}
-                imageStyle={styles.ufcHeroBackgroundImage}
-              >
-                <View style={[styles.stadiumHeroForeground, styles.ufcHeroContentWrap]}>
-                  {sportsMainHeaderInner}
-                </View>
-              </ImageBackground>
-          ) : sportMode === 'f1' ? (
-              <ImageBackground
-                source={F1_HERO_IMAGE}
-                style={[
-                  styles.headerGradient,
-                  styles.stadiumHeroRoot,
-                  styles.stadiumHeroRootFootball,
-                  { paddingTop: insets.top, paddingBottom: 4 },
-                ]}
-                imageStyle={styles.f1HeroBackgroundImage}
-              >
-                <View style={[styles.stadiumHeroForeground, styles.ufcHeroContentWrap]}>
-                  {sportsMainHeaderInner}
-                </View>
-              </ImageBackground>
-          ) : (
             <LinearGradient
               colors={getSportsMainHeaderGradient(sportMode, isDark)}
               start={{ x: 0, y: 0 }}
@@ -3273,47 +3527,16 @@ function SportsScreenInner() {
                 styles.headerGradient,
                 styles.stadiumHeroRoot,
                 styles.stadiumHeroRootFootball,
-                { paddingTop: insets.top, paddingBottom: 4 },
+                { paddingTop: insets.top, paddingBottom: 4, paddingHorizontal: sportsEdgePad },
               ]}
             >
               <View style={[styles.stadiumHeroForeground, styles.ufcHeroContentWrap]}>
                 {sportsMainHeaderInner}
               </View>
             </LinearGradient>
-          )}
-          {sportStripOverlapSlot}
+            {sportStripOverlapSlot}
           </View>
         </Animated.View>
-      )}
-
-      {sportMode === 'ufc' && (
-        <View style={[styles.tabWrapper, styles.tabWrapperUfc]}>
-          <UFCSegmentToggle
-            activeTab={ufcTab}
-            onTabChange={(tab) => {
-              setUfcShowStatsRankings(false);
-              setUfcTab(tab as 'upcoming' | 'results');
-            }}
-            counts={ufcCounts}
-          />
-        </View>
-      )}
-
-      {sportMode === 'ufc' && (
-        <View style={styles.ufcQuickLinksBelowTabs}>
-          <UFCFeatureRow
-            onUpcoming={() => {
-              setUfcShowStatsRankings(false);
-              setUfcTab('upcoming');
-            }}
-            onResults={() => {
-              setUfcShowStatsRankings(false);
-              setUfcTab('results');
-            }}
-            onRankings={() => setUfcShowStatsRankings(true)}
-            onFavorites={() => router.push('/(tabs)/profile' as any)}
-          />
-        </View>
       )}
 
       {sportMode === 'football' &&
@@ -3361,6 +3584,247 @@ function SportsScreenInner() {
             </TouchableOpacity>
           </View>
         </ScrollView>
+      ) : sportMode === 'ufc' ? (
+        isLoading ? (
+          <View style={styles.loadingContainer}>
+            <View style={styles.loadingPulse}>
+              <ActivityIndicator size="large" color={UFC_RED} />
+            </View>
+            <Text style={[styles.loadingText, { color: colors.textSecondary }]}>Loading fights...</Text>
+          </View>
+        ) : hasConfigError ? (
+          <View style={styles.errorContainer}>
+            <View style={[styles.errorIcon, { backgroundColor: colors.errorLight }]}>
+              <AlertCircle size={28} color={colors.warning} strokeWidth={2} />
+            </View>
+            <Text style={[styles.errorTitle, { color: colors.text }]}>API Configuration Required</Text>
+            <Text style={[styles.errorSub, { color: colors.textSecondary }]}>
+              MMA API key is not configured on the server
+            </Text>
+          </View>
+        ) : hasError ? (
+          <View style={styles.errorContainer}>
+            <View style={[styles.errorIcon, { backgroundColor: colors.errorLight }]}>
+              <AlertCircle size={28} color={colors.error} strokeWidth={2} />
+            </View>
+            <Text style={[styles.errorTitle, { color: colors.text }]}>Unable to Load</Text>
+            <Text style={[styles.errorSub, { color: colors.textSecondary }]}>
+              Please check your connection and try again
+            </Text>
+            <TouchableOpacity style={styles.retryBtn} onPress={onRefresh} activeOpacity={0.85}>
+              <RefreshCw size={16} color={colors.warning} />
+              <Text style={[styles.retryBtnText, { color: colors.warning }]}>Try Again</Text>
+            </TouchableOpacity>
+          </View>
+        ) : ufcShowStatsRankings ? (
+          <ScrollView
+            style={styles.scrollView}
+            contentContainerStyle={[styles.scrollContent, { paddingBottom: insets.bottom + 120 }]}
+            showsVerticalScrollIndicator={false}
+            refreshControl={
+              <RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={UFC_RED} colors={[UFC_RED]} />
+            }
+          >
+            {renderUfcChromeHeader()}
+            <UFCStatsRankingsPanel
+              ufcTab={ufcTab}
+              fightsCount={ufcDisplayFights.length}
+              eventsCount={ufcGroupedByEvent.length}
+              koTkoCount={
+                ufcTab === 'results'
+                  ? ufcDisplayFights.filter(f => /ko|tko/i.test(f.result?.method || '')).length
+                  : 0
+              }
+              subCount={
+                ufcTab === 'results'
+                  ? ufcDisplayFights.filter(f => /sub/i.test(f.result?.method || '')).length
+                  : 0
+              }
+              leaderboard={ufcWinLeaderboard}
+              onBack={() => setUfcShowStatsRankings(false)}
+            />
+          </ScrollView>
+        ) : ufcUpcomingFights.length === 0 && ufcResultsFights.length === 0 ? (
+          <ScrollView
+            style={styles.scrollView}
+            contentContainerStyle={[styles.scrollContent, { paddingBottom: insets.bottom + 140 }]}
+            showsVerticalScrollIndicator={false}
+            refreshControl={
+              <RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={UFC_RED} colors={[UFC_RED]} />
+            }
+          >
+            {renderUfcChromeHeader()}
+            <View style={ufcStyles.emptyHero}>
+              <LinearGradient
+                colors={[...sf.ufcGradient]}
+                start={{ x: 0, y: 0 }}
+                end={{ x: 1, y: 1 }}
+                style={ufcStyles.emptyHeroGradient}
+              >
+                <View style={ufcStyles.emptyHeroTopAccent} />
+                <LinearGradient
+                  colors={['#FF3B43', '#B30710']}
+                  start={{ x: 0, y: 0 }}
+                  end={{ x: 1, y: 1 }}
+                  style={ufcStyles.emptyHeroIconCircle}
+                >
+                  <Swords size={32} color="#FFFFFF" strokeWidth={2} />
+                </LinearGradient>
+                <Text
+                  style={[
+                    ufcStyles.emptyHeroTitle,
+                    { color: isDark ? sf.text : '#F7F6FA' },
+                  ]}
+                >
+                  {UFC_EMPTY_CONFIG[ufcTab].title}
+                </Text>
+                <Text
+                  style={[
+                    ufcStyles.emptyHeroSub,
+                    {
+                      color: isDark ? UFC_MUTED : 'rgba(165, 166, 170, 0.95)',
+                    },
+                  ]}
+                >
+                  {hasConfigError
+                    ? 'The MMA API requires a separate subscription on api-sports.io (free plan available). Your football API key works for football but MMA needs its own activation.'
+                    : ufcMmaApiHint || UFC_EMPTY_CONFIG[ufcTab].sub}
+                </Text>
+                {hasConfigError ? (
+                  <>
+                    <View style={ufcStyles.emptyHeroDivider} />
+                    <View style={ufcStyles.emptyHeroInfoRow}>
+                      <AlertCircle size={14} color={UFC_RED} />
+                      <Text
+                        style={[
+                          ufcStyles.emptyHeroInfoText,
+                          {
+                            color: isDark ? sf.textMuted : 'rgba(230, 228, 242, 0.78)',
+                          },
+                        ]}
+                      >
+                        Visit api-sports.io, log in with your account, and subscribe to the MMA API (free plan with 100 requests/day).
+                      </Text>
+                    </View>
+                    <View style={[ufcStyles.emptyHeroInfoRow, { marginTop: 8 }]}>
+                      <RefreshCw
+                        size={14}
+                        color={isDark ? sf.textMuted : 'rgba(220, 218, 235, 0.75)'}
+                      />
+                      <Text
+                        style={[
+                          ufcStyles.emptyHeroInfoText,
+                          {
+                            color: isDark ? sf.textMuted : 'rgba(230, 228, 242, 0.78)',
+                          },
+                        ]}
+                      >
+                        After subscribing, pull down to refresh.
+                      </Text>
+                    </View>
+                  </>
+                ) : (
+                  <>
+                    <View style={ufcStyles.emptyHeroDivider} />
+                    <View style={ufcStyles.emptyHeroInfoRow}>
+                      <RefreshCw
+                        size={14}
+                        color={isDark ? sf.textMuted : 'rgba(220, 218, 235, 0.75)'}
+                      />
+                      <Text
+                        style={[
+                          ufcStyles.emptyHeroInfoText,
+                          {
+                            color: isDark ? sf.textMuted : 'rgba(230, 228, 242, 0.78)',
+                          },
+                        ]}
+                      >
+                        Pull down to refresh and try again.
+                      </Text>
+                    </View>
+                  </>
+                )}
+              </LinearGradient>
+            </View>
+          </ScrollView>
+        ) : (
+          <View style={{ flex: 1 }}>
+            <FlatList
+              ref={ufcEventsFlatListRef}
+              data={ufcEventListData}
+              renderItem={renderUfcEventListItem}
+              keyExtractor={ufcEventListKeyExtractor}
+              style={styles.scrollView}
+              contentContainerStyle={[
+                styles.scrollContent,
+                { flexGrow: 1, paddingBottom: insets.bottom + 120, paddingTop: 4 },
+              ]}
+              showsVerticalScrollIndicator={false}
+              ListHeaderComponent={
+                <View>
+                  {renderUfcChromeHeader()}
+                  <UFCStatsRow
+                    ufcTab={ufcTab}
+                    fightsCount={ufcDisplayFights.length}
+                    eventsCount={ufcGroupedByEvent.length}
+                    koTkoCount={
+                      ufcTab === 'results'
+                        ? ufcDisplayFights.filter(f => /ko|tko/i.test(f.result?.method || '')).length
+                        : 0
+                    }
+                    subCount={
+                      ufcTab === 'results'
+                        ? ufcDisplayFights.filter(f => /sub/i.test(f.result?.method || '')).length
+                        : 0
+                    }
+                  />
+                  <View style={ufcStyles.sectionHeaderRow}>
+                    <Text style={ufcStyles.sectionHeaderTitle}>
+                      {ufcTab === 'results' ? 'LATEST RESULTS' : 'UPCOMING FIGHTS'}
+                    </Text>
+                    <TouchableOpacity
+                      activeOpacity={0.75}
+                      onPress={() => {
+                        if (Platform.OS !== 'web') {
+                          void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+                        }
+                        ufcEventsFlatListRef.current?.scrollToEnd({ animated: true });
+                      }}
+                      hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}
+                      style={ufcStyles.sectionHeaderActionRow}
+                    >
+                      <Text style={ufcStyles.sectionHeaderAction}>View All</Text>
+                      <ChevronRight size={16} color={UFC_RED} strokeWidth={2.5} />
+                    </TouchableOpacity>
+                  </View>
+                </View>
+              }
+              initialNumToRender={6}
+              maxToRenderPerBatch={4}
+              windowSize={5}
+              removeClippedSubviews={false}
+              refreshControl={
+                <RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={UFC_RED} colors={[UFC_RED]} />
+              }
+              ListEmptyComponent={
+                <View style={{ paddingVertical: 28, paddingHorizontal: 20, alignItems: 'center' }}>
+                  <Text
+                    style={{
+                      color: isDark ? UFC_MUTED : 'rgba(165, 166, 170, 0.95)',
+                      fontSize: 14,
+                      textAlign: 'center',
+                      lineHeight: 20,
+                    }}
+                  >
+                    {ufcTab === 'upcoming'
+                      ? 'No upcoming fights in this feed yet. Switch to Results or pull down to refresh.'
+                      : 'No completed fights in this feed yet. Switch to Upcoming or pull down to refresh.'}
+                  </Text>
+                </View>
+              }
+            />
+          </View>
+        )
       ) : isLoading ? (
         <View style={styles.loadingContainer}>
           <View style={styles.loadingPulse}>
@@ -3426,227 +3890,10 @@ function SportsScreenInner() {
             <RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={colors.primary} colors={[colors.primary]} />
           }
         />
-      ) : sportMode === 'ufc' && isLoading ? (
-        <View style={styles.loadingContainer}>
-          <View style={styles.loadingPulse}>
-            <ActivityIndicator size="large" color={UFC_RED} />
-          </View>
-          <Text style={[styles.loadingText, { color: colors.textSecondary }]}>Loading fights...</Text>
-        </View>
-      ) : sportMode === 'ufc' && hasConfigError ? (
-        <View style={styles.errorContainer}>
-          <View style={[styles.errorIcon, { backgroundColor: colors.errorLight }]}>
-            <AlertCircle size={28} color={colors.warning} strokeWidth={2} />
-          </View>
-          <Text style={[styles.errorTitle, { color: colors.text }]}>API Configuration Required</Text>
-          <Text style={[styles.errorSub, { color: colors.textSecondary }]}>
-            MMA API key is not configured on the server
-          </Text>
-        </View>
-      ) : sportMode === 'ufc' && hasError ? (
-        <View style={styles.errorContainer}>
-          <View style={[styles.errorIcon, { backgroundColor: colors.errorLight }]}>
-            <AlertCircle size={28} color={colors.error} strokeWidth={2} />
-          </View>
-          <Text style={[styles.errorTitle, { color: colors.text }]}>Unable to Load</Text>
-          <Text style={[styles.errorSub, { color: colors.textSecondary }]}>
-            Please check your connection and try again
-          </Text>
-          <TouchableOpacity style={styles.retryBtn} onPress={onRefresh} activeOpacity={0.85}>
-            <RefreshCw size={16} color={colors.warning} />
-            <Text style={[styles.retryBtnText, { color: colors.warning }]}>Try Again</Text>
-          </TouchableOpacity>
-        </View>
-      ) : sportMode === 'ufc' && ufcShowStatsRankings ? (
-        <ScrollView
-          style={styles.scrollView}
-          contentContainerStyle={[styles.scrollContent, { paddingBottom: insets.bottom + 120 }]}
-          showsVerticalScrollIndicator={false}
-          refreshControl={
-            <RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={UFC_RED} colors={[UFC_RED]} />
-          }
-        >
-          <UFCStatsRankingsPanel
-            ufcTab={ufcTab}
-            fightsCount={ufcDisplayFights.length}
-            eventsCount={ufcGroupedByEvent.length}
-            koTkoCount={
-              ufcTab === 'results'
-                ? ufcDisplayFights.filter(f => /ko|tko/i.test(f.result?.method || '')).length
-                : 0
-            }
-            subCount={
-              ufcTab === 'results'
-                ? ufcDisplayFights.filter(f => /sub/i.test(f.result?.method || '')).length
-                : 0
-            }
-            leaderboard={ufcWinLeaderboard}
-            onBack={() => setUfcShowStatsRankings(false)}
-          />
-        </ScrollView>
-      ) : sportMode === 'ufc' && ufcDisplayFights.length === 0 ? (
-        <ScrollView
-          style={styles.scrollView}
-          contentContainerStyle={[styles.scrollContent, { paddingBottom: insets.bottom + 140 }]}
-          showsVerticalScrollIndicator={false}
-          refreshControl={
-            <RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={UFC_RED} colors={[UFC_RED]} />
-          }
-        >
-          <View style={ufcStyles.emptyHero}>
-            <LinearGradient
-              colors={[...sf.ufcGradient]}
-              start={{ x: 0, y: 0 }}
-              end={{ x: 1, y: 1 }}
-              style={ufcStyles.emptyHeroGradient}
-            >
-              <View style={ufcStyles.emptyHeroTopAccent} />
-              <LinearGradient
-                colors={['#FF3B43', '#B30710']}
-                start={{ x: 0, y: 0 }}
-                end={{ x: 1, y: 1 }}
-                style={ufcStyles.emptyHeroIconCircle}
-              >
-                <Swords size={32} color="#FFFFFF" strokeWidth={2} />
-              </LinearGradient>
-              <Text
-                style={[
-                  ufcStyles.emptyHeroTitle,
-                  { color: isDark ? sf.text : '#F7F6FA' },
-                ]}
-              >
-                {UFC_EMPTY_CONFIG[ufcTab].title}
-              </Text>
-              <Text
-                style={[
-                  ufcStyles.emptyHeroSub,
-                  {
-                    color: isDark ? UFC_MUTED : 'rgba(165, 166, 170, 0.95)',
-                  },
-                ]}
-              >
-                {hasConfigError
-                  ? 'The MMA API requires a separate subscription on api-sports.io (free plan available). Your football API key works for football but MMA needs its own activation.'
-                  : ufcMmaApiHint || UFC_EMPTY_CONFIG[ufcTab].sub}
-              </Text>
-              {hasConfigError ? (
-                <>
-                  <View style={ufcStyles.emptyHeroDivider} />
-                  <View style={ufcStyles.emptyHeroInfoRow}>
-                    <AlertCircle size={14} color={UFC_RED} />
-                    <Text
-                      style={[
-                        ufcStyles.emptyHeroInfoText,
-                        {
-                          color: isDark ? sf.textMuted : 'rgba(230, 228, 242, 0.78)',
-                        },
-                      ]}
-                    >
-                      Visit api-sports.io, log in with your account, and subscribe to the MMA API (free plan with 100 requests/day).
-                    </Text>
-                  </View>
-                  <View style={[ufcStyles.emptyHeroInfoRow, { marginTop: 8 }]}>
-                    <RefreshCw
-                      size={14}
-                      color={isDark ? sf.textMuted : 'rgba(220, 218, 235, 0.75)'}
-                    />
-                    <Text
-                      style={[
-                        ufcStyles.emptyHeroInfoText,
-                        {
-                          color: isDark ? sf.textMuted : 'rgba(230, 228, 242, 0.78)',
-                        },
-                      ]}
-                    >
-                      After subscribing, pull down to refresh.
-                    </Text>
-                  </View>
-                </>
-              ) : (
-                <>
-                  <View style={ufcStyles.emptyHeroDivider} />
-                  <View style={ufcStyles.emptyHeroInfoRow}>
-                    <RefreshCw
-                      size={14}
-                      color={isDark ? sf.textMuted : 'rgba(220, 218, 235, 0.75)'}
-                    />
-                    <Text
-                      style={[
-                        ufcStyles.emptyHeroInfoText,
-                        {
-                          color: isDark ? sf.textMuted : 'rgba(230, 228, 242, 0.78)',
-                        },
-                      ]}
-                    >
-                      Pull down to refresh and try again.
-                    </Text>
-                  </View>
-                </>
-              )}
-            </LinearGradient>
-          </View>
-        </ScrollView>
-      ) : sportMode === 'ufc' ? (
-        <View style={{ flex: 1 }}>
-          <FlatList
-            ref={ufcEventsFlatListRef}
-            data={ufcEventListData}
-            renderItem={renderUfcEventListItem}
-            keyExtractor={ufcEventListKeyExtractor}
-            style={styles.scrollView}
-            contentContainerStyle={[styles.scrollContent, { paddingBottom: insets.bottom + 120, paddingTop: 4 }]}
-            showsVerticalScrollIndicator={false}
-            ListHeaderComponent={
-              <View>
-                <UFCStatsRow
-                  ufcTab={ufcTab}
-                  fightsCount={ufcDisplayFights.length}
-                  eventsCount={ufcGroupedByEvent.length}
-                  koTkoCount={
-                    ufcTab === 'results'
-                      ? ufcDisplayFights.filter(f => /ko|tko/i.test(f.result?.method || '')).length
-                      : 0
-                  }
-                  subCount={
-                    ufcTab === 'results'
-                      ? ufcDisplayFights.filter(f => /sub/i.test(f.result?.method || '')).length
-                      : 0
-                  }
-                />
-                <View style={ufcStyles.sectionHeaderRow}>
-                  <Text style={ufcStyles.sectionHeaderTitle}>
-                    {ufcTab === 'results' ? 'LATEST RESULTS' : 'UPCOMING FIGHTS'}
-                  </Text>
-                  <TouchableOpacity
-                    activeOpacity={0.75}
-                    onPress={() => {
-                      if (Platform.OS !== 'web') {
-                        void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-                      }
-                      ufcEventsFlatListRef.current?.scrollToEnd({ animated: true });
-                    }}
-                    hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}
-                    style={ufcStyles.sectionHeaderActionRow}
-                  >
-                    <Text style={ufcStyles.sectionHeaderAction}>View All</Text>
-                    <ChevronRight size={16} color={UFC_RED} strokeWidth={2.5} />
-                  </TouchableOpacity>
-                </View>
-              </View>
-            }
-            initialNumToRender={6}
-            maxToRenderPerBatch={4}
-            windowSize={5}
-            removeClippedSubviews={Platform.OS !== 'web'}
-            refreshControl={
-              <RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={UFC_RED} colors={[UFC_RED]} />
-            }
-          />
-        </View>
       ) : null}
 
       {sportMode === 'f1' && (
-        <F1Section isDark={isDark} insets={insets} />
+        <F1Section isDark={isDark} insets={insets} stackHeader={renderF1ChromeHeader()} />
       )}
 
       {sportMode === 'nba' ? (
@@ -3894,7 +4141,7 @@ function SportsScreenInner() {
           <View style={[styles.pickerContainer, { backgroundColor: colors.surface }]}>
             <View style={styles.pickerHandle} />
             <View style={[styles.pickerHeader, { borderBottomColor: colors.border }]}>
-              <Text style={[styles.pickerTitle, { color: colors.text }]}>League Tables</Text>
+              <Text style={[styles.pickerTitle, { color: colors.text }]}>League tables & stats</Text>
               <TouchableOpacity onPress={() => setShowLeaguePicker(false)} style={styles.pickerClose}>
                 <X size={20} color={colors.textSecondary} />
               </TouchableOpacity>
@@ -3927,6 +4174,16 @@ function SportsScreenInner() {
           </View>
         </View>
       </Modal>
+
+      <FootballTeamSearchModal
+        visible={footballTeamSearchOpen}
+        onClose={() => {
+          setFootballTeamSearchOpen(false);
+          setFootballClubProfilePreset(null);
+        }}
+        isDark={isDark}
+        initialClub={footballClubProfilePreset}
+      />
     </View>
   );
 }
@@ -3960,6 +4217,14 @@ const styles = StyleSheet.create({
     paddingHorizontal: 20,
     paddingTop: 12,
     paddingBottom: 14,
+  },
+  /** Football hero: full-bleed image (strip overlaps bottom like UFC/F1/NBA); content inset separately. */
+  headerGradientFootballBleed: {
+    paddingHorizontal: 0,
+  },
+  stadiumHeroForegroundFootballInset: {
+    paddingHorizontal: 20,
+    width: '100%',
   },
   headerTop: {
     flexDirection: 'row',
@@ -3995,7 +4260,7 @@ const styles = StyleSheet.create({
   ufcHeroBackgroundImage: {
     resizeMode: 'cover' as const,
   },
-  /** F1 hero — same treatment as UFC: full-bleed art only, no scrims. */
+  /** F1 hero — full-bleed art; bottom crop ~3% of tall hero min height. */
   f1HeroBackgroundImage: {
     resizeMode: 'cover' as const,
   },
@@ -4019,15 +4284,15 @@ const styles = StyleSheet.create({
   },
   /** Tall hero must anchor content to the top; `stadiumHeroRoot` uses flex-end for the short legacy bar only. */
   stadiumHeroRootFootball: {
-    minHeight: 470,
+    minHeight: FOOTBALL_HERO_MIN_HEIGHT_PX,
     justifyContent: 'flex-start' as const,
   },
   stadiumHeroImage: {
     resizeMode: 'cover' as const,
   },
-  /* Visually crop the lower 20% of the hero image. */
-  stadiumHeroImageCropBottom: {
-    transform: [{ translateY: -90 }],
+  /** Shift cover image up ~4% of football hero min height; parent `overflow: hidden` clips the bottom. */
+  stadiumHeroImageCropBottomFootball: {
+    transform: [{ translateY: -FOOTBALL_HERO_BOTTOM_CROP_PX }],
   },
   stadiumHeroForeground: {
     position: 'relative' as const,
@@ -4413,16 +4678,36 @@ const styles = StyleSheet.create({
     fontWeight: '700' as const,
     letterSpacing: -0.2,
   },
-  footballContextSpacer: {
-    flex: 1,
+  footballLeagueTablesCta: {
+    flexDirection: 'row' as const,
+    alignItems: 'center' as const,
+    gap: 12,
+    marginTop: 12,
+    paddingVertical: 14,
+    paddingHorizontal: 14,
+    borderRadius: 16,
+    borderWidth: 2,
   },
-  footballRefineBtn: {
-    width: 48,
-    height: 48,
-    borderRadius: 24,
+  footballLeagueTablesIconWrap: {
+    width: 46,
+    height: 46,
+    borderRadius: 13,
     alignItems: 'center' as const,
     justifyContent: 'center' as const,
-    borderWidth: 1,
+  },
+  footballLeagueTablesTextCol: {
+    flex: 1,
+    minWidth: 0,
+  },
+  footballLeagueTablesTitle: {
+    fontSize: 16,
+    fontWeight: '800' as const,
+    letterSpacing: -0.35,
+  },
+  footballLeagueTablesSub: {
+    fontSize: 12,
+    fontWeight: '600' as const,
+    marginTop: 3,
   },
   refineModalHint: {
     fontSize: 12,
@@ -5329,6 +5614,7 @@ const sportToggleStyles = StyleSheet.create({
   trackScrollContent: {
     flexGrow: 1,
     justifyContent: 'center',
+    alignItems: 'stretch',
   },
   track: {
     flexDirection: 'row',
@@ -5339,6 +5625,24 @@ const sportToggleStyles = StyleSheet.create({
     padding: 3,
     gap: 4,
   },
+  /** Shell for BlurView + hairline (F1 / UFC hero strip). */
+  trackShell: {
+    alignSelf: 'stretch',
+    width: '100%',
+    maxWidth: '100%',
+    borderRadius: 14,
+    overflow: 'hidden',
+    position: 'relative' as const,
+    ...Platform.select({
+      ios: {
+        shadowColor: '#000',
+        shadowOffset: { width: 0, height: 4 },
+        shadowOpacity: 0.14,
+        shadowRadius: 12,
+      },
+      android: { elevation: 4 },
+    }),
+  },
   /** Equal-width segments: `flex: 1` alone can mis-measure on RN when only two children are shown. */
   option: {
     flexGrow: 1,
@@ -5347,9 +5651,24 @@ const sportToggleStyles = StyleSheet.create({
     minWidth: 0,
     justifyContent: 'center',
     alignItems: 'center',
-    paddingVertical: 10,
-    paddingHorizontal: 6,
+    paddingVertical: 8,
+    paddingHorizontal: 4,
     borderRadius: 11,
+  },
+  /** Solid pill on glass strip — forest green on busy pitch/blur reads poorly without this. */
+  optionFootballActive: {
+    backgroundColor: '#15803D',
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.38)',
+    ...Platform.select({
+      ios: {
+        shadowColor: '#000',
+        shadowOffset: { width: 0, height: 2 },
+        shadowOpacity: 0.22,
+        shadowRadius: 5,
+      },
+      android: { elevation: 3 },
+    }),
   },
   optionInner: {
     flexDirection: 'row',
