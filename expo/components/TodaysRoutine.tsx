@@ -39,9 +39,18 @@ import { CommunityHabit, ExerciseFormGuide } from '@/types/habit';
 import { Task } from '@/types/task';
 import { COMMUNITY_HABITS } from '@/mocks/communityHabits';
 import { generateMinimalHabits, MinimalHabit } from '@/utils/habitFormationAnalysis';
-import { shouldDoHabitToday } from '@/utils/dateUtils';
+import { useTodayHabits } from '@/hooks/useTodayHabits';
+import type { WeeklyHabitProgress } from '@/utils/todayHabits';
+import HabitCompletionToast from '@/components/HabitCompletionToast';
+import TodayCompletionLog from '@/components/TodayCompletionLog';
+import {
+  getMergedHabitCompletions,
+  getProgramSessionProgress,
+  getWorkoutForWeekday,
+} from '@/utils/programProgress';
 import * as Haptics from 'expo-haptics';
 import { router } from 'expo-router';
+import HabitAddToTodayPicker from '@/components/HabitAddToTodayPicker';
 
 
 interface ConvertedHabit {
@@ -68,6 +77,7 @@ interface RoutineItemProps {
   habit: RoutineHabit;
   communityInfo?: CommunityHabit;
   minimalVersion?: MinimalHabit;
+  weeklyProgress?: WeeklyHabitProgress | null;
   isBusyMode: boolean;
   onToggle: () => void;
   onRemove: () => void;
@@ -242,8 +252,18 @@ const ExerciseList = ({ activities, habitColor, exerciseGifs, exerciseFormGuides
   );
 };
 
-const RoutineItem = ({ habit, communityInfo, minimalVersion, isBusyMode, onToggle, onRemove, index }: RoutineItemProps) => {
+const RoutineItem = ({
+  habit,
+  communityInfo,
+  minimalVersion,
+  weeklyProgress,
+  isBusyMode,
+  onToggle,
+  onRemove,
+  index,
+}: RoutineItemProps) => {
   const { colors, isDark } = useTheme();
+  const appContext = useApp();
   const scaleAnim = useRef(new Animated.Value(1)).current;
   const fadeAnim = useRef(new Animated.Value(0)).current;
   const slideAnim = useRef(new Animated.Value(20)).current;
@@ -282,73 +302,68 @@ const RoutineItem = ({ habit, communityInfo, minimalVersion, isBusyMode, onToggl
   const programInfo = React.useMemo(() => {
     const task = habit as Task;
     console.log('🏋️ [TodaysRoutine] Checking workout for habit:', task.title);
-    
+
     let programWeeks = task.programData?.weeks;
-    let currentWeek = task.currentWeek;
     let programStartDate = task.programStartDate;
-    
+
     if (!programWeeks && communityInfo?.weeks) {
       console.log('🔄 [TodaysRoutine] Using community habit program data as fallback for:', task.title);
       programWeeks = communityInfo.weeks;
-      if (!currentWeek) {
-        currentWeek = 1;
-      }
       if (!programStartDate) {
         programStartDate = task.createdAt || new Date().toISOString();
       }
     }
-    
-    console.log('📊 [TodaysRoutine] Program data:', {
-      hasWeeks: !!programWeeks,
-      weeksCount: programWeeks?.length,
-      currentWeek: currentWeek,
-      totalWeeks: task.totalWeeks || programWeeks?.length,
-      programStartDate: programStartDate,
-      habitFrequency: task.habitFrequency,
-      hasCommunityInfo: !!communityInfo,
-      communityWeeks: communityInfo?.weeks?.length
-    });
-    
-    if (!programWeeks || !currentWeek) {
+
+    if (!programWeeks?.length) {
       console.log('❌ [TodaysRoutine] Missing program data for', task.title);
-      return { hasProgram: false, todaysWorkout: null, isRestDay: false, nextWorkoutDay: null, currentDay: 0, totalDays: 0, programProgressPercent: 0 };
+      return {
+        hasProgram: false,
+        todaysWorkout: null,
+        isRestDay: false,
+        nextWorkoutDay: null,
+        currentDay: 0,
+        totalDays: 0,
+        programProgressPercent: 0,
+        currentWeek: 0,
+        totalWeeks: 0,
+      };
     }
 
     const totalWeeks = programWeeks.length;
     const habitDays = task.habitFrequency?.days || communityInfo?.frequency?.days || [];
     const isDaily = habitDays.length === 7;
-    
-    let currentDay = 0;
-    let totalDays = 0;
-    
-    if (programStartDate) {
-      const startDate = new Date(programStartDate);
-      startDate.setHours(0, 0, 0, 0);
-      const now = new Date();
-      now.setHours(0, 0, 0, 0);
-      
-      if (isDaily) {
-        const diffMs = now.getTime() - startDate.getTime();
-        currentDay = Math.floor(diffMs / (1000 * 60 * 60 * 24)) + 1;
-        totalDays = totalWeeks * 7;
-      } else {
-        const completionCount = Object.keys(task.habitCompletions || {}).filter(d => task.habitCompletions?.[d]).length;
-        currentDay = completionCount + (isCompleted ? 0 : 1);
-        totalDays = totalWeeks * habitDays.length;
-      }
-      currentDay = Math.max(1, Math.min(currentDay, totalDays));
-    }
-    
-    const programProgressPercent = totalDays > 0 ? Math.min(100, Math.round((currentDay / totalDays) * 100)) : 0;
-    
-    const currentWeekData = programWeeks.find((w: any) => w.week === currentWeek);
+    const mergedCompletions = getMergedHabitCompletions(task, appContext?.habits);
+
+    const sessionProgress = getProgramSessionProgress({
+      completions: mergedCompletions,
+      totalWeeks,
+      habitDays,
+      programStartDate,
+      isDaily,
+    });
+
+    const currentWeek = sessionProgress.currentWeek;
+    const { currentDay, totalDays, programProgressPercent } = sessionProgress;
+
+    const currentWeekData = programWeeks.find((w: { week: number }) => w.week === currentWeek);
     if (!currentWeekData?.days) {
       console.log('❌ [TodaysRoutine] No days found for week', currentWeek);
-      return { hasProgram: true, todaysWorkout: null, isRestDay: true, nextWorkoutDay: null, currentWeek, totalWeeks, weekTitle: undefined, currentDay, totalDays, programProgressPercent };
+      return {
+        hasProgram: true,
+        todaysWorkout: null,
+        isRestDay: true,
+        nextWorkoutDay: null,
+        currentWeek,
+        totalWeeks,
+        weekTitle: undefined,
+        currentDay,
+        totalDays,
+        programProgressPercent,
+      };
     }
-    
+
     const dayOfWeek = new Date().getDay();
-    
+
     if (!habitDays.includes(dayOfWeek)) {
       let nextDay = null;
       for (let i = 1; i <= 7; i++) {
@@ -359,10 +374,10 @@ const RoutineItem = ({ habit, communityInfo, minimalVersion, isBusyMode, onToggl
         }
       }
       console.log('⏭️ [TodaysRoutine] Rest day. Next workout:', nextDay);
-      return { 
-        hasProgram: true, 
-        todaysWorkout: null, 
-        isRestDay: true, 
+      return {
+        hasProgram: true,
+        todaysWorkout: null,
+        isRestDay: true,
         nextWorkoutDay: nextDay,
         currentWeek,
         totalWeeks,
@@ -372,20 +387,21 @@ const RoutineItem = ({ habit, communityInfo, minimalVersion, isBusyMode, onToggl
         programProgressPercent,
       };
     }
-    
-    const dayIndex = habitDays.indexOf(dayOfWeek);
-    const workoutDay = currentWeekData.days[dayIndex];
-    
+
+    const workoutDay = getWorkoutForWeekday(currentWeekData, habitDays, dayOfWeek);
+
     console.log('✅ [TodaysRoutine] Found workout:', {
-      dayIndex,
+      currentWeek,
+      completedSessions: sessionProgress.completedSessions,
+      currentDay,
       title: workoutDay?.title,
-      hasActivities: !!workoutDay?.activities
+      hasActivities: !!workoutDay?.activities,
     });
-    
-    return { 
-      hasProgram: true, 
-      todaysWorkout: workoutDay, 
-      isRestDay: false, 
+
+    return {
+      hasProgram: true,
+      todaysWorkout: workoutDay,
+      isRestDay: false,
       nextWorkoutDay: null,
       currentWeek,
       totalWeeks,
@@ -394,7 +410,7 @@ const RoutineItem = ({ habit, communityInfo, minimalVersion, isBusyMode, onToggl
       totalDays,
       programProgressPercent,
     };
-  }, [habit, communityInfo, isCompleted]);
+  }, [habit, communityInfo, appContext?.habits]);
   
   const todaysActivities = programInfo.todaysWorkout;
 
@@ -526,6 +542,11 @@ const RoutineItem = ({ habit, communityInfo, minimalVersion, isBusyMode, onToggl
             </View>
           ) : (
             <View style={styles.routineItemMeta}>
+              {weeklyProgress ? (
+                <View style={styles.weeklyBadge}>
+                  <Text style={styles.weeklyBadgeText}>{weeklyProgress.label}</Text>
+                </View>
+              ) : null}
               {habit.habitStreak && habit.habitStreak > 0 ? (
                 <View style={[
                   styles.streakBadge,
@@ -717,51 +738,55 @@ export default function TodaysRoutine({
   const [habitsExpanded, setHabitsExpanded] = useState(false);
   
   const savedHabits = useMemo(() => savedHabitsContext?.savedHabits || [], [savedHabitsContext?.savedHabits]);
-  const updateTask = tasksContext?.updateTask || (() => {});
-  
-  const taskBasedHabits = useMemo(() => {
-    return (tasksContext?.allTasks || []).filter((task: Task) => {
-      if (!task.isHabit || !task.habitFrequency) return false;
-      return shouldDoHabitToday(task.habitFrequency);
+  const allTasks = tasksContext?.allTasks || [];
+
+  const {
+    entries: todayHabitEntries,
+    stats: todayHabitStats,
+    todayLog,
+    feedback: completionFeedback,
+    dismissFeedback,
+    toggleTodayHabit,
+  } = useTodayHabits();
+
+  const todayHabits = useMemo((): RoutineHabit[] => {
+    return todayHabitEntries.map((entry, index) => {
+      const task = allTasks.find((t) => t.id === entry.id && t.isHabit);
+      if (task) {
+        return {
+          ...task,
+          habitCompletions: entry.habitCompletions,
+          habitStreak: entry.habitStreak,
+          status: entry.completedToday ? ('completed' as const) : ('todo' as const),
+        };
+      }
+      return {
+        id: entry.id,
+        title: entry.title,
+        description: '',
+        status: entry.completedToday ? ('completed' as const) : ('todo' as const),
+        priority: 'medium' as const,
+        category: 'Personal',
+        createdAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString(),
+        isHabit: true,
+        habitFrequency: entry.habitFrequency ?? { days: [0, 1, 2, 3, 4, 5, 6] },
+        habitCompletions: entry.habitCompletions,
+        habitStreak: entry.habitStreak,
+        color: entry.color || HABIT_COLORS[index % HABIT_COLORS.length],
+        icon: entry.icon,
+        isLegacy: true,
+      } as ConvertedHabit;
     });
-  }, [tasksContext?.allTasks]);
-  
-  const legacyHabits = useMemo(() => {
-    return appContext?.todayHabits || [];
-  }, [appContext?.todayHabits]);
-  
-  const convertedLegacyHabits = useMemo(() => {
-    return legacyHabits.map((habit, index) => ({
-      id: habit.id,
-      title: habit.name,
-      description: habit.description || '',
-      status: habit.completedToday ? 'completed' as const : 'todo' as const,
-      priority: 'medium' as const,
-      category: (habit as any).category || 'Personal',
-      createdAt: habit.createdAt,
-      updatedAt: habit.createdAt,
-      isHabit: true,
-      habitFrequency: habit.frequency,
-      habitCompletions: Object.keys(habit.completions || {}).reduce((acc, date) => {
-        if (habit.completions[date]) acc[date] = true;
-        return acc;
-      }, {} as Record<string, boolean>),
-      habitStreak: habit.streak || 0,
-      color: habit.color || HABIT_COLORS[index % HABIT_COLORS.length],
-      icon: habit.icon,
-      isLegacy: true,
-    }));
-  }, [legacyHabits]);
-  
-  const todayHabits = useMemo(() => {
-    const taskIds = new Set(taskBasedHabits.map(h => h.id));
-    const combined = [
-      ...taskBasedHabits,
-      ...convertedLegacyHabits.filter(h => !taskIds.has(h.id))
-    ];
-    console.log('📋 TodaysRoutine - Combined habits:', combined.length, '(tasks:', taskBasedHabits.length, ', legacy:', convertedLegacyHabits.length, ')');
-    return combined;
-  }, [taskBasedHabits, convertedLegacyHabits]);
+  }, [todayHabitEntries, allTasks]);
+
+  const weeklyByHabitId = useMemo(() => {
+    const map: Record<string, WeeklyHabitProgress | null> = {};
+    for (const e of todayHabitEntries) {
+      map[e.id] = e.weeklyProgress;
+    }
+    return map;
+  }, [todayHabitEntries]);
 
   
   const todayTasks = useMemo(() => {
@@ -804,11 +829,7 @@ export default function TodaysRoutine({
     });
   }, [todayHabits, savedHabits, maxItems, habitsExpanded, minimalHabitsMap]);
 
-  const completedHabitsCount = useMemo(() => {
-    const d = new Date();
-    const today = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
-    return todayHabits.filter((h: RoutineHabit) => h.habitCompletions?.[today]).length;
-  }, [todayHabits]);
+  const completedHabitsCount = todayHabitStats.completedHabits;
   
   const completedTasksCount = useMemo(() => 
     completedTodayTasks.length,
@@ -818,6 +839,8 @@ export default function TodaysRoutine({
   const totalCount = todayHabits.length + todayTasks.length;
   const completedCount = completedHabitsCount + completedTasksCount;
   const progressPercent = totalCount > 0 ? (completedCount / totalCount) * 100 : 0;
+  const emptyHabitSlots = Math.max(0, maxItems - todayHabits.length);
+  const showHabitPicker = emptyHabitSlots > 0;
 
   useEffect(() => {
     Animated.timing(progressAnim, {
@@ -834,37 +857,13 @@ export default function TodaysRoutine({
 
   const handleToggle = (habitId: string) => {
     void Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
-    
-    const legacyHabit = convertedLegacyHabits.find(h => h.id === habitId);
-    if (legacyHabit && (legacyHabit as any).isLegacy) {
-      console.log('🔄 Toggling legacy habit:', habitId);
-      appContext?.toggleHabitCompletion(habitId);
-      return;
-    }
-    
-    const habit = taskBasedHabits.find((h: Task) => h.id === habitId);
-    if (!habit) return;
-    
-    const d2 = new Date();
-    const today = `${d2.getFullYear()}-${String(d2.getMonth() + 1).padStart(2, '0')}-${String(d2.getDate()).padStart(2, '0')}`;
-    const updatedCompletions = { ...(habit.habitCompletions || {}) };
-    
-    if (updatedCompletions[today]) {
-      delete updatedCompletions[today];
-    } else {
-      updatedCompletions[today] = true;
-    }
-    
-    updateTask(habitId, {
-      habitCompletions: updatedCompletions,
-      status: updatedCompletions[today] ? 'completed' : 'todo'
-    });
+    toggleTodayHabit(habitId);
   };
   
   const handleRemove = (habitId: string) => {
     console.log('🗑️ Removing habit:', habitId);
     
-    const legacyHabit = convertedLegacyHabits.find(h => h.id === habitId);
+    const legacyHabit = todayHabitEntries.find((e) => e.id === habitId && e.isLegacy);
     if (legacyHabit && (legacyHabit as any).isLegacy) {
       console.log('🗑️ Removing legacy habit:', habitId);
       appContext?.deleteHabit(habitId);
@@ -891,16 +890,13 @@ export default function TodaysRoutine({
         </View>
         <Text style={[styles.emptyTitle, { color: colors.text }]}>Start your routine</Text>
         <Text style={[styles.emptyText, { color: colors.textSecondary }]}>
-          Add habits to build a daily routine that works for you
+          Add a habit for today — no need to browse the full catalog first
         </Text>
-        <TouchableOpacity 
-          style={[styles.discoverBtn, { backgroundColor: colors.primary }]}
-          onPress={() => router.push('/discover' as any)}
-          activeOpacity={0.8}
-        >
-          <Sparkles size={14} color="#fff" strokeWidth={2.5} />
-          <Text style={styles.discoverBtnText}>Discover Habits</Text>
-        </TouchableOpacity>
+        <HabitAddToTodayPicker
+          variant="empty"
+          emptySlots={maxItems}
+          maxSuggestions={4}
+        />
       </View>
     );
   }
@@ -909,6 +905,10 @@ export default function TodaysRoutine({
 
   return (
     <View style={[styles.container, { backgroundColor: colors.card, borderColor: colors.border }]}>
+      <HabitCompletionToast
+        feedback={completionFeedback}
+        onDismiss={dismissFeedback}
+      />
       {showHeader && (
         <View style={styles.header}>
           <View style={styles.headerLeft}>
@@ -978,6 +978,8 @@ export default function TodaysRoutine({
           )}
         </View>
       </View>
+
+      <TodayCompletionLog items={todayLog} />
       
       {todayHabits.length > 0 && (
         <View style={styles.sectionHeader}>
@@ -991,6 +993,14 @@ export default function TodaysRoutine({
         </View>
       )}
 
+      {todayHabits.length === 0 && showHabitPicker && (
+        <HabitAddToTodayPicker
+          variant="empty"
+          emptySlots={emptyHabitSlots}
+          maxSuggestions={4}
+        />
+      )}
+
       <View style={styles.routineList}>
         {routineItems.map(({ habit, communityInfo, minimalVersion }, idx) => (
           <RoutineItem
@@ -998,6 +1008,7 @@ export default function TodaysRoutine({
             habit={habit as RoutineHabit}
             communityInfo={communityInfo}
             minimalVersion={minimalVersion}
+            weeklyProgress={weeklyByHabitId[habit.id] ?? null}
             isBusyMode={busyMode.isEnabled}
             onToggle={() => handleToggle(habit.id)}
             onRemove={() => handleRemove(habit.id)}
@@ -1017,6 +1028,14 @@ export default function TodaysRoutine({
           </Text>
           <ChevronRight size={12} color={COLORS.primary} strokeWidth={2.5} />
         </TouchableOpacity>
+      )}
+
+      {todayHabits.length > 0 && showHabitPicker && (
+        <HabitAddToTodayPicker
+          variant="fill-slot"
+          emptySlots={emptyHabitSlots}
+          maxSuggestions={Math.min(3, emptyHabitSlots)}
+        />
       )}
       
       <View style={[styles.sectionHeader, { marginTop: 22 }]}>
@@ -1350,6 +1369,19 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     gap: 6,
+  },
+  weeklyBadge: {
+    backgroundColor: '#EEF2FF',
+    paddingHorizontal: 7,
+    paddingVertical: 3,
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: 'rgba(99, 102, 241, 0.2)',
+  },
+  weeklyBadgeText: {
+    fontSize: 10,
+    fontWeight: '700',
+    color: '#4F46E5',
   },
   streakBadge: {
     flexDirection: 'row',

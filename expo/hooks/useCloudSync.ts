@@ -8,6 +8,7 @@ import { useAuth } from '@/hooks/useAuth';
 import { useSupabaseSync } from '@/utils/supabaseUserSync';
 
 import { initializeCloudSync, syncAllDataToCloud, syncAllDataFromCloud } from '@/utils/supabaseSync';
+import type { CloudMergeStats, CloudPullPayload } from '@/utils/syncMerge';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 
 type SyncStatus = 'idle' | 'syncing' | 'success' | 'error';
@@ -32,6 +33,8 @@ export const [CloudSyncProvider, useCloudSync] = createContextHook(() => {
   const [useSupabase, setUseSupabase] = useState<boolean>(false);
   const [isInitialized, setIsInitialized] = useState<boolean>(false);
   const [latestSnapshotTime, setLatestSnapshotTime] = useState<string | null>(null);
+  const [lastPullTime, setLastPullTime] = useState<string | null>(null);
+  const [lastMergeSummary, setLastMergeSummary] = useState<CloudMergeStats | null>(null);
 
   const { isAuthenticated, user } = useAuth();
   const getScopedSyncKey = useCallback(
@@ -39,7 +42,7 @@ export const [CloudSyncProvider, useCloudSync] = createContextHook(() => {
     [user?.id]
   );
   const supabaseUserSync = useSupabaseSync(user?.id);
-  const { profile } = useUserProfile();
+  const { profile, mergeProfileFromCloud } = useUserProfile();
   
   // Always call hooks unconditionally
   const appContext = useAppSafe();
@@ -78,10 +81,12 @@ export const [CloudSyncProvider, useCloudSync] = createContextHook(() => {
     try {
       const enabledKey = getScopedSyncKey('cloud_sync_enabled');
       const timestampKey = getScopedSyncKey('cloud_sync_timestamp');
+      const pullTimestampKey = getScopedSyncKey('cloud_sync_pull_timestamp');
       const providerKey = getScopedSyncKey('cloud_sync_provider');
-      let [enabled, lastSync, provider] = await Promise.all([
+      let [enabled, lastSync, lastPull, provider] = await Promise.all([
         AsyncStorage.getItem(enabledKey),
         AsyncStorage.getItem(timestampKey),
+        AsyncStorage.getItem(pullTimestampKey),
         AsyncStorage.getItem(providerKey),
       ]);
       if (!enabled && !lastSync && !provider) {
@@ -111,6 +116,11 @@ export const [CloudSyncProvider, useCloudSync] = createContextHook(() => {
         setLastSyncTime(lastSync);
       } else {
         setLastSyncTime(null);
+      }
+      if (lastPull) {
+        setLastPullTime(lastPull);
+      } else {
+        setLastPullTime(null);
       }
       if (provider === 'supabase' || provider === 'firebase') {
         setUseSupabase(true);
@@ -226,6 +236,40 @@ export const [CloudSyncProvider, useCloudSync] = createContextHook(() => {
     }
   }, [isAuthenticated, user, useSupabase, cloudStorage, isCloudEnabled, habits, activities, shows, sports, allTasks, projects, timeEntries, profile, contextsReady, refreshSnapshotMeta, getScopedSyncKey]);
 
+  const applyCloudMerge = useCallback(
+    async (cloudData: CloudPullPayload): Promise<CloudMergeStats> => {
+      const summary: CloudMergeStats = {
+        habitsMerged: false,
+        tasksMerged: false,
+        profileMerged: false,
+        projectsMerged: false,
+        timeEntriesMerged: false,
+        activitiesMerged: false,
+        showsMerged: false,
+        sportsMerged: false,
+      };
+
+      const habitsStats = await appContext?.mergeFromCloud?.(cloudData);
+      if (habitsStats?.habitsMerged) summary.habitsMerged = true;
+      if (habitsStats?.activitiesMerged) summary.activitiesMerged = true;
+      if (habitsStats?.showsMerged) summary.showsMerged = true;
+      if (habitsStats?.sportsMerged) summary.sportsMerged = true;
+
+      const tasksStats = await tasksContext?.mergeFromCloud?.(cloudData);
+      if (tasksStats?.tasksMerged) summary.tasksMerged = true;
+      if (tasksStats?.projectsMerged) summary.projectsMerged = true;
+      if (tasksStats?.timeEntriesMerged) summary.timeEntriesMerged = true;
+
+      if (cloudData.userProfile) {
+        const profileMerged = await mergeProfileFromCloud(cloudData.userProfile);
+        summary.profileMerged = profileMerged;
+      }
+
+      return summary;
+    },
+    [appContext, tasksContext, mergeProfileFromCloud]
+  );
+
   const syncFromCloud = useCallback(async (storage?: any) => {
     if (!isAuthenticated || !user) {
       console.log('User not authenticated, skipping sync');
@@ -246,30 +290,27 @@ export const [CloudSyncProvider, useCloudSync] = createContextHook(() => {
       setSyncStatus('syncing');
       setError(null);
 
-      let cloudData;
+      let cloudData: CloudPullPayload | null = null;
       if (useSupabase) {
-        cloudData = await syncAllDataFromCloud();
+        cloudData = (await syncAllDataFromCloud()) as CloudPullPayload | null;
       } else {
         const storageToUse = storage || cloudStorage;
         if (!storageToUse) {
           throw new Error('Storage not available');
         }
-        cloudData = await storageToUse.downloadData();
+        cloudData = (await storageToUse.downloadData()) as CloudPullPayload | null;
       }
       
       if (cloudData) {
         console.log('Cloud data received:', Object.keys(cloudData));
-        
-        // TODO: You would need to add methods to your stores to update from cloud data
-        // For now, we just log what we received
-        // Example:
-        // if (cloudData.habits) updateHabits(cloudData.habits);
-        // if (cloudData.tasks) updateTasks(cloudData.tasks);
-        
+        const mergeSummary = await applyCloudMerge(cloudData);
+        setLastMergeSummary(mergeSummary);
+        console.log('[useCloudSync] Merged from cloud:', mergeSummary);
+
         setSyncStatus('success');
         const now = new Date().toISOString();
-        setLastSyncTime(now);
-        await AsyncStorage.setItem(getScopedSyncKey('cloud_sync_timestamp'), now);
+        setLastPullTime(now);
+        await AsyncStorage.setItem(getScopedSyncKey('cloud_sync_pull_timestamp'), now);
         return true;
       } else {
         setSyncStatus('success');
@@ -285,7 +326,22 @@ export const [CloudSyncProvider, useCloudSync] = createContextHook(() => {
       console.warn('Sync from cloud failed:', msg, err);
       return false;
     }
-  }, [isAuthenticated, user, useSupabase, cloudStorage, isCloudEnabled, contextsReady, getScopedSyncKey]);
+  }, [
+    isAuthenticated,
+    user,
+    useSupabase,
+    cloudStorage,
+    isCloudEnabled,
+    contextsReady,
+    getScopedSyncKey,
+    applyCloudMerge,
+  ]);
+
+  const syncNow = useCallback(async () => {
+    const pulled = await syncFromCloud();
+    if (!pulled) return false;
+    return syncToCloud();
+  }, [syncFromCloud, syncToCloud]);
 
   const enableCloudSync = useCallback(async (preferSupabase = false) => {
     if (!isAuthenticated || !user) {
@@ -329,6 +385,8 @@ export const [CloudSyncProvider, useCloudSync] = createContextHook(() => {
         try {
           const initialized = await initializeSync(true);
           if (initialized) {
+            console.log('[useCloudSync] Initial merge from cloud after sign-in');
+            const pulled = await syncFromCloud();
             const hasAnyLocalData =
               habits.length > 0 ||
               activities.length > 0 ||
@@ -338,11 +396,11 @@ export const [CloudSyncProvider, useCloudSync] = createContextHook(() => {
               projects.length > 0 ||
               timeEntries.length > 0;
 
-            if (hasAnyLocalData) {
-              console.log('[useCloudSync] Initial push to Supabase after sign-in');
+            if (pulled || hasAnyLocalData) {
+              console.log('[useCloudSync] Backing up merged state to Supabase');
               await syncToCloud();
             } else {
-              console.log('[useCloudSync] Skipping initial push because local datasets are empty (prevents cloud overwrite).');
+              console.log('[useCloudSync] No local or remote data to sync yet.');
             }
           } else {
             console.log('Cloud sync not available, using local storage');
@@ -361,6 +419,7 @@ export const [CloudSyncProvider, useCloudSync] = createContextHook(() => {
     contextsReady,
     supabaseInitAttempted,
     initializeSync,
+    syncFromCloud,
     syncToCloud,
     habits.length,
     activities.length,
@@ -398,8 +457,13 @@ export const [CloudSyncProvider, useCloudSync] = createContextHook(() => {
 
     const handleAppStateChange = (nextAppState: string) => {
       if (nextAppState === 'active') {
-        console.log('App became active, syncing from cloud...');
-        void syncFromCloud();
+        console.log('App became active, merging from cloud then backing up...');
+        void (async () => {
+          const pulled = await syncFromCloud();
+          if (pulled) {
+            await syncToCloud();
+          }
+        })();
       }
     };
 
@@ -408,7 +472,7 @@ export const [CloudSyncProvider, useCloudSync] = createContextHook(() => {
     return () => {
       subscription?.remove();
     };
-  }, [isCloudEnabled, isAuthenticated, user, useSupabase, cloudStorage, syncFromCloud]);
+  }, [isCloudEnabled, isAuthenticated, user, useSupabase, cloudStorage, syncFromCloud, syncToCloud]);
 
   const syncToCloudWrapper = useCallback(() => syncToCloud(), [syncToCloud]);
   const syncFromCloudWrapper = useCallback(() => syncFromCloud(), [syncFromCloud]);
@@ -426,10 +490,14 @@ export const [CloudSyncProvider, useCloudSync] = createContextHook(() => {
     void refreshSnapshotMeta();
   }, [refreshSnapshotMeta]);
 
+  const syncNowWrapper = useCallback(() => syncNow(), [syncNow]);
+
   return useMemo(() => ({
     // Status
     syncStatus,
     lastSyncTime,
+    lastPullTime,
+    lastMergeSummary,
     isCloudEnabled,
     error,
     
@@ -438,6 +506,7 @@ export const [CloudSyncProvider, useCloudSync] = createContextHook(() => {
     disableCloudSync,
     syncToCloud: syncToCloudWrapper,
     syncFromCloud: syncFromCloudWrapper,
+    syncNow: syncNowWrapper,
     forceSync,
     
     // Provider info
@@ -452,5 +521,22 @@ export const [CloudSyncProvider, useCloudSync] = createContextHook(() => {
     
     // Auto-sync status
     isAutoSyncActive: isCloudEnabled && (useSupabase || !!cloudStorage),
-  }), [syncStatus, lastSyncTime, isCloudEnabled, error, enableCloudSync, disableCloudSync, syncToCloudWrapper, syncFromCloudWrapper, forceSync, useSupabase, cloudStorage, latestSnapshotTime, restoreLatestSnapshot]);
+  }), [
+    syncStatus,
+    lastSyncTime,
+    lastPullTime,
+    lastMergeSummary,
+    isCloudEnabled,
+    error,
+    enableCloudSync,
+    disableCloudSync,
+    syncToCloudWrapper,
+    syncFromCloudWrapper,
+    syncNowWrapper,
+    forceSync,
+    useSupabase,
+    cloudStorage,
+    latestSnapshotTime,
+    restoreLatestSnapshot,
+  ]);
 });

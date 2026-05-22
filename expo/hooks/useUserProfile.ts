@@ -8,74 +8,14 @@ import { getTeamIdFromName } from '@/utils/footballApi';
 import { trpcClient } from '@/lib/trpc';
 import { useSupabaseSync } from '@/utils/supabaseUserSync';
 import { unifiedStorage } from '@/utils/unifiedStorage';
+import { createDefaultUserProfile, seedDefaultUserProfile } from '@/utils/userProfileBootstrap';
+import {
+  mergeProfilesFromCloud,
+  reconcileProfileWithSession,
+  type CloudPullPayload,
+} from '@/utils/syncMerge';
 
-/**
- * After guest → signed-in migration, stored JSON can still have name "Guest User" while auth has the real email.
- * Profile UI shows `user.email` from auth but `profile.name` from storage — reconcile so both match the session.
- */
-function reconcileStoredProfileWithSession(
-  parsed: UserProfile,
-  userId: string,
-  email: string,
-  sessionDisplayName: string,
-): Pick<UserProfile, 'id' | 'email' | 'name'> {
-  const rawName = typeof parsed.name === 'string' ? parsed.name : '';
-  const placeholderName = rawName === 'Guest User' || rawName === 'Guest';
-  const dn = sessionDisplayName.trim();
-  const authNameOk = dn.length > 0 && dn !== 'Guest User' && dn !== 'Guest';
-
-  let name = rawName;
-  if (placeholderName) {
-    if (authNameOk) {
-      name = dn;
-    } else if (email && !email.toLowerCase().startsWith('guest@')) {
-      const local = email.split('@')[0] ?? '';
-      name =
-        local.length > 0 ? local.charAt(0).toUpperCase() + local.slice(1) : 'there';
-    }
-  }
-
-  return { id: userId, email, name };
-}
-
-const createDefaultProfile = (userId: string, email: string, name: string): UserProfile => {
-  return {
-    id: userId,
-    email,
-    name,
-    favoriteTeams: [],
-    favoriteCountries: [],
-    favoriteLeagues: [],
-    sportsFeedPrefs: {
-      strictFollowing: false,
-      includeFollowedLeagues: true,
-      discoveryLevel: 'med',
-      prioritizeDomesticLeagues: true,
-    },
-    favoriteBooks: [],
-    interests: [],
-    notificationSettings: {
-      liveMatches: true,
-      matchReminders: true,
-      goalAlerts: true,
-      habitReminders: true,
-      habitRiskAlerts: true,
-      quietHoursEnabled: true,
-      quietHoursStart: '22:30',
-      quietHoursEnd: '07:00',
-      eventReminderLeadMinutes: 30,
-    },
-    displayPreferences: {
-      showOnlyFavorites: false,
-      timeFormat: '12h' as const,
-      theme: 'auto' as const
-    },
-    subscriptionTier: 'free' as const,
-    onboardingCompleted: false,
-    createdAt: new Date().toISOString(),
-    lastLoginAt: new Date().toISOString()
-  };
-};
+const PROFILE_LOAD_TIMEOUT_MS = 12_000;
 
 export const [UserProfileProvider, useUserProfile] = createContextHook(() => {
   const { user, isAuthenticated } = useAuth();
@@ -85,19 +25,40 @@ export const [UserProfileProvider, useUserProfile] = createContextHook(() => {
   const [isLoading, setIsLoading] = useState<boolean>(true);
   const [teamLogos, setTeamLogos] = useState<Map<number, string>>(new Map());
   const logoFetchedRef = useRef<Set<number>>(new Set());
+  const loadInFlightRef = useRef<string | null>(null);
+  const loadPromiseRef = useRef<Promise<void> | null>(null);
+  const loadedUserIdRef = useRef<string | null>(null);
 
   const loadProfile = useCallback(async (userId: string, email: string, name: string) => {
+    if (loadInFlightRef.current === userId && loadPromiseRef.current) {
+      console.log('⏳ [Profile] Awaiting in-flight load for', userId);
+      return loadPromiseRef.current;
+    }
+    loadInFlightRef.current = userId;
     console.log('🔄 [Profile] Loading profile for user:', { userId, email, name, platform: Platform.OS });
-    setIsLoading(true);
-    
+    if (loadedUserIdRef.current !== userId) {
+      setIsLoading(true);
+    }
+
+    const run = async () => {
     try {
       const storageKey = `@user_profile_${userId}`;
       console.log('📱 [Profile] Checking storage key:', storageKey, 'on platform:', Platform.OS);
       
-      let stored: string | null = null;
+      let stored: string | null = await unifiedStorage.getItem(storageKey);
+      const hadLocalProfile = !!stored;
       let loadedFromSupabase = false;
-      
-      if (userId && supabaseSync.loadFromCloud) {
+
+      // New signups: unblock onboarding UI immediately; cloud merge runs afterward.
+      if (!hadLocalProfile) {
+        const seeded = createDefaultUserProfile(userId, email, name);
+        setProfile(seeded);
+        loadedUserIdRef.current = userId;
+        setIsLoading(false);
+        void unifiedStorage.setItem(storageKey, JSON.stringify(seeded)).catch(() => {});
+      }
+
+      if (!hadLocalProfile && userId && supabaseSync.loadFromCloud) {
         try {
           console.log('☁️ [Profile] Loading from Supabase...');
           const cloudData = await supabaseSync.loadFromCloud();
@@ -113,10 +74,9 @@ export const [UserProfileProvider, useUserProfile] = createContextHook(() => {
           console.log('⚠️ [Profile] Supabase load failed, falling back to local storage:', cloudError);
         }
       }
-      
+
       if (!stored) {
-        stored = await unifiedStorage.getItem(storageKey);
-        console.log('📦 [Profile] Local storage result:', stored ? 'Found data' : 'No data', 'Length:', stored?.length || 0);
+        console.log('📦 [Profile] Local storage result:', 'No data');
       }
       
       if (stored) {
@@ -130,20 +90,18 @@ export const [UserProfileProvider, useUserProfile] = createContextHook(() => {
           favoriteTeams: parsedProfile.favoriteTeams?.map((t: UserTeam) => t.name) || []
         });
 
-        const sessionCore = reconcileStoredProfileWithSession(
-          parsedProfile,
+        const sessionReconciledProfile = reconcileProfileWithSession(parsedProfile, {
           userId,
           email,
-          name,
-        );
+          displayName: name,
+        });
         const sessionReconciled =
-          parsedProfile.id !== sessionCore.id ||
-          parsedProfile.email !== sessionCore.email ||
-          parsedProfile.name !== sessionCore.name;
+          parsedProfile.id !== sessionReconciledProfile.id ||
+          parsedProfile.email !== sessionReconciledProfile.email ||
+          parsedProfile.name !== sessionReconciledProfile.name;
 
         const updatedProfile: UserProfile = {
-          ...parsedProfile,
-          ...sessionCore,
+          ...sessionReconciledProfile,
           interests: parsedProfile.interests || [],
           favoriteCountries: parsedProfile.favoriteCountries || [],
           favoriteLeagues: parsedProfile.favoriteLeagues || [],
@@ -172,8 +130,9 @@ export const [UserProfileProvider, useUserProfile] = createContextHook(() => {
           try {
             await unifiedStorage.setItem(storageKey, JSON.stringify(updatedProfile));
             if (userId && supabaseSync.saveToCloud) {
-              await supabaseSync.saveToCloud({ userProfile: updatedProfile });
-              console.log('☁️ [Profile] Synced reconciled profile to Supabase');
+              void supabaseSync.saveToCloud({ userProfile: updatedProfile }).catch((syncErr) => {
+                console.log('⚠️ [Profile] Failed to persist reconciled profile:', syncErr);
+              });
             }
           } catch (syncErr) {
             console.log('⚠️ [Profile] Failed to persist reconciled profile:', syncErr);
@@ -185,30 +144,56 @@ export const [UserProfileProvider, useUserProfile] = createContextHook(() => {
           console.log('📝 [Profile] Updated profile with new fields');
           
           if (!loadedFromSupabase && userId && supabaseSync.saveToCloud) {
-            try {
-              await supabaseSync.saveToCloud({ userProfile: updatedProfile });
-              console.log('☁️ [Profile] Synced updated profile to Supabase');
-            } catch (syncError) {
+            void supabaseSync.saveToCloud({ userProfile: updatedProfile }).catch((syncError) => {
               console.log('⚠️ [Profile] Failed to sync to Supabase:', syncError);
-            }
+            });
           }
         }
-      } else {
-        console.log('🆕 [Profile] Creating new profile for user on', Platform.OS);
-        const newProfile = createDefaultProfile(userId, email, name);
-        await unifiedStorage.setItem(storageKey, JSON.stringify(newProfile));
-        setProfile(newProfile);
-        console.log('✅ [Profile] New profile created and saved on', Platform.OS, ':', newProfile.name, 'Teams:', newProfile.favoriteTeams?.length);
+        loadedUserIdRef.current = userId;
+      } else if (!hadLocalProfile) {
+        const seeded = createDefaultUserProfile(userId, email, name);
+        void supabaseSync.saveToCloud?.({ userProfile: seeded }).catch(() => {});
+        loadedUserIdRef.current = userId;
       }
     } catch (error) {
       console.error('❌ [Profile] Error loading user profile on', Platform.OS, ':', error);
-      const defaultProfile = createDefaultProfile(userId, email, name);
+      const defaultProfile = createDefaultUserProfile(userId, email, name);
       setProfile(defaultProfile);
+      loadedUserIdRef.current = userId;
       console.log('🔄 [Profile] Using fallback default profile on', Platform.OS);
-    } finally {
-      setIsLoading(false);
-      console.log('✅ [Profile] Profile loading complete, platform:', Platform.OS);
     }
+    };
+
+    const loadPromise = (async () => {
+      try {
+        await Promise.race([
+          run(),
+          new Promise<void>((_, reject) =>
+            setTimeout(() => reject(new Error('Profile load timed out')), PROFILE_LOAD_TIMEOUT_MS),
+          ),
+        ]);
+      } catch (timeoutErr) {
+        console.warn('⚠️ [Profile] Load timed out or failed — using local default:', timeoutErr);
+        const fallback = createDefaultUserProfile(userId, email, name);
+        try {
+          await unifiedStorage.setItem(`@user_profile_${userId}`, JSON.stringify(fallback));
+        } catch {
+          /* best effort */
+        }
+        setProfile(fallback);
+        loadedUserIdRef.current = userId;
+      } finally {
+        if (loadInFlightRef.current === userId) {
+          loadInFlightRef.current = null;
+        }
+        loadPromiseRef.current = null;
+        setIsLoading(false);
+        console.log('✅ [Profile] Profile loading complete, platform:', Platform.OS);
+      }
+    })();
+
+    loadPromiseRef.current = loadPromise;
+    return loadPromise;
   }, [supabaseSync]);
 
   useEffect(() => {
@@ -226,9 +211,11 @@ export const [UserProfileProvider, useUserProfile] = createContextHook(() => {
     } else {
       console.log('❌ No authenticated user, clearing profile');
       setProfile(null);
+      loadedUserIdRef.current = null;
+      loadInFlightRef.current = null;
       setIsLoading(false);
     }
-  }, [user, isAuthenticated, loadProfile]);
+  }, [user?.id, user?.email, user?.name, isAuthenticated, loadProfile]);
 
   useEffect(() => {
     if (!profile?.favoriteTeams || !user) return;
@@ -546,11 +533,19 @@ export const [UserProfileProvider, useUserProfile] = createContextHook(() => {
   };
 
   const completeOnboarding = () => {
+    if (!profile && user) {
+      void saveProfile({
+        ...createDefaultUserProfile(user.id, user.email, user.name),
+        onboardingCompleted: true,
+      });
+      return;
+    }
     updateProfile({ onboardingCompleted: true });
   };
 
   const resetOnboarding = () => {
-    const baseProfile = profile || createDefaultProfile(userId || '', user?.email || '', user?.name || '');
+    const baseProfile =
+      profile || createDefaultUserProfile(userId || '', user?.email || '', user?.name || '');
     void saveProfile({
       ...baseProfile,
       onboardingCompleted: false,
@@ -708,6 +703,26 @@ export const [UserProfileProvider, useUserProfile] = createContextHook(() => {
     updateProfile({ tabOrder: undefined });
   };
 
+  const mergeProfileFromCloud = useCallback(
+    async (cloudPayload: CloudPullPayload['userProfile']): Promise<boolean> => {
+      if (!user || !cloudPayload || typeof cloudPayload !== 'object') return false;
+      const displayName =
+        user.name?.trim() ||
+        profile?.name?.trim() ||
+        (user.email ? user.email.split('@')[0] : '') ||
+        'there';
+      const merged = mergeProfilesFromCloud(profile, cloudPayload as UserProfile, {
+        userId: user.id,
+        email: user.email,
+        displayName,
+      });
+      if (!merged) return false;
+      await saveProfile(merged);
+      return true;
+    },
+    [user, profile, saveProfile]
+  );
+
   return {
     profile,
     isLoading,
@@ -734,6 +749,7 @@ export const [UserProfileProvider, useUserProfile] = createContextHook(() => {
     updateTabOrder,
     resetTabOrder,
     getTeamLogo,
-    teamLogos
+    teamLogos,
+    mergeProfileFromCloud,
   };
 });

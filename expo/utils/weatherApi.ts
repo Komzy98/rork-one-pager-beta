@@ -102,6 +102,12 @@ export interface ForecastDay {
   pop: number;
 }
 
+export type UvHourlyPoint = {
+  hour: string;
+  uvi: number;
+  isNow?: boolean;
+};
+
 export interface ExtendedWeatherData {
   current: ProcessedWeatherData;
   forecast: ForecastDay[];
@@ -109,12 +115,12 @@ export interface ExtendedWeatherData {
     value: number;
     level: 'low' | 'moderate' | 'high' | 'very_high' | 'extreme';
     protection: string;
+    peakToday: number;
+    hourly: UvHourlyPoint[];
   };
-  skinProtection: {
-    spfRecommendation: string;
-    sunExposureTime: string;
-    precautions: string[];
-  };
+  skinProtection: SkinProtection;
+  visibilityKm: number;
+  fetchedAt: number;
 }
 
 const OPENWEATHER_API_KEY = process.env.EXPO_PUBLIC_OPENWEATHER_API_KEY || process.env.OPENWEATHER_API_KEY || '46c8345d509d2bcf5dd59cf39c188752';
@@ -329,68 +335,155 @@ function getUVProtection(uvi: number): string {
   return 'Take all precautions! Avoid sun exposure. Wear SPF 50+, full protective clothing, and seek shade.';
 }
 
-function getSkinProtection(uvi: number): { spfRecommendation: string; sunExposureTime: string; precautions: string[] } {
+export type SkinProtection = {
+  spfRecommendation: string;
+  sunExposureTime: string;
+  precautions: string[];
+};
+
+function getSafeExposureMinutes(uvi: number): number | null {
+  if (uvi <= 2) return null;
+  if (uvi <= 3) return 60;
+  if (uvi <= 5) return Math.round(55 - (uvi - 3) * 7.5);
+  if (uvi <= 7) return Math.round(40 - (uvi - 5) * 7.5);
+  if (uvi <= 10) return Math.round(25 - (uvi - 7) * 5);
+  return 10;
+}
+
+/** SPF, safe exposure, and tips from current UV (and optional peak later today). */
+export function getSkinProtection(uvi: number, peakToday?: number): SkinProtection {
+  const current = Math.round(uvi * 10) / 10;
+  const peak = peakToday != null ? Math.round(peakToday * 10) / 10 : current;
+
+  let spfRecommendation: string;
+  if (uvi <= 2) spfRecommendation = 'SPF 15+ optional';
+  else if (uvi < 6) spfRecommendation = 'SPF 30+';
+  else if (uvi < 8) spfRecommendation = 'SPF 40-50';
+  else if (uvi < 11) spfRecommendation = 'SPF 50+';
+  else spfRecommendation = 'SPF 50+ water-resistant';
+
+  const safeMinutes = getSafeExposureMinutes(uvi);
+  let sunExposureTime: string;
   if (uvi <= 2) {
-    return {
-      spfRecommendation: 'SPF 15-30 (optional)',
-      sunExposureTime: 'Safe for extended periods',
-      precautions: ['Sunglasses recommended on bright days']
-    };
+    sunExposureTime = 'Extended outdoor time OK';
+  } else if (safeMinutes != null) {
+    sunExposureTime = `~${safeMinutes} min without shade`;
+  } else {
+    sunExposureTime = 'Avoid direct exposure';
   }
-  if (uvi <= 5) {
-    return {
-      spfRecommendation: 'SPF 30+',
-      sunExposureTime: 'Limit exposure to 45-60 minutes',
-      precautions: [
-        'Apply sunscreen 15 min before going out',
-        'Wear sunglasses',
-        'Reapply every 2 hours'
-      ]
-    };
+
+  const precautions: string[] = [];
+
+  if (peak > current + 0.5) {
+    precautions.push(`UV peaks at ${peak} later — plan extra shade midday`);
   }
-  if (uvi <= 7) {
-    return {
-      spfRecommendation: 'SPF 30-50',
-      sunExposureTime: 'Limit to 30-45 minutes',
-      precautions: [
-        'Seek shade during midday hours',
-        'Wear wide-brimmed hat',
-        'Use SPF lip balm',
-        'Wear protective clothing'
-      ]
-    };
+
+  if (uvi <= 2) {
+    precautions.push('Sunglasses on bright days', 'Moisturizer with SPF is optional');
+  } else {
+    precautions.push(`Right now UV is ${current} — apply sunscreen 15 min before going out`);
+    if (uvi >= 3) precautions.push('Reapply every 2 hours when outdoors');
+    if (uvi >= 4) precautions.push('Wear sunglasses with UV protection');
+    if (uvi >= 5) precautions.push('Seek shade during midday hours');
+    if (uvi >= 6) precautions.push('Wear a wide-brimmed hat');
+    if (uvi >= 7) precautions.push('Use SPF lip balm and protective clothing');
+    if (uvi >= 8) precautions.push('Avoid direct sun 10am–4pm when possible');
+    if (uvi >= 9) precautions.push('Use water-resistant SPF and cover arms and legs');
+    if (uvi >= 11) precautions.push('Stay indoors during peak hours; monitor for heat stress');
   }
-  if (uvi <= 10) {
-    return {
-      spfRecommendation: 'SPF 50+',
-      sunExposureTime: 'Limit to 15-25 minutes',
-      precautions: [
-        'Avoid sun from 10am to 4pm',
-        'Wear UV-blocking sunglasses',
-        'Apply water-resistant sunscreen',
-        'Cover arms and legs',
-        'Stay hydrated'
-      ]
-    };
-  }
+
+  const maxTips = uvi >= 8 ? 5 : 4;
   return {
-    spfRecommendation: 'SPF 50+ (water-resistant)',
-    sunExposureTime: 'Avoid direct exposure',
-    precautions: [
-      'Stay indoors during peak hours',
-      'Full protective clothing required',
-      'UV-blocking sunglasses essential',
-      'Reapply sunscreen every hour if outside',
-      'Seek air-conditioned spaces',
-      'Monitor for heat exhaustion'
-    ]
+    spfRecommendation,
+    sunExposureTime,
+    precautions: precautions.slice(0, maxTips),
   };
 }
 
-export async function getExtendedWeather(lat?: number, lon?: number): Promise<ExtendedWeatherData> {
+type OpenMeteoUvResponse = {
+  hourly?: { time?: string[]; uv_index?: number[] };
+  daily?: { time?: string[]; uv_index_max?: number[] };
+  current?: { uv_index?: number };
+};
+
+async function fetchLiveUvData(latitude: number, longitude: number): Promise<{
+  current: number;
+  peakToday: number;
+  hourly: UvHourlyPoint[];
+  dailyByDate: Map<string, number>;
+} | null> {
+  try {
+    const url =
+      `https://api.open-meteo.com/v1/forecast?latitude=${latitude}&longitude=${longitude}` +
+      '&current=uv_index&hourly=uv_index&daily=uv_index_max&timezone=auto&forecast_days=7';
+    const response = await fetch(url);
+    if (!response.ok) return null;
+
+    const data = (await response.json()) as OpenMeteoUvResponse;
+    const now = new Date();
+    const todayYmd = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
+
+    const hourlyTimes = data.hourly?.time ?? [];
+    const hourlyUvi = data.hourly?.uv_index ?? [];
+    const todayHours: UvHourlyPoint[] = [];
+    let peakToday = 0;
+
+    for (let i = 0; i < hourlyTimes.length; i++) {
+      const t = hourlyTimes[i];
+      if (!t?.startsWith(todayYmd)) continue;
+      const uvi = Math.round((hourlyUvi[i] ?? 0) * 10) / 10;
+      peakToday = Math.max(peakToday, uvi);
+      const hourLabel = new Date(t).toLocaleTimeString('en-GB', { hour: 'numeric' });
+      const isNow = Math.abs(new Date(t).getTime() - now.getTime()) < 45 * 60 * 1000;
+      todayHours.push({ hour: hourLabel, uvi, isNow });
+    }
+
+    let displayHours: UvHourlyPoint[] = [];
+    if (todayHours.length > 0) {
+      const nowIdx = Math.max(0, todayHours.findIndex((h) => h.isNow));
+      const start = Math.max(0, nowIdx - 3);
+      displayHours = todayHours.slice(start, start + 8);
+      if (displayHours.length < 4) {
+        displayHours = todayHours.filter((_, idx) => idx % 2 === 0).slice(0, 8);
+      }
+    }
+
+    const dailyByDate = new Map<string, number>();
+    const dailyTimes = data.daily?.time ?? [];
+    const dailyMax = data.daily?.uv_index_max ?? [];
+    dailyTimes.forEach((date, i) => {
+      dailyByDate.set(date, Math.round((dailyMax[i] ?? 0) * 10) / 10);
+    });
+
+    const current =
+      typeof data.current?.uv_index === 'number'
+        ? Math.round(data.current.uv_index * 10) / 10
+        : peakToday || displayHours.find((h) => h.isNow)?.uvi || 0;
+
+    return {
+      current,
+      peakToday: peakToday || current,
+      hourly: displayHours.length > 0 ? displayHours : [{ hour: 'Now', uvi: current, isNow: true }],
+      dailyByDate,
+    };
+  } catch (error) {
+    console.log('⚠️ [Weather] Open-Meteo UV fetch failed:', error);
+    return null;
+  }
+}
+
+export async function getExtendedWeather(
+  lat?: number,
+  lon?: number,
+  options?: { forceRefresh?: boolean }
+): Promise<ExtendedWeatherData> {
   const now = Date.now();
-  
-  if (cachedExtendedWeather && (now - lastExtendedFetchTime) < EXTENDED_CACHE_DURATION) {
+
+  if (
+    !options?.forceRefresh &&
+    cachedExtendedWeather &&
+    now - lastExtendedFetchTime < EXTENDED_CACHE_DURATION
+  ) {
     console.log('☀️ [Weather] Using cached extended weather data');
     return cachedExtendedWeather;
   }
@@ -510,16 +603,6 @@ export async function getExtendedWeather(lat?: number, lon?: number): Promise<Ex
       const totalRain = items.reduce((sum: number, i: any) => sum + (i.rain?.['3h'] || 0), 0);
       const maxPop = Math.max(...items.map((i: any) => i.pop || 0));
       
-      const estimatedUvi = (() => {
-        const cond = midDay.weather[0]?.main.toLowerCase() || '';
-        const month = dateObj.getMonth();
-        const baseUvi = month >= 4 && month <= 8 ? 7 : 4;
-        
-        if (cond.includes('rain') || cond.includes('storm')) return baseUvi * 0.3;
-        if (cond.includes('cloud')) return baseUvi * 0.6;
-        return baseUvi;
-      })();
-
       forecast.push({
         date,
         dayName: dayNames[dateObj.getDay()],
@@ -532,23 +615,46 @@ export async function getExtendedWeather(lat?: number, lon?: number): Promise<Ex
         icon: midDay.weather[0]?.icon || '01d',
         humidity: Math.round(items.reduce((sum: number, i: any) => sum + i.main.humidity, 0) / items.length),
         windSpeed: Math.round(items.reduce((sum: number, i: any) => sum + i.wind.speed, 0) / items.length * 10) / 10,
-        uvi: Math.round(estimatedUvi * 10) / 10,
+        uvi: 0,
         rain: Math.round(totalRain * 10) / 10,
         pop: Math.round(maxPop * 100)
       });
     });
 
-    const currentUvi = forecast[0]?.uvi || 5;
-    
+    const uvLive =
+      latitude != null && longitude != null
+        ? await fetchLiveUvData(latitude, longitude)
+        : null;
+
+    const currentUvi = uvLive?.current ?? 0;
+    const peakToday = uvLive?.peakToday ?? currentUvi;
+
+    forecast.forEach((day) => {
+      const fromApi = uvLive?.dailyByDate.get(day.date);
+      day.uvi = fromApi ?? day.uvi;
+    });
+    if (forecast[0] && !forecast[0].uvi) {
+      forecast[0].uvi = currentUvi;
+    }
+
+    const visibilityKm =
+      typeof currentData.visibility === 'number'
+        ? Math.round((currentData.visibility / 1000) * 10) / 10
+        : 10;
+
     const extendedData: ExtendedWeatherData = {
       current,
       forecast,
       uvIndex: {
         value: currentUvi,
         level: getUVLevel(currentUvi),
-        protection: getUVProtection(currentUvi)
+        protection: getUVProtection(currentUvi),
+        peakToday,
+        hourly: uvLive?.hourly ?? [{ hour: 'Now', uvi: currentUvi, isNow: true }],
       },
-      skinProtection: getSkinProtection(currentUvi)
+      skinProtection: getSkinProtection(currentUvi, peakToday),
+      visibilityKm,
+      fetchedAt: now,
     };
 
     cachedExtendedWeather = extendedData;
@@ -608,10 +714,203 @@ function getDefaultExtendedWeather(): ExtendedWeatherData {
     uvIndex: {
       value: 5,
       level: 'moderate',
-      protection: 'Wear sunglasses on bright days. Use SPF 30+ if outdoors for 30+ minutes.'
+      protection: 'Wear sunglasses on bright days. Use SPF 30+ if outdoors for 30+ minutes.',
+      peakToday: 6,
+      hourly: [
+        { hour: '9 AM', uvi: 2 },
+        { hour: '12 PM', uvi: 5, isNow: true },
+        { hour: '3 PM', uvi: 4 },
+      ],
     },
-    skinProtection: getSkinProtection(5)
+    skinProtection: getSkinProtection(5, 6),
+    visibilityKm: 10,
+    fetchedAt: Date.now(),
   };
+}
+
+export type HeroTimeOfDay = 'morning' | 'afternoon' | 'evening' | 'night';
+
+export type HeroGradientOptions = {
+  description?: string;
+  timeOfDay?: HeroTimeOfDay;
+  hour?: number;
+};
+
+export function getTimeOfDayFromHour(hour?: number): HeroTimeOfDay {
+  const h = hour ?? new Date().getHours();
+  if (h >= 5 && h < 12) return 'morning';
+  if (h >= 12 && h < 17) return 'afternoon';
+  if (h >= 17 && h < 21) return 'evening';
+  return 'night';
+}
+
+type HeroGradient = [string, string, string];
+
+const HERO_GRADIENTS = {
+  storm: {
+    morning: ['#3D4F62', '#556575', '#6E7F8F'] as HeroGradient,
+    afternoon: ['#4A5568', '#5E6B7D', '#748191'] as HeroGradient,
+    evening: ['#2D3544', '#3D4758', '#4F5A6C'] as HeroGradient,
+    night: ['#0C0E14', '#161B28', '#232A3A'] as HeroGradient,
+  },
+  rain: {
+    light: {
+      morning: ['#9BB4C8', '#B4C8D8', '#D0DEE8'] as HeroGradient,
+      afternoon: ['#7B9AAE', '#94AFC2', '#B0C4D4'] as HeroGradient,
+      evening: ['#6B7A8A', '#8494A4', '#9EACBA'] as HeroGradient,
+      night: ['#1A2434', '#283648', '#364658'] as HeroGradient,
+    },
+    heavy: {
+      morning: ['#6E8498', '#849AAE', '#9CB0C0'] as HeroGradient,
+      afternoon: ['#556575', '#6A7D8F', '#8294A4'] as HeroGradient,
+      evening: ['#455565', '#5A6A7A', '#708090'] as HeroGradient,
+      night: ['#121A26', '#1E2A3A', '#2C3A4C'] as HeroGradient,
+    },
+  },
+  snow: {
+    morning: ['#D8E8F4', '#E8F2FA', '#F4F8FC'] as HeroGradient,
+    afternoon: ['#C4D8E8', '#D8E8F4', '#ECF4FA'] as HeroGradient,
+    evening: ['#A8B8C8', '#BCC8D8', '#D0DCE8'] as HeroGradient,
+    night: ['#1E2838', '#2C3848', '#3C4A5C'] as HeroGradient,
+  },
+  fog: {
+    morning: ['#D8D0C4', '#E4DCD0', '#F0E8DC'] as HeroGradient,
+    afternoon: ['#B8C4D0', '#C8D4E0', '#D8E4EC'] as HeroGradient,
+    evening: ['#A89888', '#B8A898', '#C8B8A8'] as HeroGradient,
+    night: ['#22262C', '#2E343C', '#3A424C'] as HeroGradient,
+  },
+  cloud: {
+    few: {
+      morning: ['#7EC8E8', '#A8DCF4', '#E0F4FC'] as HeroGradient,
+      afternoon: ['#4A9FD4', '#6BB8E8', '#A8D8F4'] as HeroGradient,
+      evening: ['#D4A878', '#E8C090', '#F4D8B0'] as HeroGradient,
+      night: ['#141E30', '#1E2C44', '#2A3C58'] as HeroGradient,
+    },
+    scattered: {
+      morning: ['#88B8D8', '#A8D0E8', '#D0E8F4'] as HeroGradient,
+      afternoon: ['#6898BE', '#88B4D4', '#B0D0E8'] as HeroGradient,
+      evening: ['#B8A090', '#C8B4A4', '#D8C8B8'] as HeroGradient,
+      night: ['#182030', '#243448', '#30445C'] as HeroGradient,
+    },
+    broken: {
+      morning: ['#98A8B8', '#B0BCC8', '#C8D4E0'] as HeroGradient,
+      afternoon: ['#788898', '#94A4B4', '#B0C0D0'] as HeroGradient,
+      evening: ['#988878', '#A89888', '#B8A8A0'] as HeroGradient,
+      night: ['#1C2434', '#283444', '#344454'] as HeroGradient,
+    },
+    overcast: {
+      morning: ['#8A98A8', '#A0ACB8', '#B8C4D0'] as HeroGradient,
+      afternoon: ['#708090', '#8898A8', '#A0B0C0'] as HeroGradient,
+      evening: ['#787068', '#888078', '#989088'] as HeroGradient,
+      night: ['#1A2030', '#262E40', '#323C50'] as HeroGradient,
+    },
+  },
+  clear: {
+    morning: ['#F0C878', '#F8DC98', '#FEF0C8'] as HeroGradient,
+    afternoon: ['#1D6FD4', '#3B8FE8', '#7EC4F8'] as HeroGradient,
+    evening: ['#D45820', '#F07830', '#F8A858'] as HeroGradient,
+    night: ['#080C18', '#101828', '#1A2840'] as HeroGradient,
+  },
+} as const;
+
+function resolveHeroTimeOfDay(
+  isDayTime: boolean,
+  options?: HeroGradientOptions
+): HeroTimeOfDay {
+  if (!isDayTime) return 'night';
+  return options?.timeOfDay ?? getTimeOfDayFromHour(options?.hour);
+}
+
+function pickByTime(
+  table: Record<HeroTimeOfDay, HeroGradient>,
+  time: HeroTimeOfDay
+): HeroGradient {
+  return table[time] ?? table.afternoon;
+}
+
+function isHeavyRain(description: string): boolean {
+  return (
+    description.includes('heavy') ||
+    description.includes('extreme') ||
+    description.includes('torrential')
+  );
+}
+
+function cloudCoverTier(
+  cloudiness: number,
+  description: string,
+  condition: string
+): 'few' | 'scattered' | 'broken' | 'overcast' {
+  const desc = description.toLowerCase();
+  const cond = condition.toLowerCase();
+  if (desc.includes('overcast') || desc.includes('broken') && cloudiness >= 55) return 'overcast';
+  if (desc.includes('overcast') || cloudiness >= 75) return 'overcast';
+  if (desc.includes('broken') || cloudiness >= 55) return 'broken';
+  if (desc.includes('scattered') || (cloudiness >= 30 && cloudiness < 55)) return 'scattered';
+  if (desc.includes('few') || cloudiness < 30) return 'few';
+  if (cond.includes('cloud') && cloudiness >= 70) return 'overcast';
+  if (cloudiness >= 50) return 'broken';
+  if (cloudiness >= 25) return 'scattered';
+  return 'few';
+}
+
+/** Sky gradient matched to condition, cloud %, description, and time of day. */
+export function getHeroGradientColors(
+  condition: string,
+  isDayTime: boolean,
+  cloudiness: number,
+  options?: HeroGradientOptions
+): HeroGradient {
+  const cond = condition.toLowerCase();
+  const desc = (options?.description ?? '').toLowerCase();
+  const time = resolveHeroTimeOfDay(isDayTime, options);
+  const clouds = Math.max(0, Math.min(100, cloudiness));
+
+  if (
+    cond.includes('thunder') ||
+    cond.includes('storm') ||
+    cond.includes('squall') ||
+    cond.includes('tornado') ||
+    desc.includes('thunder')
+  ) {
+    return pickByTime(HERO_GRADIENTS.storm, time);
+  }
+
+  if (cond.includes('snow') || cond.includes('sleet') || cond.includes('blizzard') || desc.includes('snow')) {
+    return pickByTime(HERO_GRADIENTS.snow, time);
+  }
+
+  if (
+    cond.includes('rain') ||
+    cond.includes('drizzle') ||
+    desc.includes('rain') ||
+    desc.includes('shower') ||
+    desc.includes('drizzle')
+  ) {
+    const rainSet = isHeavyRain(desc) ? HERO_GRADIENTS.rain.heavy : HERO_GRADIENTS.rain.light;
+    return pickByTime(rainSet, time);
+  }
+
+  if (
+    cond.includes('mist') ||
+    cond.includes('fog') ||
+    cond.includes('haze') ||
+    cond.includes('smoke') ||
+    cond.includes('dust') ||
+    cond.includes('sand') ||
+    desc.includes('mist') ||
+    desc.includes('fog') ||
+    desc.includes('haze')
+  ) {
+    return pickByTime(HERO_GRADIENTS.fog, time);
+  }
+
+  if (cond.includes('cloud') || clouds >= 12) {
+    const tier = cloudCoverTier(clouds, desc, cond);
+    return pickByTime(HERO_GRADIENTS.cloud[tier], time);
+  }
+
+  return pickByTime(HERO_GRADIENTS.clear, time);
 }
 
 export function getWeatherIcon(condition: string, isDayTime: boolean = true): string {

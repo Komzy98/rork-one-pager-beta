@@ -15,6 +15,13 @@ import {
 } from '@/types/task';
 import { useAuth } from '@/hooks/useAuth';
 import { useSupabaseSync } from '@/utils/supabaseUserSync';
+import {
+  resolveTasksAfterCloudSync,
+  resolveProjectsAfterCloudSync,
+  resolveTimeEntriesAfterCloudSync,
+  type CloudMergeStats,
+  type CloudPullPayload,
+} from '@/utils/syncMerge';
 
 const formatDateStr = (date: Date): string => {
   const year = date.getFullYear();
@@ -265,13 +272,6 @@ const migrateTaskDataToUserKeys = async (userId: string) => {
   }
 };
 
-/** Do not replace local tasks with cloud [] when this device already has tasks (empty cloud row / race after add). */
-function shouldApplyCloudTasks(cloudTasks: unknown, localTasks: Task[] | undefined): cloudTasks is Task[] {
-  if (!Array.isArray(cloudTasks)) return false;
-  if (cloudTasks.length > 0) return true;
-  return !(localTasks && localTasks.length > 0);
-}
-
 export const [TaskProvider, useTasks] = createContextHook(() => {
   const queryClient = useQueryClient();
   const { user } = useAuth();
@@ -359,10 +359,21 @@ export const [TaskProvider, useTasks] = createContextHook(() => {
         }
         if (!cloudData || cancelled) return;
 
-        const localTasksHydrate = queryClient.getQueryData<Task[]>(['tasks', userId]);
-        if (shouldApplyCloudTasks(cloudData.tasks, localTasksHydrate)) {
-          queryClient.setQueryData(['tasks', userId], cloudData.tasks);
-          await unifiedStorage.setItem(TASKS_STORAGE_KEY, JSON.stringify(cloudData.tasks));
+        let localTasksHydrate = queryClient.getQueryData<Task[]>(['tasks', userId]);
+        if (!localTasksHydrate?.length) {
+          const storedLocal = await unifiedStorage.getItem(TASKS_STORAGE_KEY);
+          if (storedLocal) {
+            try {
+              localTasksHydrate = JSON.parse(storedLocal) as Task[];
+            } catch {
+              /* use query cache only */
+            }
+          }
+        }
+        const mergedTasks = resolveTasksAfterCloudSync(cloudData.tasks, localTasksHydrate);
+        if (mergedTasks !== null) {
+          queryClient.setQueryData(['tasks', userId], mergedTasks);
+          await unifiedStorage.setItem(TASKS_STORAGE_KEY, JSON.stringify(mergedTasks));
         }
         if (Array.isArray(cloudData.taskProjects)) {
           queryClient.setQueryData(['task-projects', userId], cloudData.taskProjects);
@@ -398,9 +409,10 @@ export const [TaskProvider, useTasks] = createContextHook(() => {
     if (!userId || !supabaseSync.setupRealtimeSync) return;
     const unsubscribe = supabaseSync.setupRealtimeSync((cloudData) => {
       const localTasksRt = queryClient.getQueryData<Task[]>(['tasks', userId]);
-      if (shouldApplyCloudTasks(cloudData.tasks, localTasksRt)) {
-        queryClient.setQueryData(['tasks', userId], cloudData.tasks);
-        void unifiedStorage.setItem(TASKS_STORAGE_KEY, JSON.stringify(cloudData.tasks));
+      const mergedTasks = resolveTasksAfterCloudSync(cloudData.tasks, localTasksRt);
+      if (mergedTasks !== null) {
+        queryClient.setQueryData(['tasks', userId], mergedTasks);
+        void unifiedStorage.setItem(TASKS_STORAGE_KEY, JSON.stringify(mergedTasks));
       }
       if (Array.isArray(cloudData.taskProjects)) {
         queryClient.setQueryData(['task-projects', userId], cloudData.taskProjects);
@@ -985,6 +997,69 @@ export const [TaskProvider, useTasks] = createContextHook(() => {
     );
   }, [tasks]);
 
+  const mergeFromCloud = useCallback(
+    async (payload: CloudPullPayload): Promise<Partial<CloudMergeStats>> => {
+      if (!userId) return {};
+      const stats: Partial<CloudMergeStats> = {};
+
+      const readLocalTasks = async (): Promise<Task[]> => {
+        let local = queryClient.getQueryData<Task[]>(['tasks', userId]) ?? [];
+        if (!local.length) {
+          const raw = await unifiedStorage.getItem(TASKS_STORAGE_KEY);
+          if (raw) {
+            try {
+              local = JSON.parse(raw) as Task[];
+            } catch {
+              local = [];
+            }
+          }
+        }
+        return local;
+      };
+
+      const cloudTasks = payload.tasks;
+      if (cloudTasks !== undefined) {
+        const localTasks = await readLocalTasks();
+        const mergedTasks = resolveTasksAfterCloudSync(cloudTasks, localTasks);
+        if (mergedTasks !== null) {
+          queryClient.setQueryData(['tasks', userId], mergedTasks);
+          await unifiedStorage.setItem(TASKS_STORAGE_KEY, JSON.stringify(mergedTasks));
+          stats.tasksMerged = true;
+        }
+      }
+
+      const cloudProjects = payload.taskProjects ?? payload.projects;
+      if (cloudProjects !== undefined) {
+        const localProjects = queryClient.getQueryData<TaskProject[]>(['task-projects', userId]) ?? [];
+        const mergedProjects = resolveProjectsAfterCloudSync(cloudProjects, localProjects);
+        if (mergedProjects !== null) {
+          queryClient.setQueryData(['task-projects', userId], mergedProjects);
+          await unifiedStorage.setItem(PROJECTS_STORAGE_KEY, JSON.stringify(mergedProjects));
+          stats.projectsMerged = true;
+        }
+      }
+
+      const cloudTimeEntries = payload.taskTimeEntries ?? payload.timeEntries;
+      if (cloudTimeEntries !== undefined) {
+        const localEntries =
+          queryClient.getQueryData<TaskTimeEntry[]>(['task-time-entries', userId]) ?? [];
+        const mergedEntries = resolveTimeEntriesAfterCloudSync(cloudTimeEntries, localEntries);
+        if (mergedEntries !== null) {
+          queryClient.setQueryData(['task-time-entries', userId], mergedEntries);
+          await unifiedStorage.setItem(TIME_ENTRIES_STORAGE_KEY, JSON.stringify(mergedEntries));
+          stats.timeEntriesMerged = true;
+        }
+      }
+
+      void queryClient.invalidateQueries({ queryKey: ['tasks', userId] });
+      void queryClient.invalidateQueries({ queryKey: ['task-projects', userId] });
+      void queryClient.invalidateQueries({ queryKey: ['task-time-entries', userId] });
+
+      return stats;
+    },
+    [userId, queryClient, TASKS_STORAGE_KEY, PROJECTS_STORAGE_KEY, TIME_ENTRIES_STORAGE_KEY]
+  );
+
   return {
     // Data
     tasks: filteredTasks,
@@ -1028,6 +1103,8 @@ export const [TaskProvider, useTasks] = createContextHook(() => {
     getTasksByProject,
     getOverdueTasks,
     getTodayTasks,
+
+    mergeFromCloud,
   };
 });
 
@@ -1070,6 +1147,7 @@ const defaultTasksContext = {
   getTasksByProject: () => [],
   getOverdueTasks: () => [],
   getTodayTasks: () => [],
+  mergeFromCloud: async () => ({} as CloudMergeStats),
 };
 
 // Wrapper to ensure context is always available

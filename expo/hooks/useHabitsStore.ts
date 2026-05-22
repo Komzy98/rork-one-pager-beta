@@ -22,6 +22,12 @@ import { StreakFreeze } from '@/types/habit';
 import { generateDailyTasks, generateMilestones, shouldLevelUp } from '@/utils/goalBreakdown';
 import { useAuth } from '@/hooks/useAuth';
 import { useSupabaseSync } from '@/utils/supabaseUserSync';
+import {
+  resolveHabitsAfterCloudSync,
+  resolveGenericRecordsAfterCloudSync,
+  type CloudMergeStats,
+  type CloudPullPayload,
+} from '@/utils/syncMerge';
 
 // Helper function to get user-specific storage keys
 const getUserStorageKey = (baseKey: string, userId?: string) => {
@@ -76,6 +82,7 @@ const defaultAppContext = {
   updateShow: () => {},
   markEpisodeWatched: () => {},
   deleteShow: () => {},
+  mergeFromCloud: async () => ({} as CloudMergeStats),
 };
 
 // Migration function to move data from old keys to user-specific keys
@@ -147,13 +154,6 @@ const migrateDataToUserKeys = async (userId: string) => {
     console.error('Error during data migration:', error);
   }
 };
-
-/** Do not replace local habits with cloud [] when this device already has habits (empty cloud row / bad merge). */
-function shouldApplyCloudHabits(cloudHabits: unknown, localHabits: Habit[] | undefined): cloudHabits is Habit[] {
-  if (!Array.isArray(cloudHabits)) return false;
-  if (cloudHabits.length > 0) return true;
-  return !(localHabits && localHabits.length > 0);
-}
 
 export const [AppProvider, useApp] = createContextHook(() => {
   const queryClient = useQueryClient();
@@ -298,10 +298,21 @@ export const [AppProvider, useApp] = createContextHook(() => {
         }
         if (!cloudData || cancelled) return;
 
-        const localHabitsHydrate = queryClient.getQueryData<Habit[]>(['habits', userId]);
-        if (shouldApplyCloudHabits(cloudData.habits, localHabitsHydrate)) {
-          queryClient.setQueryData(['habits', userId], cloudData.habits);
-          await unifiedStorage.setItem(HABITS_STORAGE_KEY, JSON.stringify(cloudData.habits));
+        let localHabitsHydrate = queryClient.getQueryData<Habit[]>(['habits', userId]);
+        if (!localHabitsHydrate?.length) {
+          const storedLocal = await unifiedStorage.getItem(HABITS_STORAGE_KEY);
+          if (storedLocal) {
+            try {
+              localHabitsHydrate = JSON.parse(storedLocal) as Habit[];
+            } catch {
+              /* use query cache only */
+            }
+          }
+        }
+        const mergedHabits = resolveHabitsAfterCloudSync(cloudData.habits, localHabitsHydrate);
+        if (mergedHabits !== null) {
+          queryClient.setQueryData(['habits', userId], mergedHabits);
+          await unifiedStorage.setItem(HABITS_STORAGE_KEY, JSON.stringify(mergedHabits));
         }
         if (Array.isArray(cloudData.activities)) {
           queryClient.setQueryData(['activities', userId], cloudData.activities);
@@ -343,9 +354,10 @@ export const [AppProvider, useApp] = createContextHook(() => {
     if (!userId || !supabaseSync.setupRealtimeSync) return;
     const unsubscribe = supabaseSync.setupRealtimeSync((cloudData) => {
       const localHabitsRt = queryClient.getQueryData<Habit[]>(['habits', userId]);
-      if (shouldApplyCloudHabits(cloudData.habits, localHabitsRt)) {
-        queryClient.setQueryData(['habits', userId], cloudData.habits);
-        void unifiedStorage.setItem(HABITS_STORAGE_KEY, JSON.stringify(cloudData.habits));
+      const mergedHabits = resolveHabitsAfterCloudSync(cloudData.habits, localHabitsRt);
+      if (mergedHabits !== null) {
+        queryClient.setQueryData(['habits', userId], mergedHabits);
+        void unifiedStorage.setItem(HABITS_STORAGE_KEY, JSON.stringify(mergedHabits));
       }
       if (Array.isArray(cloudData.activities)) {
         queryClient.setQueryData(['activities', userId], cloudData.activities);
@@ -701,7 +713,11 @@ export const [AppProvider, useApp] = createContextHook(() => {
     const today = getTodayFormatted();
     
     return habits.map(habit => {
-      const streak = calculateStreak(habit.completions, habit.streakFreeze?.frozenDates);
+      const streak = calculateStreak(habit.completions, {
+        frozenDates: habit.streakFreeze?.frozenDates,
+        recoveredDates: habit.gracePeriod?.recoveredDates,
+        frequency: habit.frequency,
+      });
       const completedToday = !!habit.completions[today];
       const totalCompletions = Object.values(habit.completions).filter(Boolean).length;
       
@@ -1117,6 +1133,73 @@ export const [AppProvider, useApp] = createContextHook(() => {
     };
   };
 
+  const mergeFromCloud = React.useCallback(
+    async (payload: CloudPullPayload): Promise<Partial<CloudMergeStats>> => {
+      if (!userId) return {};
+      const stats: Partial<CloudMergeStats> = {};
+
+      const readLocalHabits = async (): Promise<Habit[]> => {
+        let local = queryClient.getQueryData<Habit[]>(['habits', userId]) ?? [];
+        if (!local.length) {
+          const raw = await unifiedStorage.getItem(HABITS_STORAGE_KEY);
+          if (raw) {
+            try {
+              local = JSON.parse(raw) as Habit[];
+            } catch {
+              local = [];
+            }
+          }
+        }
+        return local;
+      };
+
+      if (payload.habits !== undefined) {
+        const localHabits = await readLocalHabits();
+        const mergedHabits = resolveHabitsAfterCloudSync(payload.habits, localHabits);
+        if (mergedHabits !== null) {
+          queryClient.setQueryData(['habits', userId], mergedHabits);
+          await unifiedStorage.setItem(HABITS_STORAGE_KEY, JSON.stringify(mergedHabits));
+          stats.habitsMerged = true;
+        }
+      }
+
+      const mergeList = async <T extends { id?: string; updatedAt?: string; createdAt?: string }>(
+        key: 'activities' | 'shows' | 'sports',
+        storageKey: string,
+        queryKey: string
+      ) => {
+        if (payload[key] === undefined) return;
+        const local = queryClient.getQueryData<T[]>([queryKey, userId]) ?? [];
+        const merged = resolveGenericRecordsAfterCloudSync(payload[key], local);
+        if (merged === null) return;
+        queryClient.setQueryData([queryKey, userId], merged);
+        await unifiedStorage.setItem(storageKey, JSON.stringify(merged));
+        if (key === 'activities') stats.activitiesMerged = true;
+        if (key === 'shows') stats.showsMerged = true;
+        if (key === 'sports') stats.sportsMerged = true;
+      };
+
+      await mergeList<Activity>('activities', ACTIVITIES_STORAGE_KEY, 'activities');
+      await mergeList<Show>('shows', SHOWS_STORAGE_KEY, 'shows');
+      await mergeList<SportMatch>('sports', SPORTS_STORAGE_KEY, 'sports');
+
+      void queryClient.invalidateQueries({ queryKey: ['habits', userId] });
+      void queryClient.invalidateQueries({ queryKey: ['activities', userId] });
+      void queryClient.invalidateQueries({ queryKey: ['shows', userId] });
+      void queryClient.invalidateQueries({ queryKey: ['sports', userId] });
+
+      return stats;
+    },
+    [
+      userId,
+      queryClient,
+      HABITS_STORAGE_KEY,
+      ACTIVITIES_STORAGE_KEY,
+      SHOWS_STORAGE_KEY,
+      SPORTS_STORAGE_KEY,
+    ]
+  );
+
   return {
     // Habits
     habits: habitsQuery.data || [],
@@ -1174,6 +1257,8 @@ export const [AppProvider, useApp] = createContextHook(() => {
     
     // Loading states
     isLoading: habitsQuery.isLoading || activitiesQuery.isLoading || showsQuery.isLoading || sportsQuery.isLoading,
+
+    mergeFromCloud,
   };
 });
 

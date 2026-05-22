@@ -1,12 +1,14 @@
 import { useState, useEffect, useMemo, useCallback, useRef } from 'react';
 import { Platform, AppState, AppStateStatus } from 'react-native';
 import * as Notifications from 'expo-notifications';
+import { router } from 'expo-router';
 import createContextHook from '@nkzw/create-context-hook';
 import { useUserProfile } from './useUserProfile';
 import { useAuth } from './useAuth';
 import { useAppSafe } from './useHabitsStore';
 import { useTasks } from './useTasksStore';
 import { notificationService, ScheduledNotification } from '@/utils/notificationService';
+import { syncDailySummaryNotification } from '@/utils/dailySummaryNotifications';
 import { 
   UnifiedActivity, 
   ActivityInsight, 
@@ -486,6 +488,9 @@ export const [BackgroundServicesProvider, useBackgroundServices] = createContext
         if (data?.type) {
           console.log('Notification tapped:', data.type, data.id);
         }
+        if (data?.type === 'daily_summary') {
+          router.push('/(tabs)/activities' as never);
+        }
       });
     }
 
@@ -516,6 +521,11 @@ export const [BackgroundServicesProvider, useBackgroundServices] = createContext
       return () => clearTimeout(timer);
     }
   }, [notifState.isEnabled, allTasks.length, scheduleTaskReminders]);
+
+  useEffect(() => {
+    if (!user?.id || !notifState.isEnabled) return;
+    void syncDailySummaryNotification({ userId: user.id });
+  }, [user?.id, notifState.isEnabled]);
 
   useEffect(() => {
     if (!notifState.isEnabled || !profile?.notificationSettings.habitReminders) return;

@@ -13,7 +13,16 @@ Notifications.setNotificationHandler({
 });
 
 export interface NotificationData {
-  type: 'match_live' | 'match_reminder' | 'goal_alert' | 'habit_reminder' | 'task_due' | 'reading_reminder' | 'weekly_recap' | 'streak_protection';
+  type:
+    | 'match_live'
+    | 'match_reminder'
+    | 'goal_alert'
+    | 'habit_reminder'
+    | 'task_due'
+    | 'reading_reminder'
+    | 'weekly_recap'
+    | 'streak_protection'
+    | 'daily_summary';
   id?: string;
   payload?: Record<string, any>;
 }
@@ -406,6 +415,68 @@ export const notificationService = {
       }
     } catch (error) {
       console.error('❌ Error cancelling task reminder:', error);
+    }
+  },
+
+  async cancelNotificationsByType(type: NotificationData['type']): Promise<void> {
+    try {
+      const scheduled = await this.getScheduledNotifications();
+      const matches = scheduled.filter((n) => n.type === type);
+      for (const notification of matches) {
+        await this.cancelNotification(notification.identifier);
+      }
+      if (matches.length > 0) {
+        console.log('🗑️ Cancelled', matches.length, type, 'notification(s)');
+      }
+    } catch (error) {
+      console.error('❌ Error cancelling notifications by type:', type, error);
+    }
+  },
+
+  async scheduleDailySummaryReminder(hour: number, minute: number): Promise<string | null> {
+    try {
+      if (Platform.OS === 'web') {
+        console.log('⚠️ Daily summary reminders not supported on web');
+        return null;
+      }
+
+      const hasPermission = await this.requestPermissions();
+      if (!hasPermission) return null;
+
+      await this.cancelNotificationsByType('daily_summary');
+
+      const identifier = await Notifications.scheduleNotificationAsync({
+        content: {
+          title: '✨ Your daily summary is ready',
+          body: 'See today\'s wins, streaks, and what\'s still open on Overview.',
+          data: {
+            type: 'daily_summary',
+            id: 'daily_summary_reminder',
+          },
+          sound: true,
+        },
+        trigger: {
+          type: Notifications.SchedulableTriggerInputTypes.DAILY,
+          hour: Math.max(0, Math.min(23, hour)),
+          minute: Math.max(0, Math.min(59, minute)),
+        },
+      });
+
+      await this.saveScheduledNotification({
+        id: 'daily_summary_reminder',
+        identifier,
+        type: 'daily_summary',
+        title: '✨ Your daily summary is ready',
+        body: 'See today\'s wins, streaks, and what\'s still open on Overview.',
+        scheduledTime: `${hour}:${String(minute).padStart(2, '0')} daily`,
+        data: { hour, minute },
+      });
+
+      console.log('📅 Daily summary reminder scheduled for', hour, minute);
+      return identifier;
+    } catch (error) {
+      console.error('❌ Error scheduling daily summary reminder:', error);
+      return null;
     }
   },
 

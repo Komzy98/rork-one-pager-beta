@@ -8,7 +8,7 @@ import {
   Animated,
   Dimensions,
 } from 'react-native';
-import { useRouter } from 'expo-router';
+import { useRouter, useLocalSearchParams } from 'expo-router';
 import { ArrowRight, ArrowLeft, Check } from 'lucide-react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import * as Haptics from 'expo-haptics';
@@ -34,6 +34,7 @@ const INTERESTS = [
 
 export default function InterestsScreen() {
   const router = useRouter();
+  const { returnTo } = useLocalSearchParams<{ returnTo?: string }>();
   const insets = useSafeAreaInsets();
   const { updateInterests } = useUserProfile();
   const [selectedInterests, setSelectedInterests] = useState<string[]>([]);
@@ -87,8 +88,12 @@ export default function InterestsScreen() {
   }, [selectedInterests, updateInterests, router]);
 
   const handleBack = useCallback(() => {
+    if (returnTo === 'activities') {
+      router.replace('/(tabs)/activities' as any);
+      return;
+    }
     router.back();
-  }, [router]);
+  }, [router, returnTo]);
 
   return (
     <View style={styles.container}>

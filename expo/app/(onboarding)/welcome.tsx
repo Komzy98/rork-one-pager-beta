@@ -7,6 +7,7 @@ import {
   Animated,
   Image,
   Platform,
+  ScrollView,
 } from 'react-native';
 import { useRouter } from 'expo-router';
 import { ArrowRight, Link2, Sparkles, Tv, ListChecks, Zap, Shield } from 'lucide-react-native';
@@ -29,7 +30,7 @@ const FEATURES = [
 export default function WelcomeScreen() {
   const router = useRouter();
   const { user, isGuest } = useAuth();
-  const { completeOnboarding, isLoading: profileLoading } = useUserProfile();
+  const { completeOnboarding } = useUserProfile();
   const insets = useSafeAreaInsets();
 
   const logoScale = useRef(new Animated.Value(0.92)).current;
@@ -52,13 +53,12 @@ export default function WelcomeScreen() {
   }, [router]);
 
   const handleSkipSetup = useCallback(() => {
-    if (profileLoading) return;
     if (Platform.OS !== 'web') {
       void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
     }
     completeOnboarding();
     router.replace('/(tabs)/activities' as any);
-  }, [completeOnboarding, router, profileLoading]);
+  }, [completeOnboarding, router]);
 
   const handleCreateAccount = useCallback(() => {
     if (Platform.OS !== 'web') {
@@ -70,12 +70,20 @@ export default function WelcomeScreen() {
   const userName = isGuest ? 'there' : user?.name?.split(' ')[0] || 'there';
 
   return (
-    <View style={[styles.root, { paddingTop: insets.top + 16, paddingBottom: insets.bottom + 20 }]}>
+    <View style={[styles.root, { paddingTop: insets.top + 16 }]}>
+      <ScrollView
+        style={styles.scroll}
+        contentContainerStyle={[
+          styles.scrollContent,
+          { paddingBottom: insets.bottom + 20 },
+        ]}
+        showsVerticalScrollIndicator={false}
+        keyboardShouldPersistTaps="handled"
+      >
       <Animated.View
         style={{
           opacity: contentOpacity,
           transform: [{ translateY: contentY }],
-          flex: 1,
         }}
       >
         <View style={styles.hero}>
@@ -131,13 +139,13 @@ export default function WelcomeScreen() {
           </TouchableOpacity>
 
           <TouchableOpacity
-            style={[styles.skipBtn, profileLoading && styles.skipBtnDisabled]}
+            style={styles.skipBtn}
             onPress={handleSkipSetup}
             activeOpacity={0.85}
-            disabled={profileLoading}
+            testID="onboarding-skip"
           >
-            <Text style={styles.skipBtnText}>{profileLoading ? 'Loading…' : 'Skip for now'}</Text>
-            <Text style={styles.skipHint}>Use the app with defaults; change anytime in Profile</Text>
+            <Text style={styles.skipBtnText}>Skip for now</Text>
+            <Text style={styles.skipHint}>You&apos;ll see a quick setup card on Overview anytime</Text>
           </TouchableOpacity>
 
           <View style={styles.securityHintCard}>
@@ -155,6 +163,7 @@ export default function WelcomeScreen() {
           ) : null}
         </View>
       </Animated.View>
+      </ScrollView>
     </View>
   );
 }
@@ -163,6 +172,12 @@ const styles = StyleSheet.create({
   root: {
     flex: 1,
     backgroundColor: 'transparent',
+  },
+  scroll: {
+    flex: 1,
+  },
+  scrollContent: {
+    flexGrow: 1,
     paddingHorizontal: 24,
   },
   kicker: {
@@ -275,9 +290,6 @@ const styles = StyleSheet.create({
   skipBtn: {
     alignItems: 'center',
     paddingVertical: 12,
-  },
-  skipBtnDisabled: {
-    opacity: 0.45,
   },
   skipBtnText: {
     fontSize: 16,
