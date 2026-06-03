@@ -248,10 +248,12 @@ export const footballApi = {
       // If we have team IDs, fetch matches for each team specifically
       if (teamIds && teamIds.length > 0) {
         console.log('🏆 Fetching upcoming matches for specific teams:', teamIds);
-        
-        // Fetch matches for each team (API supports team parameter)
+        // API-Football needs `season` when using from/to with team — often returns [] without it.
+        // `next=N` is the reliable way to load a club's upcoming fixtures (same as server tRPC path).
+        const nextCount = Math.min(30, Math.max(10, Math.ceil(days / 8)));
+
         const teamPromises = teamIds.slice(0, 5).map(async (teamId) => {
-          const url = `${BASE_URL}/fixtures?team=${teamId}&from=${today}&to=${futureDate}`;
+          const url = `${BASE_URL}/fixtures?team=${teamId}&next=${nextCount}`;
           console.log('🌐 Fetching for team', teamId, ':', url.replace(API_KEY, 'HIDDEN'));
           
           try {

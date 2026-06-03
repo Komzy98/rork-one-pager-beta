@@ -42,10 +42,12 @@ import {
   NBA_WESTERN_STANDINGS,
 } from '@/constants/nbaData';
 import {
-  HERO_SECONDARY_GAP_BELOW_SPORT_STRIP,
-  HERO_SPORT_STRIP_OVERLAP_HERO_PX,
   getSportsHeroEdgePad,
-  getSportsHeroImageScale,
+  getSportsHeroImageStyle,
+  getHeroSecondaryRowStyle,
+  getHeroSportStripSlotStyle,
+  getSportsTallHeroMinHeight,
+  getSportsHeroBottomCropPx,
 } from '@/constants/sportsHeroLayout';
 import { fetchNBAGamesMultipleDays, fetchNBAStandings } from '@/utils/nbaApi';
 import NBAGameDetailsModal from './NBAGameDetailsModal';
@@ -53,9 +55,7 @@ import NBAPremiumHeroInner from './NBAPremiumHeroInner';
 
 const { width: SCREEN_WIDTH } = Dimensions.get('window');
 
-/** Aligns with `nbaHeroRoot.minHeight` — bottom crop uses 3% for consistent clip vs Football/F1 tall heroes. */
-const NBA_HERO_MIN_HEIGHT_PX = 470;
-const NBA_HERO_BOTTOM_CROP_PX = Math.round(NBA_HERO_MIN_HEIGHT_PX * 0.03);
+/** Aligns with shared sports hero min height — bottom crop uses 3% for consistent clip vs Football/F1 tall heroes. */
 
 /** NBA Center hero art (baked title + tagline); keep overlays minimal. */
 const NBA_HERO_BACKGROUND = require('../assets/images/nba-hero-premium.png');
@@ -543,7 +543,16 @@ export default function NBASection({ isDark, insets, sportToggleSlot }: NBASecti
     () => getSportsHeroEdgePad(windowWidth, safeInsets.left, safeInsets.right),
     [windowWidth, safeInsets.left, safeInsets.right],
   );
-  const heroArtScale = useMemo(() => getSportsHeroImageScale(windowWidth), [windowWidth]);
+  const heroMinHeight = useMemo(() => getSportsTallHeroMinHeight(windowWidth), [windowWidth]);
+  const heroImageStyle = useMemo(
+    () =>
+      getSportsHeroImageStyle(
+        windowWidth,
+        getSportsHeroBottomCropPx(heroMinHeight, 0.03),
+        heroMinHeight,
+      ),
+    [windowWidth, heroMinHeight],
+  );
 
   const [activeTab, setActiveTab] = useState<NBATab>('upcoming');
   const [selectedGame, setSelectedGame] = useState<NBAGame | null>(null);
@@ -762,38 +771,37 @@ export default function NBASection({ isDark, insets, sportToggleSlot }: NBASecti
   const listHeaderComponent = useMemo(
     () => (
       <>
-        <View style={s.heroStackWithSportStrip}>
-          <ImageBackground
-            source={NBA_HERO_BACKGROUND}
-            style={[s.nbaHeroRoot, { paddingHorizontal: heroEdgePad, paddingTop: insets.top, paddingBottom: 4 }]}
-            imageStyle={[
-              s.nbaHeroImage,
-              {
-                transform: [
-                  { translateY: -NBA_HERO_BOTTOM_CROP_PX },
-                  ...(heroArtScale < 1 ? [{ scale: heroArtScale } as const] : []),
-                ],
-              },
-            ]}
-          >
-            <View style={s.nbaHeroForeground}>
-              <View style={s.nbaHeroUpper}>
-                <NBAPremiumHeroInner
-                  teamAbbreviations={heroTeamAbbreviations}
-                  featuredGame={nextGame}
-                  onRefresh={onRefresh}
-                  onFeaturedPress={() => {
-                    if (nextGame) handleGamePress(nextGame);
-                  }}
-                />
-              </View>
-            </View>
-          </ImageBackground>
-          {sportToggleSlot ? (
-            <View style={[s.heroSportStripOverlapSlot, { paddingHorizontal: heroEdgePad }]}>{sportToggleSlot}</View>
-          ) : null}
-        </View>
-        <View style={[s.tabWrapper, { paddingHorizontal: heroEdgePad }]}>
+        <ImageBackground
+          source={NBA_HERO_BACKGROUND}
+          style={[
+            s.nbaHeroRoot,
+            {
+              minHeight: heroMinHeight,
+              paddingHorizontal: heroEdgePad,
+              paddingTop: insets.top,
+              paddingBottom: 4,
+              backgroundColor: '#050508',
+            },
+          ]}
+          imageStyle={heroImageStyle}
+        >
+          <View style={s.nbaHeroForeground}>
+            <NBAPremiumHeroInner
+              teamAbbreviations={heroTeamAbbreviations}
+              featuredGame={nextGame}
+              onRefresh={onRefresh}
+              onFeaturedPress={() => {
+                if (nextGame) handleGamePress(nextGame);
+              }}
+            />
+          </View>
+        </ImageBackground>
+        {sportToggleSlot ? (
+          <View style={[s.heroSportStripOverlapSlot, getHeroSportStripSlotStyle('nba'), { paddingHorizontal: heroEdgePad }]}>
+            {sportToggleSlot}
+          </View>
+        ) : null}
+        <View style={[s.tabWrapper, getHeroSecondaryRowStyle(heroEdgePad, 'nba')]}>
           <TabPill activeTab={activeTab} onTabChange={setActiveTab} isDark={isDark} counts={counts} />
         </View>
       </>
@@ -801,7 +809,8 @@ export default function NBASection({ isDark, insets, sportToggleSlot }: NBASecti
     [
       insets.top,
       heroEdgePad,
-      heroArtScale,
+      heroMinHeight,
+      heroImageStyle,
       heroTeamAbbreviations,
       nextGame,
       onRefresh,
@@ -844,23 +853,11 @@ export default function NBASection({ isDark, insets, sportToggleSlot }: NBASecti
 }
 
 const s = StyleSheet.create({
-  heroStackWithSportStrip: {
-    position: 'relative' as const,
-    zIndex: 1,
-  },
-  heroSportStripOverlapSlot: {
-    marginTop: -HERO_SPORT_STRIP_OVERLAP_HERO_PX,
-    zIndex: 20,
-    elevation: 12,
-  },
+  heroSportStripOverlapSlot: {},
   nbaHeroRoot: {
     overflow: 'hidden' as const,
-    minHeight: NBA_HERO_MIN_HEIGHT_PX,
     justifyContent: 'flex-start' as const,
     flexDirection: 'column' as const,
-  },
-  nbaHeroImage: {
-    resizeMode: 'cover' as const,
   },
   nbaHeroForeground: {
     flex: 1,
@@ -870,16 +867,8 @@ const s = StyleSheet.create({
     zIndex: 1,
     justifyContent: 'space-between' as const,
   },
-  nbaHeroUpper: {
-    flex: 1,
-    width: '100%',
-    minHeight: 0,
-  },
   tabWrapper: {
-    marginTop: HERO_SECONDARY_GAP_BELOW_SPORT_STRIP,
     marginBottom: 12,
-    zIndex: 12,
-    elevation: 6,
   },
   pillContainer: {
     flexDirection: 'row',

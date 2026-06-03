@@ -22,7 +22,10 @@ export interface NotificationData {
     | 'reading_reminder'
     | 'weekly_recap'
     | 'streak_protection'
-    | 'daily_summary';
+    | 'daily_summary'
+    | 'social'
+    | 'challenge'
+    | 'achievement';
   id?: string;
   payload?: Record<string, any>;
 }

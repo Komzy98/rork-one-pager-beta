@@ -1,0 +1,298 @@
+import { useCallback, useEffect, useMemo, useState } from 'react';
+import { Platform } from 'react-native';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
+import createContextHook from '@nkzw/create-context-hook';
+import * as Notifications from 'expo-notifications';
+import { useAuth } from './useAuth';
+import { useGamification } from './useHabitsEnhancement';
+import { supabaseConfigured } from '@/utils/supabaseClient';
+import {
+  acceptFriendRequest,
+  cancelFriendRequest,
+  ensureMyProfile,
+  getProfileByUsername,
+  isSocialUnavailableError,
+  listFriends,
+  listIncomingRequests,
+  listNudges,
+  listOutgoingRequests,
+  markNudgesRead,
+  rejectFriendRequest,
+  removeFriend as removeFriendSvc,
+  searchProfiles,
+  sendFriendRequest,
+  sendNudge,
+  subscribeToSocialChanges,
+  type SendRequestResult,
+  type SocialProfile,
+} from '@/utils/friendsService';
+import type { Leaderboard } from '@/types/gamification';
+
+async function notifyLocal(title: string, body: string) {
+  if (Platform.OS === 'web') return;
+  try {
+    await Notifications.scheduleNotificationAsync({
+      content: { title, body, sound: true },
+      trigger: null,
+    });
+  } catch {
+    // permissions not granted / unavailable — fine, in-app badge still shows.
+  }
+}
+
+export const [FriendsProvider, useFriends] = createContextHook(() => {
+  const { supabaseUser, user, isGuest } = useAuth();
+  const { stats } = useGamification();
+  const queryClient = useQueryClient();
+
+  const myUserId: string | undefined = supabaseUser?.id;
+  const enabled = !!myUserId && supabaseConfigured && !isGuest;
+
+  // null = unknown, true = tables present, false = not signed in OR migration not applied
+  const [available, setAvailable] = useState<boolean | null>(enabled ? null : false);
+  const [myProfile, setMyProfile] = useState<SocialProfile | null>(null);
+
+  const currentStreak = stats?.currentStreak ?? 0;
+  const totalCompletions = stats?.totalCompletions ?? 0;
+  const level = stats?.level ?? 1;
+
+  // Ensure my published profile row exists + keep streak fresh.
+  useEffect(() => {
+    if (!enabled || !myUserId) {
+      setAvailable(false);
+      return;
+    }
+    let cancelled = false;
+    (async () => {
+      try {
+        const prof = await ensureMyProfile({
+          userId: myUserId,
+          displayName: user?.name ?? null,
+          email: user?.email ?? null,
+          avatarUrl: user?.avatar ?? null,
+          currentStreak,
+          totalCompletions,
+          level,
+        });
+        if (!cancelled) {
+          setMyProfile(prof);
+          setAvailable(true);
+        }
+      } catch (e) {
+        if (!cancelled) setAvailable(isSocialUnavailableError(e) ? false : true);
+        if (!isSocialUnavailableError(e) && __DEV__) {
+          console.warn('useFriends: ensureMyProfile failed', e);
+        }
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [enabled, myUserId, currentStreak, totalCompletions, level, user?.name, user?.avatar, user?.email]);
+
+  const queriesEnabled = enabled && available === true;
+
+  const friendsQuery = useQuery({
+    queryKey: ['social', 'friends', myUserId],
+    queryFn: () => listFriends(myUserId as string),
+    enabled: queriesEnabled,
+    staleTime: 30_000,
+  });
+
+  const incomingQuery = useQuery({
+    queryKey: ['social', 'incoming', myUserId],
+    queryFn: () => listIncomingRequests(myUserId as string),
+    enabled: queriesEnabled,
+    staleTime: 30_000,
+  });
+
+  const outgoingQuery = useQuery({
+    queryKey: ['social', 'outgoing', myUserId],
+    queryFn: () => listOutgoingRequests(myUserId as string),
+    enabled: queriesEnabled,
+    staleTime: 30_000,
+  });
+
+  const nudgesQuery = useQuery({
+    queryKey: ['social', 'nudges', myUserId],
+    queryFn: () => listNudges(myUserId as string),
+    enabled: queriesEnabled,
+    staleTime: 15_000,
+  });
+
+  const invalidateAll = useCallback(() => {
+    if (!myUserId) return;
+    queryClient.invalidateQueries({ queryKey: ['social', 'friends', myUserId] });
+    queryClient.invalidateQueries({ queryKey: ['social', 'incoming', myUserId] });
+    queryClient.invalidateQueries({ queryKey: ['social', 'outgoing', myUserId] });
+    queryClient.invalidateQueries({ queryKey: ['social', 'nudges', myUserId] });
+  }, [queryClient, myUserId]);
+
+  // Realtime: live friend/request/nudge updates + local notifications.
+  useEffect(() => {
+    if (!queriesEnabled || !myUserId) return;
+    const unsubscribe = subscribeToSocialChanges(myUserId, {
+      onChange: invalidateAll,
+      onIncomingRequest: () => {
+        void notifyLocal('New friend request', 'Someone wants to be your accountability partner on One Pager.');
+      },
+      onNudge: ({ message }) => {
+        void notifyLocal(
+          'You got nudged 👋',
+          message?.trim() ? message : 'A friend is cheering you on — keep your streak alive!',
+        );
+      },
+    });
+    return unsubscribe;
+  }, [queriesEnabled, myUserId, invalidateAll]);
+
+  // --- Actions --------------------------------------------------------------
+  const requestByUserId = useCallback(
+    async (toUserId: string): Promise<SendRequestResult> => {
+      if (!myUserId) return { ok: false, reason: 'error', message: 'Not signed in' };
+      const res = await sendFriendRequest(myUserId, toUserId);
+      invalidateAll();
+      return res;
+    },
+    [myUserId, invalidateAll],
+  );
+
+  const requestByUsername = useCallback(
+    async (username: string): Promise<SendRequestResult> => {
+      if (!myUserId) return { ok: false, reason: 'error', message: 'Not signed in' };
+      try {
+        const profile = await getProfileByUsername(username);
+        if (!profile) return { ok: false, reason: 'error', message: 'No user found with that username' };
+        return await requestByUserId(profile.id);
+      } catch (e) {
+        return { ok: false, reason: 'error', message: (e as Error)?.message };
+      }
+    },
+    [myUserId, requestByUserId],
+  );
+
+  const search = useCallback(
+    async (query: string): Promise<SocialProfile[]> => {
+      if (!myUserId) return [];
+      try {
+        return await searchProfiles(query, myUserId);
+      } catch {
+        return [];
+      }
+    },
+    [myUserId],
+  );
+
+  const accept = useCallback(
+    async (requestId: string) => {
+      await acceptFriendRequest(requestId);
+      invalidateAll();
+    },
+    [invalidateAll],
+  );
+
+  const reject = useCallback(
+    async (requestId: string) => {
+      await rejectFriendRequest(requestId);
+      invalidateAll();
+    },
+    [invalidateAll],
+  );
+
+  const cancel = useCallback(
+    async (requestId: string) => {
+      await cancelFriendRequest(requestId);
+      invalidateAll();
+    },
+    [invalidateAll],
+  );
+
+  const unfriend = useCallback(
+    async (otherUserId: string) => {
+      await removeFriendSvc(otherUserId);
+      invalidateAll();
+    },
+    [invalidateAll],
+  );
+
+  const nudge = useCallback(
+    async (toUserId: string, message?: string) => {
+      if (!myUserId) return;
+      await sendNudge(myUserId, toUserId, message);
+    },
+    [myUserId],
+  );
+
+  const markAllNudgesRead = useCallback(async () => {
+    if (!myUserId) return;
+    try {
+      await markNudgesRead(myUserId);
+      invalidateAll();
+    } catch {
+      // ignore
+    }
+  }, [myUserId, invalidateAll]);
+
+  const unreadNudges = useMemo(
+    () => (nudgesQuery.data ?? []).filter((n) => !n.read),
+    [nudgesQuery.data],
+  );
+
+  // Live leaderboard built from real partners (+ me), ranked by current streak.
+  const friendsLeaderboard = useMemo<Leaderboard | null>(() => {
+    if (available !== true) return null;
+    const friendsData = friendsQuery.data ?? [];
+    const entries = friendsData.map((f) => ({
+      rank: 0,
+      userId: f.id,
+      userName: f.displayName || f.username,
+      avatar: f.avatarUrl ?? undefined,
+      score: f.currentStreak,
+      change: 0,
+      isCurrentUser: false,
+    }));
+    entries.push({
+      rank: 0,
+      userId: myUserId ?? 'me',
+      userName: myProfile?.displayName || myProfile?.username || 'You',
+      avatar: myProfile?.avatarUrl ?? undefined,
+      score: currentStreak,
+      change: 0,
+      isCurrentUser: true,
+    });
+    entries.sort((a, b) => b.score - a.score);
+    return {
+      id: 'partners_streaks',
+      name: 'Partner Streaks 🔥',
+      type: 'friends',
+      period: 'all_time',
+      entries: entries.map((e, i) => ({ ...e, rank: i + 1 })),
+      updatedAt: new Date().toISOString(),
+    };
+  }, [available, friendsQuery.data, myUserId, myProfile, currentStreak]);
+
+  return {
+    available,
+    isSignedIn: enabled,
+    myProfile,
+    friends: friendsQuery.data ?? [],
+    incomingRequests: incomingQuery.data ?? [],
+    outgoingRequests: outgoingQuery.data ?? [],
+    nudges: nudgesQuery.data ?? [],
+    unreadNudges,
+    friendsLeaderboard,
+    isLoading:
+      friendsQuery.isLoading || incomingQuery.isLoading || outgoingQuery.isLoading,
+    isRefreshing: friendsQuery.isFetching || incomingQuery.isFetching,
+    refresh: invalidateAll,
+    search,
+    requestByUserId,
+    requestByUsername,
+    accept,
+    reject,
+    cancel,
+    unfriend,
+    nudge,
+    markAllNudgesRead,
+  };
+});

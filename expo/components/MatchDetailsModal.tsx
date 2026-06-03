@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useRef, useCallback, useMemo } from 'react';
 import { StyleSheet, View, Text, Modal, TouchableOpacity, ScrollView, ActivityIndicator, Image, Animated, Platform, Dimensions, Linking } from 'react-native';
-import { X, MapPin, Trophy, Users, BarChart3, History, AlertTriangle, Activity, Tv, Globe, Building2, Cloud, Thermometer, Wind, Droplets, Play, TrendingUp, Shield, Zap, Clock, Clapperboard } from 'lucide-react-native';
+import { X, MapPin, Users, BarChart3, History, AlertTriangle, Activity, Tv, Globe, Building2, Cloud, Thermometer, Wind, Droplets, Play, TrendingUp, Shield, Zap, Clock, Clapperboard } from 'lucide-react-native';
+import { formatMatchRoundLabel, isKnockoutRoundLabel } from '@/utils/matchRoundLabel';
 import { LinearGradient } from 'expo-linear-gradient';
 import * as Haptics from 'expo-haptics';
 import { COLORS } from '@/constants/colors';
@@ -104,6 +105,8 @@ interface MatchDetailsModalProps {
   homeScore?: number | null;
   awayScore?: number | null;
   league: string;
+  leagueLogo?: string;
+  round?: string;
   homeTeamLogo?: string;
   awayTeamLogo?: string;
 }
@@ -556,6 +559,8 @@ export default function MatchDetailsModal({
   homeScore,
   awayScore,
   league,
+  leagueLogo: leagueLogoProp,
+  round: roundProp,
   homeTeamLogo,
   awayTeamLogo,
 }: MatchDetailsModalProps) {
@@ -666,6 +671,13 @@ export default function MatchDetailsModal({
 
   const leagueId = (data as any)?.fixture?.league?.id || fixture?.league?.id;
   const leagueCountry = (data as any)?.league?.country || fixture?.league?.country || 'World';
+  const leagueLogo = fixture?.league?.logo || leagueLogoProp;
+  const leagueName = fixture?.league?.name || league;
+  const roundLabel = useMemo(
+    () => formatMatchRoundLabel(fixture?.league?.round ?? roundProp),
+    [fixture?.league?.round, roundProp],
+  );
+  const isKnockoutRound = isKnockoutRoundLabel(roundLabel);
   const broadcastData = React.useMemo(() => getBroadcastForMatch(leagueId, leagueCountry), [leagueId, leagueCountry]);
 
   const renderWhereToWatchSection = () => {
@@ -1548,9 +1560,24 @@ export default function MatchDetailsModal({
               <TouchableOpacity onPress={handleClose} style={styles.closeBtn}>
                 <X size={20} color={tokens.textPrimary} />
               </TouchableOpacity>
-              <View style={styles.topBarCenter}>
-                <Trophy size={16} color={tokens.accent} />
-                <Text style={styles.topBarLeague} numberOfLines={1}>{league}</Text>
+              <View
+                style={styles.topBarCenter}
+                accessibilityRole="image"
+                accessibilityLabel={`${leagueName} competition`}
+              >
+                {leagueLogo ? (
+                  <Image
+                    source={{ uri: leagueLogo }}
+                    style={styles.topBarLeagueLogo}
+                    resizeMode="contain"
+                  />
+                ) : (
+                  <View style={styles.topBarLeagueFallback}>
+                    <Text style={styles.topBarLeagueFallbackText}>
+                      {leagueName.charAt(0).toUpperCase()}
+                    </Text>
+                  </View>
+                )}
               </View>
               <View style={{ width: 36 }} />
             </Animated.View>
@@ -1593,6 +1620,23 @@ export default function MatchDetailsModal({
                   {!isLive && !isCompleted && matchDateStr !== '' && (
                     <Text style={styles.heroMatchDate}>{matchDateStr}</Text>
                   )}
+                  {roundLabel ? (
+                    <View
+                      style={[
+                        styles.heroRoundBadge,
+                        isKnockoutRound && styles.heroRoundBadgeKnockout,
+                      ]}
+                    >
+                      <Text
+                        style={[
+                          styles.heroRoundText,
+                          isKnockoutRound && styles.heroRoundTextKnockout,
+                        ]}
+                      >
+                        {roundLabel}
+                      </Text>
+                    </View>
+                  ) : null}
                 </View>
 
                 <View style={styles.heroTeamCol}>
@@ -1717,10 +1761,42 @@ function createMatchModalStyles(t: MatchModalTokens) {
     flex: 1,
     justifyContent: 'center',
   },
-  topBarLeague: {
+  topBarLeagueLogo: {
+    width: 32,
+    height: 32,
+  },
+  topBarLeagueFallback: {
+    width: 32,
+    height: 32,
+    borderRadius: 16,
+    backgroundColor: t.surfaceElevated,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  topBarLeagueFallbackText: {
     fontSize: 14,
-    fontWeight: '600' as const,
+    fontWeight: '800' as const,
     color: t.textSecondary,
+  },
+  heroRoundBadge: {
+    marginTop: 8,
+    paddingHorizontal: 10,
+    paddingVertical: 4,
+    borderRadius: 10,
+    backgroundColor: t.surfaceElevated,
+  },
+  heroRoundBadgeKnockout: {
+    backgroundColor: 'rgba(245, 158, 11, 0.18)',
+  },
+  heroRoundText: {
+    fontSize: 11,
+    fontWeight: '800' as const,
+    color: t.textSecondary,
+    letterSpacing: 0.4,
+    textTransform: 'uppercase' as const,
+  },
+  heroRoundTextKnockout: {
+    color: '#D97706',
   },
   heroSection: {
     paddingHorizontal: 20,

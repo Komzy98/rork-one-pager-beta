@@ -44,25 +44,26 @@ export default function Index() {
     return <Redirect href={"/(onboarding)/welcome" as any} />;
   }
 
-  // Wait for profile hydration before routing authenticated users
-  // so onboarding decisions are made from real profile state.
+  if (profile?.onboardingCompleted) {
+    if (__DEV__) console.log('✅ Onboarding completed, redirecting to main app');
+    return <Redirect href={"/(tabs)/activities" as any} />;
+  }
+
+  // Never block onboarding on profile hydration — new signups seed a default profile quickly.
+  if (!profile || !profile.onboardingCompleted) {
+    if (__DEV__) console.log('📋 Onboarding not completed, redirecting to welcome');
+    return <Redirect href={"/(onboarding)/welcome" as any} />;
+  }
+
   if (profileLoading) {
-    if (__DEV__) console.log('🔄 Profile still loading, waiting before redirect');
+    if (__DEV__) console.log('🔄 Profile still loading');
     return (
       <View style={styles.loadingContainer}>
         <ActivityIndicator size="large" color={COLORS.primary} />
       </View>
     );
   }
-  
-  // Missing profile should still continue onboarding, especially for first OAuth logins.
-  if (!profile || !profile.onboardingCompleted) {
-    if (__DEV__) console.log('📋 Onboarding not completed, redirecting to welcome');
-    return <Redirect href={"/(onboarding)/welcome" as any} />;
-  }
 
-  // Authenticated and onboarding completed - go to main app
-  if (__DEV__) console.log('✅ All checks passed, redirecting to main app');
   return <Redirect href={"/(tabs)/activities" as any} />;
 }
 

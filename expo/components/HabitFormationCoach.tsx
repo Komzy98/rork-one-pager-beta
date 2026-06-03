@@ -323,6 +323,7 @@ Rules:
         {
           backgroundColor: colors.card,
           borderColor: colors.border,
+          borderWidth: 1.5,
           shadowColor: colors.shadow,
         },
         {
@@ -428,7 +429,16 @@ Rules:
               <Text style={styles.quickSubtitle}>Simplified versions to keep your streak</Text>
             </View>
           </View>
-          <View style={[styles.quickList, { backgroundColor: colors.surfaceSecondary, borderColor: colors.border }]}>
+          <View
+            style={[
+              styles.quickList,
+              {
+                backgroundColor: colors.surfaceSecondary,
+                borderColor: colors.border,
+                borderWidth: 1.5,
+              },
+            ]}
+          >
             {quickRoutine.map((item, index) => (
               <React.Fragment key={item.id}>
                 <QuickWinItem
@@ -506,8 +516,8 @@ const styles = StyleSheet.create({
     marginBottom: 20,
     borderRadius: 22,
     backgroundColor: '#fff',
-    borderWidth: 1,
-    borderColor: 'rgba(0,0,0,0.04)',
+    borderWidth: 1.5,
+    borderColor: 'rgba(15, 23, 42, 0.1)',
     shadowColor: '#0F172A',
     shadowOffset: { width: 0, height: 6 },
     shadowOpacity: 0.07,
@@ -589,7 +599,7 @@ const styles = StyleSheet.create({
   coachSection: {
     paddingHorizontal: 18,
     paddingTop: 14,
-    paddingBottom: 4,
+    paddingBottom: 12,
   },
   coachBubble: {
     backgroundColor: '#F8FAFC',
@@ -669,7 +679,7 @@ const styles = StyleSheet.create({
   quickSection: {
     paddingHorizontal: 18,
     paddingTop: 16,
-    paddingBottom: 4,
+    paddingBottom: 18,
   },
   quickHeaderRow: {
     flexDirection: 'row',
@@ -702,13 +712,13 @@ const styles = StyleSheet.create({
   quickList: {
     backgroundColor: '#F8FAFC',
     borderRadius: 14,
-    borderWidth: 1,
-    borderColor: 'rgba(0,0,0,0.04)',
+    borderWidth: 1.5,
+    borderColor: 'rgba(15, 23, 42, 0.1)',
     overflow: 'hidden',
   },
   quickDivider: {
-    height: 1,
-    backgroundColor: 'rgba(0,0,0,0.04)',
+    height: StyleSheet.hairlineWidth * 2,
+    backgroundColor: 'rgba(15, 23, 42, 0.08)',
     marginHorizontal: 12,
   },
   quickItemWrapper: {

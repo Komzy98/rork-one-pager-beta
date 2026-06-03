@@ -17,6 +17,7 @@ import { X, Shield } from 'lucide-react-native';
 import { BlurView } from 'expo-blur';
 import { trpc } from '@/lib/trpc';
 import { useTheme } from '@/hooks/useTheme';
+import { getCompetitionById } from '@/constants/competitions';
 import * as Haptics from 'expo-haptics';
 
 interface LeagueStandingsModalProps {
@@ -24,6 +25,8 @@ interface LeagueStandingsModalProps {
   onClose: () => void;
   leagueId: number;
   leagueName: string;
+  /** When known from fixtures, improves first fetch (API season year). */
+  season?: number;
 }
 
 const STATS_TABS = [
@@ -37,6 +40,7 @@ export default function LeagueStandingsModal({
   onClose,
   leagueId,
   leagueName,
+  season: seasonHint,
 }: LeagueStandingsModalProps) {
   const { colors } = useTheme();
   const { width: windowWidth } = useWindowDimensions();
@@ -74,7 +78,7 @@ export default function LeagueStandingsModal({
   }, [liveFootballQuery.data?.response, leagueId]);
 
   const standingsQuery = trpc.football.getLeagueStandings.useQuery(
-    { leagueId },
+    { leagueId, ...(seasonHint != null ? { season: seasonHint } : {}) },
     {
       enabled: visible,
       staleTime: leagueHasLiveFixture ? 0 : 5 * 60 * 1000,
@@ -82,7 +86,11 @@ export default function LeagueStandingsModal({
     },
   );
 
-  const leagueSeason = standingsQuery.data?.response?.[0]?.league?.season;
+  const leagueSeason =
+    standingsQuery.data?.seasonUsed ??
+    (standingsQuery.data?.response?.[0] as { league?: { season?: number } } | undefined)?.league
+      ?.season ??
+    seasonHint;
 
   const topPlayersQuery = trpc.football.getLeagueTopPlayers.useQuery(
     {
@@ -124,7 +132,14 @@ export default function LeagueStandingsModal({
 
   const standings = standingsQuery.data?.response?.[0]?.league?.standings;
   const leagueData = standingsQuery.data?.response?.[0]?.league;
-  const hasMultipleGroups = standings && standings.length > 1;
+  const hasStandingsRows = useMemo(() => {
+    if (!Array.isArray(standings) || standings.length === 0) return false;
+    return standings.some((group) => Array.isArray(group) && group.length > 0);
+  }, [standings]);
+  const hasMultipleGroups = hasStandingsRows && standings!.length > 1;
+  const noTableReason = standingsQuery.data?.noTableReason;
+  const competitionMeta = useMemo(() => getCompetitionById(leagueId), [leagueId]);
+  const isCupCompetition = competitionMeta?.type === 'cup' || noTableReason === 'cup';
 
   const topScorers = topPlayersQuery.data?.topScorers ?? [];
   const topAssists = topPlayersQuery.data?.topAssists ?? [];
@@ -368,7 +383,7 @@ export default function LeagueStandingsModal({
                   {leagueData?.name || leagueName}
                 </Text>
                 <Text style={[styles.seasonText, { color: colors.textSecondary }]}>
-                  {leagueData?.season != null ? `${leagueData.season} season` : 'Season'} · tables & leaders
+                  {leagueSeason != null ? `${leagueSeason} season` : 'Season'} · tables & leaders
                 </Text>
               </View>
             </View>
@@ -434,9 +449,18 @@ export default function LeagueStandingsModal({
               <ActivityIndicator size="large" color={colors.primary} />
               <Text style={[styles.loadingText, { color: colors.textSecondary }]}>Loading standings…</Text>
             </View>
-          ) : standingsQuery.error || !standings ? (
+          ) : standingsQuery.error || !hasStandingsRows ? (
             <View style={styles.errorContainer}>
-              <Text style={[styles.errorText, { color: colors.error }]}>Failed to load standings</Text>
+              <Text style={[styles.errorText, { color: colors.error }]}>
+                {isCupCompetition
+                  ? 'No league table for this cup'
+                  : 'Failed to load standings'}
+              </Text>
+              <Text style={[styles.errorSubtext, { color: colors.textSecondary }]}>
+                {isCupCompetition
+                  ? 'Knockout competitions use brackets instead of season tables. Try top scorers from match stats or pick a league competition.'
+                  : 'Check your connection or try again in a moment.'}
+              </Text>
             </View>
           ) : (
             <View style={styles.pagerShell}>
@@ -578,6 +602,13 @@ const styles = StyleSheet.create({
   errorText: {
     fontSize: 14,
     textAlign: 'center',
+  },
+  errorSubtext: {
+    marginTop: 8,
+    fontSize: 13,
+    lineHeight: 19,
+    textAlign: 'center',
+    paddingHorizontal: 24,
   },
   pagerShell: {
     flex: 1,

@@ -1,6 +1,6 @@
 import React, { useMemo, useState, useEffect, useCallback, useRef } from 'react';
 import { StyleSheet, View, Text, ScrollView, TouchableOpacity, Image, Platform, RefreshControl, Animated, Alert, FlatList } from 'react-native';
-import { Play, ChevronRight, Sparkles, Calendar, CheckCircle2, Target, Flame, Tv, Radio, X, Clock, BarChart3, Volume2, VolumeX, BellRing, Brain } from 'lucide-react-native';
+import { Play, ChevronRight, Sparkles, Calendar, CheckCircle2, Target, Flame, Tv, Radio, X, Clock, BarChart3, Volume2, VolumeX, BellRing, Brain, Share2, PartyPopper, Users } from 'lucide-react-native';
 import * as Speech from 'expo-speech';
 import * as Haptics from 'expo-haptics';
 import { setAudioModeAsync, useAudioPlayer, useAudioPlayerStatus } from 'expo-audio';
@@ -12,6 +12,7 @@ import { useApp } from '@/hooks/useHabitsStore';
 import { useTasks } from '@/hooks/useTasksStore';
 import { useUserProfile } from '@/hooks/useUserProfile';
 import { useAuth } from '@/hooks/useAuth';
+import { useTodayHabits } from '@/hooks/useTodayHabits';
 import { router, Stack } from 'expo-router';
 import { useFocusEffect } from '@react-navigation/native';
 import SwipeableTabContainer from '@/components/SwipeableTabContainer';
@@ -26,16 +27,56 @@ import EnhancedLoadingState from '@/components/EnhancedLoadingState';
 
 import WeatherDetailModal from '@/components/WeatherDetailModal';
 import { trpc } from '@/lib/trpc';
-import { getCurrentWeather } from '@/utils/weatherApi';
+import { useFootballBundle } from '@/contexts/FootballBundleContext';
+import { getCurrentWeather, getHeroGradientColors } from '@/utils/weatherApi';
 import { LiveFootballMatch, Show } from '@/types/habit';
 import { useCalendar } from '@/hooks/useCalendar';
 import { tmdbApi, TMDBTVShowDetails, isTmdbFetchAbortError } from '@/utils/tmdbApi';
-import { summarizeDailyProgress, DailySummary } from '@/utils/dailySummary';
+import {
+  summarizeDailyProgress,
+  DailySummary,
+  type DailySummaryHabitRollup,
+} from '@/utils/dailySummary';
+import {
+  buildPriorityTaskHighlights,
+  buildTodayCalendarHighlights,
+  buildContinueWatchingHighlights,
+  buildSportsEmotionalBeats,
+} from '@/utils/buildDailySummaryInput';
+import {
+  buildTodayHabitEntries,
+  buildSummaryHabitsFromEntries,
+} from '@/utils/todayHabits';
+import DailySummaryInsights from '@/components/DailySummaryInsights';
+import { ProgressShareSheet } from '@/components/ProgressShareSheet';
+import { useActivity } from '@/hooks/useActivity';
+import { buildSummaryPayload, type SharePayload } from '@/utils/shareProgress';
+import {
+  getTodayYmd,
+  buildOpenItemsForSummary,
+  saveDailyStatsSnapshot,
+  loadYesterdayStats,
+  computeStatsDelta,
+  saveDailySummaryCache,
+  loadDailySummaryCache,
+  isDailySummaryDismissed,
+  markDailySummaryDismissed,
+  clearDailySummaryDismissed,
+  isAutoSummaryHintDismissed,
+  dismissAutoSummaryHint,
+  isAutoSummaryEnabled,
+  shouldRunAutoSummaryNow,
+  getAutoSummarySchedule,
+  formatAutoSummaryTime,
+  type DailyStatsSnapshot,
+  type DailyStatsDelta,
+} from '@/utils/dailySummaryStats';
 import { useActivityIntelligence } from '@/hooks/useBackgroundServices';
 import { useQuery } from '@tanstack/react-query';
 import ActivitiesAIView from '@/components/activities/ActivitiesAIView';
 import FlyingBirds from '@/components/FlyingBirds';
 import TodaysRoutine from '@/components/TodaysRoutine';
+import AddInterestsLaterCard from '@/components/AddInterestsLaterCard';
 import PeakPerformanceScheduler from '@/components/PeakPerformanceScheduler';
 import HabitFormationCoach from '@/components/HabitFormationCoach';
 import { getChronotypeInfo, getChronotypeGreetingTip } from '@/constants/chronotypes';
@@ -139,13 +180,16 @@ export default function ActivitiesScreen() {
   const tasksContext = useTasks();
   const userProfileData = useUserProfile();
   const profile = userProfileData?.profile;
+  const [summarySharePayload, setSummarySharePayload] = useState<SharePayload | null>(null);
   const defaultFavoriteTeam = useCallback(() => false, []);
   const isFavoriteTeam = userProfileData?.isFavoriteTeam ?? defaultFavoriteTeam;
   const insets = useSafeAreaInsets();
   const intelligence = useActivityIntelligence();
+  const partnerActivity = useActivity();
   
   const calendarData = useCalendar();
   const getUpcomingCalendarEvents = calendarData?.getUpcomingCalendarEvents || (() => []);
+  const getTodayCalendarEvents = calendarData?.getTodayCalendarEvents || (() => []);
   const calendars = calendarData?.calendars || [];
   const eventKit = calendarData?.eventKit || { isEventKitAvailable: false, hasPermission: false };
   
@@ -154,7 +198,12 @@ export default function ActivitiesScreen() {
   const [showEventKitManager, setShowEventKitManager] = useState<boolean>(false);
   const [refreshing, setRefreshing] = useState<boolean>(false);
   const [dailySummary, setDailySummary] = useState<DailySummary | null>(null);
+  const [yesterdayDelta, setYesterdayDelta] = useState<DailyStatsDelta | null>(null);
   const [isGeneratingSummary, setIsGeneratingSummary] = useState<boolean>(false);
+  const autoSummaryInFlightRef = useRef(false);
+  const userId = user?.id || 'guest';
+  const [autoSummaryScheduleLabel, setAutoSummaryScheduleLabel] = useState<string>('');
+  const [autoSummaryHintDismissed, setAutoSummaryHintDismissed] = useState(true);
   const [isSpeaking, setIsSpeaking] = useState<boolean>(false);
   const [showsWithThumbnails, setShowsWithThumbnails] = useState<(Show & { posterUrl?: string | null })[]>([]);
   const [younifyContinueItems, setYounifyContinueItems] = useState<Record<string, unknown>[]>([]);
@@ -482,32 +531,13 @@ export default function ActivitiesScreen() {
     if (sportsSelectedLeagues.length === 0) return undefined;
     return sportsSelectedLeagues;
   }, [sportsSelectedLeagues]);
-  
-  // tRPC queries for sports data - ALWAYS enabled for robustness
-  // Even without favorites, we fetch popular league data so sports section never fails
-  const hasTeamsOrNations = favoriteTeamIds.length > 0 || nationalTeamIds.length > 0;
 
-  const footballBundleQuery = trpc.football.getMatchesBundle.useQuery(
-    {
-      days: 14,
-      teamIds: favoriteTeamIds.length > 0 ? favoriteTeamIds : undefined,
-      leagueIds: queryLeagueIds,
-      nationalTeamIds: nationalTeamIds.length > 0 ? nationalTeamIds : undefined,
-      includeAfcon,
-      includeResults: true,
-    },
-    {
-      refetchInterval: 90 * 1000,
-      staleTime: 60 * 1000,
-      gcTime: 30 * 60 * 1000,
-      refetchOnMount: true,
-      refetchOnWindowFocus: false,
-      refetchOnReconnect: true,
-      retry: 1,
-      retryDelay: 2000,
-      enabled: true,
-    }
-  );
+  /** Shared with Sports tab via FootballBundleProvider — no duplicate polling. */
+  const { query: footballBundleQuery, requestIncludeResults } = useFootballBundle();
+
+  useEffect(() => {
+    requestIncludeResults();
+  }, [requestIncludeResults]);
 
   // Transform API data to LiveFootballMatch format
   const transformApiFootballData = useCallback((fixtures: any[]): LiveFootballMatch[] => {
@@ -545,6 +575,7 @@ export default function ActivitiesScreen() {
         homeTeamLogo: fixture.teams?.home?.logo,
         awayTeamLogo: fixture.teams?.away?.logo,
         leagueLogo: fixture.league?.logo,
+        round: fixture.league?.round,
       };
     });
   }, []);
@@ -618,7 +649,7 @@ export default function ActivitiesScreen() {
         return true;
       }
       
-      if (hasTeamsOrNations) {
+      if (favoriteTeamIds.length > 0 || nationalTeamIds.length > 0) {
         const matchHomeId = match.homeTeamId;
         const matchAwayId = match.awayTeamId;
         if (matchHomeId && favoriteTeamIds.includes(matchHomeId)) return true;
@@ -632,7 +663,7 @@ export default function ActivitiesScreen() {
     
     console.log('📊 [Activities] Filter result:', filtered.length, 'matches from', matches.length, 'total');
     return filtered;
-  }, [profile?.favoriteTeams, profile?.nationalities, isFavoriteTeam, isFavoriteNationalTeam, hasTeamsOrNations, favoriteTeamIds, nationalTeamIds]);
+  }, [profile?.favoriteTeams, profile?.nationalities, isFavoriteTeam, isFavoriteNationalTeam, favoriteTeamIds, nationalTeamIds]);
 
   // Raw unfiltered matches - used by ModernSportsSection which does its own filtering
   const rawLiveMatches = useMemo(() => {
@@ -710,50 +741,8 @@ export default function ActivitiesScreen() {
     return profile?.favoriteNBATeams || [];
   }, [profile?.favoriteNBATeams]);
 
-  const stats = useMemo(() => {
-    // Combine both task-based habits AND legacy habits (like TodaysRoutine does)
-    const today = new Date().getDay();
-    const _d = new Date();
-    const todayDate = `${_d.getFullYear()}-${String(_d.getMonth() + 1).padStart(2, '0')}-${String(_d.getDate()).padStart(2, '0')}`;
-    
-    // Task-based habits
-    const taskHabits = tasksContext?.allTasks?.filter(task => {
-      if (!task.isHabit || !task.habitFrequency) return false;
-      return task.habitFrequency.days.includes(today);
-    }) || [];
-    
-    // Legacy habits from appContext (already filtered for today)
-    const legacyHabits = appContext?.todayHabits || [];
-    
-    // Count unique habits (avoid duplicates by ID)
-    const taskHabitIds = new Set(taskHabits.map(h => h.id));
-    const uniqueLegacyHabits = legacyHabits.filter(h => !taskHabitIds.has(h.id));
-    
-    const completedTaskHabits = taskHabits.filter(task => 
-      task.habitCompletions?.[todayDate]
-    ).length;
-    
-    const completedLegacyHabits = uniqueLegacyHabits.filter(h => h.completedToday).length;
-    
-    const totalHabits = taskHabits.length + uniqueLegacyHabits.length;
-    const completedHabits = completedTaskHabits + completedLegacyHabits;
-    const habitCompletionRate = totalHabits > 0 ? Math.round((completedHabits / totalHabits) * 100) : 0;
-    
-    // Get max streak from both sources
-    const taskStreaks = taskHabits.map(h => h.habitStreak || 0);
-    const legacyStreaks = uniqueLegacyHabits.map(h => h.streak || 0);
-    const allStreaks = [...taskStreaks, ...legacyStreaks];
-    const currentStreak = allStreaks.length > 0 ? Math.max(...allStreaks) : 0;
-    
-    if (__DEV__) console.log('📊 Stats - habits:', totalHabits, 'completed:', completedHabits);
-    
-    return {
-      totalHabits,
-      completedHabits,
-      currentStreak,
-      habitCompletionRate
-    };
-  }, [tasksContext?.allTasks, appContext?.todayHabits]);
+  const { stats: todayHabitStats } = useTodayHabits();
+  const stats = todayHabitStats;
   
   const trackedTVShows = useMemo(() => {
     return shows.filter((show: Show) => 
@@ -996,8 +985,79 @@ export default function ActivitiesScreen() {
   useEffect(() => {
     void fetchWeather();
   }, [fetchWeather]);
-  
-  
+
+  const buildTodayStatsSnapshot = useCallback(
+    (
+      todayYmd: string,
+      habitRollup: DailySummaryHabitRollup | null,
+      completedTasksCount: number,
+      totalTasksCount: number,
+      summaryScore?: number
+    ): DailyStatsSnapshot => {
+      const completedHabits = habitRollup?.completedCount ?? stats.completedHabits;
+      const totalHabits = habitRollup?.scheduledCount ?? stats.totalHabits;
+      const rate =
+        totalHabits > 0 ? Math.round((completedHabits / totalHabits) * 100) : 0;
+      return {
+        date: todayYmd,
+        completedHabits,
+        totalHabits,
+        completedTasks: completedTasksCount,
+        totalTasks: totalTasksCount,
+        habitCompletionRate: rate,
+        summaryScore,
+      };
+    },
+    [stats.completedHabits, stats.totalHabits]
+  );
+
+  const refreshYesterdayDelta = useCallback(
+    async (snapshot: DailyStatsSnapshot) => {
+      const yesterday = await loadYesterdayStats(userId, snapshot.date);
+      setYesterdayDelta(computeStatsDelta(snapshot, yesterday));
+    },
+    [userId]
+  );
+
+  useEffect(() => {
+    void (async () => {
+      const schedule = await getAutoSummarySchedule(userId);
+      const tf = profile?.displayPreferences?.timeFormat === '24h' ? '24h' : '12h';
+      setAutoSummaryScheduleLabel(formatAutoSummaryTime(schedule.hour, schedule.minute, tf));
+    })();
+  }, [userId, profile?.displayPreferences?.timeFormat]);
+
+  useEffect(() => {
+    void isAutoSummaryHintDismissed(userId).then(setAutoSummaryHintDismissed);
+  }, [userId]);
+
+  const handleDismissAutoSummaryHint = useCallback(() => {
+    setAutoSummaryHintDismissed(true);
+    void dismissAutoSummaryHint(userId);
+  }, [userId]);
+
+  useEffect(() => {
+    const todayYmd = getTodayYmd();
+    void (async () => {
+      const dismissed = await isDailySummaryDismissed(userId, todayYmd);
+      const cached = dismissed ? null : await loadDailySummaryCache(userId, todayYmd);
+      if (cached) setDailySummary(cached);
+      const allTasks = tasksContext?.allTasks || [];
+      const legacyHabits = appContext?.todayHabits || [];
+      const habitEntries = buildTodayHabitEntries(allTasks, legacyHabits, todayYmd);
+      const { rollup } = buildSummaryHabitsFromEntries(habitEntries);
+      const regularTasks = allTasks.filter((t) => !t.isHabit);
+      const completedTasksCount = regularTasks.filter((t) => t.status === 'completed').length;
+      const snap = buildTodayStatsSnapshot(
+        todayYmd,
+        rollup,
+        completedTasksCount,
+        regularTasks.length,
+        cached?.score
+      );
+      await refreshYesterdayDelta(snap);
+    })();
+  }, [userId, appContext?.todayHabits, tasksContext?.allTasks, buildTodayStatsSnapshot, refreshYesterdayDelta]);
 
   const generateDailySummary = useCallback(async () => {
     setIsGeneratingSummary(true);
@@ -1006,34 +1066,21 @@ export default function ActivitiesScreen() {
       const today = `${_ds.getFullYear()}-${String(_ds.getMonth() + 1).padStart(2, '0')}-${String(_ds.getDate()).padStart(2, '0')}`;
       
       const legacyHabits = appContext?.todayHabits || [];
-      const taskHabits = tasksContext?.allTasks?.filter(task => {
-        if (!task.isHabit || !task.habitFrequency) return false;
-        const todayDay = new Date().getDay();
-        return task.habitFrequency.days.includes(todayDay);
-      }) || [];
-      
-      const habitsForSummary = [
-        ...legacyHabits.map(h => ({
-          name: h.name,
-          done: h.completedToday,
-          streak: h.streak
-        })),
-        ...taskHabits.map(task => ({
-          name: task.title,
-          done: !!task.habitCompletions?.[today],
-          streak: task.habitStreak || 0
-        }))
-      ];
-      
-      const regularTasks = tasksContext?.allTasks?.filter(task => !task.isHabit) || [];
-      const tasksForSummary = regularTasks.map(task => ({
+      const allTasks = tasksContext?.allTasks || [];
+      const habitEntries = buildTodayHabitEntries(allTasks, legacyHabits, today);
+      const { habits: habitsForSummary, rollup: habitRollup } =
+        buildSummaryHabitsFromEntries(habitEntries);
+
+      const regularTasks = allTasks.filter((task) => !task.isHabit);
+      const tasksForSummary = regularTasks.map((task) => ({
         name: task.title,
         completed: task.status === 'completed',
         priority: task.priority,
-        category: task.category
+        category: task.category,
       }));
-      
-      const completedTasksCount = tasksForSummary.filter(t => t.completed).length;
+      const priorityTasks = buildPriorityTaskHighlights(allTasks);
+
+      const completedTasksCount = tasksForSummary.filter((t) => t.completed).length;
       const totalTasksCount = tasksForSummary.length;
       
       // Prepare upcoming matches data (next 7 days)
@@ -1069,14 +1116,32 @@ export default function ActivitiesScreen() {
           };
         });
       
-      const calendarEvents = getUpcomingCalendarEvents(3);
-      const upcomingEventsForSummary = calendarEvents.slice(0, 8).map(event => ({
+      const calendarEvents = getUpcomingCalendarEvents(14);
+      const upcomingEventsForSummary = calendarEvents.slice(0, 8).map((event) => ({
         title: event.title,
         startDate: event.startDate,
         endDate: event.endDate,
         location: event.location,
         isAllDay: event.isAllDay,
       }));
+      const todayCalendar = buildTodayCalendarHighlights(
+        [...getTodayCalendarEvents(), ...calendarEvents],
+        today
+      );
+      const continueWatching = buildContinueWatchingHighlights(continueWatchingItems);
+      const sportsBeats = buildSportsEmotionalBeats({
+        todayYmd: today,
+        recentWins,
+        upcomingMatches: upcomingMatchesForSummary,
+        liveMatches: liveMatches.map((m) => ({
+          homeTeam: m.homeTeam,
+          awayTeam: m.awayTeam,
+          date: m.date,
+          time: m.time,
+          homeScore: m.homeScore,
+          awayScore: m.awayScore,
+        })),
+      });
 
       const weatherForSummary = weather ? {
         condition: weather.condition || '',
@@ -1087,27 +1152,119 @@ export default function ActivitiesScreen() {
         windSpeed: weather.windSpeed,
       } : undefined;
 
+      const rollupNote = habitRollup
+        ? `${habitRollup.ratioLabel} habits scheduled for today (${habitRollup.incompleteCount} open)`
+        : `Completed ${stats.completedHabits}/${stats.totalHabits} habits`;
+
+      const openItems = buildOpenItemsForSummary({
+        habitIncompleteNames: habitRollup?.incompleteNames,
+        priorityTasks,
+        tasks: tasksForSummary,
+      });
+
+      const todaySnapshot = buildTodayStatsSnapshot(
+        today,
+        habitRollup,
+        completedTasksCount,
+        totalTasksCount
+      );
+      const yesterdayStats = await loadYesterdayStats(userId, today);
+      const preDelta = computeStatsDelta(todaySnapshot, yesterdayStats);
+      const yesterdayContext = preDelta
+        ? {
+            habitsLabel: preDelta.habitsLabel,
+            tasksLabel: preDelta.tasksLabel,
+            scoreLabel: preDelta.scoreLabel,
+          }
+        : null;
+
       const summary = await summarizeDailyProgress({
         date: today,
-        activities: activities.map(a => ({ name: a.title, minutes: a.timeSpent, details: a.description })),
+        activities: activities.map((a) => ({ name: a.title, minutes: a.timeSpent, details: a.description })),
         habits: habitsForSummary,
+        habitRollup,
         tasks: tasksForSummary,
-        shows: shows.filter(s => s.status === 'Watching').map(s => ({ title: s.title, episode: s.currentEpisode?.toString() })),
-        sports: upcomingMatches.map(m => ({ team: `${m.homeTeam} vs ${m.awayTeam}`, result: m.status })),
+        priorityTasks,
+        openItems,
+        yesterdayContext,
+        shows: shows.filter((s) => s.status === 'Watching').map((s) => ({
+          title: s.title,
+          episode: s.currentEpisode?.toString(),
+        })),
+        continueWatching,
+        sports: upcomingMatches.map((m) => ({ team: `${m.homeTeam} vs ${m.awayTeam}`, result: m.status })),
+        sportsBeats,
         upcomingMatches: upcomingMatchesForSummary,
-        recentWins: recentWins,
+        recentWins,
         upcomingEvents: upcomingEventsForSummary,
+        todayCalendar,
         weather: weatherForSummary,
-        notes: `Completed ${stats.completedHabits}/${stats.totalHabits} habits and ${completedTasksCount}/${totalTasksCount} tasks today`
+        notes: `${rollupNote}; ${completedTasksCount}/${totalTasksCount} regular tasks completed`,
       });
       setDailySummary(summary);
+
+      const snapshotWithScore = buildTodayStatsSnapshot(
+        today,
+        habitRollup,
+        completedTasksCount,
+        totalTasksCount,
+        summary.score
+      );
+      await saveDailyStatsSnapshot(userId, snapshotWithScore);
+      await saveDailySummaryCache(userId, today, summary);
+      await clearDailySummaryDismissed(userId, today);
+      await refreshYesterdayDelta(snapshotWithScore);
     } catch (error) {
       if (__DEV__) console.error('Error generating daily summary:', error);
     } finally {
       setIsGeneratingSummary(false);
     }
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [activities, shows, upcomingMatches, completedTodayMatches, isFavoriteTeam, stats, appContext?.todayHabits, tasksContext?.allTasks, weather, calendars]);
+  }, [
+    activities,
+    shows,
+    upcomingMatches,
+    completedTodayMatches,
+    isFavoriteTeam,
+    stats,
+    appContext?.todayHabits,
+    tasksContext?.allTasks,
+    weather,
+    calendars,
+    continueWatchingItems,
+    liveMatches,
+    getTodayCalendarEvents,
+    getUpcomingCalendarEvents,
+    userId,
+    buildTodayStatsSnapshot,
+    refreshYesterdayDelta,
+  ]);
+
+  useFocusEffect(
+    useCallback(() => {
+      const tick = async () => {
+        if (showUnifiedView || isGeneratingSummary || autoSummaryInFlightRef.current) return;
+        const todayYmd = getTodayYmd();
+        const dismissed = await isDailySummaryDismissed(userId, todayYmd);
+        const existing = await loadDailySummaryCache(userId, todayYmd);
+        if (dismissed || existing) return;
+        const enabled = await isAutoSummaryEnabled(userId);
+        if (!enabled) return;
+        const schedule = await getAutoSummarySchedule(userId);
+        if (!shouldRunAutoSummaryNow(new Date(), schedule.hour, schedule.minute)) return;
+        autoSummaryInFlightRef.current = true;
+        try {
+          await generateDailySummary();
+        } finally {
+          autoSummaryInFlightRef.current = false;
+        }
+      };
+
+      void tick();
+      const interval = setInterval(() => void tick(), 60_000);
+      return () => clearInterval(interval);
+    }, [showUnifiedView, isGeneratingSummary, userId, generateDailySummary])
+  );
   
   const navigateToHabits = () => {
     router.push('/tasks' as any);
@@ -1129,6 +1286,8 @@ export default function ActivitiesScreen() {
     const tip = getChronotypeGreetingTip(chronoInfo);
     return tip || null;
   };
+
+  const getHeroSubtitle = (): string | null => getChronotypeSubtitle();
   
   const getTimeEmoji = () => {
     if (weather) {
@@ -1166,57 +1325,15 @@ export default function ActivitiesScreen() {
 
   const getGradientColors = (): string[] => {
     const timeOfDay = getTimeOfDay();
-    const condition = weather?.condition?.toLowerCase() || '';
-    
-    if (weather?.isStormy) {
-      return timeOfDay === 'night' 
-        ? ['#1a1a2e', '#2d2d44', '#3a3a5c']
-        : ['#4a5568', '#5a6478', '#6b7a8a'];
+    if (weather) {
+      return [
+        ...getHeroGradientColors(weather.condition, weather.isDayTime, weather.cloudiness ?? 0, {
+          description: weather.description,
+          timeOfDay,
+        }),
+      ];
     }
-    
-    if (weather?.isRaining) {
-      switch (timeOfDay) {
-        case 'morning': return ['#8BA4B8', '#9BB4C8', '#7A98AE'];
-        case 'afternoon': return ['#7B9AAE', '#8AAABE', '#6B8A9E'];
-        case 'evening': return ['#6B7A8A', '#7A8898', '#5A6878'];
-        case 'night': return ['#1E2A3A', '#2A3648', '#1A2636'];
-        default: return ['#7B9AAE', '#8AAABE', '#6B8A9E'];
-      }
-    }
-    
-    if (weather?.isSnowing) {
-      return timeOfDay === 'night'
-        ? ['#2A3444', '#3A4454', '#4A5464']
-        : ['#D5E5F5', '#E8F0F8', '#F0F6FC'];
-    }
-    
-    if (condition.includes('mist') || condition.includes('fog') || condition.includes('haze') || condition.includes('smoke')) {
-      switch (timeOfDay) {
-        case 'morning': return ['#D4C8B8', '#C8BCA8', '#E0D4C4'];
-        case 'afternoon': return ['#B8C4D0', '#C8D4E0', '#A8B4C0'];
-        case 'evening': return ['#B0A090', '#C0B0A0', '#A09080'];
-        case 'night': return ['#2A2E36', '#3A3E46', '#1E2228'];
-        default: return ['#B8C4D0', '#C8D4E0', '#A8B4C0'];
-      }
-    }
-    
-    if (weather?.isCloudy) {
-      switch (timeOfDay) {
-        case 'morning': return ['#C8D4E0', '#B8C8D8', '#D8E4F0'];
-        case 'afternoon': return ['#A8B8C8', '#B8C8D8', '#98A8B8'];
-        case 'evening': return ['#B8A8A0', '#C8B8B0', '#A89888'];
-        case 'night': return ['#252D3A', '#1E2636', '#2A3244'];
-        default: return ['#A8B8C8', '#B8C8D8', '#98A8B8'];
-      }
-    }
-    
-    switch (timeOfDay) {
-      case 'morning': return ['#FEF3C7', '#FDE68A', '#FBBF24'];
-      case 'afternoon': return ['#DBEAFE', '#93C5FD', '#60A5FA'];
-      case 'evening': return ['#FED7AA', '#FDBA74', '#FB923C'];
-      case 'night': return ['#1E293B', '#0F172A', '#020617'];
-      default: return ['#DBEAFE', '#93C5FD', '#60A5FA'];
-    }
+    return [...getHeroGradientColors('clear', timeOfDay !== 'night', 0, { timeOfDay })];
   };
   
   const getHeroTextColor = (): string => {
@@ -1768,7 +1885,9 @@ export default function ActivitiesScreen() {
                 </Animated.Text>
                 <View style={styles.greetingTextContainer}>
                   <Text style={[styles.greetingText, { color: getHeroTextColor() }]}>{getGreeting()}</Text>
-                  <Text style={[styles.dateText, { color: getHeroSecondaryTextColor() }]}>{getTodayDate()}{getChronotypeSubtitle() ? `  · ${getChronotypeSubtitle()}` : ''}</Text>
+                  <Text style={[styles.dateText, { color: getHeroSecondaryTextColor() }]} numberOfLines={2}>
+                    {getTodayDate()}{getHeroSubtitle() ? `  · ${getHeroSubtitle()}` : ''}
+                  </Text>
                 </View>
                 {/* Weather Info Badge */}
                 {weather && (
@@ -1934,6 +2053,8 @@ export default function ActivitiesScreen() {
           <ActivitiesAIView onRequestPeakScheduler={() => setShowPeakScheduler(true)} />
         ) : (
           <View style={{ backgroundColor: colors.background }}>
+            <AddInterestsLaterCard />
+
             {/* Daily Summary Card */}
             <View style={styles.summarySection}>
               {dailySummary ? (
@@ -1957,6 +2078,7 @@ export default function ActivitiesScreen() {
                         style={styles.summaryCloseBtn}
                         onPress={() => {
                       void stopSummarySpeech();
+                      void markDailySummaryDismissed(userId, getTodayYmd());
                       setDailySummary(null);
                     }}
                       >
@@ -1997,6 +2119,24 @@ export default function ActivitiesScreen() {
                     </View>
                     <Text style={[styles.scoreValue, { color: colors.text }]}>{dailySummary.score}/100</Text>
                   </View>
+                  <DailySummaryInsights summary={dailySummary} yesterdayDelta={yesterdayDelta} />
+                  <TouchableOpacity
+                    style={styles.shareSummaryButton}
+                    onPress={() =>
+                      setSummarySharePayload(
+                        buildSummaryPayload(
+                          dailySummary.score,
+                          dailySummary.summary,
+                          (profile?.name || user?.email?.split('@')[0] || '').trim() || undefined,
+                        ),
+                      )
+                    }
+                    activeOpacity={0.8}
+                    testID="daily-summary-share-button"
+                  >
+                    <Share2 size={16} color="#fff" />
+                    <Text style={styles.shareSummaryText}>Share today’s score</Text>
+                  </TouchableOpacity>
                 </View>
               ) : (
                 <TouchableOpacity 
@@ -2010,6 +2150,29 @@ export default function ActivitiesScreen() {
                   </Text>
                 </TouchableOpacity>
               )}
+              {!dailySummary && !isGeneratingSummary && !autoSummaryHintDismissed ? (
+                <View
+                  style={[
+                    styles.autoSummaryHintCard,
+                    { backgroundColor: isDark ? colors.card : '#F1F5F9', borderColor: colors.border },
+                  ]}
+                >
+                  <Text style={[styles.autoSummaryHint, { color: colors.textSecondary }]}>
+                    {autoSummaryScheduleLabel
+                      ? `Auto-summary after ${autoSummaryScheduleLabel} when you open Overview (change in Profile)`
+                      : 'Auto-summary runs at your chosen time when you open Overview (set in Profile)'}
+                  </Text>
+                  <TouchableOpacity
+                    style={[styles.autoSummaryHintDismiss, { backgroundColor: isDark ? colors.background : '#E2E8F0' }]}
+                    onPress={handleDismissAutoSummaryHint}
+                    hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+                    accessibilityLabel="Dismiss auto-summary message"
+                    testID="dismiss-auto-summary-hint"
+                  >
+                    <X size={14} color={colors.textTertiary} />
+                  </TouchableOpacity>
+                </View>
+              ) : null}
             </View>
 
             {/* Today's Routine Section - Combined with Progress */}
@@ -2358,6 +2521,76 @@ export default function ActivitiesScreen() {
             {hasNBAInterest && (
               <NBAUpcomingSection favoriteNBATeams={favoriteNBATeams} />
             )}
+
+            {/* Partner Activity */}
+            {partnerActivity.available === true &&
+              (partnerActivity.feed.length > 0 || partnerActivity.activeTodayCount > 0) && (
+                <View style={styles.section}>
+                  <View style={styles.sectionHeaderRow}>
+                    <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+                      <Users size={20} color={colors.text} strokeWidth={2} />
+                      <Text style={[styles.sectionTitle, { color: colors.text }]}>Partner Activity</Text>
+                    </View>
+                    <TouchableOpacity style={styles.viewAllBtn} onPress={() => router.push('/friends' as any)}>
+                      <Text style={styles.viewAllText}>See all</Text>
+                      <ChevronRight size={16} color={COLORS.primary} />
+                    </TouchableOpacity>
+                  </View>
+
+                  {!!partnerActivity.presenceLabel && (
+                    <View style={styles.partnerPresence}>
+                      <View style={styles.partnerLiveDot} />
+                      <Text style={styles.partnerPresenceText}>{partnerActivity.presenceLabel}</Text>
+                    </View>
+                  )}
+
+                  {partnerActivity.feed.slice(0, 3).map((event) => (
+                    <View
+                      key={event.id}
+                      style={[styles.partnerCard, { backgroundColor: colors.card, borderColor: colors.border }]}
+                    >
+                      <View style={styles.partnerCardBody}>
+                        <Text style={[styles.partnerCardTitle, { color: colors.text }]} numberOfLines={2}>
+                          {event.title}
+                        </Text>
+                        {!!event.body && (
+                          <Text style={[styles.partnerCardSub, { color: colors.textSecondary }]} numberOfLines={1}>
+                            {event.body}
+                          </Text>
+                        )}
+                      </View>
+                      <TouchableOpacity
+                        style={[
+                          styles.partnerCheer,
+                          {
+                            borderColor: event.cheeredByMe ? '#F59E0B' : colors.border,
+                            backgroundColor: event.cheeredByMe ? '#F59E0B18' : 'transparent',
+                          },
+                        ]}
+                        onPress={() => {
+                          if (Platform.OS !== 'web') {
+                            Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light).catch(() => {});
+                          }
+                          void partnerActivity.cheer(event.id, !event.cheeredByMe);
+                        }}
+                        activeOpacity={0.7}
+                      >
+                        <PartyPopper size={15} color={event.cheeredByMe ? '#F59E0B' : colors.textMuted} />
+                        {event.cheersCount > 0 && (
+                          <Text
+                            style={[
+                              styles.partnerCheerCount,
+                              { color: event.cheeredByMe ? '#F59E0B' : colors.textMuted },
+                            ]}
+                          >
+                            {event.cheersCount}
+                          </Text>
+                        )}
+                      </TouchableOpacity>
+                    </View>
+                  ))}
+                </View>
+              )}
           </View>
         )}
       </Animated.ScrollView>
@@ -2379,7 +2612,10 @@ export default function ActivitiesScreen() {
         currentWeather={weather ? {
           temp: weather.temp,
           description: weather.description,
-          city: weather.city
+          city: weather.city,
+          condition: weather.condition,
+          isDayTime: weather.isDayTime,
+          cloudiness: weather.cloudiness,
         } : undefined}
       />
       
@@ -2409,10 +2645,18 @@ export default function ActivitiesScreen() {
           homeScore={liveMatches[0].homeScore}
           awayScore={liveMatches[0].awayScore}
           league={liveMatches[0].league}
+          leagueLogo={liveMatches[0].leagueLogo}
+          round={liveMatches[0].round}
           homeTeamLogo={liveMatches[0].homeTeamLogo}
           awayTeamLogo={liveMatches[0].awayTeamLogo}
         />
       )}
+
+      <ProgressShareSheet
+        visible={!!summarySharePayload}
+        payload={summarySharePayload}
+        onClose={() => setSummarySharePayload(null)}
+      />
     </SwipeableTabContainer>
   );
 }
@@ -2694,6 +2938,29 @@ const styles = StyleSheet.create({
     paddingHorizontal: 20,
     paddingTop: 22,
   },
+  autoSummaryHintCard: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    gap: 10,
+    marginTop: 12,
+    paddingVertical: 10,
+    paddingLeft: 12,
+    paddingRight: 8,
+    borderRadius: 12,
+    borderWidth: 1,
+  },
+  autoSummaryHint: {
+    flex: 1,
+    fontSize: 12,
+    lineHeight: 16,
+  },
+  autoSummaryHintDismiss: {
+    width: 28,
+    height: 28,
+    borderRadius: 14,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
   dailySummaryCard: {
     backgroundColor: '#FFFFFF',
     borderRadius: 24,
@@ -2801,6 +3068,21 @@ const styles = StyleSheet.create({
     fontWeight: '700',
     color: COLORS.text,
   },
+  shareSummaryButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 8,
+    backgroundColor: '#2563EB',
+    borderRadius: 14,
+    paddingVertical: 12,
+    marginTop: 12,
+  },
+  shareSummaryText: {
+    color: '#fff',
+    fontSize: 14,
+    fontWeight: '700',
+  },
   generateSummaryButton: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -2861,6 +3143,37 @@ const styles = StyleSheet.create({
     color: COLORS.primary,
     lineHeight: 18,
   },
+  partnerPresence: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 7,
+    marginBottom: 12,
+  },
+  partnerLiveDot: { width: 7, height: 7, borderRadius: 4, backgroundColor: '#34C759' },
+  partnerPresenceText: { fontSize: 13, fontWeight: '700' as const, color: '#1E9E4A' },
+  partnerCard: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    borderRadius: 14,
+    borderWidth: StyleSheet.hairlineWidth,
+    padding: 14,
+    marginBottom: 10,
+  },
+  partnerCardBody: { flex: 1, paddingRight: 12 },
+  partnerCardTitle: { fontSize: 14, fontWeight: '700' as const },
+  partnerCardSub: { fontSize: 12, marginTop: 3 },
+  partnerCheer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 5,
+    paddingHorizontal: 12,
+    paddingVertical: 9,
+    borderRadius: 10,
+    borderWidth: 1.5,
+    minWidth: 46,
+    justifyContent: 'center',
+  },
+  partnerCheerCount: { fontSize: 13, fontWeight: '700' as const },
 
   // Calendar Events
   emptyCalendarCard: {

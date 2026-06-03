@@ -13,7 +13,8 @@ import {
   Platform,
   UIManager,
   ActionSheetIOS,
-  ActivityIndicator
+  ActivityIndicator,
+  Share,
 } from 'react-native';
 import { Image } from 'expo-image';
 import * as ImagePicker from 'expo-image-picker';
@@ -59,10 +60,20 @@ import {
   Ticket,
 } from 'lucide-react-native';
 import * as Haptics from 'expo-haptics';
-import { router } from 'expo-router';
+import { router, useLocalSearchParams } from 'expo-router';
 import { useAuth } from '@/hooks/useAuth';
 import { useUserProfile } from '@/hooks/useUserProfile';
 import { useApp } from '@/hooks/useHabitsStore';
+import { useTodayHabits } from '@/hooks/useTodayHabits';
+import {
+  getAutoSummarySchedule,
+  setAutoSummaryEnabled,
+  setAutoSummaryTime,
+  setDailySummaryNotifyEnabled,
+  formatAutoSummaryTime,
+  isAutoSummaryEnabled,
+} from '@/utils/dailySummaryStats';
+import { syncDailySummaryNotification } from '@/utils/dailySummaryNotifications';
 import { useNotificationsSafe } from '@/hooks/useBackgroundServices';
 import { useGamification } from '@/hooks/useHabitsEnhancement';
 import { useTheme } from '@/hooks/useTheme';
@@ -71,11 +82,26 @@ import CustomHeader from '@/components/CustomHeader';
 
 import { useCloudSync } from '@/hooks/useCloudSync';
 import { CheckCircle2, AlertCircle, RefreshCw, Download } from 'lucide-react-native';
-import { migrateLocalDataToSupabaseUser } from '@/utils/localToSupabaseMigration';
+import {
+  migrateLocalDataToSupabaseUser,
+  getLastGuestUserId,
+} from '@/utils/localToSupabaseMigration';
+import type { CloudMergeStats } from '@/utils/syncMerge';
 import { AchievementsBadges } from '@/components/AchievementsBadges';
 import { ChallengeLeaderboard } from '@/components/ChallengeLeaderboard';
+import { ProgressShareSheet } from '@/components/ProgressShareSheet';
+import {
+  buildAchievementPayload,
+  buildStreakPayload,
+  buildChallengePayload,
+  type SharePayload,
+} from '@/utils/shareProgress';
+import { buildChallengeLink } from '@/utils/deepLinks';
+import type { Achievement, Challenge } from '@/types/gamification';
+import { useFriends } from '@/hooks/useFriends';
 import { MOCK_CHALLENGES } from '@/mocks/socialData';
 import { ThemeSettings } from '@/components/ThemeSettings';
+import { GOOGLE_G_LOGO } from '@/constants/googleBrandAssets';
 
 import { UserTeam, UserCountry, NBAFavoriteTeam } from '@/types/habit';
 import { FOOTBALL_COUNTRIES, FOOTBALL_TEAMS, getFootballTeamLogoUrl, searchTeams as searchAllTeams } from '@/constants/footballData';
@@ -100,6 +126,20 @@ function formatRelativeTime(iso: string): string {
   const diffDay = Math.floor(diffHr / 24);
   if (diffDay < 7) return `${diffDay}d ago`;
   return new Date(iso).toLocaleDateString();
+}
+
+function formatMergeSummary(summary: CloudMergeStats | null): string | null {
+  if (!summary) return null;
+  const parts: string[] = [];
+  if (summary.habitsMerged) parts.push('habits');
+  if (summary.tasksMerged) parts.push('tasks');
+  if (summary.profileMerged) parts.push('profile');
+  if (summary.projectsMerged) parts.push('projects');
+  if (summary.activitiesMerged) parts.push('activities');
+  if (summary.showsMerged) parts.push('shows');
+  if (summary.sportsMerged) parts.push('sports');
+  if (parts.length === 0) return 'No changes from cloud';
+  return `Merged ${parts.join(', ')}`;
 }
 
 const INTEREST_ICONS: Record<string, React.ComponentType<any>> = {
@@ -152,6 +192,7 @@ export default function ProfileScreen() {
   } = useUserProfile();
   const { resetAllWalkthroughs } = useWalkthrough();
   const { dashboardSummary } = useApp();
+  const { stats: todayHabitStats } = useTodayHabits();
   const {
     badges,
     achievements,
@@ -174,8 +215,11 @@ export default function ProfileScreen() {
   const {
     syncStatus,
     lastSyncTime,
+    lastPullTime,
+    lastMergeSummary,
     isCloudEnabled,
     syncToCloud,
+    syncNow,
     enableCloudSync,
     error: syncError,
     latestSnapshotTime,
@@ -192,11 +236,89 @@ export default function ProfileScreen() {
   const [editingName, setEditingName] = useState<boolean>(false);
   const [tempName, setTempName] = useState<string>(profile?.name || '');
   const [expandedSection, setExpandedSection] = useState<ExpandedSection>(null);
+  const { challengeId } = useLocalSearchParams<{ challengeId?: string }>();
+
+  useEffect(() => {
+    if (challengeId) {
+      setExpandedSection('challenges');
+    }
+  }, [challengeId]);
   const [isUploadingImage, setIsUploadingImage] = useState<boolean>(false);
   const [tempSelectedInterests, setTempSelectedInterests] = useState<string[]>([]);
   const [showTabOrderModal, setShowTabOrderModal] = useState<boolean>(false);
   const [tempTabOrder, setTempTabOrder] = useState<string[]>([]);
   const [isImportingLocal, setIsImportingLocal] = useState<boolean>(false);
+  const profileUserId = user?.id || 'guest';
+  const [autoSummaryEnabled, setAutoSummaryEnabledState] = useState(true);
+  const [dailySummaryNotify, setDailySummaryNotify] = useState(true);
+  const [summaryHour, setSummaryHour] = useState(20);
+  const [summaryMinute, setSummaryMinute] = useState(0);
+
+  const timeFormat = profile?.displayPreferences?.timeFormat === '24h' ? '24h' : '12h';
+
+  const applySummarySchedule = useCallback(
+    async (patch: {
+      autoEnabled?: boolean;
+      notifyEnabled?: boolean;
+      hour?: number;
+      minute?: number;
+    }) => {
+      const auto = patch.autoEnabled ?? autoSummaryEnabled;
+      const notify = patch.notifyEnabled ?? dailySummaryNotify;
+      const hour = patch.hour ?? summaryHour;
+      const minute = patch.minute ?? summaryMinute;
+
+      if (patch.autoEnabled !== undefined) {
+        await setAutoSummaryEnabled(profileUserId, patch.autoEnabled);
+        setAutoSummaryEnabledState(patch.autoEnabled);
+      }
+      if (patch.notifyEnabled !== undefined) {
+        await setDailySummaryNotifyEnabled(profileUserId, patch.notifyEnabled);
+        setDailySummaryNotify(patch.notifyEnabled);
+      }
+      if (patch.hour !== undefined || patch.minute !== undefined) {
+        await setAutoSummaryTime(profileUserId, hour, minute);
+        setSummaryHour(hour);
+        setSummaryMinute(minute);
+      }
+
+      if (patch.notifyEnabled && !notificationsEnabled) {
+        const granted = await requestPermissions();
+        if (!granted) return;
+      }
+
+      await syncDailySummaryNotification({
+        userId: profileUserId,
+        autoEnabled: auto,
+        notifyEnabled: notify,
+        hour,
+        minute,
+      });
+    },
+    [
+      profileUserId,
+      autoSummaryEnabled,
+      dailySummaryNotify,
+      summaryHour,
+      summaryMinute,
+      notificationsEnabled,
+      requestPermissions,
+    ]
+  );
+
+  useEffect(() => {
+    void (async () => {
+      const [enabled, schedule] = await Promise.all([
+        isAutoSummaryEnabled(profileUserId),
+        getAutoSummarySchedule(profileUserId),
+      ]);
+      setAutoSummaryEnabledState(enabled);
+      setDailySummaryNotify(schedule.notifyEnabled);
+      setSummaryHour(schedule.hour);
+      setSummaryMinute(schedule.minute);
+    })();
+  }, [profileUserId]);
+
   const [mfaFactorId, setMfaFactorId] = useState<string | null>(null);
   const [mfaQrCode, setMfaQrCode] = useState<string | null>(null);
   const [mfaSecret, setMfaSecret] = useState<string | null>(null);
@@ -221,6 +343,55 @@ export default function ProfileScreen() {
       updateProfile({ avatar: user.avatar });
     }
   }, [isGuest, user?.avatar, profile?.avatar, updateProfile]);
+
+  const {
+    friends: socialFriends,
+    incomingRequests: socialIncoming,
+    unreadNudges: socialUnreadNudges,
+    friendsLeaderboard: socialLeaderboard,
+  } = useFriends();
+  const partnerBadgeCount = socialIncoming.length + socialUnreadNudges.length;
+
+  const [sharePayload, setSharePayload] = useState<SharePayload | null>(null);
+  const shareUsername =
+    (profile?.name || user?.email?.split('@')[0] || '').trim() || undefined;
+
+  const handleShareAchievement = useCallback(
+    (achievement: Achievement) => {
+      if (!achievement.isUnlocked) return;
+      setSharePayload(
+        buildAchievementPayload(achievement.name, achievement.description, shareUsername),
+      );
+    },
+    [shareUsername],
+  );
+
+  const handleShareStreak = useCallback(() => {
+    setSharePayload(
+      buildStreakPayload(gamificationStats?.currentStreak ?? 0, shareUsername),
+    );
+  }, [gamificationStats, shareUsername]);
+
+  const handleShareChallenge = useCallback(
+    (challenge: Challenge) => {
+      setSharePayload(
+        buildChallengePayload(challenge.name, buildChallengeLink(challenge.id), shareUsername),
+      );
+    },
+    [shareUsername],
+  );
+
+  const handleInviteToChallenge = useCallback(async (challenge: Challenge) => {
+    const link = buildChallengeLink(challenge.id);
+    try {
+      await Share.share({
+        message: `Join my "${challenge.name}" challenge on One Pager 🎯\n${link}`,
+        ...(Platform.OS === 'ios' ? { url: link } : {}),
+      });
+    } catch {
+      // user dismissed the share sheet
+    }
+  }, []);
 
   const handleClaimWeeklyReward = useCallback(() => {
     const result = claimWeeklyReward();
@@ -594,7 +765,7 @@ export default function ProfileScreen() {
                 {isGoogleSignedIn && (
                   <View style={[styles.googleBadge, { backgroundColor: colors.surfaceSecondary, borderColor: colors.border }]}>
                     <Image
-                      source={{ uri: 'https://developers.google.com/identity/images/g-logo.png' }}
+                      source={GOOGLE_G_LOGO}
                       style={styles.googleBadgeLogo}
                       contentFit="contain"
                     />
@@ -623,7 +794,7 @@ export default function ProfileScreen() {
                 <View style={[styles.statIconBg, { backgroundColor: '#FF9500' + '15' }]}>
                   <Flame size={16} color="#FF9500" />
                 </View>
-                <Text style={[styles.statValue, { color: colors.text }]}>{dashboardSummary.habits.currentStreak}</Text>
+                <Text style={[styles.statValue, { color: colors.text }]}>{todayHabitStats.currentStreak}</Text>
                 <Text style={[styles.statLabel, { color: colors.textTertiary }]}>Streak</Text>
               </View>
               <View style={[styles.statDivider, { backgroundColor: colors.border }]} />
@@ -631,7 +802,7 @@ export default function ProfileScreen() {
                 <View style={[styles.statIconBg, { backgroundColor: '#34C759' + '15' }]}>
                   <Target size={16} color="#34C759" />
                 </View>
-                <Text style={[styles.statValue, { color: colors.text }]}>{dashboardSummary.habits.completed}/{dashboardSummary.habits.total}</Text>
+                <Text style={[styles.statValue, { color: colors.text }]}>{todayHabitStats.completedHabits}/{todayHabitStats.totalHabits}</Text>
                 <Text style={[styles.statLabel, { color: colors.textTertiary }]}>Today</Text>
               </View>
               <View style={[styles.statDivider, { backgroundColor: colors.border }]} />
@@ -862,6 +1033,103 @@ export default function ProfileScreen() {
                     trackColor={{ false: colors.border, true: colors.primary }}
                   />
                 </View>
+                <View style={[styles.notifRow, { borderBottomColor: colors.border }]}>
+                  <View style={{ flex: 1, paddingRight: 12 }}>
+                    <Text style={[styles.notifLabel, { color: colors.text }]}>Cheers & social</Text>
+                    <Text style={[styles.notifMetaText, { color: colors.textSecondary, marginTop: 2 }]}>
+                      Friend requests, nudges, and cheers from partners
+                    </Text>
+                  </View>
+                  <Switch
+                    value={profile.notificationSettings.socialNotifications ?? true}
+                    onValueChange={(value) => updateNotificationSettings({ socialNotifications: value })}
+                    trackColor={{ false: colors.border, true: colors.primary }}
+                  />
+                </View>
+                <View style={[styles.notifRow, { borderBottomColor: colors.border }]}>
+                  <View style={{ flex: 1, paddingRight: 12 }}>
+                    <Text style={[styles.notifLabel, { color: colors.text }]}>Auto daily summary</Text>
+                    <Text style={[styles.notifMetaText, { color: colors.textSecondary, marginTop: 2 }]}>
+                      Builds your recap on Overview after your chosen time
+                    </Text>
+                  </View>
+                  <Switch
+                    value={autoSummaryEnabled}
+                    onValueChange={(value) => {
+                      void applySummarySchedule({ autoEnabled: value });
+                    }}
+                    trackColor={{ false: colors.border, true: colors.primary }}
+                  />
+                </View>
+                {autoSummaryEnabled ? (
+                  <>
+                    <View style={[styles.notifRow, { borderBottomColor: colors.border, alignItems: 'center' }]}>
+                      <View style={{ flex: 1, paddingRight: 12 }}>
+                        <Text style={[styles.notifLabel, { color: colors.text }]}>Summary time</Text>
+                        <Text style={[styles.notifMetaText, { color: colors.textSecondary, marginTop: 2 }]}>
+                          {formatAutoSummaryTime(summaryHour, summaryMinute, timeFormat)}
+                        </Text>
+                      </View>
+                      <View style={styles.summaryTimeStepper}>
+                        <TouchableOpacity
+                          style={[styles.timeStepBtn, { backgroundColor: colors.surfaceSecondary }]}
+                          onPress={() => {
+                            const nextH = (summaryHour + 23) % 24;
+                            void applySummarySchedule({ hour: nextH });
+                          }}
+                          accessibilityLabel="Earlier hour"
+                        >
+                          <Text style={[styles.timeStepBtnText, { color: colors.text }]}>−</Text>
+                        </TouchableOpacity>
+                        <TouchableOpacity
+                          style={[styles.timeStepBtn, { backgroundColor: colors.surfaceSecondary }]}
+                          onPress={() => {
+                            const nextM = (summaryMinute + 45) % 60;
+                            void applySummarySchedule({ minute: nextM });
+                          }}
+                          accessibilityLabel="Earlier 15 minutes"
+                        >
+                          <Text style={[styles.timeStepBtnText, { color: colors.textTertiary }]}>−15m</Text>
+                        </TouchableOpacity>
+                        <TouchableOpacity
+                          style={[styles.timeStepBtn, { backgroundColor: colors.surfaceSecondary }]}
+                          onPress={() => {
+                            const nextM = (summaryMinute + 15) % 60;
+                            void applySummarySchedule({ minute: nextM });
+                          }}
+                          accessibilityLabel="Later 15 minutes"
+                        >
+                          <Text style={[styles.timeStepBtnText, { color: colors.textTertiary }]}>+15m</Text>
+                        </TouchableOpacity>
+                        <TouchableOpacity
+                          style={[styles.timeStepBtn, { backgroundColor: colors.surfaceSecondary }]}
+                          onPress={() => {
+                            const nextH = (summaryHour + 1) % 24;
+                            void applySummarySchedule({ hour: nextH });
+                          }}
+                          accessibilityLabel="Later hour"
+                        >
+                          <Text style={[styles.timeStepBtnText, { color: colors.text }]}>+</Text>
+                        </TouchableOpacity>
+                      </View>
+                    </View>
+                    <View style={[styles.notifRow, { borderBottomColor: colors.border }]}>
+                      <View style={{ flex: 1, paddingRight: 12 }}>
+                        <Text style={[styles.notifLabel, { color: colors.text }]}>Summary reminder</Text>
+                        <Text style={[styles.notifMetaText, { color: colors.textSecondary, marginTop: 2 }]}>
+                          Push notification at {formatAutoSummaryTime(summaryHour, summaryMinute, timeFormat)} to check Overview
+                        </Text>
+                      </View>
+                      <Switch
+                        value={dailySummaryNotify}
+                        onValueChange={(value) => {
+                          void applySummarySchedule({ notifyEnabled: value });
+                        }}
+                        trackColor={{ false: colors.border, true: colors.primary }}
+                      />
+                    </View>
+                  </>
+                ) : null}
                 <View style={[styles.notifRow, { borderBottomColor: colors.border }]}>
                   <Text style={[styles.notifLabel, { color: colors.text }]}>Habit Risk Nudges</Text>
                   <Switch
@@ -1266,30 +1534,50 @@ export default function ProfileScreen() {
                 <View style={styles.syncCardInfo}>
                   <Text style={[styles.syncCardTitle, { color: colors.text }]}>
                     {syncStatus === 'syncing'
-                      ? 'Backing up...'
+                      ? 'Syncing...'
                       : syncStatus === 'error'
-                      ? 'Backup failed'
+                      ? 'Sync failed'
                       : isCloudEnabled
-                      ? 'Cloud Backup Active'
-                      : 'Cloud Backup'}
+                      ? 'Cloud sync active'
+                      : 'Cloud sync'}
                   </Text>
                   <Text style={[styles.syncCardSubtitle, { color: colors.textTertiary }]}>
                     {syncStatus === 'error' && syncError
                       ? syncError
-                      : lastSyncTime
-                      ? `Last backup ${formatRelativeTime(lastSyncTime)}`
+                      : lastPullTime || lastSyncTime
+                      ? `Last synced ${formatRelativeTime(lastPullTime || lastSyncTime!)}`
                       : isCloudEnabled
-                      ? 'Waiting for first backup...'
-                      : 'Sign in to enable auto-backup'}
+                      ? 'Waiting for first sync...'
+                      : 'Sign in to sync habits and tasks across devices'}
                   </Text>
                 </View>
               </View>
 
+              <Text style={[styles.syncConflictNote, { color: colors.textTertiary }]}>
+                Conflict-safe merge: newer edits win per item; habit and task completion days from both devices are kept.
+              </Text>
+
+              {lastPullTime && (
+                <View style={[styles.syncDetailRow, { borderTopColor: colors.border }]}>
+                  <Text style={[styles.syncDetailLabel, { color: colors.textTertiary }]}>Last pull</Text>
+                  <Text style={[styles.syncDetailValue, { color: colors.text }]}>
+                    {new Date(lastPullTime).toLocaleString([], { dateStyle: 'medium', timeStyle: 'short' })}
+                  </Text>
+                </View>
+              )}
               {lastSyncTime && (
                 <View style={[styles.syncDetailRow, { borderTopColor: colors.border }]}>
                   <Text style={[styles.syncDetailLabel, { color: colors.textTertiary }]}>Last backup</Text>
                   <Text style={[styles.syncDetailValue, { color: colors.text }]}>
                     {new Date(lastSyncTime).toLocaleString([], { dateStyle: 'medium', timeStyle: 'short' })}
+                  </Text>
+                </View>
+              )}
+              {lastMergeSummary && formatMergeSummary(lastMergeSummary) && (
+                <View style={[styles.syncDetailRow, { borderTopColor: colors.border }]}>
+                  <Text style={[styles.syncDetailLabel, { color: colors.textTertiary }]}>Last merge</Text>
+                  <Text style={[styles.syncDetailValue, { color: colors.text }]}>
+                    {formatMergeSummary(lastMergeSummary)}
                   </Text>
                 </View>
               )}
@@ -1313,13 +1601,13 @@ export default function ProfileScreen() {
                   if (!isCloudEnabled) {
                     const ok = await enableCloudSync(true);
                     if (!ok) {
-                      Alert.alert('Backup unavailable', syncError || 'Could not enable cloud sync. Check your internet connection and sign-in status.');
+                      Alert.alert('Sync unavailable', syncError || 'Could not enable cloud sync. Check your internet connection and sign-in status.');
                       return;
                     }
                   }
-                  const result = await syncToCloud();
+                  const result = await syncNow();
                   if (!result) {
-                    Alert.alert('Backup failed', syncError || 'Unable to back up to Supabase. Check console logs for details.');
+                    Alert.alert('Sync failed', syncError || 'Unable to sync with Supabase. Check console logs for details.');
                   } else {
                     void Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
                   }
@@ -1329,7 +1617,38 @@ export default function ProfileScreen() {
               >
                 <RefreshCw size={16} color={colors.textInverse} />
                 <Text style={[styles.syncBackupBtnText, { color: colors.textInverse }]}>
-                  {syncStatus === 'syncing' ? 'Backing up...' : 'Back Up Now'}
+                  {syncStatus === 'syncing' ? 'Syncing...' : 'Sync Now'}
+                </Text>
+              </TouchableOpacity>
+
+              <TouchableOpacity
+                style={[
+                  styles.syncBackupBtn,
+                  { backgroundColor: colors.surfaceSecondary, marginTop: 8 },
+                  (syncStatus === 'syncing') && { opacity: 0.5 },
+                ]}
+                onPress={async () => {
+                  void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+                  if (!isCloudEnabled) {
+                    const ok = await enableCloudSync(true);
+                    if (!ok) {
+                      Alert.alert('Backup unavailable', syncError || 'Could not enable cloud sync.');
+                      return;
+                    }
+                  }
+                  const result = await syncToCloud();
+                  if (!result) {
+                    Alert.alert('Backup failed', syncError || 'Unable to back up to Supabase.');
+                  } else {
+                    void Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+                  }
+                }}
+                disabled={syncStatus === 'syncing'}
+                activeOpacity={0.8}
+              >
+                <Cloud size={16} color={colors.text} />
+                <Text style={[styles.syncBackupBtnText, { color: colors.text }]}>
+                  {syncStatus === 'syncing' ? 'Backing up...' : 'Back Up Only'}
                 </Text>
               </TouchableOpacity>
 
@@ -1345,15 +1664,20 @@ export default function ProfileScreen() {
                     void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
                     setIsImportingLocal(true);
                     try {
-                      const result = await migrateLocalDataToSupabaseUser(user.email, user.id, { force: true });
+                      const guestUserId = await getLastGuestUserId();
+                      const result = await migrateLocalDataToSupabaseUser(user.email, user.id, {
+                        force: true,
+                        sessionDisplayName: user.name,
+                        guestUserId: guestUserId ?? undefined,
+                      });
                       if (result.keysCopied > 0) {
                         if (isCloudEnabled) {
-                          await syncToCloud();
+                          await syncNow();
                         }
                         void Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
                         Alert.alert(
                           'Import complete',
-                          `Imported ${result.keysCopied} data set${result.keysCopied === 1 ? '' : 's'} from your old local account. Restart the app to see your streaks.`
+                          `Merged ${result.keysCopied} data set${result.keysCopied === 1 ? '' : 's'} from your old local or guest account. Habits and tasks should appear after sync completes.`
                         );
                       } else if (result.oldUserId) {
                         Alert.alert('Nothing to import', 'Found an old local account but its data is already in this account.');
@@ -1452,14 +1776,50 @@ export default function ProfileScreen() {
 
             {expandedSection === 'achievements' && (
               <View style={[styles.expandedContent, { backgroundColor: colors.surfaceSecondary }]}>
+                <TouchableOpacity
+                  style={styles.shareStreakBtn}
+                  onPress={handleShareStreak}
+                  activeOpacity={0.85}
+                >
+                  <Flame size={16} color="#FFFFFF" />
+                  <Text style={styles.shareStreakBtnText}>
+                    Share my {gamificationStats?.currentStreak ?? 0}-day streak
+                  </Text>
+                </TouchableOpacity>
                 <AchievementsBadges
                   badges={badges}
                   achievements={achievements}
                   stats={gamificationStats}
+                  onAchievementPress={handleShareAchievement}
                   compact
                 />
               </View>
             )}
+
+            {/* Accountability Partners */}
+            <TouchableOpacity
+              style={[styles.settingsItem, { backgroundColor: colors.card, borderColor: colors.border }]}
+              onPress={() => router.push('/friends' as any)}
+              activeOpacity={0.7}
+            >
+              <View style={[styles.settingsIconBg, { backgroundColor: '#FF6A3D' + '15' }]}>
+                <Users size={18} color="#FF6A3D" />
+              </View>
+              <View style={styles.settingsItemContent}>
+                <Text style={[styles.settingsItemTitle, { color: colors.text }]}>Accountability Partners</Text>
+                <Text style={[styles.settingsItemSubtitle, { color: colors.textTertiary }]}>
+                  {socialFriends.length > 0
+                    ? `${socialFriends.length} partner${socialFriends.length === 1 ? '' : 's'}`
+                    : 'Add friends to keep each other on track'}
+                </Text>
+              </View>
+              {partnerBadgeCount > 0 && (
+                <View style={styles.partnerBadge}>
+                  <Text style={styles.partnerBadgeText}>{partnerBadgeCount}</Text>
+                </View>
+              )}
+              <ChevronRight size={20} color={colors.textTertiary} />
+            </TouchableOpacity>
 
             {/* Challenges */}
             <TouchableOpacity 
@@ -1487,10 +1847,12 @@ export default function ProfileScreen() {
               <View style={[styles.expandedContent, { backgroundColor: colors.surfaceSecondary }]}>
                 <ChallengeLeaderboard
                   challenges={[...challenges, ...MOCK_CHALLENGES]}
-                  leaderboard={getLeaderboard('friends')}
+                  leaderboard={socialLeaderboard ?? getLeaderboard('friends')}
                   currentUserId="current_user"
                   onJoinChallenge={joinChallenge}
                   onLeaveChallenge={leaveChallenge}
+                  onShareChallenge={handleShareChallenge}
+                  onInviteFriend={handleInviteToChallenge}
                   compact
                 />
               </View>
@@ -1838,6 +2200,12 @@ export default function ProfileScreen() {
             </View>
           </View>
         </Modal>
+
+        <ProgressShareSheet
+          visible={!!sharePayload}
+          payload={sharePayload}
+          onClose={() => setSharePayload(null)}
+        />
       </View>
     </SwipeableTabContainer>
   );
@@ -1846,6 +2214,37 @@ export default function ProfileScreen() {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
+  },
+  partnerBadge: {
+    minWidth: 22,
+    height: 22,
+    borderRadius: 11,
+    paddingHorizontal: 6,
+    backgroundColor: '#FF3B30',
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginRight: 8,
+  },
+  partnerBadgeText: {
+    color: '#FFFFFF',
+    fontSize: 12,
+    fontWeight: '700',
+  },
+  shareStreakBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 8,
+    backgroundColor: '#FF6A3D',
+    borderRadius: 12,
+    paddingVertical: 12,
+    paddingHorizontal: 16,
+    marginBottom: 12,
+  },
+  shareStreakBtnText: {
+    color: '#FFFFFF',
+    fontSize: 14,
+    fontWeight: '700',
   },
   scrollView: {
     flex: 1,
@@ -2050,6 +2449,12 @@ const styles = StyleSheet.create({
   syncCardSubtitle: {
     fontSize: 13,
   },
+  syncConflictNote: {
+    fontSize: 12,
+    lineHeight: 17,
+    marginTop: 10,
+    marginBottom: 4,
+  },
   syncDetailRow: {
     flexDirection: 'row',
     justifyContent: 'space-between',
@@ -2233,6 +2638,23 @@ const styles = StyleSheet.create({
   notifMetaText: {
     fontSize: 12,
     marginTop: 10,
+  },
+  summaryTimeStepper: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+  },
+  timeStepBtn: {
+    minWidth: 36,
+    height: 32,
+    borderRadius: 8,
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingHorizontal: 6,
+  },
+  timeStepBtnText: {
+    fontSize: 14,
+    fontWeight: '700',
   },
   notificationOptionRow: {
     flexDirection: 'row',

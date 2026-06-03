@@ -2,13 +2,15 @@ import { z } from 'zod';
 import { publicProcedure } from '@/backend/trpc/create-context';
 import { getFootballApiKeyFromEnv } from '@/backend/utils/footballApiKey';
 
-const BASE_URL = 'https://v3.football.api-sports.io';
+export const FOOTBALL_API_BASE_URL = 'https://v3.football.api-sports.io';
+const BASE_URL = FOOTBALL_API_BASE_URL;
 
-function getCurrentSeason(): number {
+export function getCurrentSeason(): number {
   const now = new Date();
   const month = now.getMonth();
   const year = now.getFullYear();
-  if (month < 7) return year - 1;
+  // Align with client football season (Aug–May leagues use start-year as API season).
+  if (month < 6) return year - 1;
   return year;
 }
 
@@ -16,13 +18,14 @@ function getAlternateSeason(): number {
   const now = new Date();
   const month = now.getMonth();
   const year = now.getFullYear();
-  if (month < 7) return year;
+  if (month < 6) return year;
   return year - 1;
 }
 
-const DOMESTIC_CUP_LEAGUES = [
-  45, 48, 143, 81, 137, 66,
-];
+/** Domestic cups / super cups — no season-long league table in API-Football. */
+const CUP_LEAGUES_WITHOUT_TABLE = new Set([
+  45, 48, 46, 143, 556, 81, 529, 137, 66, 65, 90, 96, 531,
+]);
 
 interface CacheEntry {
   data: any;
@@ -33,7 +36,7 @@ const apiCache = new Map<string, CacheEntry>();
 const MAX_CACHE_SIZE = 500;
 const CACHE_EVICT_COUNT = 50;
 
-const CACHE_TTL: Record<string, number> = {
+export const CACHE_TTL: Record<string, number> = {
   live: 20 * 1000,
   upcoming: 30 * 60 * 1000,
   today: 5 * 60 * 1000,
@@ -98,7 +101,7 @@ function setCache(key: string, data: any): void {
 
 const delay = (ms: number) => new Promise(resolve => setTimeout(resolve, ms));
 
-async function cachedFetch(url: string, headers: Record<string, string>, cacheKey: string, ttl: number): Promise<any> {
+export async function cachedFetch(url: string, headers: Record<string, string>, cacheKey: string, ttl: number): Promise<any> {
   const cached = getFromCache(cacheKey, ttl);
   if (cached) return cached;
 
@@ -150,6 +153,15 @@ async function cachedFetch(url: string, headers: Record<string, string>, cacheKe
         console.warn(`⚠️ API returned errors for ${cacheKey.substring(0, 60)}:`, JSON.stringify(data.errors));
         const stale = getStaleFromCache(cacheKey);
         if (stale) return stale;
+        const quotaMsg =
+          typeof data.errors.requests === 'string'
+            ? data.errors.requests
+            : typeof data.errors.rateLimit === 'string'
+              ? data.errors.rateLimit
+              : null;
+        if (quotaMsg) {
+          return { response: [], errors: { rateLimit: quotaMsg } };
+        }
       }
 
       setCache(cacheKey, data);
@@ -181,12 +193,26 @@ async function leagueHasLiveFixture(leagueId: number, headers: Record<string, st
 }
 
 const KEY_INTERNATIONAL_LEAGUES = [
-  5, 10, 6, 15, 16, 17, 18, 19, 20, 4, 9, 7, 21,
+  1, 5, 10, 6, 15, 16, 17, 18, 19, 20, 4, 9, 7, 21,
 ];
 
 const INTERNATIONAL_COMPETITIONS = KEY_INTERNATIONAL_LEAGUES;
 
 export { INTERNATIONAL_COMPETITIONS };
+
+/**
+ * International tournaments where API-Football indexes fixtures by the tournament year
+ * (e.g. World Cup 2026 → season 2026), not the Aug–May club season. Fetch these with a
+ * date window and NO `season` param so a club-season mismatch can't return an empty list.
+ * Ids: 1 World Cup, 4 Euro, 5 Nations League, 6 AFCON, 7 Asian Cup, 9 Copa América,
+ * 10 Friendlies, 15–20 World Cup Qualifiers (all confederations), 21 Confederations Cup.
+ */
+const INTERNATIONAL_TOURNAMENT_IDS = new Set<number>([
+  1, 4, 5, 6, 7, 9, 10, 15, 16, 17, 18, 19, 20, 21,
+]);
+
+/** International tournaments always probed in the default feed (cheap: empty outside their date window). */
+const DEFAULT_INTERNATIONAL_IDS = [1];
 
 const CORE_LEAGUES = [39, 140, 78, 135, 61];
 const CORE_COMPETITIONS = [2, 3, 848]; // UCL, UEL, UECL
@@ -207,7 +233,15 @@ type GetMatchesInput = z.infer<typeof getMatchesInputSchema>;
 async function fetchMatchesByType(input: GetMatchesInput) {
     const { type, days = 14, leagueIds, teamIds, nationalTeamIds, includeAfcon } = input;
 
-    const topLevelCacheKey = getCacheKey(type, { days, leagueIds, teamIds, nationalTeamIds, includeAfcon });
+    /** Bump when fetch/filter logic changes — avoids serving stale empty bundles from cache. */
+    const topLevelCacheKey = getCacheKey(type, {
+      days,
+      leagueIds,
+      teamIds,
+      nationalTeamIds,
+      includeAfcon,
+      _filterRev: 'short-upper-v1',
+    });
     const topLevelTtl = CACHE_TTL[type] || 60000;
     const cachedResult = getFromCache(topLevelCacheKey, topLevelTtl);
     if (cachedResult) {
@@ -238,8 +272,16 @@ async function fetchMatchesByType(input: GetMatchesInput) {
       const matches = data.response || [];
       console.log(`✅ ${matches.length} live matches`);
 
-      const result = { response: matches, results: matches.length, errors: data.errors || {}, paging: data.paging || {}, parameters: { type, days } };
-      setCache(topLevelCacheKey, result);
+      const result = {
+        response: matches,
+        results: matches.length,
+        errors: data.errors || {},
+        paging: data.paging || {},
+        parameters: { type, days },
+      };
+      if (matches.length > 0 || !data.errors?.rateLimit) {
+        setCache(topLevelCacheKey, result);
+      }
       return result;
     }
 
@@ -272,6 +314,12 @@ async function fetchMatchesByType(input: GetMatchesInput) {
       }
     };
 
+    const bundleErrors: { rateLimit?: string } = {};
+    const noteFetchErrors = (data: { errors?: { rateLimit?: string } }) => {
+      const msg = data.errors?.rateLimit;
+      if (msg && !bundleErrors.rateLimit) bundleErrors.rateLimit = msg;
+    };
+
     const fetchLeagueMatchesForSeason = async (leagueId: number, fetchSeason: number): Promise<any[]> => {
       let url = '';
       if (type === 'today') {
@@ -283,10 +331,15 @@ async function fetchMatchesByType(input: GetMatchesInput) {
       }
       const ck = `league:${leagueId}:${type}:${fromDate}:${toDate}:${fetchSeason}`;
       const data = await cachedFetch(url, headers, ck, topLevelTtl);
+      noteFetchErrors(data);
       return data.response || [];
     };
 
     const fetchLeagueMatches = async (leagueId: number): Promise<any[]> => {
+      /** Tournaments (World Cup, qualifiers, continental cups) don't follow the club season year. */
+      if (INTERNATIONAL_TOURNAMENT_IDS.has(leagueId)) {
+        return fetchIntlLeague(leagueId);
+      }
       return fetchLeagueMatchesForSeason(leagueId, season);
     };
 
@@ -295,6 +348,7 @@ async function fetchMatchesByType(input: GetMatchesInput) {
         const url = `${BASE_URL}/fixtures?date=${today}&team=${teamId}`;
         const ck = `team:${teamId}:today:${today}`;
         const data = await cachedFetch(url, headers, ck, topLevelTtl);
+        noteFetchErrors(data);
         const matches = data.response || [];
         console.log(`⚽ Team ${teamId} today: ${matches.length} matches`);
         return matches;
@@ -303,6 +357,7 @@ async function fetchMatchesByType(input: GetMatchesInput) {
         const url = `${BASE_URL}/fixtures?team=${teamId}&last=20`;
         const ck = `team:${teamId}:results:last20`;
         const data = await cachedFetch(url, headers, ck, topLevelTtl);
+        noteFetchErrors(data);
         const matches = data.response || [];
         console.log(`⚽ Team ${teamId} results: ${matches.length} matches`);
         return matches;
@@ -312,6 +367,7 @@ async function fetchMatchesByType(input: GetMatchesInput) {
       const url = `${BASE_URL}/fixtures?team=${teamId}&next=15`;
       const ck = `team:${teamId}:upcoming:next15`;
       const data = await cachedFetch(url, headers, ck, topLevelTtl);
+      noteFetchErrors(data);
       const matches = data.response || [];
       console.log(`⚽ Team ${teamId} upcoming: ${matches.length} matches`);
       return matches;
@@ -331,6 +387,7 @@ async function fetchMatchesByType(input: GetMatchesInput) {
         ck = `national:${teamId}:upcoming:next10`;
       }
       const data = await cachedFetch(url, headers, ck, topLevelTtl);
+      noteFetchErrors(data);
       return data.response || [];
     };
 
@@ -345,6 +402,7 @@ async function fetchMatchesByType(input: GetMatchesInput) {
       }
       const ck = `intl:${leagueId}:${type}:${fromDate}:${toDate}`;
       const data = await cachedFetch(url, headers, ck, topLevelTtl);
+      noteFetchErrors(data);
       return data.response || [];
     };
 
@@ -361,12 +419,14 @@ async function fetchMatchesByType(input: GetMatchesInput) {
           limitedLeagues.forEach(id => allPromises.push(fetchLeagueMatches(id)));
         }
       } else if (hasUserSelectedLeagues) {
-        const limitedLeagues = leagueIds!.slice(0, 6);
+        const limitedLeagues = leagueIds!.slice(0, 8);
         console.log(`⚽ Fetching ${limitedLeagues.length} user-selected leagues`);
         limitedLeagues.forEach(id => allPromises.push(fetchLeagueMatches(id)));
       } else {
         // Default feed: top 5 domestic leagues + major UEFA competitions.
         [...CORE_LEAGUES, ...CORE_COMPETITIONS].forEach(id => allPromises.push(fetchLeagueMatches(id)));
+        // In-window international tournaments (e.g. FIFA World Cup) — season-agnostic; empty outside tournament dates.
+        DEFAULT_INTERNATIONAL_IDS.forEach(id => allPromises.push(fetchIntlLeague(id)));
       }
 
       if (nationalTeamIds && nationalTeamIds.length > 0) {
@@ -397,6 +457,27 @@ async function fetchMatchesByType(input: GetMatchesInput) {
           if (r.status === 'fulfilled') addMatches(r.value);
         });
       }
+
+      /**
+       * User picked specific competitions (Worldwide + league chips) but those leagues may have
+       * zero fixtures in the date window (breaks, wrong season, etc.). Merge the default core
+       * bundle so the tab isn't blank; client visibility rules relax when the narrow set is empty.
+       */
+      if (
+        allMatches.length === 0 &&
+        hasUserSelectedLeagues &&
+        !hasTeams &&
+        type !== 'today'
+      ) {
+        console.warn(
+          `⚠️ Selected leagues returned no ${type} fixtures — merging core league bundle (top 5 + UEFA cups)`,
+        );
+        const fallbackPromises = [...CORE_LEAGUES, ...CORE_COMPETITIONS].map((id) => fetchLeagueMatches(id));
+        const fallbackSettled = await Promise.allSettled(fallbackPromises);
+        fallbackSettled.forEach((r) => {
+          if (r.status === 'fulfilled') addMatches(r.value);
+        });
+      }
     } catch (error: any) {
       console.error(`💥 Batch fetch failed: ${error.message}`);
       if (staleTopLevel) {
@@ -412,11 +493,33 @@ async function fetchMatchesByType(input: GetMatchesInput) {
 
     let filteredMatches = allMatches;
 
+    const statusShort = (m: any): string =>
+      String(m?.fixture?.status?.short ?? m?.status?.short ?? '')
+        .trim()
+        .toUpperCase();
+
     if (type === 'upcoming') {
-      const excludedStatuses = ['FT', 'AET', 'PEN', 'CANC', 'ABD', 'AWD', 'WO', '1H', '2H', 'HT', 'ET', 'BT', 'LIVE', 'P'];
-      filteredMatches = allMatches.filter(match => !excludedStatuses.includes(match.fixture?.status?.short));
+      /** api-sports often returns lowercase shorts; strict uppercase compare was wiping feeds. */
+      const excludedStatuses = new Set([
+        'FT',
+        'AET',
+        'PEN',
+        'CANC',
+        'ABD',
+        'AWD',
+        'WO',
+        '1H',
+        '2H',
+        'HT',
+        'ET',
+        'BT',
+        'LIVE',
+        'P',
+      ]);
+      filteredMatches = allMatches.filter((match) => !excludedStatuses.has(statusShort(match)));
     } else if (type === 'results') {
-      filteredMatches = allMatches.filter(match => ['FT', 'AET', 'PEN', 'AWD', 'WO'].includes(match.fixture?.status?.short));
+      const finishedStatuses = new Set(['FT', 'AET', 'PEN', 'AWD', 'WO']);
+      filteredMatches = allMatches.filter((match) => finishedStatuses.has(statusShort(match)));
     }
 
     filteredMatches.sort((a, b) => {
@@ -430,12 +533,14 @@ async function fetchMatchesByType(input: GetMatchesInput) {
     const result = {
       response: filteredMatches,
       results: filteredMatches.length,
-      errors: {},
+      errors: bundleErrors.rateLimit ? { rateLimit: bundleErrors.rateLimit } : {},
       paging: {},
       parameters: { type, days },
     };
 
-    setCache(topLevelCacheKey, result);
+    if (filteredMatches.length > 0 || !bundleErrors.rateLimit) {
+      setCache(topLevelCacheKey, result);
+    }
     return result;
 }
 
@@ -521,6 +626,22 @@ export const getTeamLogosRoute = publicProcedure
     return { logos };
   });
 
+function hasStandingsPayload(data: { response?: unknown } | null | undefined): boolean {
+  const standings = (data?.response as { league?: { standings?: unknown[] } }[])?.[0]?.league?.standings;
+  if (!Array.isArray(standings) || standings.length === 0) return false;
+  return standings.some((group) => Array.isArray(group) && group.length > 0);
+}
+
+function buildStandingsSeasonCandidates(inputSeason?: number): number[] {
+  const current = getCurrentSeason();
+  const alternate = getAlternateSeason();
+  const calendarYear = new Date().getFullYear();
+  const candidates = [inputSeason, current, alternate, current - 1, calendarYear].filter(
+    (s): s is number => typeof s === 'number' && Number.isFinite(s) && s >= 1900 && s <= 2100,
+  );
+  return [...new Set(candidates)];
+}
+
 export const getLeagueStandingsRoute = publicProcedure
   .input(z.object({
     leagueId: z.coerce.number().int().positive().max(99999),
@@ -530,15 +651,19 @@ export const getLeagueStandingsRoute = publicProcedure
     const { leagueId, season: inputSeason } = input;
     
     const apiKey = getFootballApiKeyFromEnv();
-    const season = inputSeason || getCurrentSeason();
+    const seasonsToTry = buildStandingsSeasonCandidates(inputSeason);
     
-    console.log(`🏆 API-Football Standings Request - League: ${leagueId}, Season: ${season}`);
+    console.log(
+      `🏆 API-Football Standings Request - League: ${leagueId}, seasons: ${seasonsToTry.join(', ')}`,
+    );
     console.log(`🔑 API Key check: ${apiKey ? `configured (${apiKey.length} chars)` : 'NOT CONFIGURED'}`);
     
     if (!apiKey) {
       console.error('❌ No football API key: set FOOTBALL_API_KEY or EXPO_PUBLIC_FOOTBALL_API_KEY for the API server');
       return {
         response: [],
+        seasonUsed: null,
+        noTableReason: 'unavailable' as const,
         errors: { config: 'API key not configured' },
       };
     }
@@ -548,20 +673,38 @@ export const getLeagueStandingsRoute = publicProcedure
     };
     
     try {
-      const url = `${BASE_URL}/standings?league=${leagueId}&season=${season}`;
-      const cacheKey = `standings:${leagueId}:${season}`;
       const hasLiveInLeague = await leagueHasLiveFixture(leagueId, headers);
       const standingsTtl = hasLiveInLeague ? CACHE_TTL.standingsLive : CACHE_TTL.standings;
-      const data = await cachedFetch(url, headers, cacheKey, standingsTtl);
+
+      for (const season of seasonsToTry) {
+        const url = `${BASE_URL}/standings?league=${leagueId}&season=${season}`;
+        const cacheKey = `standings:${leagueId}:${season}`;
+        const data = await cachedFetch(url, headers, cacheKey, standingsTtl);
+        if (hasStandingsPayload(data)) {
+          return {
+            response: data.response || [],
+            seasonUsed: season,
+            noTableReason: null,
+            errors: data.errors || {},
+          };
+        }
+      }
+
+      const noTableReason = CUP_LEAGUES_WITHOUT_TABLE.has(leagueId) ? ('cup' as const) : ('unavailable' as const);
+      console.warn(`⚠️ No standings for league ${leagueId} after seasons: ${seasonsToTry.join(', ')}`);
 
       return {
-        response: data.response || [],
-        errors: data.errors || {},
+        response: [],
+        seasonUsed: seasonsToTry[0] ?? null,
+        noTableReason,
+        errors: {},
       };
     } catch (error: any) {
       console.error(`💥 Fetch error:`, error.message);
       return {
         response: [],
+        seasonUsed: null,
+        noTableReason: 'unavailable' as const,
         errors: { network: error.message },
       };
     }

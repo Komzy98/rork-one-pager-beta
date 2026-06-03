@@ -8,6 +8,15 @@ export const TOP_LEAGUE_BUNDLE_IDS: number[] = (() => {
   return Array.from(new Set([...top5, ...uefaClub]));
 })();
 
+/**
+ * International tournaments (FIFA World Cup, its qualifiers, continental cups) that should always
+ * pass For You / Top Leagues visibility regardless of club-league scope — they're high-interest and
+ * never part of the domestic/UEFA club bundle. Mirrors backend INTERNATIONAL_TOURNAMENT_IDS.
+ */
+export const ALWAYS_VISIBLE_INTERNATIONAL_LEAGUE_IDS: ReadonlySet<number> = new Set([
+  1, 4, 5, 6, 7, 9, 10, 15, 16, 17, 18, 19, 20, 21,
+]);
+
 const UEFA_DISCOVERY_LEAGUE_IDS = {
   low: [] as number[],
   med: [2],
@@ -168,11 +177,13 @@ export interface ApplyFootballVisibilityRulesInput {
   /** Only applied when `smartFilter === 'worldwide'` */
   manualLeagueIds: readonly number[];
   favoriteTeamIds: ReadonlySet<number>;
+  /** For You / Top leagues: API league scope from `buildFootballQueryContext` */
+  scopedLeagueIds?: readonly number[];
 }
 
 /**
  * Client-side visibility after fetch: manual league narrowing (worldwide only), following-only,
- * then pin followed clubs. No cross-mode bleed — rules keyed only on `smartFilter`.
+ * For You / Top leagues scoping (live feed is global from API), then pin followed clubs.
  */
 export function applyFootballVisibilityRules<T extends FootballMatchForVisibility>(
   matches: readonly T[],
@@ -182,7 +193,28 @@ export function applyFootballVisibilityRules<T extends FootballMatchForVisibilit
 
   if (input.smartFilter === 'worldwide' && input.manualLeagueIds.length > 0) {
     const set = new Set(input.manualLeagueIds);
-    filtered = filtered.filter((m) => set.has(m.leagueId));
+    const narrowed = filtered.filter((m) => set.has(m.leagueId));
+    /** If picks have no fixtures in this window, don't hide the whole feed (stale/off-season selections). */
+    if (narrowed.length > 0) {
+      filtered = narrowed;
+    }
+  } else if (input.smartFilter === 'for-you' && input.scopedLeagueIds && input.scopedLeagueIds.length > 0) {
+    const leagueSet = new Set(input.scopedLeagueIds);
+    filtered = filtered.filter(
+      (m) =>
+        leagueSet.has(m.leagueId) ||
+        ALWAYS_VISIBLE_INTERNATIONAL_LEAGUE_IDS.has(m.leagueId) ||
+        isFavoriteTeamMatch(m, input.favoriteTeamIds),
+    );
+  } else if (
+    input.smartFilter === 'top-leagues' &&
+    input.scopedLeagueIds &&
+    input.scopedLeagueIds.length > 0
+  ) {
+    const leagueSet = new Set(input.scopedLeagueIds);
+    filtered = filtered.filter(
+      (m) => leagueSet.has(m.leagueId) || ALWAYS_VISIBLE_INTERNATIONAL_LEAGUE_IDS.has(m.leagueId),
+    );
   }
 
   if (input.smartFilter === 'following') {

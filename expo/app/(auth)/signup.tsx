@@ -23,6 +23,7 @@ import { supabaseConfigured } from '@/utils/supabaseClient';
 import { COLORS } from '@/constants/colors';
 import { SignupCredentials } from '@/types/habit';
 import { checkAuthRateLimit, recordAuthAttempt, formatRetryMessage } from '@/utils/authRateLimiter';
+import { GOOGLE_G_LOGO } from '@/constants/googleBrandAssets';
 
 export default function SignupScreen() {
   const { signup, loginWithGoogle, loginWithGoogleOAuth, googleAuthConfig } = useAuth();
@@ -354,10 +355,7 @@ export default function SignupScreen() {
               {googleLoading ? (
                 <ActivityIndicator size="small" color={COLORS.text} style={styles.googleIcon} />
               ) : (
-                <Image
-                  source={{ uri: 'https://developers.google.com/identity/images/g-logo.png' }}
-                  style={styles.googleLogo}
-                />
+                <Image source={GOOGLE_G_LOGO} style={styles.googleLogo} />
               )}
               <Text style={styles.googleButtonText}>
                 {googleLoading ? 'Signing up...' : 'Sign up with Google'}

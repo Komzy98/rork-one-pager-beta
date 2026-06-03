@@ -1,0 +1,207 @@
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
+import createContextHook from '@nkzw/create-context-hook';
+import { useAuth } from './useAuth';
+import { useFriends } from './useFriends';
+import { useGamification } from './useHabitsEnhancement';
+import { useUserProfile } from './useUserProfile';
+import { supabaseConfigured } from '@/utils/supabaseClient';
+import { unifiedStorage } from '@/utils/unifiedStorage';
+import { notificationService } from '@/utils/notificationService';
+import {
+  updateActivityVisibility,
+  type ActivityVisibility,
+} from '@/utils/friendsService';
+import {
+  checkActivityAvailable,
+  getActiveTodayCount,
+  getFeed,
+  logEvent,
+  subscribeToActivity,
+  toggleCheer,
+  type ActivityEvent,
+  type ActivityType,
+  type LogEventInput,
+} from '@/utils/activityService';
+
+const STREAK_MILESTONES = [3, 7, 14, 21, 30, 50, 60, 100, 150, 200, 365];
+
+export const [ActivityProvider, useActivity] = createContextHook(() => {
+  const { supabaseUser, isGuest } = useAuth();
+  const { friends, myProfile } = useFriends();
+  const { stats } = useGamification();
+  const { profile } = useUserProfile();
+  const queryClient = useQueryClient();
+
+  const myUserId: string | undefined = supabaseUser?.id;
+  const enabled = !!myUserId && supabaseConfigured && !isGuest;
+
+  const [available, setAvailable] = useState<boolean | null>(enabled ? null : false);
+  const [visibility, setVisibilityState] = useState<ActivityVisibility>('friends');
+
+  const friendIds = useMemo(() => friends.map((f) => f.id), [friends]);
+  const currentStreak = stats?.currentStreak ?? 0;
+
+  const socialNotifsEnabled = profile?.notificationSettings?.socialNotifications !== false;
+  const socialNotifsRef = useRef(socialNotifsEnabled);
+  socialNotifsRef.current = socialNotifsEnabled;
+
+  useEffect(() => {
+    if (!enabled) {
+      setAvailable(false);
+      return;
+    }
+    let cancelled = false;
+    void checkActivityAvailable().then((ok) => {
+      if (!cancelled) setAvailable(ok);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [enabled]);
+
+  useEffect(() => {
+    if (myProfile?.activityVisibility) setVisibilityState(myProfile.activityVisibility);
+  }, [myProfile?.activityVisibility]);
+
+  const queriesEnabled = enabled && available === true;
+
+  const feedQuery = useQuery({
+    queryKey: ['activity', 'feed', myUserId, friendIds.length],
+    queryFn: () => getFeed(myUserId as string, friendIds),
+    enabled: queriesEnabled,
+    staleTime: 30_000,
+  });
+
+  const activeTodayQuery = useQuery({
+    queryKey: ['activity', 'active-today', myUserId, friendIds.length],
+    queryFn: () => getActiveTodayCount(friendIds),
+    enabled: queriesEnabled && friendIds.length > 0,
+    staleTime: 60_000,
+  });
+
+  const invalidate = useCallback(() => {
+    queryClient.invalidateQueries({ queryKey: ['activity'] });
+  }, [queryClient]);
+
+  // Realtime: live feed + a notification when a friend cheers your post.
+  useEffect(() => {
+    if (!queriesEnabled || !myUserId) return;
+    return subscribeToActivity(myUserId, {
+      onChange: invalidate,
+      onCheerOnMyEvent: () => {
+        if (!socialNotifsRef.current) return;
+        void notificationService.sendImmediateNotification(
+          'You got a cheer 🎉',
+          'A friend cheered your progress on One Pager.',
+          { type: 'social' },
+        );
+      },
+    });
+  }, [queriesEnabled, myUserId, invalidate]);
+
+  const logActivity = useCallback(
+    async (input: Omit<LogEventInput, 'userId'>) => {
+      if (!queriesEnabled || !myUserId) return;
+      try {
+        await logEvent({ ...input, userId: myUserId });
+        invalidate();
+      } catch {
+        // best effort
+      }
+    },
+    [queriesEnabled, myUserId, invalidate],
+  );
+
+  // Auto-log streak milestones once each.
+  useEffect(() => {
+    if (!queriesEnabled || !myUserId || currentStreak < STREAK_MILESTONES[0]) return;
+    const milestone = [...STREAK_MILESTONES].reverse().find((m) => currentStreak >= m);
+    if (!milestone) return;
+    const key = `activity_last_milestone_${myUserId}`;
+    let cancelled = false;
+    (async () => {
+      try {
+        const stored = await unifiedStorage.getItem(key);
+        const last = stored ? parseInt(stored, 10) : 0;
+        if (cancelled || milestone <= last) return;
+        await logEvent({
+          userId: myUserId,
+          type: 'streak_milestone',
+          title: `${milestone}-day streak! 🔥`,
+          body: `${myProfile?.displayName || 'You'} hit a ${milestone}-day streak.`,
+          metadata: { milestone },
+        });
+        await unifiedStorage.setItem(key, String(milestone));
+        invalidate();
+      } catch {
+        // ignore
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [queriesEnabled, myUserId, currentStreak, myProfile?.displayName, invalidate]);
+
+  const cheer = useCallback(
+    async (eventId: string, on: boolean) => {
+      // Optimistic feed update.
+      queryClient.setQueryData<ActivityEvent[]>(
+        ['activity', 'feed', myUserId, friendIds.length],
+        (prev) =>
+          (prev ?? []).map((e) =>
+            e.id === eventId
+              ? { ...e, cheeredByMe: on, cheersCount: Math.max(0, e.cheersCount + (on ? 1 : -1)) }
+              : e,
+          ),
+      );
+      try {
+        const total = await toggleCheer(eventId, on);
+        queryClient.setQueryData<ActivityEvent[]>(
+          ['activity', 'feed', myUserId, friendIds.length],
+          (prev) => (prev ?? []).map((e) => (e.id === eventId ? { ...e, cheersCount: total } : e)),
+        );
+      } catch {
+        invalidate(); // reconcile from server on failure
+      }
+    },
+    [queryClient, myUserId, friendIds.length, invalidate],
+  );
+
+  const setVisibility = useCallback(
+    async (v: ActivityVisibility) => {
+      if (!myUserId) return;
+      const previous = visibility;
+      setVisibilityState(v);
+      try {
+        await updateActivityVisibility(myUserId, v);
+      } catch {
+        setVisibilityState(previous);
+      }
+    },
+    [myUserId, visibility],
+  );
+
+  const presenceLabel = useMemo(() => {
+    const n = activeTodayQuery.data ?? 0;
+    if (n <= 0) return null;
+    return `${n} partner${n === 1 ? '' : 's'} active today`;
+  }, [activeTodayQuery.data]);
+
+  return {
+    available,
+    isSignedIn: enabled,
+    feed: feedQuery.data ?? [],
+    isLoading: feedQuery.isLoading,
+    isRefreshing: feedQuery.isFetching,
+    activeTodayCount: activeTodayQuery.data ?? 0,
+    presenceLabel,
+    visibility,
+    setVisibility,
+    cheer,
+    logActivity,
+    refresh: invalidate,
+  };
+});
+
+export type { ActivityEvent, ActivityType };

@@ -1,5 +1,10 @@
-import React from 'react';
-import { View, Text, StyleSheet, TouchableOpacity, Image } from 'react-native';
+import React, { useMemo } from 'react';
+import { View, Text, StyleSheet, TouchableOpacity, Image, useWindowDimensions } from 'react-native';
+import {
+  getSportsTallHeroMinHeight,
+  HERO_FEATURED_CARD_BOTTOM_INSET_PX,
+  SPORTS_TALL_HERO_MIN_HEIGHT_PX,
+} from '@/constants/sportsHeroLayout';
 import { BlurView } from 'expo-blur';
 import { Search, RefreshCw, Plus, CalendarDays, MapPin } from 'lucide-react-native';
 import { router } from 'expo-router';
@@ -7,6 +12,9 @@ import type { NBAGame } from '@/constants/nbaData';
 import { getTeamLogo } from '@/constants/nbaData';
 
 const NBA_ORANGE = '#F26522';
+
+/** Reserve space for baked-in “NBA CENTER” artwork at the tall-hero baseline. */
+const HERO_ART_SPACER_BASE_PX = 108;
 
 function formatFeaturedTipOff(game: NBAGame): string {
   const d = new Date(game.date);
@@ -40,6 +48,12 @@ export default function NBAPremiumHeroInner({
   onRefresh,
   onFeaturedPress,
 }: Props) {
+  const { width: windowWidth } = useWindowDimensions();
+  const heroMinHeight = useMemo(() => getSportsTallHeroMinHeight(windowWidth), [windowWidth]);
+  const heroArtSpacerHeight = useMemo(
+    () => Math.round((heroMinHeight / SPORTS_TALL_HERO_MIN_HEIGHT_PX) * HERO_ART_SPACER_BASE_PX),
+    [heroMinHeight],
+  );
   const venueLine =
     featuredGame ? [featuredGame.arena, featuredGame.city].filter(Boolean).join(', ') : 'Arena TBA';
   const tipLine = featuredGame ? formatFeaturedTipOff(featuredGame) : '';
@@ -60,7 +74,7 @@ export default function NBAPremiumHeroInner({
       </View>
 
       <View style={styles.heroContent}>
-        <View style={styles.heroArtSpacer} />
+        <View style={[styles.heroArtSpacer, { height: heroArtSpacerHeight }]} />
 
         <View style={styles.clubRow}>
           {teamAbbreviations.slice(0, 4).map((abbr, i) => (
@@ -153,11 +167,9 @@ const styles = StyleSheet.create({
   heroContent: {
     paddingTop: 8,
     paddingHorizontal: 0,
-    paddingBottom: 16,
+    paddingBottom: HERO_FEATURED_CARD_BOTTOM_INSET_PX,
   },
-  /** Clears baked-in “NBA CENTER” / tagline in the hero artwork. */
   heroArtSpacer: {
-    height: 108,
     width: '100%',
   },
   clubRow: {

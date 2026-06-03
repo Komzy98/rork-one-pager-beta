@@ -1,7 +1,7 @@
 import { Tabs } from "expo-router";
 import { LayoutDashboard, Clapperboard, Medal, ListChecks, Search, CircleUser, CookingPot, CalendarDays, GraduationCap } from "lucide-react-native";
 import React, { useRef, useEffect, useCallback } from "react";
-import { View, StyleSheet, Platform, TouchableOpacity, Text, Animated, Image } from "react-native";
+import { View, StyleSheet, Platform, TouchableOpacity, Text, Animated, Image, ScrollView } from "react-native";
 import { useAuth } from "@/hooks/useAuth";
 import { BlurView } from "expo-blur";
 import type { BottomTabBarProps, BottomTabNavigationOptions } from "@react-navigation/bottom-tabs";
@@ -10,6 +10,7 @@ import * as Haptics from 'expo-haptics';
 import { useUserProfile } from "@/hooks/useUserProfile";
 import { useTheme } from "@/hooks/useTheme";
 import type { ThemeColors } from "@/types/theme";
+import { FootballBundleProvider } from "@/contexts/FootballBundleContext";
 
 
 
@@ -50,6 +51,9 @@ interface TabRoute {
   path?: string;
 }
 
+const PINNED_START_TAB = 'activities';
+const PINNED_END_TAB = 'profile';
+
 interface AnimatedTabItemProps {
   route: TabRoute;
   isFocused: boolean;
@@ -58,6 +62,8 @@ interface AnimatedTabItemProps {
   colors: ThemeColors;
   isShowsTabActive?: boolean;
   avatarUrl?: string;
+  variant?: 'pinned' | 'scroll';
+  onLayout?: (event: { nativeEvent: { layout: { x: number; width: number } } }) => void;
 }
 
 const AnimatedTabItem = React.memo(({ 
@@ -68,6 +74,8 @@ const AnimatedTabItem = React.memo(({
   colors, 
   isShowsTabActive,
   avatarUrl,
+  variant = 'scroll',
+  onLayout,
 }: AnimatedTabItemProps) => {
   const scaleAnim = useRef(new Animated.Value(1)).current;
   const iconScale = useRef(new Animated.Value(isFocused ? 1.15 : 1)).current;
@@ -120,7 +128,10 @@ const AnimatedTabItem = React.memo(({
   const inactiveColor = isFocused ? activeColor : colors.textSecondary;
 
   return (
-    <View style={styles.tabButton}>
+    <View
+      style={variant === 'pinned' ? styles.tabButtonPinned : styles.tabButtonScroll}
+      onLayout={onLayout}
+    >
       <TouchableOpacity
         accessibilityRole="button"
         accessibilityState={isFocused ? { selected: true } : {}}
@@ -184,10 +195,18 @@ function CustomTabBar({ state, descriptors, navigation }: BottomTabBarProps) {
   const { user } = useAuth();
   const personalizedTabs = getPersonalizedTabs();
   const containerOpacity = useRef(new Animated.Value(0)).current;
+  const middleScrollRef = useRef<ScrollView>(null);
+  const middleTabLayouts = useRef<Record<string, { x: number; width: number }>>({});
 
   const visibleRoutes = state.routes.filter((route) => 
     personalizedTabs.includes(route.name)
   ).sort((a, b) => personalizedTabs.indexOf(a.name) - personalizedTabs.indexOf(b.name));
+
+  const pinnedStartRoute = visibleRoutes.find((route) => route.name === PINNED_START_TAB);
+  const pinnedEndRoute = visibleRoutes.find((route) => route.name === PINNED_END_TAB);
+  const scrollableRoutes = visibleRoutes.filter(
+    (route) => route.name !== PINNED_START_TAB && route.name !== PINNED_END_TAB,
+  );
 
   useEffect(() => {
     Animated.timing(containerOpacity, {
@@ -199,6 +218,73 @@ function CustomTabBar({ state, descriptors, navigation }: BottomTabBarProps) {
 
   const currentRouteName = state.routes[state.index]?.name;
   const isShowsTabActive = currentRouteName === 'shows';
+  const scrollableTabNames = scrollableRoutes.map((route) => route.name).join(',');
+
+  const scrollMiddleTabIntoView = useCallback((tabName: string, animated: boolean) => {
+    const layout = middleTabLayouts.current[tabName];
+    if (!layout || !middleScrollRef.current) {
+      return;
+    }
+
+    middleScrollRef.current.scrollTo({
+      x: Math.max(0, layout.x - 12),
+      animated,
+    });
+  }, []);
+
+  useEffect(() => {
+    if (!currentRouteName || !scrollableTabNames.split(',').includes(currentRouteName)) {
+      return;
+    }
+
+    scrollMiddleTabIntoView(currentRouteName, true);
+  }, [currentRouteName, scrollableTabNames, scrollMiddleTabIntoView]);
+
+  const renderTab = (route: (typeof state.routes)[number], variant: 'pinned' | 'scroll') => {
+    const routeIndex = state.routes.findIndex((r) => r.name === route.name);
+    const isFocused = state.index === routeIndex;
+    const { options } = descriptors[route.key];
+
+    const onPress = () => {
+      const event = navigation.emit({
+        type: 'tabPress',
+        target: route.key,
+        canPreventDefault: true,
+      });
+
+      if (!isFocused && !event.defaultPrevented) {
+        navigation.navigate(route.name);
+      }
+    };
+
+    return (
+      <AnimatedTabItem
+        key={route.key}
+        route={route}
+        isFocused={isFocused}
+        onPress={onPress}
+        options={options}
+        colors={colors}
+        isShowsTabActive={isShowsTabActive}
+        avatarUrl={profile?.avatar || user?.avatar}
+        variant={variant}
+        onLayout={
+          variant === 'scroll'
+            ? (event) => {
+                const layout = {
+                  x: event.nativeEvent.layout.x,
+                  width: event.nativeEvent.layout.width,
+                };
+                middleTabLayouts.current[route.name] = layout;
+                if (route.name === currentRouteName) {
+                  scrollMiddleTabIntoView(route.name, false);
+                }
+              }
+            : undefined
+        }
+      />
+    );
+  };
 
   return (
     <Animated.View style={[styles.tabBarContainer, {
@@ -210,36 +296,24 @@ function CustomTabBar({ state, descriptors, navigation }: BottomTabBarProps) {
         borderColor: isDark ? 'rgba(255,255,255,0.08)' : 'rgba(255,255,255,0.42)',
       }]}>
         <View style={styles.tabBarInner}>
-          {visibleRoutes.map((route) => {
-            const routeIndex = state.routes.findIndex(r => r.name === route.name);
-            const isFocused = state.index === routeIndex;
-            const { options } = descriptors[route.key];
+          {pinnedStartRoute ? renderTab(pinnedStartRoute, 'pinned') : null}
 
-            const onPress = () => {
-              const event = navigation.emit({
-                type: 'tabPress',
-                target: route.key,
-                canPreventDefault: true,
-              });
+          {scrollableRoutes.length > 0 ? (
+            <ScrollView
+              ref={middleScrollRef}
+              horizontal
+              showsHorizontalScrollIndicator={false}
+              style={styles.scrollableTabs}
+              contentContainerStyle={styles.scrollableTabsContent}
+              keyboardShouldPersistTaps="handled"
+            >
+              {scrollableRoutes.map((route) => renderTab(route, 'scroll'))}
+            </ScrollView>
+          ) : (
+            <View style={styles.scrollableTabs} />
+          )}
 
-              if (!isFocused && !event.defaultPrevented) {
-                navigation.navigate(route.name);
-              }
-            };
-
-            return (
-              <AnimatedTabItem
-                key={route.key}
-                route={route}
-                isFocused={isFocused}
-                onPress={onPress}
-                options={options}
-                colors={colors}
-                isShowsTabActive={isShowsTabActive}
-                avatarUrl={profile?.avatar || user?.avatar}
-              />
-            );
-          })}
+          {pinnedEndRoute ? renderTab(pinnedEndRoute, 'pinned') : null}
         </View>
       </BlurView>
     </Animated.View>
@@ -262,13 +336,15 @@ export default function TabLayout() {
 
   if (isLoading) {
     return (
-      <Tabs 
-        screenOptions={commonScreenOptions}
-        tabBar={(props) => <CustomTabBar {...props} />}
-      >
-        <Tabs.Screen name="activities" />
-        <Tabs.Screen name="profile" />
-      </Tabs>
+      <FootballBundleProvider>
+        <Tabs
+          screenOptions={commonScreenOptions}
+          tabBar={(props) => <CustomTabBar {...props} />}
+        >
+          <Tabs.Screen name="activities" />
+          <Tabs.Screen name="profile" />
+        </Tabs>
+      </FootballBundleProvider>
     );
   }
 
@@ -276,24 +352,26 @@ export default function TabLayout() {
   const allTabs = ['activities', 'tasks', 'shows', 'sports', 'cooking', 'learning', 'events', 'discover', 'profile'];
 
   return (
-    <Tabs 
-      screenOptions={commonScreenOptions}
-      tabBar={(props) => <CustomTabBar {...props} />}
-    >
-      {allTabs.map((tabName) => {
-        const isVisible = personalizedTabs.includes(tabName);
+    <FootballBundleProvider>
+      <Tabs
+        screenOptions={commonScreenOptions}
+        tabBar={(props) => <CustomTabBar {...props} />}
+      >
+        {allTabs.map((tabName) => {
+          const isVisible = personalizedTabs.includes(tabName);
 
-        return (
-          <Tabs.Screen
-            key={tabName}
-            name={tabName}
-            options={{
-              href: isVisible ? undefined : null,
-            }}
-          />
-        );
-      })}
-    </Tabs>
+          return (
+            <Tabs.Screen
+              key={tabName}
+              name={tabName}
+              options={{
+                href: isVisible ? undefined : null,
+              }}
+            />
+          );
+        })}
+      </Tabs>
+    </FootballBundleProvider>
   );
 }
 
@@ -333,12 +411,27 @@ const styles = StyleSheet.create({
     flex: 1,
     flexDirection: 'row',
     alignItems: 'center',
-    paddingHorizontal: 8,
+    paddingHorizontal: 4,
   },
-  tabButton: {
-    flex: 1,
+  tabButtonPinned: {
+    width: 64,
     alignItems: 'center',
     justifyContent: 'center',
+    flexShrink: 0,
+  },
+  tabButtonScroll: {
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  scrollableTabs: {
+    flex: 1,
+    minWidth: 0,
+  },
+  scrollableTabsContent: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 4,
+    gap: 2,
   },
   tabTouchable: {
     alignItems: 'center',
@@ -348,9 +441,9 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
     paddingVertical: 8,
-    paddingHorizontal: 12,
+    paddingHorizontal: 10,
     borderRadius: 24,
-    minWidth: 68,
+    minWidth: 60,
   },
   tabLabel: {
     fontSize: 9,

@@ -4,6 +4,7 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { Stack, useRouter } from "expo-router";
 import * as SplashScreen from "expo-splash-screen";
 import * as Linking from "expo-linking";
+import { parseDeepLink } from "@/utils/deepLinks";
 import React, { useEffect, ReactNode } from "react";
 import { LogBox, Platform, StatusBar, StyleSheet } from "react-native";
 
@@ -47,6 +48,9 @@ import { AppProvider } from "@/hooks/useHabitsStore";
 import { TaskProvider } from "@/hooks/useTasksStore";
 import { CloudSyncProvider } from "@/hooks/useCloudSync";
 import { HabitsEnhancementProvider } from "@/hooks/useHabitsEnhancement";
+import { FriendsProvider } from "@/hooks/useFriends";
+import { CommunityProvider } from "@/hooks/useCommunity";
+import { ActivityProvider } from "@/hooks/useActivity";
 import { BusyModeProvider } from "@/hooks/useBusyMode";
 import { BackgroundServicesProvider } from "@/hooks/useBackgroundServices";
 import { WalkthroughProvider } from "@/hooks/useWalkthrough";
@@ -132,6 +136,24 @@ function RootLayoutNav() {
           gestureEnabled: true,
         }} 
       />
+      <Stack.Screen
+        name="friends"
+        options={{
+          headerShown: false,
+          title: "Accountability Partners",
+          presentation: "modal",
+          gestureEnabled: true,
+        }}
+      />
+      <Stack.Screen
+        name="publish-habit"
+        options={{
+          headerShown: false,
+          title: "Publish Habit",
+          presentation: "modal",
+          gestureEnabled: true,
+        }}
+      />
     </Stack>
   );
 }
@@ -184,6 +206,23 @@ export default function RootLayout() {
   useEffect(() => {
     const handleDeepLink = (event: { url: string }) => {
       if (__DEV__) console.log('Deep link received:', event.url);
+
+      const parsed = parseDeepLink(event.url);
+      if (parsed) {
+        if (parsed.kind === 'challenge') {
+          router.push({ pathname: '/(tabs)/profile', params: { challengeId: parsed.id } } as any);
+          return;
+        }
+        if (parsed.kind === 'user') {
+          router.push({ pathname: '/friends', params: { addUsername: parsed.username } } as any);
+          return;
+        }
+        if (parsed.kind === 'tab') {
+          router.push(`/(tabs)/${parsed.name}` as any);
+          return;
+        }
+      }
+
       const { path } = Linking.parse(event.url);
       if (path) {
         if (path === 'sports') {
@@ -242,6 +281,9 @@ export default function RootLayout() {
                       <SafeProvider provider={TaskProvider}>
                         <SafeProvider provider={CloudSyncProvider}>
                             <SafeProvider provider={HabitsEnhancementProvider}>
+                              <SafeProvider provider={FriendsProvider}>
+                              <SafeProvider provider={CommunityProvider}>
+                              <SafeProvider provider={ActivityProvider}>
                               <SafeProvider provider={BusyModeProvider}>
                                 <SafeProvider provider={BackgroundServicesProvider}>
                                   <SafeProvider provider={WalkthroughProvider}>
@@ -253,6 +295,9 @@ export default function RootLayout() {
                                     </SafeProvider>
                                   </SafeProvider>
                                 </SafeProvider>
+                              </SafeProvider>
+                              </SafeProvider>
+                              </SafeProvider>
                               </SafeProvider>
                             </SafeProvider>
                         </SafeProvider>

@@ -1015,6 +1015,8 @@ function ModernSportsSectionComponent({
           homeScore={selectedMatch.homeScore}
           awayScore={selectedMatch.awayScore}
           league={selectedMatch.league}
+          leagueLogo={selectedMatch.leagueLogo}
+          round={selectedMatch.round}
           homeTeamLogo={selectedMatch.homeTeamLogo}
           awayTeamLogo={selectedMatch.awayTeamLogo}
         />

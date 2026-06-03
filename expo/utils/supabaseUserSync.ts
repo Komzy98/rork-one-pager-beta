@@ -411,9 +411,11 @@ export class SupabaseUserSync {
         session.user?.id === this.userId
       );
     };
-    if (await check()) return true;
-    await new Promise((r) => setTimeout(r, 400));
-    return check();
+    for (let attempt = 0; attempt < 5; attempt++) {
+      if (await check()) return true;
+      await new Promise((r) => setTimeout(r, 280 + attempt * 120));
+    }
+    return false;
   }
 
   async loadFromCloud(): Promise<UserData | null> {

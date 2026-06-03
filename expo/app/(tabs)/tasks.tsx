@@ -1,57 +1,66 @@
 import React, { useState, useRef, useEffect, useCallback, useMemo } from 'react';
-import { 
-  View, 
-  Text, 
-  StyleSheet, 
-  ScrollView,
-  TouchableOpacity, 
-  RefreshControl,
-  Platform,
-  Alert,
-  Animated,
-  TextInput
-} from 'react-native';
+import { View, StyleSheet, Platform, Alert, Animated } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Stack } from 'expo-router';
-import { 
-  Play, 
-  Pause,
-  CheckCircle2, 
-  Circle,
-  Zap,
-  Clock,
-  ChevronRight,
-  Plus,
-  Flame,
-  Target,
-  TrendingUp,
-  Moon,
-  Sun,
-  Coffee,
-  Sunset,
-  Edit3,
-  ListChecks
-} from 'lucide-react-native';
-import { LinearGradient } from 'expo-linear-gradient';
+import { Coffee, Sun, Sunset, Moon } from 'lucide-react-native';
+import * as Haptics from 'expo-haptics';
 
 import { useTheme } from '@/hooks/useTheme';
-import * as Haptics from 'expo-haptics';
-import { Task } from '@/types/task';
+import { Task, TaskPriority } from '@/types/task';
 import { useTasks } from '@/hooks/useTasksStore';
 import { TaskEditModal } from '@/components/TaskEditModal';
-import { getTodayFormatted, shouldDoHabitToday, calculateStreak } from '@/utils/dateUtils';
+import { getTodayFormatted } from '@/utils/dateUtils';
+import { useTodayHabits } from '@/hooks/useTodayHabits';
+import { entriesToDisplayTasks } from '@/utils/todayHabits';
 import TabWalkthrough from '@/components/TabWalkthrough';
 import { useUserProfile } from '@/hooks/useUserProfile';
-import { isInPeakHours, getChronotypeInfo, getChronotypeGreetingTip, getSecondaryPeakHours } from '@/constants/chronotypes';
+import {
+  isInPeakHours,
+  getChronotypeInfo,
+  getSecondaryPeakHours,
+} from '@/constants/chronotypes';
+import TasksDashboardView, {
+  QuickAddMode,
+  TimeBlockViewModel,
+} from '@/components/tasks/TasksDashboardView';
+import TasksAllListModal from '@/components/tasks/TasksAllListModal';
+import HabitsAllListModal from '@/components/tasks/HabitsAllListModal';
+import PeakPerformanceScheduler from '@/components/PeakPerformanceScheduler';
+import { getTasksAISuggestion } from '@/utils/tasksAISuggestion';
+import {
+  buildTodayPlanItems,
+  buildWeekCompletedPlanItems,
+  countResolvedPlanItems,
+  countTodayPlanItems,
+  formatTimeBlockSubtitle,
+  getTimeBlockScheduleMeta,
+  resolveTodayPlanList,
+  type TimeBlockId,
+  type TodayDoneScope,
+  type TodaySourceFilter,
+  type TodayStatusFilter,
+} from '@/utils/todayPlanSchedule';
+import { useReduceMotion } from '@/hooks/useReduceMotion';
+import { HABIT_COLORS } from '@/constants/colors';
 
-
-
-const TIME_BLOCKS = [
-  { id: 'morning', label: 'Morning', icon: Coffee, hours: [6, 12], color: '#F59E0B' },
-  { id: 'afternoon', label: 'Afternoon', icon: Sun, hours: [12, 17], color: '#3B82F6' },
-  { id: 'evening', label: 'Evening', icon: Sunset, hours: [17, 21], color: '#8B5CF6' },
-  { id: 'night', label: 'Night', icon: Moon, hours: [21, 6], color: '#6366F1' },
+const TIME_BLOCKS: {
+  id: TimeBlockId;
+  label: string;
+  icon: typeof Coffee;
+  hours: readonly [number, number];
+}[] = [
+  { id: 'morning', label: 'Morning', icon: Coffee, hours: [6, 12] },
+  { id: 'afternoon', label: 'Afternoon', icon: Sun, hours: [12, 17] },
+  { id: 'evening', label: 'Evening', icon: Sunset, hours: [17, 21] },
+  { id: 'night', label: 'Night', icon: Moon, hours: [21, 6] },
 ];
+
+const PRIORITY_COLORS: Record<TaskPriority, string> = {
+  urgent: '#EF4444',
+  high: '#F59E0B',
+  medium: '#3578F6',
+  low: '#7B61FF',
+};
 
 const getCurrentTimeBlock = () => {
   const hour = new Date().getHours();
@@ -61,131 +70,306 @@ const getCurrentTimeBlock = () => {
   return 'night';
 };
 
+const getPeakPillText = (chronoInfo: ReturnType<typeof getChronotypeInfo>, inPeak: boolean) => {
+  if (!chronoInfo) return 'Build your rhythm';
+  if (inPeak) return 'In your peak now';
+
+  const hour = new Date().getHours();
+  let hoursUntil = chronoInfo.peakHours.start - hour;
+  if (hoursUntil < 0) hoursUntil += 24;
+  if (hoursUntil <= 3) {
+    return `Peak in ${hoursUntil}–${Math.min(hoursUntil + 1, 3)} hours`;
+  }
+  return 'Peak window ahead';
+};
+
 export default function TasksScreen() {
   const insets = useSafeAreaInsets();
   const { isDark, colors } = useTheme();
   const { profile } = useUserProfile();
-  const { 
-    tasks, 
-    addTask,
-    updateTask,
-    deleteTask,
-    activeTimer,
-    startTimer,
-    stopTimer
-  } = useTasks();
-  
+  const { tasks, addTask, updateTask, deleteTask, activeTimer, startTimer, stopTimer } = useTasks();
+
   const [refreshing, setRefreshing] = useState(false);
   const [editingTask, setEditingTask] = useState<Task | null>(null);
   const [isCreatingTask, setIsCreatingTask] = useState(false);
   const [quickTaskTitle, setQuickTaskTitle] = useState('');
   const [focusedTaskId, setFocusedTaskId] = useState<string | null>(null);
   const [elapsedSeconds, setElapsedSeconds] = useState(0);
-  
-  
+  const [todaySourceFilter, setTodaySourceFilter] = useState<TodaySourceFilter>('all');
+  const [todayStatusFilter, setTodayStatusFilter] = useState<TodayStatusFilter>('open');
+  const [todayDoneScope, setTodayDoneScope] = useState<TodayDoneScope>('today');
+  const [quickAddMode, setQuickAddMode] = useState<QuickAddMode>('task');
+  const [showAllTasksModal, setShowAllTasksModal] = useState(false);
+  const [allTasksModalStatus, setAllTasksModalStatus] = useState<'all' | 'completed'>('all');
+  const reduceMotion = useReduceMotion();
+  const [showAllHabitsModal, setShowAllHabitsModal] = useState(false);
+  const [showPeakScheduler, setShowPeakScheduler] = useState(false);
+  const [showHabitCoach, setShowHabitCoach] = useState(false);
+  const [isCreatingHabit, setIsCreatingHabit] = useState(false);
+
   const pulseAnim = useRef(new Animated.Value(1)).current;
-  const progressAnim = useRef(new Animated.Value(0)).current;
-  
+
   const todayStr = getTodayFormatted();
   const currentBlock = getCurrentTimeBlock();
-  
-  const allTasks = useMemo(() => tasks.filter(t => !t.isHabit), [tasks]);
-  const habits = useMemo(() => tasks.filter(t => t.isHabit), [tasks]);
+
+  const allTasks = useMemo(() => tasks.filter((t) => !t.isHabit), [tasks]);
+  const habits = useMemo(() => tasks.filter((t) => t.isHabit), [tasks]);
 
   const chronoInfo = profile?.chronotype ? getChronotypeInfo(profile.chronotype) : undefined;
   const inPeak = chronoInfo ? isInPeakHours(chronoInfo) : false;
   const secondaryPeak = chronoInfo ? getSecondaryPeakHours(chronoInfo) : null;
-  const inSecondaryPeak = secondaryPeak ? (() => {
-    const h = new Date().getHours();
-    return h >= secondaryPeak.start && h < secondaryPeak.end;
-  })() : false;
-  
-  const todayHabits = useMemo(() => habits.filter(habit => {
-    if (!habit.habitFrequency) return false;
-    return shouldDoHabitToday(habit.habitFrequency);
-  }), [habits]);
-  
-  const pendingTasks = useMemo(() => 
-    allTasks.filter(t => t.status !== 'completed' && t.status !== 'cancelled')
-      .sort((a, b) => {
-        const priorityOrder = { urgent: 4, high: 3, medium: 2, low: 1 };
-        const baseA = priorityOrder[a.priority] || 1;
-        const baseB = priorityOrder[b.priority] || 1;
-        if (inPeak || inSecondaryPeak) {
-          const boostA = (a.priority === 'urgent' || a.priority === 'high') ? 2 : 0;
-          const boostB = (b.priority === 'urgent' || b.priority === 'high') ? 2 : 0;
-          return (baseB + boostB) - (baseA + boostA);
-        }
-        return baseB - baseA;
-      }),
-    [allTasks, inPeak, inSecondaryPeak]
+  const inSecondaryPeak = secondaryPeak
+    ? (() => {
+        const h = new Date().getHours();
+        return h >= secondaryPeak.start && h < secondaryPeak.end;
+      })()
+    : false;
+
+  const {
+    entries: todayHabitEntries,
+    stats: todayHabitStats,
+    todayLog,
+    feedback: completionFeedback,
+    dismissFeedback,
+    toggleTodayHabit,
+  } = useTodayHabits();
+
+  const todayHabits = useMemo(
+    () => entriesToDisplayTasks(todayHabitEntries, tasks),
+    [todayHabitEntries, tasks],
   );
-  
-  const completedToday = useMemo(() => {
-    const todayStart = new Date();
-    todayStart.setHours(0, 0, 0, 0);
-    return allTasks.filter(t => 
-      t.status === 'completed' && 
-      t.completedAt && 
-      new Date(t.completedAt) >= todayStart
-    ).length;
-  }, [allTasks]);
-  
-  const completedHabitsToday = useMemo(() => 
-    todayHabits.filter(h => h.habitCompletions?.[todayStr]).length,
-    [todayHabits, todayStr]
+
+  const pendingTasks = useMemo(
+    () =>
+      allTasks
+        .filter((t) => t.status !== 'completed' && t.status !== 'cancelled')
+        .sort((a, b) => {
+          const priorityOrder = { urgent: 4, high: 3, medium: 2, low: 1 };
+          const baseA = priorityOrder[a.priority] || 1;
+          const baseB = priorityOrder[b.priority] || 1;
+          if (inPeak || inSecondaryPeak) {
+            const boostA = a.priority === 'urgent' || a.priority === 'high' ? 2 : 0;
+            const boostB = b.priority === 'urgent' || b.priority === 'high' ? 2 : 0;
+            return baseB + boostB - (baseA + boostA);
+          }
+          return baseB - baseA;
+        }),
+    [allTasks, inPeak, inSecondaryPeak],
   );
-  
-  const totalTodayGoal = pendingTasks.length + todayHabits.length;
-  const totalCompleted = completedToday + completedHabitsToday;
-  const momentumPercent = totalTodayGoal > 0 ? Math.round((totalCompleted / (totalTodayGoal + totalCompleted)) * 100) : 0;
-  
+
+  const todayStart = useMemo(() => {
+    const d = new Date();
+    d.setHours(0, 0, 0, 0);
+    return d;
+  }, []);
+
+  const completedTodayTasks = useMemo(
+    () =>
+      allTasks.filter(
+        (t) => t.status === 'completed' && t.completedAt && new Date(t.completedAt) >= todayStart,
+      ),
+    [allTasks, todayStart],
+  );
+
+  const momentumTasksTotal = pendingTasks.length + completedTodayTasks.length;
+  const momentumTasksDone = completedTodayTasks.length;
+  const momentumHabitsTotal = todayHabitStats.totalHabits;
+  const momentumHabitsDone = todayHabitStats.completedHabits;
+  const momentumPlanTotal = momentumTasksTotal + momentumHabitsTotal;
+  const momentumPlanDone = momentumTasksDone + momentumHabitsDone;
+  const momentumPercent =
+    momentumPlanTotal > 0 ? Math.round((momentumPlanDone / momentumPlanTotal) * 100) : 0;
+
+  const allTodayPlanItems = useMemo(
+    () => buildTodayPlanItems(allTasks, todayHabits, todayStr, chronoInfo),
+    [allTasks, todayHabits, todayStr, chronoInfo],
+  );
+
+  const weekCompletedPlanItems = useMemo(
+    () => buildWeekCompletedPlanItems(allTasks, habits, chronoInfo),
+    [allTasks, habits, chronoInfo],
+  );
+
+  const filteredTodayPlanItems = useMemo(
+    () =>
+      resolveTodayPlanList(
+        allTodayPlanItems,
+        weekCompletedPlanItems,
+        todaySourceFilter,
+        todayStatusFilter,
+        todayDoneScope,
+      ),
+    [
+      allTodayPlanItems,
+      weekCompletedPlanItems,
+      todaySourceFilter,
+      todayStatusFilter,
+      todayDoneScope,
+    ],
+  );
+
+  const allOpenCount = useMemo(
+    () => countTodayPlanItems(allTodayPlanItems, 'all', 'open'),
+    [allTodayPlanItems],
+  );
+  const allDoneCount = useMemo(
+    () => countTodayPlanItems(allTodayPlanItems, 'all', 'done'),
+    [allTodayPlanItems],
+  );
+  const tasksOpenCount = useMemo(
+    () => countTodayPlanItems(allTodayPlanItems, 'tasks', 'open'),
+    [allTodayPlanItems],
+  );
+  const tasksDoneCount = useMemo(
+    () => countTodayPlanItems(allTodayPlanItems, 'tasks', 'done'),
+    [allTodayPlanItems],
+  );
+  const habitsOpenCount = useMemo(
+    () => countTodayPlanItems(allTodayPlanItems, 'habits', 'open'),
+    [allTodayPlanItems],
+  );
+  const habitsDoneCount = useMemo(
+    () => countTodayPlanItems(allTodayPlanItems, 'habits', 'done'),
+    [allTodayPlanItems],
+  );
+  const allWeekDoneCount = useMemo(
+    () => countResolvedPlanItems(allTodayPlanItems, weekCompletedPlanItems, 'all', 'done', 'week'),
+    [allTodayPlanItems, weekCompletedPlanItems],
+  );
+  const tasksWeekDoneCount = useMemo(
+    () => countResolvedPlanItems(allTodayPlanItems, weekCompletedPlanItems, 'tasks', 'done', 'week'),
+    [allTodayPlanItems, weekCompletedPlanItems],
+  );
+  const habitsWeekDoneCount = useMemo(
+    () => countResolvedPlanItems(allTodayPlanItems, weekCompletedPlanItems, 'habits', 'done', 'week'),
+    [allTodayPlanItems, weekCompletedPlanItems],
+  );
+
   const focusTask = useMemo(() => {
+    if (pendingTasks.length === 0) return undefined;
     if (focusedTaskId) {
-      return pendingTasks.find(t => t.id === focusedTaskId) || pendingTasks[0];
+      return pendingTasks.find((t) => t.id === focusedTaskId) || pendingTasks[0];
     }
     return pendingTasks[0];
   }, [pendingTasks, focusedTaskId]);
-  
-  const upNextTasks = useMemo(() => 
-    pendingTasks.filter(t => t.id !== focusTask?.id).slice(0, 5),
-    [pendingTasks, focusTask]
-  );
-  
-  const maxStreak = useMemo(() => 
-    habits.reduce((max, h) => Math.max(max, h.habitStreak || 0), 0),
-    [habits]
+
+  const incompleteHabitsToday = useMemo(
+    () => todayHabits.filter((h) => !h.habitCompletions?.[todayStr]),
+    [todayHabits, todayStr],
   );
 
-  useEffect(() => {
-    Animated.timing(progressAnim, {
-      toValue: momentumPercent,
-      duration: 800,
-      useNativeDriver: false,
-    }).start();
-  }, [momentumPercent, progressAnim]);
+  const focusHabit = useMemo(() => {
+    if (pendingTasks.length > 0) return null;
+    return incompleteHabitsToday[0] ?? null;
+  }, [pendingTasks.length, incompleteHabitsToday]);
+
+  const maxStreak = todayHabitStats.currentStreak;
+
+  const weeklyProgressByHabitId = useMemo(() => {
+    const map: Record<string, string | undefined> = {};
+    for (const e of todayHabitEntries) {
+      map[e.id] = e.weeklyProgress?.label;
+    }
+    return map;
+  }, [todayHabitEntries]);
+
+  const activeFocusTask = useMemo(() => {
+    if (!activeTimer) return null;
+    return allTasks.find((t) => t.id === activeTimer.taskId) ?? null;
+  }, [activeTimer, allTasks]);
+
+  const aiSuggestionCopy = useMemo(
+    () =>
+      getTasksAISuggestion({
+        chronoInfo,
+        inPeak,
+        inSecondaryPeak,
+        focusTask: focusTask ?? null,
+        pendingTasks,
+        todayHabits,
+        todayStr,
+        momentumPercent,
+        totalCompletedToday: momentumPlanDone,
+        pendingCount: pendingTasks.length,
+        activeFocusTask,
+        activeTimerStartTime: activeTimer?.startTime ?? null,
+      }),
+    [
+      chronoInfo,
+      inPeak,
+      inSecondaryPeak,
+      focusTask,
+      pendingTasks,
+      todayHabits,
+      todayStr,
+      momentumPercent,
+      momentumPlanDone,
+      activeFocusTask,
+      activeTimer?.startTime,
+      elapsedSeconds,
+    ],
+  );
+
+  const timeBlocks: TimeBlockViewModel[] = useMemo(() => {
+    return TIME_BLOCKS.map((block) => {
+      const isCurrent = block.id === currentBlock;
+      const meta = getTimeBlockScheduleMeta(allTodayPlanItems, block.id);
+      const subtitle = formatTimeBlockSubtitle(allTodayPlanItems, block.id);
+
+      let status: TimeBlockViewModel['status'] = 'Upcoming';
+      if (meta.itemCount === 0) {
+        status = 'Upcoming';
+      } else if (meta.openCount === 0) {
+        status = 'Done';
+      } else if (isCurrent) {
+        status = 'Current';
+      } else {
+        const isPast =
+          (block.id === 'morning' && ['afternoon', 'evening', 'night'].includes(currentBlock)) ||
+          (block.id === 'afternoon' && ['evening', 'night'].includes(currentBlock)) ||
+          (block.id === 'evening' && currentBlock === 'night');
+        status = isPast ? 'Done' : 'Upcoming';
+      }
+
+      return {
+        id: block.id,
+        label: block.label,
+        subtitle,
+        status,
+        icon: block.icon,
+      } as TimeBlockViewModel;
+    });
+  }, [currentBlock, allTodayPlanItems]);
 
   useEffect(() => {
     if (activeTimer) {
       const interval = setInterval(() => {
         const start = new Date(activeTimer.startTime).getTime();
-        const now = Date.now();
-        setElapsedSeconds(Math.floor((now - start) / 1000));
+        setElapsedSeconds(Math.floor((Date.now() - start) / 1000));
       }, 1000);
-      
-      Animated.loop(
-        Animated.sequence([
-          Animated.timing(pulseAnim, { toValue: 1.05, duration: 1000, useNativeDriver: true }),
-          Animated.timing(pulseAnim, { toValue: 1, duration: 1000, useNativeDriver: true }),
-        ])
-      ).start();
-      
-      return () => clearInterval(interval);
-    } else {
-      setElapsedSeconds(0);
-      pulseAnim.setValue(1);
+
+      let pulseLoop: Animated.CompositeAnimation | null = null;
+      if (!reduceMotion) {
+        pulseLoop = Animated.loop(
+          Animated.sequence([
+            Animated.timing(pulseAnim, { toValue: 1.04, duration: 1000, useNativeDriver: true }),
+            Animated.timing(pulseAnim, { toValue: 1, duration: 1000, useNativeDriver: true }),
+          ]),
+        );
+        pulseLoop.start();
+      } else {
+        pulseAnim.setValue(1);
+      }
+
+      return () => {
+        clearInterval(interval);
+        pulseLoop?.stop();
+      };
     }
-  }, [activeTimer, pulseAnim]);
+
+    setElapsedSeconds(0);
+    pulseAnim.setValue(1);
+  }, [activeTimer, pulseAnim, reduceMotion]);
 
   const formatTime = (seconds: number) => {
     const mins = Math.floor(seconds / 60);
@@ -198,93 +382,94 @@ export default function TasksScreen() {
     setTimeout(() => setRefreshing(false), 600);
   }, []);
 
-  const handleToggleFocus = useCallback((task: Task) => {
+  const handleToggleFocus = useCallback(() => {
+    if (!focusTask) return;
     if (Platform.OS !== 'web') {
       void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
     }
-    
-    if (activeTimer?.taskId === task.id) {
+    if (activeTimer?.taskId === focusTask.id) {
       stopTimer();
     } else {
-      startTimer(task.id);
-      setFocusedTaskId(task.id);
+      startTimer(focusTask.id);
+      setFocusedTaskId(focusTask.id);
     }
-  }, [activeTimer, startTimer, stopTimer]);
+  }, [activeTimer, focusTask, startTimer, stopTimer]);
 
-  const handleCompleteTask = useCallback((task: Task) => {
-    if (Platform.OS !== 'web') {
-      void Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
-    }
-    
-    if (activeTimer?.taskId === task.id) {
-      stopTimer();
-    }
-    
-    updateTask(task.id, { 
-      status: 'completed',
-      completedAt: new Date().toISOString()
-    });
-    
-    if (focusedTaskId === task.id) {
-      setFocusedTaskId(null);
-    }
-  }, [activeTimer, stopTimer, updateTask, focusedTaskId]);
+  const handleCompleteTask = useCallback(
+    (task: Task) => {
+      if (Platform.OS !== 'web') {
+        void Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+      }
+      if (activeTimer?.taskId === task.id) {
+        stopTimer();
+      }
+      updateTask(task.id, {
+        status: 'completed',
+        completedAt: new Date().toISOString(),
+      });
+      if (focusedTaskId === task.id) {
+        setFocusedTaskId(null);
+      }
+    },
+    [activeTimer, stopTimer, updateTask, focusedTaskId],
+  );
 
-  const handleToggleHabit = useCallback((habit: Task) => {
-    if (!habit.habitCompletions) return;
-    
-    if (Platform.OS !== 'web') {
-      void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-    }
-    
-    const isCompleted = habit.habitCompletions[todayStr];
-    const updatedCompletions = { ...habit.habitCompletions };
-    
-    if (isCompleted) {
-      delete updatedCompletions[todayStr];
-    } else {
-      updatedCompletions[todayStr] = true;
-    }
-    
-    const streak = calculateStreak(updatedCompletions);
-    
-    updateTask(habit.id, {
-      habitCompletions: updatedCompletions,
-      habitStreak: streak,
-      status: updatedCompletions[todayStr] ? 'completed' : 'todo'
-    });
-  }, [todayStr, updateTask]);
+  const handleToggleHabit = useCallback(
+    (habit: Task) => {
+      if (Platform.OS !== 'web') {
+        void Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+      }
+      toggleTodayHabit(habit.id);
+    },
+    [toggleTodayHabit],
+  );
 
   const handleQuickAdd = useCallback(() => {
     if (!quickTaskTitle.trim()) return;
-    
     if (Platform.OS !== 'web') {
       void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
     }
-    
-    addTask({
-      title: quickTaskTitle.trim(),
-      priority: 'medium',
-      status: 'todo',
-      category: 'personal',
-      tags: [],
-      subTasks: [],
-      reminders: [],
-      attachments: [],
-      completionLogs: [],
-      progress: 0,
-      isRecurring: false,
-      isHabit: false,
-    });
-    
+    if (quickAddMode === 'habit') {
+      addTask({
+        title: quickTaskTitle.trim(),
+        priority: 'medium',
+        status: 'todo',
+        category: 'personal',
+        tags: [],
+        subTasks: [],
+        reminders: [],
+        attachments: [],
+        completionLogs: [],
+        progress: 0,
+        isRecurring: false,
+        isHabit: true,
+        habitFrequency: { days: [0, 1, 2, 3, 4, 5, 6] },
+        habitCompletions: {},
+        habitStreak: 0,
+        color: HABIT_COLORS[habits.length % HABIT_COLORS.length],
+      });
+    } else {
+      addTask({
+        title: quickTaskTitle.trim(),
+        priority: 'medium',
+        status: 'todo',
+        category: 'personal',
+        tags: [],
+        subTasks: [],
+        reminders: [],
+        attachments: [],
+        completionLogs: [],
+        progress: 0,
+        isRecurring: false,
+        isHabit: false,
+      });
+    }
     setQuickTaskTitle('');
-  }, [quickTaskTitle, addTask]);
+  }, [quickTaskTitle, quickAddMode, addTask, habits.length]);
 
-  const handleDeleteTask = useCallback((task: Task) => {
-    Alert.alert(
-      'Delete Task',
-      `Delete "${task.title}"?`,
-      [
+  const handleDeleteTask = useCallback(
+    (task: Task) => {
+      Alert.alert('Delete Task', `Delete "${task.title}"?`, [
         { text: 'Cancel', style: 'cancel' },
         {
           text: 'Delete',
@@ -293,525 +478,254 @@ export default function TasksScreen() {
             if (Platform.OS !== 'web') {
               void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Heavy);
             }
+            if (activeTimer?.taskId === task.id) {
+              stopTimer();
+            }
             deleteTask(task.id);
           },
         },
-      ]
-    );
-  }, [deleteTask]);
+      ]);
+    },
+    [activeTimer, deleteTask, stopTimer],
+  );
 
-  const getPriorityGradient = (priority: string): [string, string] => {
-    switch (priority) {
-      case 'urgent': return ['#EF4444', '#DC2626'];
-      case 'high': return ['#F97316', '#EA580C'];
-      case 'medium': return ['#3B82F6', '#2563EB'];
-      default: return ['#6B7280', '#4B5563'];
+  const handleSetInProgress = useCallback(
+    (task: Task) => {
+      if (Platform.OS !== 'web') {
+        void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+      }
+      updateTask(task.id, { status: 'in-progress' });
+    },
+    [updateTask],
+  );
+
+  const handleAISuggestionPress = useCallback(() => {
+    const { action } = aiSuggestionCopy;
+    if (Platform.OS !== 'web') {
+      void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
     }
-  };
-
-  const renderMomentumRing = () => {
-    const size = 120;
-    const strokeWidth = 10;
-    
-    return (
-      <View style={styles.momentumContainer}>
-        <View style={styles.momentumRing}>
-          <View style={[styles.ringBackground, { 
-            width: size, 
-            height: size, 
-            borderRadius: size / 2,
-            borderWidth: strokeWidth,
-            borderColor: isDark ? 'rgba(255,255,255,0.1)' : 'rgba(0,0,0,0.08)',
-          }]} />
-          <Animated.View style={[styles.ringProgress, {
-            width: size,
-            height: size,
-            borderRadius: size / 2,
-            borderWidth: strokeWidth,
-            borderColor: '#10B981',
-            borderRightColor: 'transparent',
-            borderBottomColor: 'transparent',
-            transform: [{ rotate: `${(momentumPercent / 100) * 360}deg` }],
-          }]} />
-          <View style={styles.momentumCenter}>
-            <Zap size={20} color="#10B981" />
-            <Text style={[styles.momentumValue, { color: colors.text }]}>{momentumPercent}%</Text>
-            <Text style={[styles.momentumLabel, { color: colors.textSecondary }]}>momentum</Text>
-          </View>
-        </View>
-        
-        <View style={styles.statsRow}>
-          <View style={styles.statItem}>
-            <Text style={[styles.statValue, { color: colors.text }]}>{totalCompleted}</Text>
-            <Text style={[styles.statLabel, { color: colors.textSecondary }]}>done</Text>
-          </View>
-          <View style={[styles.statDivider, { backgroundColor: isDark ? 'rgba(255,255,255,0.1)' : 'rgba(0,0,0,0.08)' }]} />
-          <View style={styles.statItem}>
-            <Text style={[styles.statValue, { color: colors.text }]}>{pendingTasks.length}</Text>
-            <Text style={[styles.statLabel, { color: colors.textSecondary }]}>pending</Text>
-          </View>
-          <View style={[styles.statDivider, { backgroundColor: isDark ? 'rgba(255,255,255,0.1)' : 'rgba(0,0,0,0.08)' }]} />
-          <View style={styles.statItem}>
-            <View style={styles.streakBadge}>
-              <Flame size={14} color="#F59E0B" />
-              <Text style={styles.streakNumber}>{maxStreak}</Text>
-            </View>
-            <Text style={[styles.statLabel, { color: colors.textSecondary }]}>streak</Text>
-          </View>
-        </View>
-      </View>
-    );
-  };
-
-  const renderFocusHero = () => {
-    if (!focusTask) {
-      return (
-        <View style={[styles.emptyFocus, { backgroundColor: isDark ? 'rgba(255,255,255,0.05)' : '#F9FAFB' }]}>
-          <Target size={40} color={colors.textSecondary} />
-          <Text style={[styles.emptyFocusTitle, { color: colors.text }]}>All clear!</Text>
-          <Text style={[styles.emptyFocusSubtitle, { color: colors.textSecondary }]}>
-            Add a task to start your flow
-          </Text>
-        </View>
-      );
+    switch (action.type) {
+      case 'focus_task': {
+        const task = allTasks.find((t) => t.id === action.taskId);
+        if (!task || task.isHabit) return;
+        setFocusedTaskId(task.id);
+        if (task.status !== 'completed' && task.status !== 'cancelled') {
+          startTimer(task.id);
+        }
+        break;
+      }
+      case 'complete_habit': {
+        const habit = habits.find((h) => h.id === action.habitId);
+        if (habit) handleToggleHabit(habit);
+        break;
+      }
+      case 'edit_task': {
+        const task = allTasks.find((t) => t.id === action.taskId);
+        if (task) setEditingTask(task);
+        break;
+      }
+      case 'create_task':
+        if (quickAddMode === 'habit') {
+          setIsCreatingHabit(true);
+        } else {
+          setIsCreatingTask(true);
+        }
+        break;
+      default:
+        break;
     }
-    
-    const isActive = activeTimer?.taskId === focusTask.id;
-    const gradientColors = getPriorityGradient(focusTask.priority);
-    
-    return (
-      <Animated.View style={[styles.focusHero, { transform: [{ scale: isActive ? pulseAnim : 1 }] }]}>
-        <LinearGradient
-          colors={gradientColors}
-          start={{ x: 0, y: 0 }}
-          end={{ x: 1, y: 1 }}
-          style={styles.focusGradient}
-        >
-          <View style={styles.focusHeader}>
-            <View style={styles.focusBadge}>
-              <Zap size={12} color="#fff" />
-              <Text style={styles.focusBadgeText}>{(inPeak || inSecondaryPeak) ? 'PEAK FOCUS' : 'FOCUS'}</Text>
-            </View>
-            {isActive && (
-              <View style={styles.timerBadge}>
-                <Clock size={12} color="#fff" />
-                <Text style={styles.timerText}>{formatTime(elapsedSeconds)}</Text>
-              </View>
-            )}
-          </View>
-          
-          <Text style={styles.focusTitle} numberOfLines={2}>{focusTask.title}</Text>
-          
-          {focusTask.description && (
-            <Text style={styles.focusDescription} numberOfLines={1}>{focusTask.description}</Text>
-          )}
-          
-          <View style={styles.focusActions}>
-            <TouchableOpacity 
-              style={[styles.focusButton, styles.focusButtonPrimary]}
-              onPress={() => handleToggleFocus(focusTask)}
-              activeOpacity={0.8}
-            >
-              {isActive ? (
-                <>
-                  <Pause size={18} color={gradientColors[0]} />
-                  <Text style={[styles.focusButtonText, { color: gradientColors[0] }]}>Pause</Text>
-                </>
-              ) : (
-                <>
-                  <Play size={18} color={gradientColors[0]} />
-                  <Text style={[styles.focusButtonText, { color: gradientColors[0] }]}>Start</Text>
-                </>
-              )}
-            </TouchableOpacity>
-            
-            <TouchableOpacity 
-              style={[styles.focusButton, styles.focusButtonEdit]}
-              onPress={() => setEditingTask(focusTask)}
-              activeOpacity={0.8}
-            >
-              <Edit3 size={18} color="#fff" />
-              <Text style={[styles.focusButtonText, { color: '#fff' }]}>Edit</Text>
-            </TouchableOpacity>
-            
-            <TouchableOpacity 
-              style={[styles.focusButton, styles.focusButtonSecondary]}
-              onPress={() => handleCompleteTask(focusTask)}
-              activeOpacity={0.8}
-            >
-              <CheckCircle2 size={18} color="#fff" />
-              <Text style={[styles.focusButtonText, { color: '#fff' }]}>Done</Text>
-            </TouchableOpacity>
-          </View>
-        </LinearGradient>
-      </Animated.View>
-    );
-  };
+  }, [
+    aiSuggestionCopy,
+    allTasks,
+    habits,
+    handleToggleHabit,
+    startTimer,
+    quickAddMode,
+  ]);
 
-  const renderUpNext = () => {
-    if (upNextTasks.length === 0 && todayHabits.length === 0) return null;
-    
-    return (
-      <View style={styles.section}>
-        <View style={styles.sectionHeader}>
-          <TrendingUp size={18} color={colors.text} />
-          <Text style={[styles.sectionTitle, { color: colors.text }]}>Up Next</Text>
-          <ChevronRight size={18} color={colors.textSecondary} />
-        </View>
-        
-        <ScrollView 
-          horizontal 
-          showsHorizontalScrollIndicator={false}
-          contentContainerStyle={styles.upNextScroll}
-        >
-          {upNextTasks.map((task) => (
-            <TouchableOpacity 
-              key={task.id}
-              style={[styles.upNextCard, { backgroundColor: isDark ? 'rgba(255,255,255,0.06)' : '#fff' }]}
-              onPress={() => setEditingTask(task)}
-              onLongPress={() => handleDeleteTask(task)}
-              activeOpacity={0.7}
-            >
-              <View style={[styles.priorityStripe, { backgroundColor: getPriorityGradient(task.priority)[0] }]} />
-              <Text style={[styles.upNextTitle, { color: colors.text }]} numberOfLines={2}>
-                {task.title}
-              </Text>
-              <TouchableOpacity 
-                style={styles.upNextAction}
-                onPress={() => {
-                  setFocusedTaskId(task.id);
-                  if (Platform.OS !== 'web') {
-                    void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-                  }
-                }}
-              >
-                <Text style={styles.upNextActionText}>Focus</Text>
-              </TouchableOpacity>
-            </TouchableOpacity>
-          ))}
-        </ScrollView>
-      </View>
-    );
-  };
+  const handleViewAllHabits = useCallback(() => {
+    setShowAllHabitsModal(true);
+  }, []);
 
-  const renderHabits = () => {
-    if (todayHabits.length === 0) return null;
-    
-    return (
-      <View style={styles.section}>
-        <View style={styles.sectionHeader}>
-          <Target size={18} color="#10B981" />
-          <Text style={[styles.sectionTitle, { color: colors.text }]}>Daily Habits</Text>
-          <Text style={[styles.sectionBadge, { backgroundColor: '#DCFCE7' }]}>
-            {completedHabitsToday}/{todayHabits.length}
-          </Text>
-        </View>
-        
-        <View style={styles.habitsGrid}>
-          {todayHabits.map((habit) => {
-            const isCompleted = habit.habitCompletions?.[todayStr];
-            const habitColor = habit.color || '#10B981';
-            
-            return (
-              <TouchableOpacity
-                key={habit.id}
-                style={[
-                  styles.habitChip,
-                  { 
-                    backgroundColor: isCompleted ? habitColor : (isDark ? 'rgba(255,255,255,0.06)' : '#F3F4F6'),
-                    borderColor: isCompleted ? habitColor : 'transparent',
-                  }
-                ]}
-                onPress={() => handleToggleHabit(habit)}
-                activeOpacity={0.7}
-              >
-                {isCompleted ? (
-                  <CheckCircle2 size={16} color="#fff" />
-                ) : (
-                  <Circle size={16} color={habitColor} />
-                )}
-                <Text 
-                  style={[
-                    styles.habitChipText, 
-                    { color: isCompleted ? '#fff' : colors.text }
-                  ]}
-                  numberOfLines={1}
-                >
-                  {habit.title}
-                </Text>
-                {(habit.habitStreak || 0) > 0 && (
-                  <View style={[styles.miniStreak, { backgroundColor: isCompleted ? 'rgba(255,255,255,0.2)' : '#FEF3C7' }]}>
-                    <Flame size={10} color={isCompleted ? '#fff' : '#F59E0B'} />
-                    <Text style={[styles.miniStreakText, { color: isCompleted ? '#fff' : '#D97706' }]}>
-                      {habit.habitStreak}
-                    </Text>
-                  </View>
-                )}
-              </TouchableOpacity>
-            );
-          })}
-        </View>
-      </View>
-    );
-  };
+  const handleTaskPress = useCallback((task: Task) => {
+    setEditingTask(task);
+  }, []);
 
-  const renderAllTasks = () => {
-    const allPendingAndCompleted = allTasks.filter(t => t.status !== 'cancelled');
-    if (allPendingAndCompleted.length === 0) return null;
-    
-    return (
-      <View style={styles.section}>
-        <View style={styles.sectionHeader}>
-          <ListChecks size={18} color={colors.text} />
-          <Text style={[styles.sectionTitle, { color: colors.text }]}>All Tasks</Text>
-          <Text style={[styles.allTasksCount, { color: colors.textSecondary }]}>
-            {allPendingAndCompleted.length}
-          </Text>
-        </View>
-        
-        {allPendingAndCompleted.map((task) => {
-          const isCompleted = task.status === 'completed';
-          const isOverdue = task.dueDate && new Date(task.dueDate) < new Date() && !isCompleted;
-          const gradientColors = getPriorityGradient(task.priority);
-          
-          return (
-            <TouchableOpacity
-              key={task.id}
-              style={[
-                styles.allTaskCard,
-                { backgroundColor: isDark ? 'rgba(255,255,255,0.06)' : '#fff' },
-                isCompleted && styles.allTaskCardCompleted,
-              ]}
-              onPress={() => setEditingTask(task)}
-              activeOpacity={0.7}
-              testID={`all-task-${task.id}`}
-            >
-              <TouchableOpacity
-                style={styles.allTaskCheckbox}
-                onPress={() => {
-                  if (isCompleted) {
-                    updateTask(task.id, { status: 'todo', completedAt: undefined });
-                  } else {
-                    handleCompleteTask(task);
-                  }
-                }}
-              >
-                {isCompleted ? (
-                  <View style={styles.allTaskChecked}>
-                    <CheckCircle2 size={20} color="#fff" />
-                  </View>
-                ) : (
-                  <View style={[styles.allTaskUnchecked, { borderColor: isOverdue ? '#EF4444' : '#D1D5DB' }]}>
-                    <Circle size={20} color={isOverdue ? '#EF4444' : '#D1D5DB'} />
-                  </View>
-                )}
-              </TouchableOpacity>
-              
-              <View style={styles.allTaskContent}>
-                <Text 
-                  style={[
-                    styles.allTaskTitle, 
-                    { color: colors.text },
-                    isCompleted && styles.allTaskTitleDone
-                  ]} 
-                  numberOfLines={1}
-                >
-                  {task.title}
-                </Text>
-                <View style={styles.allTaskMeta}>
-                  <View style={[styles.allTaskPriority, { backgroundColor: gradientColors[0] + '18' }]}>
-                    <Text style={[styles.allTaskPriorityText, { color: gradientColors[0] }]}>
-                      {task.priority}
-                    </Text>
-                  </View>
-                  {task.dueDate && (
-                    <Text style={[styles.allTaskDue, isOverdue && { color: '#EF4444' }]}>
-                      {isOverdue ? 'Overdue' : new Date(task.dueDate).toLocaleDateString('en-GB', { month: 'short', day: 'numeric' })}
-                    </Text>
-                  )}
-                  {task.description && (
-                    <Text style={[styles.allTaskDescHint, { color: colors.textSecondary }]} numberOfLines={1}>
-                      {task.description}
-                    </Text>
-                  )}
-                </View>
-              </View>
-              
-              <View style={styles.allTaskActions}>
-                <TouchableOpacity
-                  style={styles.allTaskEditBtn}
-                  onPress={() => setEditingTask(task)}
-                  hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
-                >
-                  <Edit3 size={16} color={colors.textSecondary} />
-                </TouchableOpacity>
-              </View>
-            </TouchableOpacity>
-          );
-        })}
-      </View>
-    );
-  };
+  const handleTaskCompleteFromList = useCallback(
+    (task: Task) => {
+      if (task.status === 'completed') {
+        updateTask(task.id, { status: 'todo', completedAt: undefined });
+      } else {
+        handleCompleteTask(task);
+      }
+    },
+    [handleCompleteTask, updateTask],
+  );
 
-  const renderTimeBlocks = () => {
-    return (
-      <View style={styles.section}>
-        <View style={styles.sectionHeader}>
-          <Clock size={18} color={colors.text} />
-          <Text style={[styles.sectionTitle, { color: colors.text }]}>Your Day</Text>
-          {chronoInfo && (inPeak || inSecondaryPeak) && (
-            <View style={[styles.peakIndicator, { backgroundColor: chronoInfo.color + '18' }]}>
-              <Zap size={12} color={chronoInfo.color} />
-              <Text style={[styles.peakIndicatorText, { color: chronoInfo.color }]}>Peak Zone</Text>
-            </View>
-          )}
-        </View>
+  const getTaskColor = useCallback((task: Task) => {
+    if (task.color) return task.color;
+    return PRIORITY_COLORS[task.priority] || PRIORITY_COLORS.medium;
+  }, []);
 
-        <View style={styles.timeBlocksRow}>
-          {TIME_BLOCKS.map((block) => {
-            const IconComponent = block.icon;
-            const isActive = block.id === currentBlock;
-            const isPeakBlock = chronoInfo ? (() => {
-              const start = chronoInfo.peakHours.start;
-              const end = chronoInfo.peakHours.end;
-              const [bStart, bEnd] = block.hours;
-              if (start <= end) {
-                return bStart < end && bEnd > start;
-              }
-              return bStart >= start || bEnd <= end;
-            })() : false;
-            
-            return (
-              <View 
-                key={block.id}
-                style={[
-                  styles.timeBlock,
-                  { 
-                    backgroundColor: isActive 
-                      ? `${block.color}15` 
-                      : (isDark ? 'rgba(255,255,255,0.03)' : '#F9FAFB'),
-                    borderColor: isActive ? block.color : 'transparent',
-                  }
-                ]}
-              >
-                <IconComponent size={20} color={isActive ? block.color : colors.textSecondary} />
-                <Text style={[
-                  styles.timeBlockLabel, 
-                  { color: isActive ? block.color : colors.textSecondary }
-                ]}>
-                  {block.label}
-                </Text>
-                {isActive && <View style={[styles.timeBlockDot, { backgroundColor: block.color }]} />}
-                {isPeakBlock && chronoInfo && (
-                  <View style={[styles.timeBlockPeakBadge, { backgroundColor: chronoInfo.color + '20' }]}>
-                    <Zap size={8} color={chronoInfo.color} />
-                  </View>
-                )}
-              </View>
-            );
-          })}
-        </View>
-      </View>
-    );
-  };
+  const getTaskMeta = useCallback((task: Task) => {
+    const parts: string[] = [task.priority];
+    if (task.estimatedDuration) {
+      parts.push(`${task.estimatedDuration} min`);
+    } else if (task.category) {
+      parts.push(task.category);
+    }
+    return parts.join(' · ');
+  }, []);
 
-  const renderQuickAdd = () => {
-    return (
-      <View style={[styles.quickAdd, { backgroundColor: isDark ? 'rgba(255,255,255,0.06)' : '#fff' }]}>
-        <TextInput
-          style={[styles.quickAddInput, { color: colors.text }]}
-          placeholder="Quick add task..."
-          placeholderTextColor={colors.textSecondary}
-          value={quickTaskTitle}
-          onChangeText={setQuickTaskTitle}
-          onSubmitEditing={handleQuickAdd}
-          returnKeyType="done"
-        />
-        <TouchableOpacity 
-          style={[styles.quickAddButton, { opacity: quickTaskTitle.trim() ? 1 : 0.4 }]}
-          onPress={handleQuickAdd}
-          disabled={!quickTaskTitle.trim()}
-        >
-          <Plus size={20} color="#fff" />
-        </TouchableOpacity>
-      </View>
-    );
-  };
+  const hasContent = allTasks.length > 0 || todayHabits.length > 0;
+  const isFocusActive = !!(focusTask && activeTimer?.taskId === focusTask.id);
 
   return (
     <>
       <TabWalkthrough tabName="tasks" />
       <Stack.Screen options={{ headerShown: false }} />
-      <View style={[styles.container, { backgroundColor: colors.background }]}>
-        <ScrollView
-          style={styles.scrollView}
-          contentContainerStyle={[styles.scrollContent, { paddingTop: insets.top + 16 }]}
-          showsVerticalScrollIndicator={false}
-          refreshControl={
-            <RefreshControl
-              refreshing={refreshing}
-              onRefresh={handleRefresh}
-              tintColor="#10B981"
-              colors={['#10B981']}
-            />
-          }
-        >
-          <View style={styles.header}>
-            <Text style={[styles.greeting, { color: colors.textSecondary }]}>
-              {currentBlock === 'morning' ? 'Good morning' : 
-               currentBlock === 'afternoon' ? 'Good afternoon' : 
-               currentBlock === 'evening' ? 'Good evening' : 'Late night'}
-            </Text>
-            <Text style={[styles.title, { color: colors.text }]}>Focus Flow</Text>
-            {chronoInfo && (
-              <Text style={[styles.chronoSubtitle, { color: (inPeak || inSecondaryPeak) ? chronoInfo.color : colors.textSecondary }]}>
-                {getChronotypeGreetingTip(chronoInfo)}
-              </Text>
-            )}
-          </View>
-          
-          {allTasks.length === 0 && todayHabits.length === 0 ? (
-            <View style={styles.zeroState}>
-              <View style={styles.zeroStateIconWrap}>
-                <LinearGradient
-                  colors={['#10B981', '#059669']}
-                  start={{ x: 0, y: 0 }}
-                  end={{ x: 1, y: 1 }}
-                  style={styles.zeroStateIconGradient}
-                >
-                  <ListChecks size={36} color="#fff" />
-                </LinearGradient>
-              </View>
-              <Text style={[styles.zeroStateTitle, { color: colors.text }]}>No tasks yet</Text>
-              <Text style={[styles.zeroStateSubtitle, { color: colors.textSecondary }]}>
-                Add your first task below to start building momentum
-              </Text>
-              {renderQuickAdd()}
-              <TouchableOpacity
-                style={styles.zeroStateButton}
-                onPress={() => setIsCreatingTask(true)}
-                activeOpacity={0.8}
-              >
-                <Plus size={18} color="#fff" />
-                <Text style={styles.zeroStateButtonText}>Create Detailed Task</Text>
-              </TouchableOpacity>
-            </View>
-          ) : (
-            <>
-              {renderMomentumRing()}
-              {renderFocusHero()}
-              {renderQuickAdd()}
-              {renderUpNext()}
-              {renderHabits()}
-              {renderTimeBlocks()}
-              {renderAllTasks()}
-            </>
-          )}
-          
-          <View style={{ height: 120 }} />
-        </ScrollView>
+      <View style={[styles.container, { backgroundColor: isDark ? colors.background : '#F6F7FA' }]}>
+        <TasksDashboardView
+          colors={colors}
+          isDark={isDark}
+          paddingTop={insets.top + 16}
+          paddingBottom={120}
+          refreshing={refreshing}
+          onRefresh={handleRefresh}
+          momentumPercent={momentumPercent}
+          momentumTasksDone={momentumTasksDone}
+          momentumTasksTotal={momentumTasksTotal}
+          momentumHabitsDone={momentumHabitsDone}
+          momentumHabitsTotal={momentumHabitsTotal}
+          streakCount={maxStreak}
+          peakPillText={getPeakPillText(chronoInfo, inPeak || inSecondaryPeak)}
+          aiSuggestion={aiSuggestionCopy.message}
+          aiSuggestionBold={aiSuggestionCopy.emphasis}
+          focusTask={focusTask ?? null}
+          isFocusActive={isFocusActive}
+          focusElapsed={formatTime(elapsedSeconds)}
+          inPeak={inPeak || inSecondaryPeak}
+          quickTaskTitle={quickTaskTitle}
+          onQuickTaskTitleChange={setQuickTaskTitle}
+          quickAddMode={quickAddMode}
+          onQuickAddModeChange={setQuickAddMode}
+          onQuickAdd={handleQuickAdd}
+          focusHabit={focusHabit}
+          incompleteHabitsCount={incompleteHabitsToday.length}
+          onCompleteFocusHabit={() => focusHabit && handleToggleHabit(focusHabit)}
+          completionFeedback={completionFeedback}
+          onDismissCompletionFeedback={dismissFeedback}
+          todayLog={todayLog}
+          weeklyProgressByHabitId={weeklyProgressByHabitId}
+          onEditFocusHabit={() => focusHabit && setEditingTask(focusHabit)}
+          onStartFocus={handleToggleFocus}
+          onPauseFocus={handleToggleFocus}
+          onCompleteFocus={() => focusTask && handleCompleteTask(focusTask)}
+          onEditFocus={() => focusTask && setEditingTask(focusTask)}
+          todaySourceFilter={todaySourceFilter}
+          onTodaySourceFilterChange={setTodaySourceFilter}
+          todayStatusFilter={todayStatusFilter}
+          onTodayStatusFilterChange={(filter) => {
+            setTodayStatusFilter(filter);
+            if (filter === 'open') {
+              setTodayDoneScope('today');
+            }
+          }}
+          todayDoneScope={todayDoneScope}
+          onTodayDoneScopeChange={setTodayDoneScope}
+          allOpenCount={allOpenCount}
+          allDoneCount={allDoneCount}
+          allWeekDoneCount={allWeekDoneCount}
+          tasksOpenCount={tasksOpenCount}
+          tasksDoneCount={tasksDoneCount}
+          tasksWeekDoneCount={tasksWeekDoneCount}
+          habitsOpenCount={habitsOpenCount}
+          habitsDoneCount={habitsDoneCount}
+          habitsWeekDoneCount={habitsWeekDoneCount}
+          reduceMotion={reduceMotion}
+          onViewCompletionHistory={() => {
+            setAllTasksModalStatus('completed');
+            setShowAllTasksModal(true);
+          }}
+          todayPlanItems={filteredTodayPlanItems}
+          focusedTaskId={focusedTaskId}
+          onTaskPress={handleTaskPress}
+          onTaskComplete={handleTaskCompleteFromList}
+          onTaskDelete={handleDeleteTask}
+          onSetInProgress={handleSetInProgress}
+          onSetTaskFocus={(taskId) => {
+            setFocusedTaskId(taskId);
+            if (Platform.OS !== 'web') {
+              void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+            }
+          }}
+          getTaskColor={getTaskColor}
+          getTaskMeta={getTaskMeta}
+          onToggleHabit={handleToggleHabit}
+          timeBlocks={timeBlocks}
+          pulseAnim={pulseAnim}
+          hasContent={hasContent}
+          onCreateTask={() => setIsCreatingTask(true)}
+          onSeeAllTasks={() => {
+            setAllTasksModalStatus('all');
+            setShowAllTasksModal(true);
+          }}
+          onViewAllHabits={handleViewAllHabits}
+          onAISuggestionPress={handleAISuggestionPress}
+          aiActionable={aiSuggestionCopy.action.type !== 'none'}
+          onOpenPeakScheduler={() => setShowPeakScheduler(true)}
+          onOpenHabitCoach={() => setShowHabitCoach((v) => !v)}
+          showHabitCoach={showHabitCoach}
+        />
       </View>
-      
+
+      <TasksAllListModal
+        visible={showAllTasksModal}
+        onClose={() => setShowAllTasksModal(false)}
+        initialStatusFilter={allTasksModalStatus}
+        tasks={tasks}
+        colors={colors}
+        isDark={isDark}
+        focusedTaskId={focusedTaskId}
+        getTaskColor={getTaskColor}
+        getTaskMeta={getTaskMeta}
+        onTaskPress={(task) => {
+          setShowAllTasksModal(false);
+          setEditingTask(task);
+        }}
+        onTaskComplete={handleTaskCompleteFromList}
+        onTaskDelete={handleDeleteTask}
+        onSetInProgress={handleSetInProgress}
+        onSetFocus={(taskId) => {
+          setFocusedTaskId(taskId);
+          if (Platform.OS !== 'web') {
+            void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+          }
+        }}
+      />
+
+      <PeakPerformanceScheduler
+        visible={showPeakScheduler}
+        onClose={() => setShowPeakScheduler(false)}
+        peakStartHour={chronoInfo?.peakHours.start}
+        peakEndHour={chronoInfo?.peakHours.end}
+      />
+
+      <HabitsAllListModal
+        visible={showAllHabitsModal}
+        onClose={() => setShowAllHabitsModal(false)}
+        habits={todayHabits}
+        todayStr={todayStr}
+        colors={colors}
+        isDark={isDark}
+        weeklyProgressByHabitId={weeklyProgressByHabitId}
+        onToggleHabit={handleToggleHabit}
+        onHabitPress={(habit) => {
+          setShowAllHabitsModal(false);
+          setEditingTask(habit);
+        }}
+      />
+
       <TaskEditModal
         visible={!!editingTask}
         task={editingTask}
@@ -823,8 +737,9 @@ export default function TasksScreen() {
           deleteTask(taskId);
           setEditingTask(null);
         }}
+        isHabit={editingTask?.isHabit}
       />
-      
+
       <TaskEditModal
         visible={isCreatingTask}
         task={null}
@@ -848,7 +763,37 @@ export default function TasksScreen() {
           });
           setIsCreatingTask(false);
         }}
-        isCreating={true}
+        isCreating
+      />
+
+      <TaskEditModal
+        visible={isCreatingHabit}
+        task={null}
+        onClose={() => setIsCreatingHabit(false)}
+        onSave={(_, updates) => {
+          addTask({
+            title: updates.title || 'New Habit',
+            description: updates.description,
+            priority: updates.priority || 'medium',
+            status: 'todo',
+            category: updates.category || 'personal',
+            tags: updates.tags || [],
+            subTasks: [],
+            reminders: [],
+            attachments: [],
+            completionLogs: [],
+            progress: 0,
+            isRecurring: false,
+            isHabit: true,
+            habitFrequency: { days: [0, 1, 2, 3, 4, 5, 6] },
+            habitCompletions: {},
+            habitStreak: 0,
+            color: HABIT_COLORS[habits.length % HABIT_COLORS.length],
+          });
+          setIsCreatingHabit(false);
+        }}
+        isCreating
+        isHabit
       />
     </>
   );
@@ -857,495 +802,5 @@ export default function TasksScreen() {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-  },
-  scrollView: {
-    flex: 1,
-  },
-  scrollContent: {
-    paddingHorizontal: 20,
-  },
-  header: {
-    marginBottom: 24,
-  },
-  greeting: {
-    fontSize: 14,
-    fontWeight: '500' as const,
-    marginBottom: 4,
-  },
-  title: {
-    fontSize: 28,
-    fontWeight: '800' as const,
-    letterSpacing: -0.5,
-  },
-  chronoSubtitle: {
-    fontSize: 12,
-    fontWeight: '500' as const,
-    marginTop: 4,
-    letterSpacing: 0.1,
-  },
-  momentumContainer: {
-    alignItems: 'center',
-    marginBottom: 28,
-  },
-  momentumRing: {
-    width: 120,
-    height: 120,
-    justifyContent: 'center',
-    alignItems: 'center',
-    marginBottom: 20,
-  },
-  ringBackground: {
-    position: 'absolute',
-  },
-  ringProgress: {
-    position: 'absolute',
-  },
-  momentumCenter: {
-    alignItems: 'center',
-  },
-  momentumValue: {
-    fontSize: 24,
-    fontWeight: '800' as const,
-    marginTop: 4,
-  },
-  momentumLabel: {
-    fontSize: 11,
-    fontWeight: '600' as const,
-    textTransform: 'uppercase' as const,
-    letterSpacing: 0.5,
-  },
-  statsRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 20,
-  },
-  statItem: {
-    alignItems: 'center',
-  },
-  statValue: {
-    fontSize: 20,
-    fontWeight: '700' as const,
-  },
-  statLabel: {
-    fontSize: 12,
-    marginTop: 2,
-  },
-  statDivider: {
-    width: 1,
-    height: 30,
-  },
-  streakBadge: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 4,
-  },
-  streakNumber: {
-    fontSize: 20,
-    fontWeight: '700' as const,
-    color: '#D97706',
-  },
-  focusHero: {
-    marginBottom: 20,
-    borderRadius: 24,
-    overflow: 'hidden',
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 8 },
-    shadowOpacity: 0.15,
-    shadowRadius: 24,
-    elevation: 12,
-  },
-  focusGradient: {
-    padding: 24,
-    minHeight: 180,
-  },
-  focusHeader: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    marginBottom: 16,
-  },
-  focusBadge: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 6,
-    backgroundColor: 'rgba(255,255,255,0.2)',
-    paddingHorizontal: 10,
-    paddingVertical: 5,
-    borderRadius: 20,
-  },
-  focusBadgeText: {
-    color: '#fff',
-    fontSize: 11,
-    fontWeight: '700' as const,
-    letterSpacing: 1,
-  },
-  timerBadge: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 6,
-    backgroundColor: 'rgba(0,0,0,0.2)',
-    paddingHorizontal: 12,
-    paddingVertical: 6,
-    borderRadius: 20,
-  },
-  timerText: {
-    color: '#fff',
-    fontSize: 14,
-    fontWeight: '700' as const,
-    fontVariant: ['tabular-nums'],
-  },
-  focusTitle: {
-    fontSize: 22,
-    fontWeight: '700' as const,
-    color: '#fff',
-    marginBottom: 8,
-    lineHeight: 28,
-  },
-  focusDescription: {
-    fontSize: 14,
-    color: 'rgba(255,255,255,0.8)',
-    marginBottom: 20,
-  },
-  focusActions: {
-    flexDirection: 'row',
-    gap: 12,
-  },
-  focusButton: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    gap: 6,
-    paddingVertical: 12,
-    paddingHorizontal: 14,
-    borderRadius: 14,
-    flex: 1,
-  },
-  focusButtonPrimary: {
-    backgroundColor: '#fff',
-  },
-  focusButtonSecondary: {
-    backgroundColor: 'rgba(255,255,255,0.2)',
-  },
-  focusButtonEdit: {
-    backgroundColor: 'rgba(255,255,255,0.15)',
-  },
-  focusButtonText: {
-    fontSize: 15,
-    fontWeight: '700' as const,
-  },
-  emptyFocus: {
-    borderRadius: 24,
-    padding: 40,
-    alignItems: 'center',
-    marginBottom: 20,
-  },
-  emptyFocusTitle: {
-    fontSize: 18,
-    fontWeight: '700' as const,
-    marginTop: 16,
-  },
-  emptyFocusSubtitle: {
-    fontSize: 14,
-    marginTop: 4,
-  },
-  zeroState: {
-    alignItems: 'center',
-    paddingTop: 40,
-    paddingHorizontal: 12,
-  },
-  zeroStateIconWrap: {
-    marginBottom: 24,
-    borderRadius: 28,
-    overflow: 'hidden',
-  },
-  zeroStateIconGradient: {
-    width: 80,
-    height: 80,
-    borderRadius: 28,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  zeroStateTitle: {
-    fontSize: 22,
-    fontWeight: '700' as const,
-    marginBottom: 8,
-  },
-  zeroStateSubtitle: {
-    fontSize: 15,
-    textAlign: 'center' as const,
-    lineHeight: 22,
-    marginBottom: 28,
-    maxWidth: 280,
-  },
-  zeroStateButton: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 8,
-    backgroundColor: '#10B981',
-    paddingHorizontal: 24,
-    paddingVertical: 14,
-    borderRadius: 16,
-    marginTop: 12,
-  },
-  zeroStateButtonText: {
-    color: '#fff',
-    fontSize: 15,
-    fontWeight: '600' as const,
-  },
-  quickAdd: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    borderRadius: 16,
-    paddingLeft: 16,
-    paddingRight: 6,
-    paddingVertical: 6,
-    marginBottom: 24,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.06,
-    shadowRadius: 8,
-    elevation: 3,
-  },
-  quickAddInput: {
-    flex: 1,
-    fontSize: 15,
-    paddingVertical: 8,
-  },
-  quickAddButton: {
-    backgroundColor: '#10B981',
-    width: 40,
-    height: 40,
-    borderRadius: 12,
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  section: {
-    marginBottom: 24,
-  },
-  sectionHeader: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 8,
-    marginBottom: 14,
-  },
-  sectionTitle: {
-    fontSize: 16,
-    fontWeight: '700' as const,
-    flex: 1,
-  },
-  sectionBadge: {
-    fontSize: 12,
-    fontWeight: '600' as const,
-    color: '#16A34A',
-    paddingHorizontal: 8,
-    paddingVertical: 3,
-    borderRadius: 8,
-    overflow: 'hidden',
-  },
-  upNextScroll: {
-    paddingRight: 20,
-    gap: 12,
-  },
-  upNextCard: {
-    width: 160,
-    padding: 14,
-    borderRadius: 16,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.05,
-    shadowRadius: 8,
-    elevation: 2,
-    overflow: 'hidden',
-  },
-  priorityStripe: {
-    position: 'absolute',
-    top: 0,
-    left: 0,
-    right: 0,
-    height: 3,
-  },
-  upNextTitle: {
-    fontSize: 14,
-    fontWeight: '600' as const,
-    lineHeight: 20,
-    marginBottom: 12,
-    minHeight: 40,
-  },
-  upNextAction: {
-    backgroundColor: 'rgba(16,185,129,0.1)',
-    paddingVertical: 6,
-    paddingHorizontal: 12,
-    borderRadius: 8,
-    alignSelf: 'flex-start',
-  },
-  upNextActionText: {
-    fontSize: 12,
-    fontWeight: '600' as const,
-    color: '#10B981',
-  },
-  habitsGrid: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    gap: 10,
-  },
-  habitChip: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 8,
-    paddingVertical: 10,
-    paddingHorizontal: 14,
-    borderRadius: 12,
-    borderWidth: 1.5,
-    width: '47%' as unknown as number,
-  },
-  habitChipText: {
-    fontSize: 13,
-    fontWeight: '600' as const,
-    flexShrink: 1,
-  },
-  miniStreak: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 3,
-    paddingHorizontal: 6,
-    paddingVertical: 2,
-    borderRadius: 6,
-    marginLeft: 4,
-  },
-  miniStreakText: {
-    fontSize: 11,
-    fontWeight: '700' as const,
-  },
-  allTasksCount: {
-    fontSize: 13,
-    fontWeight: '600' as const,
-  },
-  allTaskCard: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    padding: 14,
-    borderRadius: 14,
-    marginBottom: 8,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 1 },
-    shadowOpacity: 0.04,
-    shadowRadius: 6,
-    elevation: 1,
-  },
-  allTaskCardCompleted: {
-    opacity: 0.6,
-  },
-  allTaskCheckbox: {
-    marginRight: 12,
-  },
-  allTaskChecked: {
-    width: 24,
-    height: 24,
-    borderRadius: 12,
-    backgroundColor: '#10B981',
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  allTaskUnchecked: {
-    width: 24,
-    height: 24,
-    borderRadius: 12,
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  allTaskContent: {
-    flex: 1,
-    marginRight: 8,
-  },
-  allTaskTitle: {
-    fontSize: 15,
-    fontWeight: '600' as const,
-    marginBottom: 4,
-  },
-  allTaskTitleDone: {
-    textDecorationLine: 'line-through' as const,
-    opacity: 0.6,
-  },
-  allTaskMeta: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 8,
-  },
-  allTaskPriority: {
-    paddingHorizontal: 7,
-    paddingVertical: 2,
-    borderRadius: 5,
-  },
-  allTaskPriorityText: {
-    fontSize: 11,
-    fontWeight: '600' as const,
-    textTransform: 'capitalize' as const,
-  },
-  allTaskDue: {
-    fontSize: 12,
-    color: '#6B7280',
-  },
-  allTaskDescHint: {
-    fontSize: 12,
-    flex: 1,
-  },
-  allTaskActions: {
-    flexDirection: 'row',
-    alignItems: 'center',
-  },
-  allTaskEditBtn: {
-    width: 32,
-    height: 32,
-    borderRadius: 8,
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  timeBlocksRow: {
-    flexDirection: 'row',
-    gap: 10,
-  },
-  timeBlock: {
-    flex: 1,
-    alignItems: 'center',
-    paddingVertical: 14,
-    borderRadius: 14,
-    borderWidth: 1.5,
-    position: 'relative',
-  },
-  timeBlockLabel: {
-    fontSize: 11,
-    fontWeight: '600' as const,
-    marginTop: 6,
-  },
-  timeBlockDot: {
-    position: 'absolute',
-    bottom: 6,
-    width: 4,
-    height: 4,
-    borderRadius: 2,
-  },
-  peakIndicator: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 4,
-    paddingHorizontal: 8,
-    paddingVertical: 4,
-    borderRadius: 8,
-    marginLeft: 'auto' as const,
-  },
-  peakIndicatorText: {
-    fontSize: 11,
-    fontWeight: '700' as const,
-  },
-
-  timeBlockPeakBadge: {
-    position: 'absolute',
-    top: 6,
-    right: 6,
-    width: 16,
-    height: 16,
-    borderRadius: 8,
-    justifyContent: 'center',
-    alignItems: 'center',
   },
 });

@@ -23,7 +23,12 @@ import * as Haptics from 'expo-haptics';
 import { LinearGradient } from 'expo-linear-gradient';
 import { useTheme } from '@/hooks/useTheme';
 import { sportsFixedPalette } from '@/utils/sportsPalette';
+import { formatMatchRoundLabel, isKnockoutRoundLabel } from '@/utils/matchRoundLabel';
 import type { LiveFootballMatch } from '@/types/habit';
+
+/** Favourite club indicator — always gold, independent of sports-tab green chrome. */
+const FAVORITE_STAR_COLOR = '#F5B800';
+const FAVORITE_STAR_BG = 'rgba(245, 184, 24, 0.22)';
 
 /** Shape expected by the Sports tab list — maps cleanly from `LiveFootballMatch`. */
 export type SportsMatchCardModel = {
@@ -45,6 +50,7 @@ export type SportsMatchCardModel = {
   homeTeamLogo?: string;
   awayTeamLogo?: string;
   leagueLogo?: string;
+  round?: string;
   elapsed?: number;
 };
 
@@ -68,6 +74,7 @@ export function liveFootballMatchToCardModel(m: LiveFootballMatch): SportsMatchC
     homeTeamLogo: m.homeTeamLogo,
     awayTeamLogo: m.awayTeamLogo,
     leagueLogo: m.leagueLogo,
+    round: m.round,
     elapsed: m.elapsed,
   };
 }
@@ -123,6 +130,16 @@ const LivePulse = ({ color = '#FF3B30', size = 8 }: { color?: string; size?: num
   );
 };
 
+export type MatchCardSurfaceColors = {
+  card: string;
+  border: string;
+  surfaceSecondary: string;
+  text: string;
+  textMuted: string;
+  primary: string;
+  warning: string;
+};
+
 export const PremiumSportsMatchCard = React.memo(
   ({
     match,
@@ -131,6 +148,7 @@ export const PremiumSportsMatchCard = React.memo(
     isNotified,
     onToggleNotification,
     isPinned,
+    surfaceColors,
   }: {
     match: SportsMatchCardModel;
     isFavoriteTeam: (name: string) => boolean;
@@ -138,9 +156,26 @@ export const PremiumSportsMatchCard = React.memo(
     isNotified?: boolean;
     onToggleNotification?: (matchId: string) => void;
     isPinned?: boolean;
+    /** When set (e.g. club profile sheet), card matches parent surface instead of sports-tab gold/blue. */
+    surfaceColors?: MatchCardSurfaceColors;
   }) => {
     const { isDark } = useTheme();
-    const sf = sportsFixedPalette(isDark);
+    const sfBase = sportsFixedPalette(isDark);
+    const sportsTabGreen = !surfaceColors;
+    const mc = sportsTabGreen ? sfBase.matchChrome : null;
+    const sf = surfaceColors
+      ? { ...sfBase, ...surfaceColors }
+      : mc
+        ? {
+            ...sfBase,
+            card: mc.card,
+            border: mc.border,
+            surfaceSecondary: mc.surfaceSecondary,
+            primary: mc.accent,
+            warning: mc.accent,
+          }
+        : sfBase;
+    const neutralSheet = !!surfaceColors;
     const isLive = match.status === 'Live';
     const isCompleted = match.status === 'Completed';
     const isUpcoming = !isLive && !isCompleted;
@@ -187,6 +222,8 @@ export const PremiumSportsMatchCard = React.memo(
     };
 
     const resultStyle = getResultStyle();
+    const roundLabel = formatMatchRoundLabel(match.round);
+    const isKnockoutRound = isKnockoutRoundLabel(roundLabel);
 
     return (
       <View style={cardStyles.cardWrapper}>
@@ -195,7 +232,13 @@ export const PremiumSportsMatchCard = React.memo(
             style={[
               cardStyles.cardInner,
               { backgroundColor: sf.card, borderColor: sf.border },
-              !isDark && isUpcoming && cardStyles.upcomingPremiumCardLight,
+              sportsTabGreen && isUpcoming && !isLive && cardStyles.upcomingFootballCard,
+              sportsTabGreen && isUpcoming && !isLive && isDark && { borderColor: mc!.border },
+              sportsTabGreen && isUpcoming && !isLive && !isDark && {
+                backgroundColor: mc!.card,
+                borderColor: mc!.border,
+                shadowColor: mc!.shadow,
+              },
               isLive && cardStyles.liveCardBorder,
               isPinned && !isLive && { borderColor: `${sf.warning}55` },
             ]}
@@ -216,9 +259,9 @@ export const PremiumSportsMatchCard = React.memo(
                 style={cardStyles.cardGlow}
                 pointerEvents="none"
               />
-            ) : !isDark && isUpcoming ? (
+            ) : sportsTabGreen && isUpcoming ? (
               <LinearGradient
-                colors={['rgba(247, 221, 143, 0.18)', 'transparent']}
+                colors={[...mc!.glow]}
                 start={{ x: 0, y: 0 }}
                 end={{ x: 1, y: 1 }}
                 style={cardStyles.cardGlow}
@@ -237,9 +280,27 @@ export const PremiumSportsMatchCard = React.memo(
                 <Text style={[cardStyles.leagueName, { color: sf.textMuted }]} numberOfLines={1}>
                   {match.league}
                 </Text>
+                {roundLabel ? (
+                  <View
+                    style={[
+                      cardStyles.roundBadge,
+                      isKnockoutRound && cardStyles.roundBadgeKnockout,
+                    ]}
+                  >
+                    <Text
+                      style={[
+                        cardStyles.roundBadgeText,
+                        isKnockoutRound && cardStyles.roundBadgeTextKnockout,
+                      ]}
+                      numberOfLines={1}
+                    >
+                      {roundLabel}
+                    </Text>
+                  </View>
+                ) : null}
                 {(homeIsFavorite || awayIsFavorite) && (
-                  <View style={[cardStyles.favStarHeader, { backgroundColor: `${sf.warning}28` }]}>
-                    <Star size={9} color={sf.warning} fill={sf.warning} />
+                  <View style={[cardStyles.favStarHeader, { backgroundColor: FAVORITE_STAR_BG }]}>
+                    <Star size={9} color={FAVORITE_STAR_COLOR} fill={FAVORITE_STAR_COLOR} />
                   </View>
                 )}
               </View>
@@ -389,7 +450,8 @@ export const PremiumSportsMatchCard = React.memo(
     prev.match.status === next.match.status &&
     prev.match.elapsed === next.match.elapsed &&
     prev.isNotified === next.isNotified &&
-    prev.isPinned === next.isPinned,
+    prev.isPinned === next.isPinned &&
+    prev.surfaceColors === next.surfaceColors,
 );
 
 const pulseStyles = StyleSheet.create({
@@ -426,11 +488,8 @@ const cardStyles = StyleSheet.create({
     overflow: 'hidden',
     position: 'relative',
   },
-  upcomingPremiumCardLight: {
-    backgroundColor: '#FFFFFF',
-    borderColor: 'rgba(185, 145, 58, 0.35)',
-    shadowColor: '#B9913A',
-    shadowOpacity: 0.1,
+  upcomingFootballCard: {
+    shadowOpacity: 0.08,
     shadowRadius: 14,
     shadowOffset: { width: 0, height: 4 },
     elevation: 3,
@@ -474,6 +533,27 @@ const cardStyles = StyleSheet.create({
     fontWeight: '600',
     textTransform: 'uppercase',
     letterSpacing: 0.3,
+    flexShrink: 1,
+  },
+  roundBadge: {
+    paddingHorizontal: 6,
+    paddingVertical: 2,
+    borderRadius: 6,
+    backgroundColor: 'rgba(100, 116, 139, 0.14)',
+    flexShrink: 0,
+  },
+  roundBadgeKnockout: {
+    backgroundColor: 'rgba(245, 158, 11, 0.2)',
+  },
+  roundBadgeText: {
+    fontSize: 9,
+    fontWeight: '800',
+    letterSpacing: 0.35,
+    textTransform: 'uppercase',
+    color: '#64748B',
+  },
+  roundBadgeTextKnockout: {
+    color: '#B45309',
   },
   liveIndicator: {
     flexDirection: 'row',

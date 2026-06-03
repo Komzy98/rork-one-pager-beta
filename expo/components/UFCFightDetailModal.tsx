@@ -21,21 +21,35 @@ import {
 } from 'lucide-react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import * as Haptics from 'expo-haptics';
+import { UFC_BRAND } from '@/utils/sportsPalette';
 
-/** Matches UFC Fight Center tab (`sports.tsx`) — modal always uses this chrome so cards aren’t light while the hero stays dark under a global light theme. */
-const UFC_MODAL = {
-  sheetGrad: ['#0C0C10', '#070708'] as const,
-  heroGrad: ['#1A0808', '#140614', '#0A0A12'] as const,
-  card: '#14151A',
-  cardBorder: 'rgba(255,255,255,0.09)',
-  text: '#F0F0FA',
-  textMuted: '#9EA3AD',
-  label: '#7B7B90',
-  chipBg: '#1A1B22',
-  iconMuted: '#8B8BA7',
-  closeBg: '#1C1C28',
-  handle: '#3A3A48',
-} as const;
+/** UFC fight sheet — always Fight Center black/red (matches Results tab). */
+function ufcModalChrome() {
+  return {
+    sheetGrad: ['#0C0C10', '#070708'] as const,
+    heroGrad: ['#1A0808', '#140614', '#0A0A12'] as const,
+    card: UFC_BRAND.surface,
+    cardBorder: UFC_BRAND.border,
+    text: UFC_BRAND.text,
+    textMuted: UFC_BRAND.muted,
+    label: '#7B7B90',
+    chipBg: '#1A1B22',
+    iconMuted: '#8B8BA7',
+    closeBg: '#1C1C28',
+    handle: '#3A3A48',
+    accent: UFC_BRAND.red,
+    accentSoft: UFC_BRAND.redSoft,
+    accentBorder: UFC_BRAND.redBorder,
+    heroText: UFC_BRAND.text,
+    divider: 'rgba(255,255,255,0.08)',
+    avatarBg: '#1A1B1E',
+    avatarBorder: UFC_BRAND.redBorder,
+    countdownBoxBg: UFC_BRAND.redSoft,
+    countdownBoxBorder: UFC_BRAND.redBorder,
+    countdownUnit: UFC_BRAND.muted,
+    countdownSep: '#6B6B80',
+  };
+}
 
 interface UFCFight {
   id: number;
@@ -110,6 +124,7 @@ const LivePulse = ({ color = '#FF3B30', size = 8 }: { color?: string; size?: num
 };
 
 export default function UFCFightDetailModal({ visible, onClose, fight }: UFCFightDetailModalProps) {
+  const ui = useMemo(() => ufcModalChrome(), []);
   const slideAnim = useRef(new Animated.Value(0)).current;
   const fadeAnim = useRef(new Animated.Value(0)).current;
   const fighter1Anim = useRef(new Animated.Value(-50)).current;
@@ -150,6 +165,8 @@ export default function UFCFightDetailModal({ visible, onClose, fight }: UFCFigh
   const isCompleted = fight.status === 'Completed';
   const isLive = fight.status === 'Live';
   const isUpcoming = fight.status === 'Upcoming';
+  const fighter1Won = isCompleted && !!fight.fighter1.winner;
+  const fighter2Won = isCompleted && !!fight.fighter2.winner;
 
   const getFighterInitial = (name: string) => {
     if (!name || name === 'TBA') return '?';
@@ -173,7 +190,7 @@ export default function UFCFightDetailModal({ visible, onClose, fight }: UFCFigh
     if (m.includes('ko') || m.includes('tko')) return '#FF6B6B';
     if (m.includes('submission') || m.includes('sub')) return '#7C3AED';
     if (m.includes('decision') || m.includes('dec')) return '#3B82F6';
-    return '#D4AF37';
+    return UFC_BRAND.red;
   };
 
   const getMethodLabel = (method?: string) => {
@@ -210,30 +227,30 @@ export default function UFCFightDetailModal({ visible, onClose, fight }: UFCFigh
       <Animated.View style={[s.overlay, { opacity: fadeAnim }]}>
         <TouchableOpacity style={StyleSheet.absoluteFill} activeOpacity={1} onPress={handleClose} />
         <Animated.View style={[s.sheet, { transform: [{ translateY: slideAnim }] }]}>
-          <LinearGradient colors={[...UFC_MODAL.sheetGrad]} style={s.sheetGradient}>
+          <LinearGradient colors={[...ui.sheetGrad]} style={s.sheetGradient}>
             <View style={s.handleRow}>
-              <View style={[s.handle, { backgroundColor: UFC_MODAL.handle }]} />
+              <View style={[s.handle, { backgroundColor: ui.handle }]} />
             </View>
 
             <View style={s.headerRow}>
               <View style={{ flex: 1 }} />
               <TouchableOpacity
-                style={[s.closeBtn, { backgroundColor: UFC_MODAL.closeBg }]}
+                style={[s.closeBtn, { backgroundColor: ui.closeBg }]}
                 onPress={handleClose}
                 activeOpacity={0.7}
               >
-                <X size={18} color={UFC_MODAL.iconMuted} />
+                <X size={18} color={ui.iconMuted} />
               </TouchableOpacity>
             </View>
 
             <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={s.scrollContent}>
               <LinearGradient
-                colors={[...UFC_MODAL.heroGrad]}
+                colors={[...ui.heroGrad]}
                 start={{ x: 0, y: 0 }}
                 end={{ x: 1, y: 1 }}
                 style={s.heroGradient}
               >
-                <View style={s.heroGoldBar} />
+                <View style={s.heroAccentBar} />
 
                 {isLive && (
                   <View style={s.liveBadgeRow}>
@@ -255,18 +272,18 @@ export default function UFCFightDetailModal({ visible, onClose, fight }: UFCFigh
 
                 {isUpcoming && (
                   <View style={s.liveBadgeRow}>
-                    <View style={[s.liveBadge, { backgroundColor: 'rgba(212, 175, 55, 0.12)', borderColor: 'rgba(212, 175, 55, 0.25)' }]}>
-                      <Calendar size={12} color="#D4AF37" />
-                      <Text style={[s.liveBadgeText, { color: '#D4AF37' }]}>UPCOMING</Text>
+                    <View style={[s.liveBadge, { backgroundColor: ui.accentSoft, borderColor: ui.accentBorder }]}>
+                      <Calendar size={12} color={ui.accent} />
+                      <Text style={[s.liveBadgeText, { color: ui.accent }]}>UPCOMING</Text>
                     </View>
                   </View>
                 )}
 
-                <Text style={s.heroEvent} numberOfLines={2}>{fight.event}</Text>
+                <Text style={[s.heroEvent, { color: ui.heroText }]} numberOfLines={2}>{fight.event}</Text>
 
                 {fight.category !== 'TBD' && (
-                  <View style={s.categoryBadge}>
-                    <Text style={s.categoryText}>{fight.category}</Text>
+                  <View style={[s.categoryBadge, { backgroundColor: ui.accentSoft, borderColor: ui.accentBorder }]}>
+                    <Text style={[s.categoryText, { color: ui.accent }]}>{fight.category}</Text>
                   </View>
                 )}
 
@@ -274,14 +291,15 @@ export default function UFCFightDetailModal({ visible, onClose, fight }: UFCFigh
                   <Animated.View style={[s.fighterCol, { transform: [{ translateX: fighter1Anim }] }]}>
                     <View style={[
                       s.fighterAvatarOuter,
-                      isCompleted && fight.fighter1.winner && { borderColor: '#10B981', borderWidth: 3 },
-                      isCompleted && !fight.fighter1.winner && fight.fighter2.winner && { opacity: 0.5 },
+                      { borderColor: ui.avatarBorder },
+                      fighter1Won && { borderColor: '#10B981', borderWidth: 3 },
+                      fighter2Won && !fighter1Won && { opacity: 0.5 },
                     ]}>
-                      <View style={s.fighterAvatar}>
+                      <View style={[s.fighterAvatar, { backgroundColor: ui.avatarBg }]}>
                         {fight.fighter1.photo ? (
                           <Image
                             source={{ uri: fight.fighter1.photo }}
-                            style={s.fighterPhoto}
+                            style={[s.fighterPhoto, { opacity: 1 }]}
                             contentFit="cover"
                             cachePolicy="memory-disk"
                           />
@@ -294,17 +312,18 @@ export default function UFCFightDetailModal({ visible, onClose, fight }: UFCFigh
                     </View>
                     <Text style={[
                       s.fighterName,
-                      isCompleted && fight.fighter1.winner && { color: '#10B981' },
+                      { color: ui.heroText },
+                      fighter1Won && { color: '#10B981' },
                     ]} numberOfLines={2}>
                       {fight.fighter1.name === 'TBA' ? 'To Be Announced' : fight.fighter1.name}
                     </Text>
-                    {isCompleted && fight.fighter1.winner && (
+                    {fighter1Won && (
                       <LinearGradient colors={['#10B981', '#059669']} style={s.winBadge}>
                         <Trophy size={10} color="#FFF" />
                         <Text style={s.winBadgeText}>WINNER</Text>
                       </LinearGradient>
                     )}
-                    {isCompleted && !fight.fighter1.winner && fight.fighter2.winner && (
+                    {fighter2Won && !fighter1Won && (
                       <View style={s.lossBadge}>
                         <Text style={s.lossBadgeText}>LOSS</Text>
                       </View>
@@ -312,27 +331,28 @@ export default function UFCFightDetailModal({ visible, onClose, fight }: UFCFigh
                   </Animated.View>
 
                   <View style={s.vsCenter}>
-                    <View style={s.vsLineV} />
+                    <View style={[s.vsLineV, { backgroundColor: ui.accentBorder }]} />
                     <LinearGradient
-                      colors={isLive ? ['#FF3B30', '#CC2D26'] : ['#D4AF37', '#B8860B']}
+                      colors={isLive ? ['#FF3B30', '#CC2D26'] : [UFC_BRAND.redBright, UFC_BRAND.redDark]}
                       style={s.vsCircle}
                     >
                       <Text style={s.vsText}>VS</Text>
                     </LinearGradient>
-                    <View style={s.vsLineV} />
+                    <View style={[s.vsLineV, { backgroundColor: ui.accentBorder }]} />
                   </View>
 
                   <Animated.View style={[s.fighterCol, { transform: [{ translateX: fighter2Anim }] }]}>
                     <View style={[
                       s.fighterAvatarOuter,
-                      isCompleted && fight.fighter2.winner && { borderColor: '#10B981', borderWidth: 3 },
-                      isCompleted && !fight.fighter2.winner && fight.fighter1.winner && { opacity: 0.5 },
+                      { borderColor: ui.avatarBorder },
+                      fighter2Won && { borderColor: '#10B981', borderWidth: 3 },
+                      fighter1Won && !fighter2Won && { opacity: 0.5 },
                     ]}>
-                      <View style={s.fighterAvatar}>
+                      <View style={[s.fighterAvatar, { backgroundColor: ui.avatarBg }]}>
                         {fight.fighter2.photo ? (
                           <Image
                             source={{ uri: fight.fighter2.photo }}
-                            style={s.fighterPhoto}
+                            style={[s.fighterPhoto, { opacity: 1 }]}
                             contentFit="cover"
                             cachePolicy="memory-disk"
                           />
@@ -345,17 +365,18 @@ export default function UFCFightDetailModal({ visible, onClose, fight }: UFCFigh
                     </View>
                     <Text style={[
                       s.fighterName,
-                      isCompleted && fight.fighter2.winner && { color: '#10B981' },
+                      { color: ui.heroText },
+                      fighter2Won && { color: '#10B981' },
                     ]} numberOfLines={2}>
                       {fight.fighter2.name === 'TBA' ? 'To Be Announced' : fight.fighter2.name}
                     </Text>
-                    {isCompleted && fight.fighter2.winner && (
+                    {fighter2Won && (
                       <LinearGradient colors={['#10B981', '#059669']} style={s.winBadge}>
                         <Trophy size={10} color="#FFF" />
                         <Text style={s.winBadgeText}>WINNER</Text>
                       </LinearGradient>
                     )}
-                    {isCompleted && !fight.fighter2.winner && fight.fighter1.winner && (
+                    {fighter1Won && !fighter2Won && (
                       <View style={s.lossBadge}>
                         <Text style={s.lossBadgeText}>LOSS</Text>
                       </View>
@@ -369,12 +390,12 @@ export default function UFCFightDetailModal({ visible, onClose, fight }: UFCFigh
                   <View
                     style={[
                       s.resultCard,
-                      { backgroundColor: UFC_MODAL.card, borderColor: UFC_MODAL.cardBorder },
+                      { backgroundColor: ui.card, borderColor: ui.cardBorder },
                     ]}
                   >
                     <View style={s.resultCardHeader}>
-                      <Swords size={16} color="#D4AF37" />
-                      <Text style={[s.resultCardTitle, { color: UFC_MODAL.text }]}>Fight Result</Text>
+                      <Swords size={16} color={ui.accent} />
+                      <Text style={[s.resultCardTitle, { color: ui.text }]}>Fight Result</Text>
                     </View>
                     <View style={s.resultCardBody}>
                       <View style={[s.resultMethodBox, { backgroundColor: getMethodColor(fight.result.method) + '15' }]}>
@@ -383,24 +404,24 @@ export default function UFCFightDetailModal({ visible, onClose, fight }: UFCFigh
                           <Text style={[s.resultMethodMain, { color: getMethodColor(fight.result.method) }]}>
                             {fight.result.method}
                           </Text>
-                          <Text style={[s.resultMethodSub, { color: UFC_MODAL.textMuted }]}>
+                          <Text style={[s.resultMethodSub, { color: ui.textMuted }]}>
                             {getMethodLabel(fight.result.method)}
                           </Text>
                         </View>
                       </View>
                       <View style={s.resultDetailsRow}>
                         {fight.result.round !== undefined && (
-                          <View style={[s.resultChip, { backgroundColor: UFC_MODAL.chipBg }]}>
-                            <Target size={12} color={UFC_MODAL.iconMuted} />
-                            <Text style={[s.resultChipText, { color: UFC_MODAL.text }]}>
+                          <View style={[s.resultChip, { backgroundColor: ui.chipBg }]}>
+                            <Target size={12} color={ui.iconMuted} />
+                            <Text style={[s.resultChipText, { color: ui.text }]}>
                               Round {fight.result.round}
                             </Text>
                           </View>
                         )}
                         {fight.result.time && (
-                          <View style={[s.resultChip, { backgroundColor: UFC_MODAL.chipBg }]}>
-                            <Clock size={12} color={UFC_MODAL.iconMuted} />
-                            <Text style={[s.resultChipText, { color: UFC_MODAL.text }]}>
+                          <View style={[s.resultChip, { backgroundColor: ui.chipBg }]}>
+                            <Clock size={12} color={ui.iconMuted} />
+                            <Text style={[s.resultChipText, { color: ui.text }]}>
                               {fight.result.time}
                             </Text>
                           </View>
@@ -414,27 +435,27 @@ export default function UFCFightDetailModal({ visible, onClose, fight }: UFCFigh
                   <View
                     style={[
                       s.countdownCard,
-                      { backgroundColor: UFC_MODAL.card, borderColor: UFC_MODAL.cardBorder },
+                      { backgroundColor: ui.card, borderColor: ui.cardBorder },
                     ]}
                   >
                     <View style={s.resultCardHeader}>
-                      <Flame size={16} color="#D4AF37" />
-                      <Text style={[s.resultCardTitle, { color: UFC_MODAL.text }]}>Countdown</Text>
+                      <Flame size={16} color={ui.accent} />
+                      <Text style={[s.resultCardTitle, { color: ui.text }]}>Countdown</Text>
                     </View>
                     <View style={s.countdownRow}>
-                      <View style={s.countdownBox}>
-                        <Text style={s.countdownValue}>{countdown.days}</Text>
-                        <Text style={s.countdownUnit}>DAYS</Text>
+                      <View style={[s.countdownBox, { backgroundColor: ui.countdownBoxBg, borderColor: ui.countdownBoxBorder }]}>
+                        <Text style={[s.countdownValue, { color: ui.accent }]}>{countdown.days}</Text>
+                        <Text style={[s.countdownUnit, { color: ui.countdownUnit }]}>DAYS</Text>
                       </View>
-                      <Text style={s.countdownSep}>:</Text>
-                      <View style={s.countdownBox}>
-                        <Text style={s.countdownValue}>{countdown.hours}</Text>
-                        <Text style={s.countdownUnit}>HRS</Text>
+                      <Text style={[s.countdownSep, { color: ui.countdownSep }]}>:</Text>
+                      <View style={[s.countdownBox, { backgroundColor: ui.countdownBoxBg, borderColor: ui.countdownBoxBorder }]}>
+                        <Text style={[s.countdownValue, { color: ui.accent }]}>{countdown.hours}</Text>
+                        <Text style={[s.countdownUnit, { color: ui.countdownUnit }]}>HRS</Text>
                       </View>
-                      <Text style={s.countdownSep}>:</Text>
-                      <View style={s.countdownBox}>
-                        <Text style={s.countdownValue}>{countdown.mins}</Text>
-                        <Text style={s.countdownUnit}>MIN</Text>
+                      <Text style={[s.countdownSep, { color: ui.countdownSep }]}>:</Text>
+                      <View style={[s.countdownBox, { backgroundColor: ui.countdownBoxBg, borderColor: ui.countdownBoxBorder }]}>
+                        <Text style={[s.countdownValue, { color: ui.accent }]}>{countdown.mins}</Text>
+                        <Text style={[s.countdownUnit, { color: ui.countdownUnit }]}>MIN</Text>
                       </View>
                     </View>
                   </View>
@@ -443,57 +464,57 @@ export default function UFCFightDetailModal({ visible, onClose, fight }: UFCFigh
                 <View
                   style={[
                     s.infoCard,
-                    { backgroundColor: UFC_MODAL.card, borderColor: UFC_MODAL.cardBorder },
+                    { backgroundColor: ui.card, borderColor: ui.cardBorder },
                   ]}
                 >
                   <View style={s.resultCardHeader}>
-                    <Calendar size={16} color="#D4AF37" />
-                    <Text style={[s.resultCardTitle, { color: UFC_MODAL.text }]}>Event Details</Text>
+                    <Calendar size={16} color={ui.accent} />
+                    <Text style={[s.resultCardTitle, { color: ui.text }]}>Event Details</Text>
                   </View>
                   <View style={s.infoRows}>
                     <View style={s.infoRow}>
-                      <Text style={[s.infoLabel, { color: UFC_MODAL.label }]}>Event</Text>
-                      <Text style={[s.infoValue, { color: UFC_MODAL.text }]} numberOfLines={2}>
+                      <Text style={[s.infoLabel, { color: ui.label }]}>Event</Text>
+                      <Text style={[s.infoValue, { color: ui.text }]} numberOfLines={2}>
                         {fight.event}
                       </Text>
                     </View>
-                    <View style={[s.infoDivider, { backgroundColor: 'rgba(255,255,255,0.08)' }]} />
+                    <View style={[s.infoDivider, { backgroundColor: ui.divider }]} />
                     <View style={s.infoRow}>
-                      <Text style={[s.infoLabel, { color: UFC_MODAL.label }]}>Date</Text>
-                      <Text style={[s.infoValue, { color: UFC_MODAL.text }]}>{formattedDate}</Text>
+                      <Text style={[s.infoLabel, { color: ui.label }]}>Date</Text>
+                      <Text style={[s.infoValue, { color: ui.text }]}>{formattedDate}</Text>
                     </View>
                     {fight.time && (
                       <>
-                        <View style={[s.infoDivider, { backgroundColor: 'rgba(255,255,255,0.08)' }]} />
+                        <View style={[s.infoDivider, { backgroundColor: ui.divider }]} />
                         <View style={s.infoRow}>
-                          <Text style={[s.infoLabel, { color: UFC_MODAL.label }]}>Time</Text>
-                          <Text style={[s.infoValue, { color: UFC_MODAL.text }]}>{fight.time}</Text>
+                          <Text style={[s.infoLabel, { color: ui.label }]}>Time</Text>
+                          <Text style={[s.infoValue, { color: ui.text }]}>{fight.time}</Text>
                         </View>
                       </>
                     )}
                     {fight.category !== 'TBD' && (
                       <>
-                        <View style={[s.infoDivider, { backgroundColor: 'rgba(255,255,255,0.08)' }]} />
+                        <View style={[s.infoDivider, { backgroundColor: ui.divider }]} />
                         <View style={s.infoRow}>
-                          <Text style={[s.infoLabel, { color: UFC_MODAL.label }]}>Weight Class</Text>
-                          <Text style={[s.infoValue, { color: '#D4AF37' }]}>{fight.category}</Text>
+                          <Text style={[s.infoLabel, { color: ui.label }]}>Weight Class</Text>
+                          <Text style={[s.infoValue, { color: ui.accent }]}>{fight.category}</Text>
                         </View>
                       </>
                     )}
-                    <View style={[s.infoDivider, { backgroundColor: 'rgba(255,255,255,0.08)' }]} />
+                    <View style={[s.infoDivider, { backgroundColor: ui.divider }]} />
                     <View style={s.infoRow}>
-                      <Text style={[s.infoLabel, { color: isDark ? '#6B6B85' : '#AEAEB2' }]}>Status</Text>
+                      <Text style={[s.infoLabel, { color: ui.label }]}>Status</Text>
                       <View style={[
                         s.statusPill,
                         isLive && { backgroundColor: 'rgba(255, 59, 48, 0.12)' },
                         isCompleted && { backgroundColor: 'rgba(16, 185, 129, 0.12)' },
-                        isUpcoming && { backgroundColor: 'rgba(212, 175, 55, 0.12)' },
+                        isUpcoming && { backgroundColor: ui.accentSoft },
                       ]}>
                         <Text style={[
                           s.statusPillText,
                           isLive && { color: '#FF3B30' },
                           isCompleted && { color: '#10B981' },
-                          isUpcoming && { color: '#D4AF37' },
+                          isUpcoming && { color: ui.accent },
                         ]}>
                           {fight.status}
                         </Text>
@@ -565,13 +586,13 @@ const s = StyleSheet.create({
     overflow: 'hidden',
     marginBottom: 16,
   },
-  heroGoldBar: {
+  heroAccentBar: {
     position: 'absolute',
     top: 0,
     left: 0,
     right: 0,
     height: 3,
-    backgroundColor: '#D4AF37',
+    backgroundColor: UFC_BRAND.red,
   },
   liveBadgeRow: {
     marginBottom: 14,
@@ -602,18 +623,18 @@ const s = StyleSheet.create({
     marginBottom: 10,
   },
   categoryBadge: {
-    backgroundColor: 'rgba(212, 175, 55, 0.15)',
+    backgroundColor: UFC_BRAND.redSoft,
     paddingHorizontal: 14,
     paddingVertical: 5,
     borderRadius: 10,
     borderWidth: 1,
-    borderColor: 'rgba(212, 175, 55, 0.2)',
+    borderColor: UFC_BRAND.redBorder,
     marginBottom: 20,
   },
   categoryText: {
     fontSize: 11,
     fontWeight: '700' as const,
-    color: '#D4AF37',
+    color: UFC_BRAND.red,
     textTransform: 'uppercase',
     letterSpacing: 0.8,
   },
@@ -630,7 +651,7 @@ const s = StyleSheet.create({
   fighterAvatarOuter: {
     borderRadius: 44,
     borderWidth: 2,
-    borderColor: 'rgba(212, 175, 55, 0.3)',
+    borderColor: UFC_BRAND.redBorder,
     padding: 3,
   },
   fighterAvatar: {
@@ -702,7 +723,7 @@ const s = StyleSheet.create({
   vsLineV: {
     width: 1,
     height: 16,
-    backgroundColor: 'rgba(212, 175, 55, 0.2)',
+    backgroundColor: UFC_BRAND.redSoft,
   },
   vsCircle: {
     width: 42,
@@ -725,7 +746,7 @@ const s = StyleSheet.create({
     borderRadius: 18,
     padding: 16,
     borderWidth: 1,
-    borderColor: 'rgba(212, 175, 55, 0.08)',
+    borderColor: UFC_BRAND.redBorder,
     shadowColor: '#000',
     shadowOffset: { width: 0, height: 4 },
     shadowOpacity: 0.08,
@@ -788,7 +809,7 @@ const s = StyleSheet.create({
     borderRadius: 18,
     padding: 16,
     borderWidth: 1,
-    borderColor: 'rgba(212, 175, 55, 0.08)',
+    borderColor: UFC_BRAND.redBorder,
     shadowColor: '#000',
     shadowOffset: { width: 0, height: 4 },
     shadowOpacity: 0.08,
@@ -802,19 +823,19 @@ const s = StyleSheet.create({
     gap: 8,
   },
   countdownBox: {
-    backgroundColor: 'rgba(212, 175, 55, 0.1)',
+    backgroundColor: UFC_BRAND.redSoft,
     borderRadius: 14,
     paddingVertical: 12,
     paddingHorizontal: 18,
     alignItems: 'center',
     borderWidth: 1,
-    borderColor: 'rgba(212, 175, 55, 0.15)',
+    borderColor: UFC_BRAND.redBorder,
     minWidth: 65,
   },
   countdownValue: {
     fontSize: 24,
     fontWeight: '900' as const,
-    color: '#D4AF37',
+    color: UFC_BRAND.red,
     letterSpacing: -0.5,
   },
   countdownUnit: {
@@ -833,7 +854,7 @@ const s = StyleSheet.create({
     borderRadius: 18,
     padding: 16,
     borderWidth: 1,
-    borderColor: 'rgba(212, 175, 55, 0.08)',
+    borderColor: UFC_BRAND.redBorder,
     shadowColor: '#000',
     shadowOffset: { width: 0, height: 4 },
     shadowOpacity: 0.08,

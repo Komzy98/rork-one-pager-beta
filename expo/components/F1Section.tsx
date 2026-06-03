@@ -10,6 +10,8 @@ import {
   Platform,
   RefreshControl,
   Modal,
+  ImageBackground,
+  useWindowDimensions,
 } from 'react-native';
 import {
   Flag,
@@ -40,16 +42,26 @@ import {
   getDriverStandings,
   getConstructorStandings,
 } from '@/constants/f1Data';
-import { HERO_SECONDARY_GAP_BELOW_SPORT_STRIP } from '@/constants/sportsHeroLayout';
+import {
+  getHeroSecondaryRowStyle,
+  getSportsHeroBottomCropPx,
+  getSportsHeroImageStyle,
+  getSportsTallHeroMinHeight,
+  getHeroSportStripSlotStyle,
+} from '@/constants/sportsHeroLayout';
+import F1PremiumHeroInner from '@/components/F1PremiumHeroInner';
 
 const { width: SCREEN_WIDTH } = Dimensions.get('window');
 
 interface F1SectionProps {
   isDark: boolean;
   insets: { top: number; bottom: number };
-  /** Hero + sport strip — scrolls with the rest of the page (Race Center tab body). */
-  stackHeader?: React.ReactNode;
+  edgePad: number;
+  /** Sport-mode strip rendered over the hero (from Sports tab). */
+  sportToggleSlot?: React.ReactNode;
 }
+
+const F1_HERO_IMAGE = require('../assets/images/f1-race-center-hero.png');
 
 /** Race Center redesign (`F1TabRedesign.tsx`) — dark shell + brand red. */
 const BG = '#050506';
@@ -397,7 +409,18 @@ const ConstructorRow = React.memo(({ team, pos, maxPts }: {
   );
 });
 
-export default function F1Section({ insets, stackHeader }: F1SectionProps) {
+export default function F1Section({ insets, edgePad, sportToggleSlot }: F1SectionProps) {
+  const { width: windowWidth } = useWindowDimensions();
+  const heroMinHeight = useMemo(() => getSportsTallHeroMinHeight(windowWidth), [windowWidth]);
+  const heroImageStyle = useMemo(
+    () =>
+      getSportsHeroImageStyle(
+        windowWidth,
+        getSportsHeroBottomCropPx(heroMinHeight, 0.03),
+        heroMinHeight,
+      ),
+    [windowWidth, heroMinHeight],
+  );
   const [activeTab, setActiveTab] = useState<F1Tab>('schedule');
   const [scheduleFilter, setScheduleFilter] = useState<'upcoming' | 'results'>('upcoming');
   const [selectedRace, setSelectedRace] = useState<F1Race | null>(null);
@@ -438,6 +461,10 @@ export default function F1Section({ insets, stackHeader }: F1SectionProps) {
     setShowModal(true);
   }, []);
 
+  const handleHeroFeaturedPress = useCallback(() => {
+    if (nextRace) handleRacePress(nextRace);
+  }, [nextRace, handleRacePress]);
+
   const onRefresh = useCallback(async () => {
     setRefreshing(true);
     if (Platform.OS !== 'web') await Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
@@ -454,9 +481,36 @@ export default function F1Section({ insets, stackHeader }: F1SectionProps) {
         showsVerticalScrollIndicator={false}
         refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={F1_RED} colors={[F1_RED]} />}
       >
-        {stackHeader}
+        <ImageBackground
+          source={F1_HERO_IMAGE}
+          style={[
+            s.f1HeroRoot,
+            {
+              minHeight: heroMinHeight,
+              paddingTop: insets.top,
+              paddingBottom: 4,
+            },
+          ]}
+          imageStyle={heroImageStyle}
+        >
+          <View style={[s.f1HeroForeground, s.f1HeroForegroundFill, { paddingHorizontal: edgePad }]}>
+            <F1PremiumHeroInner
+              featuredRace={nextRace ?? null}
+              onRefresh={onRefresh}
+              onFeaturedPress={handleHeroFeaturedPress}
+            />
+          </View>
+        </ImageBackground>
+        {sportToggleSlot ? (
+          <View
+            style={[s.heroSportStripOverlapSlot, getHeroSportStripSlotStyle('f1'), { paddingHorizontal: edgePad }]}
+            pointerEvents="box-none"
+          >
+            {sportToggleSlot}
+          </View>
+        ) : null}
 
-        <View style={s.scrollInner}>
+        <View style={getHeroSecondaryRowStyle(edgePad, 'f1')}>
           <View style={s.segmented}>
             {tabs.map((tab) => {
               const active = activeTab === tab.key;
@@ -474,7 +528,9 @@ export default function F1Section({ insets, stackHeader }: F1SectionProps) {
               );
             })}
           </View>
+        </View>
 
+        <View style={[s.scrollInner, { paddingHorizontal: edgePad }]}>
           {activeTab === 'schedule' && (
             <View style={s.filterRow}>
               {(['upcoming', 'results'] as const).map(f => {
@@ -655,16 +711,31 @@ const s = StyleSheet.create({
     flex: 1,
     backgroundColor: BG,
   },
+  f1HeroRoot: {
+    overflow: 'hidden' as const,
+    backgroundColor: BG,
+    justifyContent: 'flex-start' as const,
+  },
+  f1HeroForeground: {
+    width: '100%',
+    position: 'relative' as const,
+    zIndex: 1,
+  },
+  f1HeroForegroundFill: {
+    flex: 1,
+    width: '100%',
+    minHeight: 0,
+  },
+  heroSportStripOverlapSlot: {},
 
   scrollInner: {
-    paddingHorizontal: 16,
+    paddingHorizontal: 0,
   },
 
   segmented: {
     flexDirection: 'row',
     marginHorizontal: 0,
-    marginTop: HERO_SECONDARY_GAP_BELOW_SPORT_STRIP,
-    marginBottom: 12,
+    marginBottom: 0,
     backgroundColor: CARD,
     borderRadius: 14,
     padding: 4,

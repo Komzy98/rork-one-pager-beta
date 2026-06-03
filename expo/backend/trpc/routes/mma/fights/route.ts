@@ -34,8 +34,8 @@ function getMmaCacheKey(type: string, params: Record<string, any>): string {
     return acc;
   }, {} as Record<string, any>);
   /** Bump when fetch logic changes so stale caches are not reused forever. */
-  const upcomingRev = type === 'upcoming' ? ':scan-v6' : '';
-  const resultsRev = type === 'results' ? ':recent-cal-v2' : '';
+  const upcomingRev = type === 'upcoming' ? ':season-first-v8' : '';
+  const resultsRev = type === 'results' ? ':recent-cal-v3' : '';
   return `mma:${type}${upcomingRev}${resultsRev}:${JSON.stringify(sorted)}`;
 }
 
@@ -341,6 +341,38 @@ function fightDedupeKey(fight: any): string {
   return `k:${d}:${n1}:${n2}`;
 }
 
+function seasonResponseBlockedByPlan(data: any): boolean {
+  const err = data?.errors;
+  if (!err || typeof err !== 'object') return false;
+  const msg = JSON.stringify(err).toLowerCase();
+  return msg.includes('free plan') || msg.includes('do not have access to this season');
+}
+
+/** Forward calendar scan — works on free tier for current-year dates (season=YYYY often blocked). */
+async function fetchUpcomingByDateScan(
+  headers: Record<string, string>,
+  now: Date,
+  filterFn: (f: any) => boolean,
+  addFights: (fights: any[]) => number,
+  maxDays = 28,
+): Promise<void> {
+  console.log(`🥊 Upcoming: forward date scan (${maxDays + 1} days)...`);
+  for (let i = 0; i <= maxDays; i++) {
+    if (i > 0) {
+      await new Promise((r) => setTimeout(r, 180));
+    }
+    const d = new Date(now);
+    d.setDate(d.getDate() + i);
+    const dateStr = formatDate(d);
+    const fights = await fetchFightsByDate(dateStr, headers);
+    const filtered = fights.filter(filterFn);
+    const added = addFights(filtered);
+    if (added > 0) {
+      console.log(`🥊   ${dateStr}: +${added} upcoming (${filtered.length} on card)`);
+    }
+  }
+}
+
 async function fetchFightsMultipleStrategies(
   type: 'upcoming' | 'results',
   headers: Record<string, string>,
@@ -373,53 +405,55 @@ async function fetchFightsMultipleStrategies(
       }
     : (f: any) => isMmaCompletedFightPayload(f);
 
-  console.log(`🥊 Strategy 1: Season ${currentYear} query...`);
-  const seasonFights = await fetchSeasonFights(String(currentYear), headers, errOut);
-  const seasonFiltered = seasonFights.filter(filterFn);
-  addFights(seasonFiltered);
-  console.log(`🥊 Season ${currentYear} ${type}: ${seasonFiltered.length}/${seasonFights.length}`);
-
-  const altYear = type === 'upcoming' ? currentYear + 1 : currentYear - 1;
-  if (allFights.length < 10) {
-    console.log(`🥊 Strategy 1b: Alt year ${altYear} season query...`);
-    const altFights = await fetchSeasonFights(String(altYear), headers, errOut);
-    const altFiltered = altFights.filter(filterFn);
-    const altAdded = addFights(altFiltered);
-    console.log(`🥊 Alt year ${altYear}: ${altAdded} added (${altFiltered.length} filtered/${altFights.length} total)`);
-  }
-
-  /**
-   * Upcoming: only scan forward calendar days when the season dump looks thin (saves API calls).
-   * Results: ALWAYS merge the last N calendar days. Season `/fights?season=` often returns many old FT rows first;
-   * we used to skip date scans whenever count ≥ 5, which hid **last weekend’s** card until cache expiry.
-   */
   if (type === 'upcoming') {
-    const dateScanThreshold = 15;
-    if (allFights.length < dateScanThreshold) {
-      console.log(`🥊 Strategy 2 (upcoming): date scan — had only ${allFights.length} fights...`);
-      const datesToCheck: string[] = [];
-      for (let i = 0; i <= 35; i++) {
-        const d = new Date(now);
-        d.setDate(d.getDate() + i);
-        datesToCheck.push(formatDate(d));
-      }
-      console.log(`🥊 Checking ${datesToCheck.length} upcoming calendar dates forward...`);
-      for (let i = 0; i < datesToCheck.length; i++) {
-        const dateStr = datesToCheck[i];
-        if (i > 0) {
-          await new Promise((r) => setTimeout(r, 400));
-        }
-        const fights = await fetchFightsByDate(dateStr, headers);
-        const filtered = fights.filter(filterFn);
-        addFights(filtered);
-        if (allFights.length >= 40) {
-          console.log(`🥊 Found ${allFights.length} fights, stopping date queries early`);
-          break;
-        }
-      }
-      console.log(`🥊 Upcoming date-scan total: ${allFights.length} fights`);
+    /**
+     * Pro / paid: full `season=YYYY` dump (hundreds of bouts). Free tier: season blocked → calendar scan.
+     */
+    const seasonUrl = `${MMA_BASE_URL}/fights?season=${currentYear}`;
+    const seasonProbe = await mmaFetch(
+      seasonUrl,
+      headers,
+      `mma:season-probe:${currentYear}`,
+      MMA_CACHE_TTL.season,
+    );
+    const seasonBlocked = seasonResponseBlockedByPlan(seasonProbe);
+
+    if (!seasonBlocked) {
+      console.log(`🥊 Upcoming strategy: season ${currentYear} (Pro/paid)...`);
+      const seasonFights = await fetchSeasonFights(String(currentYear), headers, errOut);
+      const seasonFiltered = seasonFights.filter(filterFn);
+      addFights(seasonFiltered);
+      console.log(`🥊 Season ${currentYear} upcoming: ${seasonFiltered.length}/${seasonFights.length}`);
+
+      const nextYear = currentYear + 1;
+      console.log(`🥊 Upcoming: also season ${nextYear}...`);
+      const nextFights = await fetchSeasonFights(String(nextYear), headers, errOut);
+      addFights(nextFights.filter(filterFn));
+      console.log(`🥊 After ${nextYear} season: ${allFights.length} total upcoming`);
+    } else {
+      console.log(`🥊 Season ${currentYear} blocked by plan — using calendar date scan`);
+    }
+
+    if (seasonBlocked || allFights.length < 12) {
+      await fetchUpcomingByDateScan(headers, now, filterFn, addFights, seasonBlocked ? 35 : 14);
+      console.log(`🥊 Upcoming after date supplement: ${allFights.length} fights`);
     }
   } else {
+    console.log(`🥊 Strategy 1: Season ${currentYear} query...`);
+    const seasonFights = await fetchSeasonFights(String(currentYear), headers, errOut);
+    const seasonFiltered = seasonFights.filter(filterFn);
+    addFights(seasonFiltered);
+    console.log(`🥊 Season ${currentYear} ${type}: ${seasonFiltered.length}/${seasonFights.length}`);
+
+    const altYear = currentYear - 1;
+    if (allFights.length < 10) {
+      console.log(`🥊 Strategy 1b: Alt year ${altYear} season query...`);
+      const altFights = await fetchSeasonFights(String(altYear), headers, errOut);
+      const altFiltered = altFights.filter(filterFn);
+      const altAdded = addFights(altFiltered);
+      console.log(`🥊 Alt year ${altYear}: ${altAdded} added (${altFiltered.length} filtered/${altFights.length} total)`);
+    }
+
     const RECENT_RESULTS_DAYS = 45;
     console.log(
       `🥊 Strategy 2 (results): merging last ${RECENT_RESULTS_DAYS} calendar days (recent fight nights / weekends)...`,

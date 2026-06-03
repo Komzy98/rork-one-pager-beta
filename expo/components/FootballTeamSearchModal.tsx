@@ -14,6 +14,7 @@ import {
   View,
 } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
+import { BlurView } from 'expo-blur';
 import { Image } from 'expo-image';
 import * as Haptics from 'expo-haptics';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -24,26 +25,53 @@ import {
   MapPin,
   Search,
   Trophy,
-  TrendingUp,
   Users,
 } from 'lucide-react-native';
 import {
-  ApiStandingRow,
-  findTeamStandingRow,
-  footballApi,
+  type ApiStandingRow,
   getFootballCurrentSeason,
-  pickPrimaryLeagueForTeam,
   type CoachLite,
   type SquadPlayerLite,
   type TeamLeagueEntry,
 } from '@/utils/footballApi';
+import { trpc } from '@/lib/trpc';
 import type { LiveFootballMatch, UserTeam } from '@/types/habit';
 import { useUserProfile } from '@/hooks/useUserProfile';
+import {
+  PremiumSportsMatchCard,
+  liveFootballMatchToCardModel,
+} from '@/components/PremiumSportsMatchCard';
 
 const GREEN = '#2E9A3F';
 const GREEN_BRIGHT = '#3CCD59';
 const GREEN_DEEP = '#1a6b2c';
-const GREEN_BORDER_SOFT = 'rgba(46, 154, 63, 0.22)';
+
+/** Single source of truth for club profile chrome — avoids mixed greens, blues, and golds. */
+function clubProfileTheme(isDark: boolean) {
+  return {
+    canvas: isDark ? '#0E1014' : '#E8E6E1',
+    surface: isDark ? '#161A21' : '#FFFFFF',
+    border: isDark ? 'rgba(255,255,255,0.1)' : 'rgba(21, 24, 31, 0.1)',
+    ink: isDark ? '#F2F0EB' : '#15181F',
+    inkMuted: isDark ? '#9BA3AE' : '#5E6672',
+    inkSoft: isDark ? '#6B7480' : '#8A929E',
+    accent: isDark ? '#6B9B7A' : '#4A7C59',
+    accentSoft: isDark ? 'rgba(107, 155, 122, 0.18)' : 'rgba(74, 124, 89, 0.12)',
+    label: isDark ? '#B8AA82' : '#7A6F4A',
+    formW: isDark ? '#5A9B6E' : '#3D7A52',
+    formD: isDark ? '#6B7280' : '#94A3B8',
+    formL: isDark ? '#B87070' : '#C45C5C',
+    matchCard: {
+      card: isDark ? '#161A21' : '#FFFFFF',
+      border: isDark ? 'rgba(255,255,255,0.1)' : 'rgba(21, 24, 31, 0.1)',
+      surfaceSecondary: isDark ? '#1E242C' : '#F3F2EF',
+      text: isDark ? '#F2F0EB' : '#15181F',
+      textMuted: isDark ? '#9BA3AE' : '#5E6672',
+      primary: isDark ? '#6B9B7A' : '#4A7C59',
+      warning: isDark ? '#B8AA82' : '#7A6F4A',
+    },
+  };
+}
 
 /** Open modal straight to a club (e.g. from hero “My clubs” crests). */
 export type FootballClubProfilePreset = {
@@ -92,38 +120,64 @@ function parseMatchKickoffMs(m: LiveFootballMatch): number {
   }
 }
 
-/** Fixture window — club schedules can have gaps beyond ~6 weeks. */
-const FIXTURE_FETCH_DAYS = 120;
-const MAX_FIXTURES_SHOWN = 12;
+const MAX_FIXTURES_SHOWN = 3;
 
-function formatFixtureKickoff(m: LiveFootballMatch): { dateLabel: string; timeLabel: string } {
-  try {
-    if (m.date.includes('T')) {
-      const d = new Date(m.date);
-      if (!Number.isNaN(d.getTime())) {
-        return {
-          dateLabel: d.toLocaleDateString('en-GB', { weekday: 'short', day: 'numeric', month: 'short' }),
-          timeLabel: m.time && m.time !== 'TBD' ? m.time : 'TBD',
-        };
-      }
-    }
-    const seg = m.date.split('-');
-    if (seg.length === 3) {
-      const y = Number(seg[0]);
-      const mo = Number(seg[1]);
-      const day = Number(seg[2]);
-      const d = new Date(y, mo - 1, day);
-      if (!Number.isNaN(d.getTime())) {
-        return {
-          dateLabel: d.toLocaleDateString('en-GB', { weekday: 'short', day: 'numeric', month: 'short' }),
-          timeLabel: m.time && m.time !== 'TBD' ? m.time : 'TBD',
-        };
-      }
-    }
-  } catch {
-    /* fall through */
-  }
-  return { dateLabel: m.date, timeLabel: m.time || '—' };
+function FormPillStrip({
+  form,
+  theme,
+}: {
+  form: string;
+  theme: ReturnType<typeof clubProfileTheme>;
+}) {
+  const chars = form
+    .replace(/[^WDL]/gi, '')
+    .slice(-5)
+    .toUpperCase()
+    .split('');
+  if (!chars.length) return null;
+
+  const pillColor = (c: string) => {
+    if (c === 'W') return theme.formW;
+    if (c === 'D') return theme.formD;
+    if (c === 'L') return theme.formL;
+    return theme.inkSoft;
+  };
+
+  return (
+    <View style={styles.formPillRow}>
+      {chars.map((c, i) => (
+        <View key={`${c}-${i}`} style={[styles.formPill, { backgroundColor: pillColor(c) }]}>
+          <Text style={styles.formPillText}>{c}</Text>
+        </View>
+      ))}
+    </View>
+  );
+}
+
+function SectionHeader({
+  kicker,
+  title,
+  trailing,
+  theme,
+}: {
+  kicker: string;
+  title: string;
+  trailing?: React.ReactNode;
+  theme: ReturnType<typeof clubProfileTheme>;
+}) {
+  return (
+    <View style={styles.sectionTitleRow}>
+      <View style={styles.sectionKickerRow}>
+        <View style={[styles.sectionKickerDot, { backgroundColor: theme.accent }]} />
+        <Text style={[styles.sectionKicker, { color: theme.label }]}>{kicker}</Text>
+      </View>
+      <View style={styles.sectionHeadLine}>
+        <Text style={[styles.sectionHeading, { color: theme.ink }]}>{title}</Text>
+        {trailing}
+      </View>
+      <View style={[styles.sectionRule, { backgroundColor: theme.border }]} />
+    </View>
+  );
 }
 
 export default function FootballTeamSearchModal({
@@ -134,6 +188,7 @@ export default function FootballTeamSearchModal({
 }: FootballTeamSearchModalProps) {
   const insets = useSafeAreaInsets();
   const { profile, addFavoriteTeam } = useUserProfile();
+  const cp = useMemo(() => clubProfileTheme(isDark), [isDark]);
 
   const bg = isDark ? '#121412' : '#FAFBFA';
   const card = isDark ? '#1D221E' : '#FFFFFF';
@@ -141,199 +196,141 @@ export default function FootballTeamSearchModal({
   const text = isDark ? '#F2F5F2' : '#101828';
   const muted = isDark ? '#A7B0A8' : '#667085';
 
-  /** Richer surfaces when viewing a club profile (vs search list). */
-  const profileShellBg = selected ? (isDark ? '#080A09' : '#F1F7F3') : bg;
-  const profileCard = selected ? (isDark ? '#141916' : '#FFFFFF') : card;
-  const profileBorder = selected ? (isDark ? 'rgba(82, 214, 130, 0.20)' : 'rgba(46, 154, 63, 0.14)') : border;
-  const profileMuted = selected ? (isDark ? '#8B9690' : '#5C6570') : muted;
-
   const [query, setQuery] = useState('');
-  const [results, setResults] = useState<SearchHit[]>([]);
-  const [searchLoading, setSearchLoading] = useState(false);
+  const [debouncedQuery, setDebouncedQuery] = useState('');
   const [selected, setSelected] = useState<SearchHit | null>(null);
-  const [clubProfile, setClubProfile] = useState<LoadedClubProfile | null>(null);
-  const [profileLoading, setProfileLoading] = useState(false);
-  const [profileError, setProfileError] = useState<string | null>(null);
 
-  const [fixturesLoading, setFixturesLoading] = useState(false);
-  const [squadExtrasLoading, setSquadExtrasLoading] = useState(false);
-  const [squadPlayers, setSquadPlayers] = useState<SquadPlayerLite[]>([]);
-  const [coaches, setCoaches] = useState<CoachLite[]>([]);
-  const [nextMatches, setNextMatches] = useState<LiveFootballMatch[]>([]);
+  const profileShellBg = selected ? cp.canvas : bg;
+  const profileBorder = selected ? cp.border : border;
+  const profileMuted = selected ? cp.inkMuted : muted;
+  const profileText = selected ? cp.ink : text;
 
   useEffect(() => {
     if (!visible) {
       setQuery('');
-      setResults([]);
+      setDebouncedQuery('');
       setSelected(null);
-      setClubProfile(null);
-      setProfileError(null);
-      setSquadPlayers([]);
-      setCoaches([]);
-      setNextMatches([]);
     }
   }, [visible]);
 
-  /** Hero “My clubs” → jump to profile (resolve API id via preset or name search). */
   useEffect(() => {
-    if (!visible || !initialClub) return;
-    let cancelled = false;
-    void (async () => {
-      const aid = initialClub.apiId;
-      if (aid != null && aid > 0) {
-        if (!cancelled) {
-          setSelected({
-            id: aid,
-            name: initialClub.name,
-            logo: initialClub.logo,
-          });
-        }
-        return;
-      }
-      try {
-        const hits = await footballApi.searchTeams(initialClub.name);
-        const hit = hits[0];
-        if (cancelled || !hit) return;
-        setSelected({
-          id: hit.id,
-          name: hit.name,
-          logo: hit.logo || initialClub.logo,
-        });
-      } catch {
-        /* keep search UI */
-      }
-    })();
-    return () => {
-      cancelled = true;
-    };
-  }, [visible, initialClub]);
-
-  useEffect(() => {
-    const q = query.trim();
-    if (q.length < 2) {
-      setResults([]);
-      setSearchLoading(false);
-      return;
-    }
-    setSearchLoading(true);
-    const t = setTimeout(() => {
-      void (async () => {
-        try {
-          const hits = await footballApi.searchTeams(q);
-          setResults(hits);
-        } finally {
-          setSearchLoading(false);
-        }
-      })();
-    }, 380);
+    const t = setTimeout(() => setDebouncedQuery(query.trim()), 380);
     return () => clearTimeout(t);
   }, [query]);
 
-  useEffect(() => {
-    if (!selected) {
-      setClubProfile(null);
-      return;
-    }
-    let cancelled = false;
-    setProfileLoading(true);
-    setProfileError(null);
-    void (async () => {
-      try {
-        const season = getFootballCurrentSeason();
-        const [info, leagues] = await Promise.all([
-          footballApi.getTeamInfo(selected.id),
-          footballApi.getTeamLeaguesCurrent(selected.id),
-        ]);
-        if (cancelled) return;
-        const primary = pickPrimaryLeagueForTeam(leagues);
-        let standing: ApiStandingRow | null = null;
-        let statsForm: string | undefined;
-        if (primary) {
-          const [standingsRaw, stats] = await Promise.all([
-            footballApi.getLeagueStandingsRaw(primary.id, season),
-            footballApi.getTeamSeasonStatistics(selected.id, primary.id, season),
-          ]);
-          if (cancelled) return;
-          standing = findTeamStandingRow(standingsRaw, selected.id);
-          const form = stats && 'form' in stats ? stats.form : undefined;
-          statsForm = typeof form === 'string' ? form : undefined;
-        }
-        setClubProfile({
-          info:
-            info ??
-            ({
-              id: selected.id,
-              name: selected.name,
-              logo: selected.logo,
-              country: '',
-            } as LoadedClubProfile['info']),
-          league: primary,
-          season,
-          standing,
-          statsForm,
-        });
-      } catch {
-        if (!cancelled) setProfileError('Could not load club profile.');
-      } finally {
-        if (!cancelled) setProfileLoading(false);
-      }
-    })();
-    return () => {
-      cancelled = true;
-    };
-  }, [selected]);
+  const initialClubName = initialClub?.name?.trim() ?? '';
+  const initialClubSearchQuery = trpc.football.searchTeams.useQuery(
+    { query: initialClubName },
+    {
+      enabled:
+        visible &&
+        !!initialClub &&
+        (initialClub.apiId == null || initialClub.apiId <= 0) &&
+        initialClubName.length >= 2,
+      staleTime: 24 * 60 * 60 * 1000,
+    },
+  );
 
   useEffect(() => {
-    if (!selected) {
-      setNextMatches([]);
+    if (!visible || !initialClub) return;
+    const aid = initialClub.apiId;
+    if (aid != null && aid > 0) {
+      setSelected({
+        id: aid,
+        name: initialClub.name,
+        logo: initialClub.logo,
+      });
       return;
     }
-    let cancelled = false;
-    setFixturesLoading(true);
-    void (async () => {
-      try {
-        const upcoming = await footballApi.getUpcomingMatches(FIXTURE_FETCH_DAYS, [selected.id]);
-        if (cancelled) return;
-        const up = (upcoming ?? []).filter((m) => m.status === 'Upcoming');
-        up.sort((a, b) => parseMatchKickoffMs(a) - parseMatchKickoffMs(b));
-        setNextMatches(up.slice(0, MAX_FIXTURES_SHOWN));
-      } finally {
-        if (!cancelled) setFixturesLoading(false);
-      }
-    })();
-    return () => {
-      cancelled = true;
-    };
-  }, [selected]);
+    const hit = initialClubSearchQuery.data?.teams?.[0];
+    if (hit) {
+      setSelected({
+        id: hit.id,
+        name: hit.name,
+        logo: hit.logo || initialClub.logo,
+      });
+    }
+  }, [visible, initialClub, initialClubSearchQuery.data]);
 
-  useEffect(() => {
-    if (!selected) {
-      setSquadPlayers([]);
-      setCoaches([]);
-      return;
-    }
-    let cancelled = false;
-    setSquadExtrasLoading(true);
-    void (async () => {
-      try {
-        const [players, coachList] = await Promise.all([
-          footballApi.getTeamSquadPlayers(selected.id),
-          footballApi.getTeamCoaches(selected.id),
-        ]);
-        if (cancelled) return;
-        setSquadPlayers(players);
-        setCoaches(coachList);
-      } finally {
-        if (!cancelled) setSquadExtrasLoading(false);
-      }
-    })();
-    return () => {
-      cancelled = true;
+  const teamSearchQuery = trpc.football.searchTeams.useQuery(
+    { query: debouncedQuery },
+    {
+      enabled: visible && debouncedQuery.length >= 2,
+      staleTime: 10 * 60 * 1000,
+    },
+  );
+
+  const results: SearchHit[] =
+    debouncedQuery.length >= 2 ? (teamSearchQuery.data?.teams ?? []) : [];
+  const searchLoading = debouncedQuery.length >= 2 && teamSearchQuery.isFetching;
+
+  const clubProfileQuery = trpc.football.getClubProfile.useQuery(
+    { teamId: selected?.id ?? 0, nextFixtures: 15 },
+    {
+      enabled: visible && !!selected?.id,
+      staleTime: 15 * 60 * 1000,
+    },
+  );
+
+  const clubProfile = useMemo((): LoadedClubProfile | null => {
+    if (!selected) return null;
+    const d = clubProfileQuery.data;
+    if (!d?.info && clubProfileQuery.isLoading) return null;
+    const info = d?.info;
+    return {
+      info: info
+        ? {
+            id: info.id ?? selected.id,
+            name: info.name,
+            logo: info.logo,
+            country: info.country,
+            venue: info.venue,
+            founded: typeof info.founded === 'number' ? info.founded : undefined,
+          }
+        : {
+            id: selected.id,
+            name: selected.name,
+            logo: selected.logo,
+            country: '',
+          },
+      league: d?.primaryLeague ?? null,
+      season: d?.season ?? getFootballCurrentSeason(),
+      standing: (d?.standing as ApiStandingRow | null) ?? null,
+      statsForm: d?.statsForm,
     };
-  }, [selected]);
+  }, [selected, clubProfileQuery.data, clubProfileQuery.isLoading]);
+
+  const profileLoading = !!selected && (clubProfileQuery.isLoading || clubProfileQuery.isFetching);
+  const profileError =
+    clubProfileQuery.isError ||
+    (clubProfileQuery.data?.errors && 'config' in clubProfileQuery.data.errors)
+      ? 'Could not load club profile.'
+      : null;
+  const fixturesLoading = profileLoading;
+  const squadExtrasLoading = profileLoading;
+
+  const squadPlayers: SquadPlayerLite[] = clubProfileQuery.data?.squad ?? [];
+  const coaches: CoachLite[] = clubProfileQuery.data?.coaches ?? [];
+
+  const nextMatches = useMemo((): LiveFootballMatch[] => {
+    const upcoming = clubProfileQuery.data?.upcoming ?? [];
+    const now = Date.now();
+    const up = upcoming.filter((m: LiveFootballMatch) => {
+      if (m.status === 'Completed') return false;
+      if (m.status === 'Upcoming') return true;
+      return parseMatchKickoffMs(m) >= now - 3 * 60 * 60 * 1000;
+    });
+    up.sort((a: LiveFootballMatch, b: LiveFootballMatch) => parseMatchKickoffMs(a) - parseMatchKickoffMs(b));
+    return up.slice(0, MAX_FIXTURES_SHOWN);
+  }, [clubProfileQuery.data?.upcoming]);
 
   const formDisplay =
     (clubProfile?.standing?.form && String(clubProfile.standing.form)) || clubProfile?.statsForm || '—';
+
+  const leagueRank = clubProfile?.standing?.rank;
+  const leaguePoints = clubProfile?.standing?.points;
+  const hasSeasonPerformance =
+    !!clubProfile?.league || !!clubProfile?.standing || formDisplay !== '—';
 
   const alreadyFavorite = useMemo(() => {
     if (!selected || !profile?.favoriteTeams) return false;
@@ -350,11 +347,6 @@ export default function FootballTeamSearchModal({
 
   const goBackToSearch = useCallback(() => {
     setSelected(null);
-    setClubProfile(null);
-    setProfileError(null);
-    setSquadPlayers([]);
-    setCoaches([]);
-    setNextMatches([]);
   }, []);
 
   const addToFavourites = useCallback(() => {
@@ -379,36 +371,38 @@ export default function FootballTeamSearchModal({
         style={[styles.flex, { backgroundColor: profileShellBg, paddingTop: insets.top }]}
         behavior={Platform.OS === 'ios' ? 'padding' : undefined}
       >
-        <View
-          style={[
-            styles.headerRow,
-            {
-              borderBottomColor: selected ? (isDark ? 'rgba(52, 211, 92, 0.18)' : 'rgba(46, 154, 63, 0.12)') : border,
-              backgroundColor: selected ? (isDark ? 'rgba(20, 25, 22, 0.94)' : 'rgba(255, 255, 255, 0.72)') : 'transparent',
-            },
-          ]}
-        >
-          {selected ? (
-            <TouchableOpacity onPress={goBackToSearch} style={styles.iconBtn} accessibilityRole="button">
-              <ArrowLeft size={22} color={text} />
+        {selected ? (
+          <BlurView
+            intensity={isDark ? 48 : 72}
+            tint={isDark ? 'dark' : 'light'}
+            style={[styles.headerRow, styles.headerRowPremium, { borderBottomColor: cp.border, backgroundColor: cp.surface }]}
+          >
+            <TouchableOpacity onPress={goBackToSearch} style={[styles.iconBtnPremium, { backgroundColor: cp.accentSoft }]} accessibilityRole="button">
+              <ArrowLeft size={20} color={cp.ink} />
             </TouchableOpacity>
-          ) : (
-            <View style={{ width: 40 }} />
-          )}
-          <View style={{ flex: 1, alignItems: 'center', justifyContent: 'center', paddingHorizontal: 6 }}>
-            <Text style={[styles.headerTitle, { color: text }]}>
-              {selected ? 'Club profile' : 'Find a team'}
-            </Text>
-            {selected ? (
-              <Text style={[styles.headerSubtitle, { color: profileMuted }]} numberOfLines={1}>
-                Standings · fixtures · squad
+            <View style={{ flex: 1, alignItems: 'center', justifyContent: 'center', paddingHorizontal: 6 }}>
+              <Text style={[styles.headerTitle, styles.headerTitlePremium, { color: cp.ink }]} numberOfLines={1}>
+                {selected.name}
               </Text>
-            ) : null}
+              <Text style={[styles.headerSubtitle, { color: cp.inkMuted }]} numberOfLines={1}>
+                {clubProfile?.league?.name ?? 'Club profile'}
+              </Text>
+            </View>
+            <TouchableOpacity onPress={onClose} style={[styles.donePill, { backgroundColor: cp.accentSoft }]} hitSlop={12}>
+              <Text style={[styles.donePillText, { color: cp.accent }]}>Done</Text>
+            </TouchableOpacity>
+          </BlurView>
+        ) : (
+          <View style={[styles.headerRow, { borderBottomColor: border }]}>
+            <View style={{ width: 40 }} />
+            <View style={{ flex: 1, alignItems: 'center' }}>
+              <Text style={[styles.headerTitle, { color: text }]}>Find a team</Text>
+            </View>
+            <TouchableOpacity onPress={onClose} style={styles.closePad} hitSlop={12}>
+              <Text style={{ color: GREEN, fontWeight: '700' }}>Done</Text>
+            </TouchableOpacity>
           </View>
-          <TouchableOpacity onPress={onClose} style={styles.closePad} hitSlop={12}>
-            <Text style={{ color: GREEN, fontWeight: '700' }}>Done</Text>
-          </TouchableOpacity>
-        </View>
+        )}
 
         {!selected ? (
           <View style={styles.pad}>
@@ -472,323 +466,165 @@ export default function FootballTeamSearchModal({
                 styles.heroOuter,
                 Platform.OS === 'ios'
                   ? {
-                      shadowColor: GREEN,
-                      shadowOffset: { width: 0, height: 14 },
-                      shadowOpacity: isDark ? 0.22 : 0.14,
-                      shadowRadius: 22,
+                      shadowColor: cp.ink,
+                      shadowOffset: { width: 0, height: 8 },
+                      shadowOpacity: isDark ? 0.35 : 0.08,
+                      shadowRadius: 16,
                     }
-                  : { elevation: isDark ? 8 : 5 },
+                  : { elevation: isDark ? 6 : 3 },
               ]}
             >
-              <LinearGradient
-                colors={
-                  isDark
-                    ? ['#1a3328', '#0f1612', '#0a0e0c']
-                    : ['#e8f8ee', '#f6fffa', '#ffffff']
-                }
-                start={{ x: 0, y: 0 }}
-                end={{ x: 1, y: 1 }}
-                style={[styles.heroGradient, { borderColor: profileBorder }]}
-              >
-                <LinearGradient
-                  colors={['rgba(255,255,255,0.14)', 'rgba(255,255,255,0)', 'transparent']}
-                  start={{ x: 0.5, y: 0 }}
-                  end={{ x: 0.5, y: 0.55 }}
-                  pointerEvents="none"
-                  style={styles.heroShine}
-                />
-                <LinearGradient
-                  colors={[`${GREEN}66`, 'transparent']}
-                  start={{ x: 0, y: 0 }}
-                  end={{ x: 1, y: 0 }}
-                  pointerEvents="none"
-                  style={styles.heroSheenBand}
-                />
-                <View style={[styles.heroAccentBar, { backgroundColor: GREEN_BRIGHT }]} />
+              <View style={[styles.heroGradient, { backgroundColor: cp.surface, borderColor: cp.border }]}>
+                <View style={[styles.heroAccentBar, { backgroundColor: cp.accent }]} />
                 <View style={styles.heroTop}>
-                  <LinearGradient
-                    colors={[GREEN_BRIGHT, GREEN, GREEN_DEEP]}
-                    start={{ x: 0, y: 0 }}
-                    end={{ x: 1, y: 1 }}
-                    style={styles.heroLogoRing}
-                  >
-                    <View style={[styles.heroLogoInner, { backgroundColor: profileCard }]}>
+                  <View style={[styles.heroLogoRing, { borderColor: cp.border, backgroundColor: cp.accentSoft }]}>
+                    <View style={[styles.heroLogoInner, { backgroundColor: cp.surface }]}>
                       {selected.logo ? (
                         <Image source={{ uri: selected.logo }} style={styles.heroLogo} contentFit="contain" />
                       ) : (
-                        <View style={[styles.heroLogo, { backgroundColor: profileBorder }]} />
+                        <View style={[styles.heroLogo, { backgroundColor: cp.border }]} />
                       )}
                     </View>
-                  </LinearGradient>
+                  </View>
                   <View style={{ flex: 1, minWidth: 0 }}>
-                    <Text style={[styles.heroKicker, { color: GREEN_BRIGHT }]}>Club profile</Text>
-                    <Text style={[styles.clubName, styles.clubNamePremium, { color: text }]} numberOfLines={2}>
+                    <Text style={[styles.heroKicker, { color: cp.label }]}>Club profile</Text>
+                    <Text style={[styles.clubName, styles.clubNamePremium, { color: cp.ink }]} numberOfLines={2}>
                       {selected.name}
                     </Text>
                     {clubProfile?.info.country ? (
-                      <Text style={[styles.meta, { color: profileMuted }]}>{clubProfile.info.country}</Text>
+                      <Text style={[styles.meta, { color: cp.inkMuted }]}>{clubProfile.info.country}</Text>
                     ) : null}
                     {clubProfile?.info.founded ? (
-                      <Text style={[styles.meta, { color: profileMuted }]}>Founded {clubProfile.info.founded}</Text>
+                      <Text style={[styles.meta, { color: cp.inkMuted }]}>Founded {clubProfile.info.founded}</Text>
                     ) : null}
                     {clubProfile?.info.venue ? (
                       <View style={styles.venueRow}>
-                        <MapPin size={14} color={profileMuted} />
-                        <Text style={[styles.meta, { color: profileMuted, flex: 1 }]} numberOfLines={2}>
+                        <MapPin size={14} color={cp.inkSoft} />
+                        <Text style={[styles.meta, { color: cp.inkMuted, flex: 1 }]} numberOfLines={2}>
                           {clubProfile.info.venue}
+                        </Text>
+                      </View>
+                    ) : null}
+                    {clubProfile?.league ? (
+                      <View style={[styles.leagueChip, { backgroundColor: cp.accentSoft }]}>
+                        {clubProfile.league.logo ? (
+                          <Image source={{ uri: clubProfile.league.logo }} style={styles.leagueChipLogo} contentFit="contain" />
+                        ) : (
+                          <Trophy size={12} color={cp.accent} />
+                        )}
+                        <Text style={[styles.leagueChipText, { color: cp.ink }]} numberOfLines={1}>
+                          {clubProfile.league.name}
                         </Text>
                       </View>
                     ) : null}
                   </View>
                 </View>
-              </LinearGradient>
-            </View>
-
-            <View style={styles.sectionBlock}>
-              <View style={styles.sectionTitleRow}>
-                <Text style={[styles.sectionKicker, { color: GREEN_BRIGHT }]}>Schedule</Text>
-                <View style={styles.sectionHeadLine}>
-                  <Text style={[styles.sectionHeading, { color: text }]}>Upcoming fixtures</Text>
-                  {!fixturesLoading && nextMatches.length > 0 ? (
-                    <Text style={[styles.sectionCount, { color: profileMuted }]}>
-                      Next {Math.min(nextMatches.length, MAX_FIXTURES_SHOWN)}
-                    </Text>
-                  ) : null}
-                </View>
-              </View>
-              {fixturesLoading ? (
-                <View style={[styles.loadingCard, { backgroundColor: profileCard, borderColor: profileBorder }]}>
-                  <ActivityIndicator color={GREEN_BRIGHT} />
-                  <Text style={{ color: profileMuted, marginTop: 10, fontSize: 14 }}>Loading fixtures…</Text>
-                </View>
-              ) : nextMatches.length > 0 ? (
-                nextMatches.map((m) => {
-                  const { dateLabel, timeLabel } = formatFixtureKickoff(m);
-                  const homeHighlight = m.homeTeamId === selected.id;
-                  const awayHighlight = m.awayTeamId === selected.id;
-                  return (
-                    <View
-                      key={m.id}
-                      style={[
-                        styles.fixtureCard,
-                        styles.fixtureCardPremium,
-                        {
-                          backgroundColor: profileCard,
-                          borderColor: profileBorder,
-                          borderLeftColor: GREEN_BRIGHT,
-                          borderLeftWidth: 4,
-                        },
-                      ]}
-                    >
-                      <View style={styles.fixtureLeagueRow}>
-                        {m.leagueLogo ? (
-                          <Image source={{ uri: m.leagueLogo }} style={styles.fixtureLeagueLogo} contentFit="contain" />
-                        ) : null}
-                        <Text style={[styles.fixtureLeagueName, { color: profileMuted }]} numberOfLines={1}>
-                          {m.league}
-                          {m.round ? ` · ${m.round}` : ''}
-                        </Text>
+                {!profileLoading && (leagueRank != null || leaguePoints != null || formDisplay !== '—') ? (
+                  <View style={[styles.heroStatsPanel, { borderColor: cp.border }]}>
+                    {leagueRank != null ? (
+                      <View style={styles.heroStatBlock}>
+                        <Text style={[styles.heroStatLabel, { color: cp.inkMuted }]}>Rank</Text>
+                        <Text style={[styles.heroStatValue, { color: cp.ink }]}>#{leagueRank}</Text>
                       </View>
-                      <View style={styles.fixtureVsRow}>
-                        <View style={[styles.fixtureTeamCol, homeHighlight && styles.fixtureTeamColHi]}>
-                          {m.homeTeamLogo ? (
-                            <Image source={{ uri: m.homeTeamLogo }} style={styles.fixtureCrest} contentFit="contain" />
-                          ) : (
-                            <View style={[styles.fixtureCrest, { backgroundColor: profileBorder }]} />
-                          )}
-                          <Text
-                            style={[styles.fixtureTeamName, { color: text }, homeHighlight && { fontWeight: '800' }]}
-                            numberOfLines={2}
-                          >
-                            {m.homeTeam}
-                          </Text>
-                          {homeHighlight ? (
-                            <Text style={[styles.youBadge, { color: GREEN_BRIGHT }]}>This club</Text>
-                          ) : null}
-                        </View>
-                        <View style={[styles.fixtureVsPill, { backgroundColor: isDark ? 'rgba(60,205,100,0.18)' : 'rgba(46,154,63,0.12)' }]}>
-                          <Text style={[styles.fixtureVsTextInner, { color: GREEN_BRIGHT }]}>vs</Text>
-                        </View>
-                        <View style={[styles.fixtureTeamCol, awayHighlight && styles.fixtureTeamColHi]}>
-                          {m.awayTeamLogo ? (
-                            <Image source={{ uri: m.awayTeamLogo }} style={styles.fixtureCrest} contentFit="contain" />
-                          ) : (
-                            <View style={[styles.fixtureCrest, { backgroundColor: profileBorder }]} />
-                          )}
-                          <Text
-                            style={[styles.fixtureTeamName, { color: text }, awayHighlight && { fontWeight: '800' }]}
-                            numberOfLines={2}
-                          >
-                            {m.awayTeam}
-                          </Text>
-                          {awayHighlight ? (
-                            <Text style={[styles.youBadge, { color: GREEN_BRIGHT }]}>This club</Text>
-                          ) : null}
-                        </View>
+                    ) : null}
+                    {leaguePoints != null ? (
+                      <View style={[styles.heroStatBlock, styles.heroStatBlockMid, { borderColor: cp.border }]}>
+                        <Text style={[styles.heroStatLabel, { color: cp.inkMuted }]}>Points</Text>
+                        <Text style={[styles.heroStatValue, { color: cp.ink }]}>{leaguePoints}</Text>
                       </View>
-                      <View style={[styles.fixtureFooter, { borderTopColor: profileBorder }]}>
-                        <View style={styles.fixtureWhenBlock}>
-                          <Calendar size={15} color={GREEN_BRIGHT} />
-                          <View>
-                            <Text style={[styles.fixtureDateMain, { color: text }]}>{dateLabel}</Text>
-                            <Text style={[styles.fixtureTimeSub, { color: profileMuted }]}>{timeLabel}</Text>
-                          </View>
-                        </View>
-                        {m.venue ? (
-                          <View style={styles.fixtureVenueBlock}>
-                            <MapPin size={14} color={profileMuted} />
-                            <Text style={[styles.fixtureVenueTxt, { color: profileMuted }]} numberOfLines={2}>
-                              {m.venue}
-                            </Text>
-                          </View>
-                        ) : null}
-                      </View>
+                    ) : null}
+                    <View style={[styles.heroStatBlock, styles.heroStatBlockForm]}>
+                      <Text style={[styles.heroStatLabel, { color: cp.inkMuted }]}>Form</Text>
+                      {formDisplay !== '—' ? (
+                        <FormPillStrip form={formDisplay} theme={cp} />
+                      ) : (
+                        <Text style={[styles.heroStatValue, { color: cp.ink }]}>—</Text>
+                      )}
                     </View>
-                  );
-                })
-              ) : (
-                <View style={[styles.fixtureEmpty, { backgroundColor: profileCard, borderColor: profileBorder }]}>
-                  <Calendar size={26} color={profileMuted} />
-                  <Text style={[styles.fixtureEmptyTitle, { color: text }]}>No fixtures in view</Text>
-                  <Text style={[styles.fixtureEmptySub, { color: profileMuted }]}>
-                    Nothing scheduled for this club in the next {FIXTURE_FETCH_DAYS} days — draws, cups, or international
-                    breaks can leave gaps until fixtures are published.
-                  </Text>
-                </View>
-              )}
+                  </View>
+                ) : null}
+              </View>
             </View>
 
             <View style={styles.sectionBlock}>
-              <View style={styles.sectionTitleRow}>
-                <Text style={[styles.sectionKicker, { color: GREEN_BRIGHT }]}>Competition</Text>
-                <Text style={[styles.sectionHeading, { color: text }]}>Season performance</Text>
-              </View>
+              <SectionHeader kicker="Competition" title="Season performance" theme={cp} />
               {profileLoading ? (
                 <View style={styles.centerPad}>
-                  <ActivityIndicator size="large" color={GREEN_BRIGHT} />
-                  <Text style={{ color: profileMuted, marginTop: 10 }}>Loading league standings…</Text>
+                  <ActivityIndicator size="large" color={cp.accent} />
+                  <Text style={{ color: cp.inkMuted, marginTop: 10 }}>Loading league standings…</Text>
                 </View>
               ) : profileError ? (
                 <Text style={{ color: '#FF3B30', marginTop: 4 }}>{profileError}</Text>
-              ) : clubProfile?.league ? (
+              ) : hasSeasonPerformance ? (
                 <View
                   style={[
                     styles.statsCard,
                     styles.statsCardPremium,
-                    { backgroundColor: profileCard, borderColor: profileBorder },
+                    { backgroundColor: cp.surface, borderColor: cp.border },
                     Platform.OS === 'ios'
                       ? {
-                          shadowColor: GREEN,
-                          shadowOffset: { width: 0, height: 6 },
-                          shadowOpacity: isDark ? 0.18 : 0.1,
-                          shadowRadius: 14,
+                          shadowColor: cp.ink,
+                          shadowOffset: { width: 0, height: 4 },
+                          shadowOpacity: isDark ? 0.2 : 0.06,
+                          shadowRadius: 12,
                         }
-                      : { elevation: 3 },
+                      : { elevation: 2 },
                   ]}
                 >
-                  <LinearGradient
-                    colors={
-                      isDark
-                        ? ['rgba(60, 205, 100, 0.14)', 'rgba(60, 205, 100, 0)']
-                        : ['rgba(46, 154, 63, 0.1)', 'rgba(46, 154, 63, 0)']
-                    }
-                    start={{ x: 0, y: 0 }}
-                    end={{ x: 1, y: 1 }}
-                    style={styles.statsLeagueBand}
-                  >
-                    <View style={styles.statsHead}>
-                      <Trophy size={18} color={GREEN_BRIGHT} />
-                      <Text style={[styles.statsTitle, { color: text }]} numberOfLines={2}>
-                        {clubProfile.league.name} · {clubProfile.season}/{String(clubProfile.season + 1).slice(-2)}
-                      </Text>
+                  {clubProfile?.league ? (
+                    <View style={[styles.statsLeagueBand, { backgroundColor: cp.accentSoft }]}>
+                      <View style={styles.statsHead}>
+                        <Trophy size={18} color={cp.label} />
+                        <Text style={[styles.statsTitle, { color: cp.ink }]} numberOfLines={2}>
+                          {clubProfile.league.name} · {clubProfile.season}/{String(clubProfile.season + 1).slice(-2)}
+                        </Text>
+                      </View>
                     </View>
-                  </LinearGradient>
-                  {clubProfile.standing ? (
+                  ) : null}
+                  {clubProfile?.standing ? (
                     <>
                       <View style={styles.rowMetrics}>
-                        <View
-                          style={[
-                            styles.metric,
-                            isDark ? styles.metricPremiumDark : styles.metricPremiumLight,
-                            { borderColor: GREEN_BORDER_SOFT },
-                          ]}
-                        >
-                          <Text style={[styles.metricLbl, { color: profileMuted }]}>Position</Text>
-                          <Text style={[styles.metricVal, { color: text }]}>
+                        <View style={[styles.metric, { backgroundColor: cp.accentSoft, borderColor: cp.border }]}>
+                          <Text style={[styles.metricLbl, { color: cp.inkMuted }]}>Position</Text>
+                          <Text style={[styles.metricVal, { color: cp.ink }]}>
                             {clubProfile.standing.rank != null ? `${clubProfile.standing.rank}` : '—'}
                           </Text>
                         </View>
-                        <View
-                          style={[
-                            styles.metric,
-                            isDark ? styles.metricPremiumDark : styles.metricPremiumLight,
-                            { borderColor: GREEN_BORDER_SOFT },
-                          ]}
-                        >
-                          <Text style={[styles.metricLbl, { color: profileMuted }]}>Points</Text>
-                          <Text style={[styles.metricVal, { color: text }]}>
+                        <View style={[styles.metric, { backgroundColor: cp.accentSoft, borderColor: cp.border }]}>
+                          <Text style={[styles.metricLbl, { color: cp.inkMuted }]}>Points</Text>
+                          <Text style={[styles.metricVal, { color: cp.ink }]}>
                             {clubProfile.standing.points ?? '—'}
                           </Text>
                         </View>
-                        <View
-                          style={[
-                            styles.metric,
-                            isDark ? styles.metricPremiumDark : styles.metricPremiumLight,
-                            { borderColor: GREEN_BORDER_SOFT },
-                          ]}
-                        >
-                          <Text style={[styles.metricLbl, { color: profileMuted }]}>Played</Text>
-                          <Text style={[styles.metricVal, { color: text }]}>
+                        <View style={[styles.metric, { backgroundColor: cp.accentSoft, borderColor: cp.border }]}>
+                          <Text style={[styles.metricLbl, { color: cp.inkMuted }]}>Played</Text>
+                          <Text style={[styles.metricVal, { color: cp.ink }]}>
                             {clubProfile.standing.all?.played ?? '—'}
                           </Text>
                         </View>
                       </View>
                       <View style={styles.rowMetrics}>
-                        <View
-                          style={[
-                            styles.metric,
-                            isDark ? styles.metricPremiumDark : styles.metricPremiumLight,
-                            { borderColor: GREEN_BORDER_SOFT },
-                          ]}
-                        >
-                          <Text style={[styles.metricLbl, { color: profileMuted }]}>W</Text>
-                          <Text style={[styles.metricVal, { color: text }]}>
+                        <View style={[styles.metric, { backgroundColor: cp.accentSoft, borderColor: cp.border }]}>
+                          <Text style={[styles.metricLbl, { color: cp.inkMuted }]}>W</Text>
+                          <Text style={[styles.metricVal, { color: cp.ink }]}>
                             {clubProfile.standing.all?.win ?? '—'}
                           </Text>
                         </View>
-                        <View
-                          style={[
-                            styles.metric,
-                            isDark ? styles.metricPremiumDark : styles.metricPremiumLight,
-                            { borderColor: GREEN_BORDER_SOFT },
-                          ]}
-                        >
-                          <Text style={[styles.metricLbl, { color: profileMuted }]}>D</Text>
-                          <Text style={[styles.metricVal, { color: text }]}>
+                        <View style={[styles.metric, { backgroundColor: cp.accentSoft, borderColor: cp.border }]}>
+                          <Text style={[styles.metricLbl, { color: cp.inkMuted }]}>D</Text>
+                          <Text style={[styles.metricVal, { color: cp.ink }]}>
                             {clubProfile.standing.all?.draw ?? '—'}
                           </Text>
                         </View>
-                        <View
-                          style={[
-                            styles.metric,
-                            isDark ? styles.metricPremiumDark : styles.metricPremiumLight,
-                            { borderColor: GREEN_BORDER_SOFT },
-                          ]}
-                        >
-                          <Text style={[styles.metricLbl, { color: profileMuted }]}>L</Text>
-                          <Text style={[styles.metricVal, { color: text }]}>
+                        <View style={[styles.metric, { backgroundColor: cp.accentSoft, borderColor: cp.border }]}>
+                          <Text style={[styles.metricLbl, { color: cp.inkMuted }]}>L</Text>
+                          <Text style={[styles.metricVal, { color: cp.ink }]}>
                             {clubProfile.standing.all?.lose ?? '—'}
                           </Text>
                         </View>
-                        <View
-                          style={[
-                            styles.metric,
-                            isDark ? styles.metricPremiumDark : styles.metricPremiumLight,
-                            { borderColor: GREEN_BORDER_SOFT },
-                          ]}
-                        >
-                          <Text style={[styles.metricLbl, { color: profileMuted }]}>GD</Text>
-                          <Text style={[styles.metricVal, { color: text }]}>
+                        <View style={[styles.metric, { backgroundColor: cp.accentSoft, borderColor: cp.border }]}>
+                          <Text style={[styles.metricLbl, { color: cp.inkMuted }]}>GD</Text>
+                          <Text style={[styles.metricVal, { color: cp.ink }]}>
                             {clubProfile.standing.goalsDiff != null
                               ? `${clubProfile.standing.goalsDiff > 0 ? '+' : ''}${clubProfile.standing.goalsDiff}`
                               : '—'}
@@ -797,78 +633,114 @@ export default function FootballTeamSearchModal({
                       </View>
                     </>
                   ) : (
-                    <Text style={{ color: profileMuted, marginBottom: 10 }}>
+                    <Text style={{ color: cp.inkMuted, marginBottom: 10 }}>
                       League table position isn&apos;t available for this competition or season yet.
                     </Text>
                   )}
-                  <View
-                    style={[
-                      styles.formRow,
-                      styles.formRowPremium,
-                      {
-                        backgroundColor: isDark ? 'rgba(46, 154, 63, 0.12)' : 'rgba(46, 154, 63, 0.08)',
-                        borderWidth: StyleSheet.hairlineWidth,
-                        borderColor: isDark ? 'rgba(82, 214, 130, 0.25)' : 'rgba(46, 154, 63, 0.18)',
-                      },
-                    ]}
-                  >
-                    <TrendingUp size={16} color={GREEN_BRIGHT} />
-                    <Text style={[styles.formLbl, { color: profileMuted }]}>Recent form</Text>
-                    <Text style={[styles.formStr, { color: text }]}>{formDisplay}</Text>
-                  </View>
+                  {formDisplay !== '—' ? (
+                    <View style={[styles.formRow, styles.formRowPremium, { backgroundColor: cp.accentSoft, borderColor: cp.border }]}>
+                      <Text style={[styles.formLbl, { color: cp.inkMuted }]}>Recent form</Text>
+                      <FormPillStrip form={formDisplay} theme={cp} />
+                    </View>
+                  ) : null}
                 </View>
               ) : (
-                <Text style={{ color: profileMuted, marginTop: 4 }}>
-                  No current domestic league found for this squad in the API (e.g. national teams or off-season). Try another
-                  club.
+                <Text style={{ color: cp.inkMuted, marginTop: 4, lineHeight: 20 }}>
+                  Season stats aren&apos;t available for this club right now.
                 </Text>
               )}
             </View>
 
             <View style={styles.sectionBlock}>
-              <View style={styles.sectionTitleRow}>
-                <Text style={[styles.sectionKicker, { color: GREEN_BRIGHT }]}>Team</Text>
-                <Text style={[styles.sectionHeading, { color: text }]}>Coach & squad</Text>
-              </View>
+              <SectionHeader
+                kicker="Schedule"
+                title="Next 3 fixtures"
+                theme={cp}
+                trailing={
+                  !fixturesLoading && nextMatches.length > 0 ? (
+                    <Text style={[styles.sectionCountQuiet, { color: cp.inkSoft }]}>Upcoming</Text>
+                  ) : null
+                }
+              />
+              {fixturesLoading ? (
+                <View style={[styles.loadingCard, { backgroundColor: cp.accentSoft, borderColor: cp.border }]}>
+                  <ActivityIndicator color={cp.accent} />
+                  <Text style={{ color: cp.inkMuted, marginTop: 10, fontSize: 14 }}>Loading fixtures…</Text>
+                </View>
+              ) : nextMatches.length > 0 ? (
+                <View style={styles.fixtureList}>
+                  {nextMatches.slice(0, MAX_FIXTURES_SHOWN).map((m) => (
+                    <PremiumSportsMatchCard
+                      key={m.id}
+                      match={liveFootballMatchToCardModel(m)}
+                      surfaceColors={cp.matchCard}
+                      isFavoriteTeam={(teamName) => {
+                        const normalized = teamName.toLowerCase().trim();
+                        const club = selected.name.toLowerCase().trim();
+                        if (normalized === club) return true;
+                        if (m.homeTeamId === selected.id && normalized === m.homeTeam.toLowerCase().trim()) {
+                          return true;
+                        }
+                        if (m.awayTeamId === selected.id && normalized === m.awayTeam.toLowerCase().trim()) {
+                          return true;
+                        }
+                        return false;
+                      }}
+                    />
+                  ))}
+                </View>
+              ) : (
+                <View style={[styles.fixtureEmpty, { backgroundColor: cp.accentSoft, borderColor: cp.border }]}>
+                  <Calendar size={22} color={cp.inkSoft} />
+                  <Text style={[styles.fixtureEmptyTitle, { color: profileText }]}>No upcoming fixtures</Text>
+                  <Text style={[styles.fixtureEmptySub, { color: profileMuted }]}>
+                    No matches scheduled in the current fixture window.
+                  </Text>
+                </View>
+              )}
+            </View>
+
+            <View style={styles.sectionBlock}>
+              <SectionHeader kicker="Team" title="Coach & squad" theme={cp} />
               {squadExtrasLoading ? (
-                <View style={[styles.loadingCard, { backgroundColor: profileCard, borderColor: profileBorder }]}>
-                  <ActivityIndicator color={GREEN_BRIGHT} />
-                  <Text style={{ color: profileMuted, marginTop: 10, fontSize: 14 }}>Loading squad…</Text>
+                <View style={[styles.loadingCard, { backgroundColor: cp.accentSoft, borderColor: cp.border }]}>
+                  <ActivityIndicator color={cp.accent} />
+                  <Text style={{ color: cp.inkMuted, marginTop: 10, fontSize: 14 }}>Loading squad…</Text>
                 </View>
               ) : coaches.length > 0 || squadPlayers.length > 0 ? (
                 <View
                   style={[
                     styles.sectionCard,
                     styles.sectionCardPremium,
-                    { backgroundColor: profileCard, borderColor: profileBorder },
+                    { backgroundColor: cp.surface, borderColor: cp.border },
                     Platform.OS === 'ios'
                       ? {
-                          shadowColor: GREEN,
-                          shadowOffset: { width: 0, height: 5 },
-                          shadowOpacity: isDark ? 0.14 : 0.08,
-                          shadowRadius: 12,
+                          shadowColor: cp.ink,
+                          shadowOffset: { width: 0, height: 4 },
+                          shadowOpacity: isDark ? 0.18 : 0.06,
+                          shadowRadius: 10,
                         }
-                      : { elevation: 3 },
+                      : { elevation: 2 },
                   ]}
                 >
                   <View style={styles.sectionHead}>
-                    <Users size={18} color={GREEN_BRIGHT} />
-                    <Text style={[styles.sectionTitle, { color: text }]}>Squad depth</Text>
+                    <Users size={18} color={cp.label} />
+                    <Text style={[styles.sectionTitle, { color: cp.ink }]}>Squad depth</Text>
                   </View>
                   {coaches.map((c, idx) => (
                     <View key={`coach-${idx}-${c.name}`} style={styles.coachBlock}>
-                      <Text style={[styles.roleLbl, { color: profileMuted }]}>Coach</Text>
+                      <Text style={[styles.roleLbl, { color: cp.inkMuted }]}>Coach</Text>
                       <View style={styles.coachRow}>
                         {c.photo ? (
                           <Image
                             source={{ uri: c.photo }}
-                            style={[styles.coachPhoto, { borderWidth: 2, borderColor: GREEN_BORDER_SOFT }]}
+                            style={[styles.coachPhoto, { borderWidth: 2, borderColor: cp.border }]}
                             contentFit="cover"
                           />
                         ) : (
-                          <View style={[styles.coachPhoto, { backgroundColor: profileBorder }]} />
+                          <View style={[styles.coachPhoto, { backgroundColor: cp.border }]} />
                         )}
-                        <Text style={[styles.coachName, { color: text }]} numberOfLines={2}>
+                        <Text style={[styles.coachName, { color: cp.ink }]} numberOfLines={2}>
                           {c.name}
                         </Text>
                       </View>
@@ -876,24 +748,24 @@ export default function FootballTeamSearchModal({
                   ))}
                   {squadPlayers.length > 0 ? (
                     <View style={styles.squadWrap}>
-                      <Text style={[styles.roleLbl, { color: profileMuted, marginBottom: 10 }]}>Players</Text>
+                      <Text style={[styles.roleLbl, { color: cp.inkMuted, marginBottom: 10 }]}>Players</Text>
                       <View style={styles.squadGrid}>
                         {squadPlayers.map((p) => (
-                          <View key={p.id} style={styles.playerCell}>
+                          <View key={p.id} style={[styles.playerCell, { backgroundColor: cp.accentSoft }]}>
                             {p.photo ? (
                               <Image
                                 source={{ uri: p.photo }}
-                                style={[styles.playerPhoto, { borderWidth: 1, borderColor: GREEN_BORDER_SOFT }]}
+                                style={[styles.playerPhoto, { borderWidth: 1, borderColor: cp.border }]}
                                 contentFit="cover"
                               />
                             ) : (
-                              <View style={[styles.playerPhoto, { backgroundColor: profileBorder }]} />
+                              <View style={[styles.playerPhoto, { backgroundColor: cp.border }]} />
                             )}
-                            <Text style={[styles.playerName, { color: text }]} numberOfLines={2}>
+                            <Text style={[styles.playerName, { color: cp.ink }]} numberOfLines={2}>
                               {p.name}
                             </Text>
                             {p.position ? (
-                              <Text style={[styles.playerPos, { color: profileMuted }]} numberOfLines={1}>
+                              <Text style={[styles.playerPos, { color: cp.inkMuted }]} numberOfLines={1}>
                                 {p.position}
                               </Text>
                             ) : null}
@@ -902,11 +774,11 @@ export default function FootballTeamSearchModal({
                       </View>
                     </View>
                   ) : coaches.length === 0 ? (
-                    <Text style={{ color: profileMuted }}>Squad list not available from the API right now.</Text>
+                    <Text style={{ color: cp.inkMuted }}>Squad list not available from the API right now.</Text>
                   ) : null}
                 </View>
               ) : (
-                <Text style={{ color: profileMuted, marginTop: 4 }}>
+                <Text style={{ color: cp.inkMuted, marginTop: 4 }}>
                   Squad details aren&apos;t available for this club right now.
                 </Text>
               )}
@@ -916,34 +788,22 @@ export default function FootballTeamSearchModal({
         )}
 
         {selected && !alreadyFavorite && profile ? (
-          <View
-            style={[
-              styles.fabBar,
-              {
-                paddingBottom: Math.max(insets.bottom, 12),
-                backgroundColor: profileShellBg,
-                borderTopColor: profileBorder,
-              },
-            ]}
+          <BlurView
+            intensity={isDark ? 55 : 80}
+            tint={isDark ? 'dark' : 'light'}
+            style={[styles.fabBar, { paddingBottom: Math.max(insets.bottom, 12), borderTopColor: cp.border }]}
           >
             <TouchableOpacity
               onPress={addToFavourites}
               activeOpacity={0.92}
               accessibilityRole="button"
               accessibilityLabel="Add team to favourites"
-              style={styles.favBtnOuter}
+              style={[styles.favBtnOuter, { backgroundColor: cp.accent }]}
             >
-              <LinearGradient
-                colors={[GREEN_BRIGHT, GREEN, GREEN_DEEP]}
-                start={{ x: 0, y: 0 }}
-                end={{ x: 1, y: 1 }}
-                style={styles.favBtnGradient}
-              >
-                <Heart size={20} color="#FFF" />
-                <Text style={styles.favBtnText}>Add to favourites</Text>
-              </LinearGradient>
+              <Heart size={18} color="#FFF" fill="#FFF" />
+              <Text style={styles.favBtnText}>Add to favourites</Text>
             </TouchableOpacity>
-          </View>
+          </BlurView>
         ) : null}
       </KeyboardAvoidingView>
     </Modal>
@@ -960,9 +820,30 @@ const styles = StyleSheet.create({
     paddingBottom: 12,
     borderBottomWidth: StyleSheet.hairlineWidth,
   },
+  headerRowPremium: {
+    paddingTop: 6,
+    paddingBottom: 14,
+    borderBottomWidth: 1,
+  },
   headerTitle: { fontSize: 17, fontWeight: '700' },
+  headerTitlePremium: { fontSize: 16, fontWeight: '800', letterSpacing: -0.3 },
   headerSubtitle: { fontSize: 11, fontWeight: '600', marginTop: 2, letterSpacing: 0.2 },
   iconBtn: { width: 40, height: 40, justifyContent: 'center' },
+  iconBtnPremium: {
+    width: 38,
+    height: 38,
+    borderRadius: 12,
+    justifyContent: 'center',
+    alignItems: 'center',
+    backgroundColor: 'rgba(127,127,127,0.12)',
+  },
+  donePill: {
+    paddingHorizontal: 14,
+    paddingVertical: 8,
+    borderRadius: 20,
+    backgroundColor: 'rgba(46, 154, 63, 0.14)',
+  },
+  donePillText: { fontWeight: '700', fontSize: 14 },
   closePad: { paddingHorizontal: 8, paddingVertical: 8 },
   pad: { flex: 1, paddingHorizontal: 18 },
   searchBox: {
@@ -1014,8 +895,9 @@ const styles = StyleSheet.create({
     borderTopRightRadius: 20,
   },
   heroLogoRing: {
-    padding: 2,
+    padding: 3,
     borderRadius: 20,
+    borderWidth: 1,
   },
   heroLogoInner: {
     padding: 7,
@@ -1037,14 +919,69 @@ const styles = StyleSheet.create({
     alignSelf: 'stretch',
   },
   heroTop: { flexDirection: 'row', gap: 14, alignItems: 'flex-start' },
-  heroLogo: { width: 76, height: 76, borderRadius: 14 },
+  heroLogo: { width: 82, height: 82, borderRadius: 16 },
   clubNamePremium: {
-    fontSize: 24,
-    letterSpacing: -0.7,
-    lineHeight: 30,
+    fontSize: 26,
+    letterSpacing: -0.8,
+    lineHeight: 32,
   },
-  sectionBlock: { marginTop: 24 },
-  sectionTitleRow: { marginBottom: 12, gap: 4 },
+  leagueChip: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    alignSelf: 'flex-start',
+    marginTop: 10,
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    borderRadius: 20,
+  },
+  leagueChipLogo: { width: 16, height: 16 },
+  leagueChipText: { fontSize: 12, fontWeight: '700', maxWidth: 200 },
+  heroStatsPanel: {
+    flexDirection: 'row',
+    marginTop: 16,
+    paddingTop: 14,
+    borderTopWidth: 1,
+    alignItems: 'stretch',
+  },
+  heroStatBlock: { flex: 1, alignItems: 'center', justifyContent: 'center', paddingVertical: 4 },
+  heroStatBlockMid: { borderLeftWidth: 1, borderRightWidth: 1 },
+  heroStatBlockForm: { flex: 1.2 },
+  heroStatLabel: {
+    fontSize: 10,
+    fontWeight: '700',
+    textTransform: 'uppercase',
+    letterSpacing: 0.8,
+    marginBottom: 6,
+  },
+  heroStatValue: { fontSize: 22, fontWeight: '900', letterSpacing: -0.5 },
+  formPillRow: { flexDirection: 'row', gap: 4, justifyContent: 'center' },
+  formPill: {
+    width: 22,
+    height: 22,
+    borderRadius: 6,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  formPillText: { fontSize: 11, fontWeight: '900', color: '#fff' },
+  sectionBlock: { marginTop: 28 },
+  sectionTitleRow: { marginBottom: 14, gap: 6 },
+  sectionKickerRow: { flexDirection: 'row', alignItems: 'center', gap: 8 },
+  sectionKickerDot: {
+    width: 6,
+    height: 6,
+    borderRadius: 3,
+  },
+  sectionRule: {
+    height: 1,
+    opacity: 0.35,
+    marginTop: 10,
+  },
+  sectionCountPill: {
+    paddingHorizontal: 10,
+    paddingVertical: 4,
+    borderRadius: 20,
+  },
   sectionHeadLine: {
     flexDirection: 'row',
     alignItems: 'baseline',
@@ -1059,6 +996,7 @@ const styles = StyleSheet.create({
   },
   sectionHeading: { fontSize: 21, fontWeight: '800', flexShrink: 1, letterSpacing: -0.4 },
   sectionCount: { fontSize: 12, fontWeight: '700' },
+  sectionCountQuiet: { fontSize: 12, fontWeight: '600' },
   loadingCard: {
     alignItems: 'center',
     paddingVertical: 28,
@@ -1066,68 +1004,9 @@ const styles = StyleSheet.create({
     borderRadius: 16,
     borderWidth: StyleSheet.hairlineWidth,
   },
-  fixtureCard: {
-    borderRadius: 16,
-    borderWidth: StyleSheet.hairlineWidth,
-    padding: 14,
-    marginBottom: 12,
-    overflow: 'hidden',
+  fixtureList: {
+    marginHorizontal: -6,
   },
-  fixtureCardPremium: {
-    borderRadius: 20,
-  },
-  fixtureVsPill: {
-    paddingHorizontal: 11,
-    paddingVertical: 5,
-    borderRadius: 11,
-    justifyContent: 'center' as const,
-    alignItems: 'center' as const,
-    alignSelf: 'center' as const,
-    marginTop: 10,
-  },
-  fixtureVsTextInner: {
-    fontSize: 11,
-    fontWeight: '900' as const,
-    letterSpacing: 0.8,
-    textTransform: 'uppercase' as const,
-  },
-  fixtureLeagueRow: { flexDirection: 'row', alignItems: 'center', gap: 8, marginBottom: 12 },
-  fixtureLeagueLogo: { width: 20, height: 20, borderRadius: 4 },
-  fixtureLeagueName: { flex: 1, fontSize: 12, fontWeight: '700' },
-  fixtureVsRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    gap: 8,
-    marginBottom: 12,
-  },
-  fixtureTeamCol: {
-    flex: 1,
-    alignItems: 'center',
-    minWidth: 0,
-    paddingVertical: 6,
-    paddingHorizontal: 6,
-    borderRadius: 12,
-  },
-  fixtureTeamColHi: {
-    backgroundColor: 'rgba(46, 154, 63, 0.09)',
-  },
-  fixtureCrest: { width: 40, height: 40, marginBottom: 8, borderRadius: 10 },
-  fixtureTeamName: { fontSize: 13, fontWeight: '600', textAlign: 'center', width: '100%' },
-  youBadge: { fontSize: 10, fontWeight: '800', marginTop: 4, letterSpacing: 0.3 },
-  fixtureFooter: {
-    flexDirection: 'row',
-    alignItems: 'flex-start',
-    justifyContent: 'space-between',
-    gap: 12,
-    paddingTop: 12,
-    borderTopWidth: StyleSheet.hairlineWidth,
-  },
-  fixtureWhenBlock: { flexDirection: 'row', alignItems: 'center', gap: 10, flexShrink: 0 },
-  fixtureDateMain: { fontSize: 15, fontWeight: '800' },
-  fixtureTimeSub: { fontSize: 13, fontWeight: '600', marginTop: 2 },
-  fixtureVenueBlock: { flex: 1, flexDirection: 'row', alignItems: 'flex-start', gap: 6, minWidth: 0 },
-  fixtureVenueTxt: { flex: 1, fontSize: 12, lineHeight: 16 },
   fixtureEmpty: {
     alignItems: 'center',
     paddingVertical: 24,
@@ -1154,11 +1033,13 @@ const styles = StyleSheet.create({
   },
   statsLeagueBand: {
     paddingBottom: 14,
-    marginBottom: 4,
+    marginBottom: 12,
     marginHorizontal: -16,
     marginTop: -16,
     paddingHorizontal: 16,
     paddingTop: 16,
+    borderBottomWidth: StyleSheet.hairlineWidth,
+    borderBottomColor: 'rgba(127,127,127,0.12)',
   },
   statsHead: { flexDirection: 'row', alignItems: 'center', gap: 10, marginBottom: 0 },
   statsTitle: { flex: 1, fontSize: 15, fontWeight: '800' },
@@ -1172,14 +1053,8 @@ const styles = StyleSheet.create({
     padding: 10,
     alignItems: 'center',
   },
-  metricPremiumLight: {
-    backgroundColor: 'rgba(46, 154, 63, 0.07)',
-  },
-  metricPremiumDark: {
-    backgroundColor: 'rgba(72, 214, 130, 0.08)',
-  },
   metricLbl: { fontSize: 11, fontWeight: '600', marginBottom: 4 },
-  metricVal: { fontSize: 17, fontWeight: '800' },
+  metricVal: { fontSize: 18, fontWeight: '900', letterSpacing: -0.3 },
   formRow: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -1218,11 +1093,18 @@ const styles = StyleSheet.create({
     gap: 10,
     justifyContent: 'flex-start',
   },
-  playerCell: { width: '30%', minWidth: 96, marginBottom: 12 },
+  playerCell: {
+    width: '30%',
+    minWidth: 96,
+    marginBottom: 12,
+    padding: 8,
+    borderRadius: 14,
+    backgroundColor: 'rgba(127,127,127,0.06)',
+  },
   playerPhoto: {
     width: '100%',
     aspectRatio: 1,
-    borderRadius: 12,
+    borderRadius: 14,
     maxHeight: 96,
   },
   playerName: { fontSize: 11, fontWeight: '700', marginTop: 6 },
@@ -1233,26 +1115,21 @@ const styles = StyleSheet.create({
     paddingTop: 10,
   },
   favBtnOuter: {
-    borderRadius: 15,
-    overflow: 'hidden' as const,
-    ...Platform.select({
-      ios: {
-        shadowColor: GREEN,
-        shadowOffset: { width: 0, height: 8 },
-        shadowOpacity: 0.35,
-        shadowRadius: 14,
-      },
-      android: { elevation: 6 },
-    }),
-  },
-  favBtnGradient: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
     gap: 10,
-    paddingVertical: 17,
-    paddingHorizontal: 20,
-    borderRadius: 15,
+    paddingVertical: 16,
+    borderRadius: 14,
+    ...Platform.select({
+      ios: {
+        shadowColor: '#000',
+        shadowOffset: { width: 0, height: 6 },
+        shadowOpacity: 0.18,
+        shadowRadius: 10,
+      },
+      android: { elevation: 4 },
+    }),
   },
-  favBtnText: { color: '#FFF', fontSize: 17, fontWeight: '800' },
+  favBtnText: { color: '#FFF', fontSize: 16, fontWeight: '700' },
 });

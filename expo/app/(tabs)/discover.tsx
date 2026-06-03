@@ -85,7 +85,9 @@ import {
 } from '@/mocks/habitBundles';
 import { CommunityHabit } from '@/types/habit';
 import { useSavedHabits } from '@/hooks/useHabitsEnhancement';
+import { useCommunity } from '@/hooks/useCommunity';
 import { useRecentlyViewed } from '@/hooks/useRecentlyViewed';
+import { router } from 'expo-router';
 import { useApp } from '@/hooks/useHabitsStore';
 import HabitDetailModal from '@/components/HabitDetailModal';
 import * as Haptics from 'expo-haptics';
@@ -306,7 +308,7 @@ const SpotlightCard = ({
                   ) : (
                     <>
                       <Plus size={14} color="#fff" />
-                      <Text style={styles.spotlightAddText}>Add to Routine</Text>
+                      <Text style={styles.spotlightAddText}>Add to today</Text>
                     </>
                   )}
                 </TouchableOpacity>
@@ -743,8 +745,38 @@ export default function DiscoverScreen() {
   const insets = useSafeAreaInsets();
   const { isDark, colors } = useTheme();
   const { addCommunityHabit, removeSavedHabit, isHabitSaved, savedCount, communityHabitIds, savedHabits } = useSavedHabits();
+  const {
+    publishedHabits,
+    available: communityAvailable,
+    recordSave,
+    getStatsFor,
+    loadStats,
+  } = useCommunity();
   const { recentlyViewedIds, addRecentlyViewed } = useRecentlyViewed();
   const { habits } = useApp();
+
+  // Merge user-published habits into the catalog (newest first), then the built-ins.
+  const catalogHabits = useMemo<CommunityHabit[]>(
+    () => [...publishedHabits, ...COMMUNITY_HABITS],
+    [publishedHabits],
+  );
+
+  // Overlay real, shared save/like counts onto any habit when we have them.
+  const withStats = useCallback(
+    (habit: CommunityHabit): CommunityHabit => {
+      const s = getStatsFor(habit.id);
+      return s ? { ...habit, saves: s.saves, likes: s.likes } : habit;
+    },
+    [getStatsFor],
+  );
+
+  // Pull real counts for the built-in catalog once the backend is reachable.
+  useEffect(() => {
+    if (communityAvailable === true) {
+      void loadStats(COMMUNITY_HABITS.map((h) => h.id));
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [communityAvailable]);
   
   const [refreshing, setRefreshing] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
@@ -786,7 +818,7 @@ export default function DiscoverScreen() {
   }, [recentlyViewedIds]);
 
   const filteredHabits = useMemo(() => {
-    let result = COMMUNITY_HABITS;
+    let result = catalogHabits;
 
     if (selectedCollection) {
       result = getCollectionHabits(selectedCollection);
@@ -805,8 +837,8 @@ export default function DiscoverScreen() {
       );
     }
 
-    return result;
-  }, [activeCategory, searchQuery, selectedCollection, selectedBundle]);
+    return result.map(withStats);
+  }, [catalogHabits, activeCategory, searchQuery, selectedCollection, selectedBundle, withStats]);
 
   const onRefresh = () => {
     setRefreshing(true);
@@ -826,6 +858,7 @@ export default function DiscoverScreen() {
             onPress: () => {
               void Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
               removeSavedHabit(communityHabit.id);
+              void recordSave(communityHabit.id, false);
             },
           },
         ]
@@ -834,8 +867,8 @@ export default function DiscoverScreen() {
     }
     
     Alert.alert(
-      'Add to Routine?',
-      `Add "${communityHabit.name}" to your daily routine?`,
+      'Add to today?',
+      `Add "${communityHabit.name}" to today?`,
       [
         { text: 'Cancel', style: 'cancel' },
         {
@@ -843,11 +876,12 @@ export default function DiscoverScreen() {
           onPress: () => {
             void Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
             addCommunityHabit(communityHabit);
+            void recordSave(communityHabit.id, true);
           },
         },
       ]
     );
-  }, [isHabitSaved, addCommunityHabit, removeSavedHabit]);
+  }, [isHabitSaved, addCommunityHabit, removeSavedHabit, recordSave]);
 
   const handleHabitPress = useCallback((habit: CommunityHabit) => {
     addRecentlyViewed(habit.id);
@@ -888,10 +922,10 @@ export default function DiscoverScreen() {
 
   const savedHabitDetails = useMemo(() => {
     return savedHabits.map(sh => {
-      const community = COMMUNITY_HABITS.find(ch => ch.id === sh.communityHabitId);
+      const community = catalogHabits.find(ch => ch.id === sh.communityHabitId);
       return { saved: sh, community };
     }).filter((item): item is { saved: typeof savedHabits[number]; community: CommunityHabit } => !!item.community);
-  }, [savedHabits]);
+  }, [savedHabits, catalogHabits]);
 
   const isShowingFiltered = selectedCollection || selectedBundle || activeCategory !== 'All' || searchQuery.length > 0;
   const showHomeContent = !isShowingFiltered;
@@ -924,30 +958,46 @@ export default function DiscoverScreen() {
               <View style={styles.headerTitleGroup}>
                 <Text style={[styles.headerTitle, { color: isDark ? '#FFFFFF' : '#0F172A' }]}>Discover</Text>
                 <Text style={[styles.headerSubtitle, { color: isDark ? '#5A5A6E' : '#8E8E93' }]}>
-                  Explore habits that transform your life
+                  Full catalog — quick adds live on Overview
                 </Text>
               </View>
             </View>
-            <TouchableOpacity 
-              style={[styles.savedBadge, { 
-                backgroundColor: showSavedList ? '#007AFF' : (isDark ? '#161628' : '#FFFFFF'),
-                borderColor: showSavedList ? '#007AFF' : (isDark ? '#1F1F34' : '#E5E5EA'),
-              }]}
-              activeOpacity={0.7}
-              onPress={() => {
-                void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-                setShowSavedList(prev => !prev);
-                if (!showSavedList) {
-                  setSelectedCollection(null);
-                  setSelectedBundle(null);
-                  setSearchQuery('');
-                  setSearchFocused(false);
-                }
-              }}
-            >
-              <Bookmark size={13} color={showSavedList ? '#FFFFFF' : '#007AFF'} fill={showSavedList ? '#FFFFFF' : '#007AFF'} />
-              <Text style={[styles.savedBadgeText, showSavedList && { color: '#FFFFFF' }]}>{savedCount}</Text>
-            </TouchableOpacity>
+            <View style={styles.headerActions}>
+              <TouchableOpacity
+                style={[styles.publishBadge, {
+                  backgroundColor: isDark ? '#161628' : '#FFFFFF',
+                  borderColor: isDark ? '#1F1F34' : '#E5E5EA',
+                }]}
+                activeOpacity={0.7}
+                onPress={() => {
+                  void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+                  router.push('/publish-habit' as any);
+                }}
+              >
+                <Plus size={13} color="#007AFF" />
+                <Text style={styles.publishBadgeText}>Publish</Text>
+              </TouchableOpacity>
+              <TouchableOpacity 
+                style={[styles.savedBadge, { 
+                  backgroundColor: showSavedList ? '#007AFF' : (isDark ? '#161628' : '#FFFFFF'),
+                  borderColor: showSavedList ? '#007AFF' : (isDark ? '#1F1F34' : '#E5E5EA'),
+                }]}
+                activeOpacity={0.7}
+                onPress={() => {
+                  void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+                  setShowSavedList(prev => !prev);
+                  if (!showSavedList) {
+                    setSelectedCollection(null);
+                    setSelectedBundle(null);
+                    setSearchQuery('');
+                    setSearchFocused(false);
+                  }
+                }}
+              >
+                <Bookmark size={13} color={showSavedList ? '#FFFFFF' : '#007AFF'} fill={showSavedList ? '#FFFFFF' : '#007AFF'} />
+                <Text style={[styles.savedBadgeText, showSavedList && { color: '#FFFFFF' }]}>{savedCount}</Text>
+              </TouchableOpacity>
+            </View>
           </View>
           
           <View style={[
@@ -1092,6 +1142,7 @@ export default function DiscoverScreen() {
                                 onPress: () => {
                                   void Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
                                   removeSavedHabit(community.id);
+                                  void recordSave(community.id, false);
                                 },
                               },
                             ]
@@ -1402,6 +1453,11 @@ const styles = StyleSheet.create({
     marginTop: 3,
     fontWeight: '400' as const,
   },
+  headerActions: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+  },
   savedBadge: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -1413,6 +1469,20 @@ const styles = StyleSheet.create({
   },
   savedBadgeText: {
     fontSize: 14,
+    fontWeight: '700' as const,
+    color: '#007AFF',
+  },
+  publishBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    borderRadius: 12,
+    gap: 4,
+    borderWidth: 1,
+  },
+  publishBadgeText: {
+    fontSize: 13,
     fontWeight: '700' as const,
     color: '#007AFF',
   },

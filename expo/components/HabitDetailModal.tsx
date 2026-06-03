@@ -35,6 +35,8 @@ import { COLORS } from '@/constants/colors';
 import { CommunityHabit, ExerciseFormGuide } from '@/types/habit';
 import * as Haptics from 'expo-haptics';
 import { useRouter } from 'expo-router';
+import { Platform } from 'react-native';
+import { useCommunity } from '@/hooks/useCommunity';
 import { LinearGradient } from 'expo-linear-gradient';
 
 
@@ -167,6 +169,19 @@ export default function HabitDetailModal({
   const [formGuideTab, setFormGuideTab] = useState<'gif' | 'guide'>('gif');
   const [selectedDays, setSelectedDays] = useState<number[]>([]);
   const router = useRouter();
+  const { available: communityAvailable, likedIds, recordLike, getStatsFor } = useCommunity();
+
+  const liked = habit ? likedIds.has(habit.id) : false;
+  const likeCount = habit ? (getStatsFor(habit.id)?.likes ?? habit.likes) : 0;
+  const canLike = communityAvailable === true && !!habit;
+
+  const handleToggleLike = React.useCallback(() => {
+    if (!habit || !canLike) return;
+    if (Platform.OS !== 'web') {
+      Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light).catch(() => {});
+    }
+    void recordLike(habit.id, !liked);
+  }, [habit, canLike, liked, recordLike]);
 
   React.useEffect(() => {
     if (habit) {
@@ -370,11 +385,22 @@ export default function HabitDetailModal({
 
             <View style={styles.socialProofSection}>
               <View style={styles.socialProofRow}>
-                <View style={styles.socialProofItem}>
-                  <Heart size={18} color="#FF3B30" fill="#FF3B30" />
-                  <Text style={styles.socialProofValue}>{habit.likes.toLocaleString()}</Text>
-                  <Text style={styles.socialProofLabel}>people like this</Text>
-                </View>
+                <TouchableOpacity
+                  style={styles.socialProofItem}
+                  onPress={handleToggleLike}
+                  disabled={!canLike}
+                  activeOpacity={0.7}
+                >
+                  <Heart
+                    size={18}
+                    color="#FF3B30"
+                    fill={liked || !canLike ? '#FF3B30' : 'transparent'}
+                  />
+                  <Text style={styles.socialProofValue}>{likeCount.toLocaleString()}</Text>
+                  <Text style={styles.socialProofLabel}>
+                    {canLike ? (liked ? 'you like this' : 'like this') : 'people like this'}
+                  </Text>
+                </TouchableOpacity>
                 <View style={styles.socialProofDivider} />
                 <View style={styles.socialProofItem}>
                   <Bookmark size={18} color={COLORS.primary} fill={COLORS.primary} />

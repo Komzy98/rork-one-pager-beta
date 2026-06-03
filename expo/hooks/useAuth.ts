@@ -6,7 +6,13 @@ import * as WebBrowser from 'expo-web-browser';
 import { AuthUser, LoginCredentials, SignupCredentials } from '@/types/habit';
 import { SupabaseUserSync } from '@/utils/supabaseUserSync';
 import { clearSyncUserId, setSyncUserId } from '@/utils/supabaseSync';
-import { supabase, supabaseConfigured, supabaseUrl, signInWithPasswordDirect } from '@/utils/supabaseClient';
+import {
+  supabase,
+  supabaseConfigured,
+  supabaseUrl,
+  signInWithPasswordDirect,
+  signUpDirect,
+} from '@/utils/supabaseClient';
 import * as AuthSession from 'expo-auth-session';
 import * as Linking from 'expo-linking';
 import * as Crypto from 'expo-crypto';
@@ -679,74 +685,81 @@ export const [AuthProvider, useAuth] = createContextHook(() => {
       const displayName = `${credentials.firstName} ${credentials.lastName}`.trim();
 
       if (supabaseConfigured) {
-        let data: Awaited<ReturnType<typeof supabase.auth.signUp>>['data'] | null = null;
-        let error: Awaited<ReturnType<typeof supabase.auth.signUp>>['error'] | null = null;
         const normalizedEmail = credentials.email.trim().toLowerCase();
+        const metadata = {
+          firstName: credentials.firstName,
+          lastName: credentials.lastName,
+          name: displayName,
+          full_name: displayName,
+        };
+        let signupUser: { id: string; email?: string } | null = null;
+        let signupSession: { access_token: string; refresh_token: string } | null = null;
+        let lastError: Error | null = null;
 
         for (let attempt = 0; attempt < 3; attempt++) {
-          try {
-            const res = await supabase.auth.signUp({
-              email: normalizedEmail,
-              password: credentials.password,
-              options: {
-                data: {
-                  firstName: credentials.firstName,
-                  lastName: credentials.lastName,
-                  name: displayName,
-                  full_name: displayName,
-                },
-              },
-            });
-            data = res.data;
-            error = res.error;
-            const msg = error?.message ?? '';
-            const shouldRetry = !!error && isRetryableAuthNetworkMessage(msg) && attempt < 2;
-            if (!shouldRetry) break;
-          } catch (thrown) {
-            const msg = String((thrown as Error)?.message ?? thrown);
-            if (isRetryableAuthNetworkMessage(msg) && attempt < 2) {
-              await new Promise((r) => setTimeout(r, 450 * (attempt + 1)));
-              continue;
-            }
-            throw thrown;
+          const direct = await signUpDirect(normalizedEmail, credentials.password, metadata);
+          if (direct.data?.user) {
+            signupUser = direct.data.user;
+            signupSession = direct.data.session
+              ? {
+                  access_token: direct.data.session.access_token,
+                  refresh_token: direct.data.session.refresh_token,
+                }
+              : null;
+            lastError = null;
+            break;
           }
+          lastError = direct.error;
+          const msg = direct.error?.message ?? '';
+          if (!isRetryableAuthNetworkMessage(msg) || attempt >= 2) break;
           await new Promise((r) => setTimeout(r, 450 * (attempt + 1)));
         }
 
-        if (error || !data.user) {
-          const msg = error?.message || 'Signup failed';
+        if (!signupUser) {
+          const msg = lastError?.message || 'Signup failed';
           console.warn('Supabase signup failed:', msg);
-          const networkFriendly =
-            error != null ? friendlyMessageForAuthNetworkError(error) : friendlyMessageForAuthNetworkError(new Error(msg));
-          const friendly = /already registered|already exists/i.test(msg)
+          const networkFriendly = friendlyMessageForAuthNetworkError(lastError ?? new Error(msg));
+          const friendly = /already registered|already exists|user already registered/i.test(msg)
             ? 'An account with this email already exists'
             : networkFriendly
               ? appendDevDetail(networkFriendly, msg)
               : msg;
           return { success: false, error: friendly };
         }
+
+        if (signupSession) {
+          try {
+            await supabase.auth.setSession({
+              access_token: signupSession.access_token,
+              refresh_token: signupSession.refresh_token,
+            });
+          } catch (sessionErr) {
+            console.warn('setSession after direct signup failed:', sessionErr);
+          }
+        }
+
         const authUser: AuthUser = {
-          id: data.user.id,
-          email: data.user.email || credentials.email,
+          id: signupUser.id,
+          email: signupUser.email || credentials.email,
           name: displayName,
           isAuthenticated: true,
         };
         setIsGuest(false);
         setUser(authUser);
-        setSupabaseUser(data.user);
+        setSupabaseUser(signupUser as Parameters<typeof setSupabaseUser>[0]);
         await AsyncStorage.setItem(AUTH_STORAGE_KEY, JSON.stringify(authUser));
         void seedDefaultUserProfile(authUser.id, authUser.email, authUser.name).catch((err) => {
           console.log('Profile seed on signup failed:', err);
         });
         try {
-          const newSync = new SupabaseUserSync(data.user.id);
+          const newSync = new SupabaseUserSync(signupUser.id);
           setSupabaseSync(newSync);
           setAutoSyncEnabled(true);
-          void setSyncUserId(data.user.id);
+          void setSyncUserId(signupUser.id);
         } catch (syncError) {
           console.log('Supabase sync setup skipped on signup:', syncError);
         }
-        if (!data.session) {
+        if (!signupSession) {
           console.log('✅ Supabase signup requires email confirmation');
           return { success: true, error: 'Check your email to confirm your account before signing in.' };
         }

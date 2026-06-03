@@ -52,3 +52,30 @@ export function isMmaCompletedFightPayload(f: any): boolean {
   }
   return false;
 }
+
+/** Winner flags from the API must not dim fighters until the bout is actually finished. */
+export function resolveMmaFighterWinner(
+  fightStatus: 'Upcoming' | 'Live' | 'Completed',
+  side: 'first' | 'second',
+  opts: {
+    resultSideWinner?: boolean;
+    fighterWinner?: boolean;
+    resultWinner?: string | null;
+  },
+): boolean {
+  if (fightStatus !== 'Completed') return false;
+  if (side === 'first') {
+    return (
+      opts.resultSideWinner === true ||
+      opts.fighterWinner === true ||
+      opts.resultWinner === 'first' ||
+      opts.resultWinner === 'home'
+    );
+  }
+  return (
+    opts.resultSideWinner === true ||
+    opts.fighterWinner === true ||
+    opts.resultWinner === 'second' ||
+    opts.resultWinner === 'away'
+  );
+}

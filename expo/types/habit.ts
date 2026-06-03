@@ -406,6 +406,7 @@ export interface UserProfile {
     goalAlerts: boolean;
     habitReminders: boolean;
     habitRiskAlerts?: boolean;
+    socialNotifications?: boolean;
     quietHoursEnabled?: boolean;
     quietHoursStart?: string; // HH:mm
     quietHoursEnd?: string; // HH:mm
