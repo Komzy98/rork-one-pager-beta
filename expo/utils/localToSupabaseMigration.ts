@@ -31,6 +31,8 @@ const USER_SUFFIX_KEY_PREFIXES: string[] = [
   'tasks_',
   'task_projects_',
   'task_time_entries_',
+  'saved_community_habits_',
+  'challenges_data_',
 ];
 
 const USER_PROFILE_PREFIX = '@user_profile_';
@@ -207,7 +209,7 @@ export async function migrateGuestDataToSupabaseUser(
   ) {
     keysMerged += 1;
   }
-  for (const prefix of ['activities_', 'shows_', 'sports_']) {
+  for (const prefix of ['activities_', 'shows_', 'sports_', 'saved_community_habits_', 'challenges_data_']) {
     if (
       await mergeKeyIfSourceExists(
         `${prefix}${guestUserId}`,

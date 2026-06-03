@@ -1,4 +1,4 @@
-import { useMemo, useCallback, useEffect } from 'react';
+import { useMemo, useCallback, useEffect, useRef } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import createContextHook from '@nkzw/create-context-hook';
 import { unifiedStorage } from '@/utils/unifiedStorage';
@@ -242,6 +242,46 @@ export const [HabitsEnhancementProvider, useHabitsEnhancement] = createContextHo
 
   // === SAVED HABITS LOGIC ===
   const savedHabits = useMemo<SavedCommunityHabit[]>(() => savedHabitsQuery.data || [], [savedHabitsQuery.data]);
+
+  // Self-heal: older builds (and the guest->account migration) didn't move the
+  // saved-habits ledger to the user-scoped key, so a signed-in user could see
+  // their habits on the dashboard while Discover showed "0 saved". If the current
+  // ledger is empty, adopt the most complete orphaned ledger we can find.
+  const reconciledForRef = useRef<string | null>(null);
+  useEffect(() => {
+    if (!userId || savedHabitsQuery.isLoading) return;
+    if (savedHabits.length > 0) return;
+    if (reconciledForRef.current === userId) return;
+    reconciledForRef.current = userId;
+
+    (async () => {
+      try {
+        const allKeys = await unifiedStorage.getAllKeys();
+        const candidateKeys = allKeys.filter(
+          (k) => k.startsWith(`${SAVED_HABITS_BASE_KEY}_`) && k !== SAVED_HABITS_KEY,
+        );
+        let best: SavedCommunityHabit[] = [];
+        for (const key of candidateKeys) {
+          const raw = await unifiedStorage.getItem(key);
+          if (!raw) continue;
+          try {
+            const parsed = JSON.parse(raw);
+            if (Array.isArray(parsed) && parsed.length > best.length) {
+              best = parsed as SavedCommunityHabit[];
+            }
+          } catch {
+            // ignore malformed entries
+          }
+        }
+        if (best.length > 0) {
+          console.log('🩹 Recovered orphaned saved-habits ledger:', best.length, 'entries');
+          saveSavedHabits(best);
+        }
+      } catch (err) {
+        console.warn('Saved-habits self-heal skipped:', err);
+      }
+    })();
+  }, [userId, savedHabitsQuery.isLoading, savedHabits.length, SAVED_HABITS_KEY, saveSavedHabits]);
 
   const isHabitSaved = useCallback((communityHabitId: string): boolean => {
     return savedHabits.some((sh) => sh.communityHabitId === communityHabitId);
