@@ -50,6 +50,7 @@ export type TodayLogItem = {
 };
 
 export type HabitToggleResult = {
+  habitId: string;
   title: string;
   logged: boolean;
   streak: number;
@@ -319,6 +320,7 @@ export function resultFromToggle(
   );
   const weekly = getWeeklyHabitProgress(completions, entry.habitFrequency);
   return {
+    habitId: entry.id,
     title: entry.title,
     logged,
     streak,

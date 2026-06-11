@@ -68,6 +68,43 @@ export type DailySummaryYesterdayContext = {
   scoreLabel?: string | null;
 };
 
+export type DailySummaryScoreInput = {
+  habits?: DailySummaryHabit[];
+  habitRollup?: DailySummaryHabitRollup | null;
+  tasks?: { name: string; completed: boolean; priority?: string; category?: string }[];
+  priorityTasks?: DailySummaryPriorityTask[];
+};
+
+/**
+ * Deterministic 0–100 day score derived from real completion data so it actually
+ * reflects the day (habits weighted 70%, tasks 30%). Previously the score came
+ * from the LLM, which just echoed the "85" example in the prompt template.
+ */
+export function computeDailyScore(input: DailySummaryScoreInput): number {
+  const rollup = input.habitRollup;
+  const habitsScheduled =
+    rollup?.scheduledCount ?? (input.habits?.filter((h) => h.scheduledToday !== false).length ?? 0);
+  const habitsDone = rollup?.completedCount ?? (input.habits?.filter((h) => h.done).length ?? 0);
+
+  const tasks = input.tasks ?? [];
+  const priority = input.priorityTasks ?? [];
+  // Prefer the explicit task list; fall back to priority tasks.
+  const taskTotal = tasks.length > 0 ? tasks.length : priority.length;
+  const taskDone =
+    tasks.length > 0 ? tasks.filter((t) => t.completed).length : priority.filter((t) => t.completed).length;
+
+  const parts: { ratio: number; weight: number }[] = [];
+  if (habitsScheduled > 0) parts.push({ ratio: habitsDone / habitsScheduled, weight: 0.7 });
+  if (taskTotal > 0) parts.push({ ratio: taskDone / taskTotal, weight: 0.3 });
+
+  // Nothing scheduled today → neutral rather than a fake-perfect score.
+  if (parts.length === 0) return 50;
+
+  const totalWeight = parts.reduce((sum, p) => sum + p.weight, 0);
+  const weighted = parts.reduce((sum, p) => sum + p.ratio * p.weight, 0) / totalWeight;
+  return Math.max(0, Math.min(100, Math.round(weighted * 100)));
+}
+
 export async function summarizeDailyProgress(input: {
   date: string; // e.g., "2025-09-08"
   activities?: { name: string; minutes?: number; details?: string }[];
@@ -154,8 +191,9 @@ Generate a daily summary with this exact JSON structure:
   "streaks": [{"name": "string", "length": 0}],
   "recommendations": ["string"],
   "sentiment": "positive|neutral|negative",
-  "score": 85
-}`
+  "score": 0
+}
+(Note: "score" is recalculated by the app from real completion data — any value here is ignored.)`
           }
         ]
       })
@@ -200,6 +238,9 @@ Generate a daily summary with this exact JSON structure:
     }
     
     const summary = JSON.parse(completionText) as DailySummary;
+    // The model tends to echo the example score (85); always use the real,
+    // data-derived score so it reflects the actual day.
+    summary.score = computeDailyScore(input);
     return summary;
   } catch (error) {
     console.error('Error generating daily summary:', error);
@@ -212,7 +253,7 @@ Generate a daily summary with this exact JSON structure:
       streaks: [],
       recommendations: ["Focus on one habit at a time", "Set specific daily goals", "Celebrate small wins"],
       sentiment: "positive",
-      score: 75
+      score: computeDailyScore(input)
     };
   }
 }

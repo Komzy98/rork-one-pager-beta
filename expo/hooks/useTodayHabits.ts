@@ -2,7 +2,8 @@ import { useCallback, useMemo, useState } from 'react';
 import { useApp } from '@/hooks/useHabitsStore';
 import { useTasks } from '@/hooks/useTasksStore';
 import { mergeCompletionMaps } from '@/utils/syncMerge';
-import { getTodayFormatted } from '@/utils/dateUtils';
+import { getTodayFormatted, getLocalDateStr } from '@/utils/dateUtils';
+import type { TaskCompletion } from '@/types/task';
 import {
   applyHabitToggle,
   buildTodayHabitEntries,
@@ -22,6 +23,7 @@ export type CompletionFeedback = HabitToggleResult & {
 
 const HIDDEN_FEEDBACK: CompletionFeedback = {
   visible: false,
+  habitId: '',
   title: '',
   logged: false,
   streak: 0,
@@ -74,6 +76,26 @@ export function useTodayHabits() {
     }, 2800);
   }, []);
 
+  // Keep one timestamped completion log per day so analytics (peak hours, mood)
+  // has real data. habitCompletions only stores a date->bool map, which has no time.
+  const nextCompletionLogs = useCallback(
+    (taskObj: { id: string; completionLogs?: TaskCompletion[] }, doneToday: boolean): TaskCompletion[] => {
+      const logs = taskObj.completionLogs ?? [];
+      const hasTodayLog = logs.some((l) => getLocalDateStr(new Date(l.completedAt)) === today);
+      if (doneToday) {
+        if (hasTodayLog) return logs;
+        const newLog: TaskCompletion = {
+          id: `${Date.now()}-${Math.random().toString(36).slice(2, 9)}`,
+          taskId: taskObj.id,
+          completedAt: new Date().toISOString(),
+        };
+        return [...logs, newLog];
+      }
+      return logs.filter((l) => getLocalDateStr(new Date(l.completedAt)) !== today);
+    },
+    [today]
+  );
+
   const toggleTodayHabit = useCallback(
     (habitId: string) => {
       const entry = entries.find((e) => e.id === habitId);
@@ -111,6 +133,7 @@ export function useTodayHabits() {
             habitCompletions: nextCompletions,
             habitStreak: streak,
             status: nextCompletions[today] ? 'completed' : 'todo',
+            completionLogs: nextCompletionLogs(taskHabit, !!nextCompletions[today]),
           });
         }
 
@@ -145,6 +168,7 @@ export function useTodayHabits() {
         habitCompletions: nextCompletions,
         habitStreak: streak,
         status: nextCompletions[today] ? 'completed' : 'todo',
+        completionLogs: nextCompletionLogs(taskHabit, !!nextCompletions[today]),
       });
 
       const nextEntry = { ...entry, habitCompletions: nextCompletions, habitStreak: streak };
@@ -158,7 +182,35 @@ export function useTodayHabits() {
       toggleLegacy,
       updateTask,
       showFeedback,
+      nextCompletionLogs,
     ]
+  );
+
+  // Attach a mood to today's completion log (from the quick mood picker).
+  const setTodayMood = useCallback(
+    (habitId: string, mood: NonNullable<TaskCompletion['mood']>) => {
+      const taskHabit = allTasks.find((t) => t.id === habitId && t.isHabit);
+      if (!taskHabit) return;
+      const logs = taskHabit.completionLogs ?? [];
+      let found = false;
+      const updated = logs.map((l) => {
+        if (getLocalDateStr(new Date(l.completedAt)) === today) {
+          found = true;
+          return { ...l, mood };
+        }
+        return l;
+      });
+      if (!found) {
+        updated.push({
+          id: `${Date.now()}-${Math.random().toString(36).slice(2, 9)}`,
+          taskId: habitId,
+          completedAt: new Date().toISOString(),
+          mood,
+        });
+      }
+      updateTask(habitId, { completionLogs: updated });
+    },
+    [allTasks, today, updateTask]
   );
 
   return {
@@ -169,5 +221,6 @@ export function useTodayHabits() {
     feedback,
     dismissFeedback,
     toggleTodayHabit,
+    setTodayMood,
   };
 }

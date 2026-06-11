@@ -240,7 +240,7 @@ async function fetchMatchesByType(input: GetMatchesInput) {
       teamIds,
       nationalTeamIds,
       includeAfcon,
-      _filterRev: 'short-upper-v1',
+      _filterRev: 'intl-all-branches-v2',
     });
     const topLevelTtl = CACHE_TTL[type] || 60000;
     const cachedResult = getFromCache(topLevelCacheKey, topLevelTtl);
@@ -425,9 +425,13 @@ async function fetchMatchesByType(input: GetMatchesInput) {
       } else {
         // Default feed: top 5 domestic leagues + major UEFA competitions.
         [...CORE_LEAGUES, ...CORE_COMPETITIONS].forEach(id => allPromises.push(fetchLeagueMatches(id)));
-        // In-window international tournaments (e.g. FIFA World Cup) — season-agnostic; empty outside tournament dates.
-        DEFAULT_INTERNATIONAL_IDS.forEach(id => allPromises.push(fetchIntlLeague(id)));
       }
+
+      // Always include in-window global tournaments (e.g. FIFA World Cup) regardless of
+      // whether the user has favorite teams or specific league selections — otherwise users
+      // with favorite clubs never see World Cup fixtures. Season-agnostic; empty outside the
+      // tournament window, and deduped/cached so the extra call is cheap.
+      DEFAULT_INTERNATIONAL_IDS.forEach(id => allPromises.push(fetchIntlLeague(id)));
 
       if (nationalTeamIds && nationalTeamIds.length > 0) {
         const limitedNationals = nationalTeamIds.slice(0, 2);

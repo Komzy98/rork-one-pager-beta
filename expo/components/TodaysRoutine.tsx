@@ -747,6 +747,7 @@ export default function TodaysRoutine({
     feedback: completionFeedback,
     dismissFeedback,
     toggleTodayHabit,
+    setTodayMood,
   } = useTodayHabits();
 
   const todayHabits = useMemo((): RoutineHabit[] => {
@@ -908,6 +909,7 @@ export default function TodaysRoutine({
       <HabitCompletionToast
         feedback={completionFeedback}
         onDismiss={dismissFeedback}
+        onMood={setTodayMood}
       />
       {showHeader && (
         <View style={styles.header}>
