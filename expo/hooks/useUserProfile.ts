@@ -1,7 +1,8 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { Platform } from 'react-native';
 import createContextHook from '@nkzw/create-context-hook';
-import { UserProfile, UserTeam, UserCountry, Book, Chronotype, ChronotypeInfo } from '@/types/habit';
+import { UserProfile, UserTeam, UserCountry, Book, Chronotype, ChronotypeInfo, UserNationality } from '@/types/habit';
+import { MAX_FOLLOWED_NATIONALITIES } from '@/constants/nationalTeams';
 import { getChronotypeInfo } from '@/constants/chronotypes';
 import { useAuth } from './useAuth';
 import { getTeamIdFromName } from '@/utils/footballApi';
@@ -9,6 +10,7 @@ import { trpcClient } from '@/lib/trpc';
 import { useSupabaseSync } from '@/utils/supabaseUserSync';
 import { unifiedStorage } from '@/utils/unifiedStorage';
 import { createDefaultUserProfile, seedDefaultUserProfile } from '@/utils/userProfileBootstrap';
+import { resolveNationalTeamApiId } from '@/utils/nationalTeamApiIds';
 import {
   mergeProfilesFromCloud,
   reconcileProfileWithSession,
@@ -110,6 +112,7 @@ export const [UserProfileProvider, useUserProfile] = createContextHook(() => {
             includeFollowedLeagues: parsedProfile.sportsFeedPrefs?.includeFollowedLeagues ?? true,
             discoveryLevel: parsedProfile.sportsFeedPrefs?.discoveryLevel ?? 'med',
             prioritizeDomesticLeagues: parsedProfile.sportsFeedPrefs?.prioritizeDomesticLeagues ?? true,
+            prioritizeNationalTeams: parsedProfile.sportsFeedPrefs?.prioritizeNationalTeams ?? true,
           },
           notificationSettings: {
             liveMatches: parsedProfile.notificationSettings?.liveMatches ?? true,
@@ -269,41 +272,11 @@ export const [UserProfileProvider, useUserProfile] = createContextHook(() => {
 
   useEffect(() => {
     if (!profile?.nationalities || !user || profile.nationalities.length === 0) return;
-    
-    const CORRECT_NATIONAL_TEAM_IDS: Record<string, number> = {
-      'nigeria': 1118,
-      'cameroon': 1116,
-      'egypt': 1536,
-      'ghana': 842,
-      'ivory-coast': 846,
-      'morocco': 1519,
-      'senegal': 1544,
-      'tunisia': 27,
-      'south-africa': 15,
-      'mali': 1048,
-      'algeria': 1530,
-      'england': 10,
-      'france': 2,
-      'germany': 25,
-      'spain': 9,
-      'italy': 768,
-      'brazil': 6,
-      'argentina': 26,
-      'portugal': 27,
-      'netherlands': 1118,
-      'belgium': 1,
-      'croatia': 3,
-      'uruguay': 7,
-      'mexico': 16,
-      'japan': 12,
-      'south-korea': 17,
-      'australia': 20,
-    };
-    
+
     const timer = setTimeout(() => {
       let needsUpdate = false;
-      const updatedNationalities = profile.nationalities!.map(nation => {
-        const correctId = CORRECT_NATIONAL_TEAM_IDS[nation.id];
+      const updatedNationalities = profile.nationalities!.map((nation) => {
+        const correctId = resolveNationalTeamApiId(nation);
         if (correctId && nation.apiId !== correctId) {
           console.log(`🔄 Fixing ${nation.name} API ID: ${nation.apiId} -> ${correctId}`);
           needsUpdate = true;
@@ -496,6 +469,26 @@ export const [UserProfileProvider, useUserProfile] = createContextHook(() => {
     if (!profile) return;
     const updatedCountries = profile.favoriteCountries.filter(c => c.id !== countryId);
     updateProfile({ favoriteCountries: updatedCountries });
+  };
+
+  const addNationality = (nationality: UserNationality) => {
+    if (!profile) return;
+    const current = profile.nationalities ?? [];
+    if (current.some((n) => n.id === nationality.id)) return;
+    if (current.length >= MAX_FOLLOWED_NATIONALITIES) return;
+    updateProfile({ nationalities: [...current, nationality] });
+  };
+
+  const removeNationality = (nationalityId: string) => {
+    if (!profile?.nationalities?.length) return;
+    updateProfile({
+      nationalities: profile.nationalities.filter((n) => n.id !== nationalityId),
+    });
+  };
+
+  const setNationalities = (nationalities: UserNationality[]) => {
+    if (!profile) return;
+    updateProfile({ nationalities: nationalities.slice(0, MAX_FOLLOWED_NATIONALITIES) });
   };
 
   const updateNotificationSettings = (settings: Partial<UserProfile['notificationSettings']>) => {
@@ -733,6 +726,9 @@ export const [UserProfileProvider, useUserProfile] = createContextHook(() => {
     removeFavoriteLeague,
     addFavoriteCountry,
     removeFavoriteCountry,
+    addNationality,
+    removeNationality,
+    setNationalities,
     addFavoriteBook,
     removeFavoriteBook,
     updateBook,

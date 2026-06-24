@@ -32,6 +32,7 @@ export default function OnboardingLayout() {
       <Stack.Screen name="countries" />
       <Stack.Screen name="teams" />
       <Stack.Screen name="nba-teams" />
+      <Stack.Screen name="calendar" />
       <Stack.Screen name="feed-tuning" />
       <Stack.Screen name="complete" options={{ animation: 'fade' }} />
     </Stack>

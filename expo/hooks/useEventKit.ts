@@ -54,8 +54,8 @@ export const [EventKitProvider, useEventKit] = createContextHook(() => {
   const [isLoading, setIsLoading] = useState<boolean>(false);
   const [error, setError] = useState<string | null>(null);
 
-  // Check if EventKit is available (iOS only)
-  const isEventKitAvailable = Platform.OS === 'ios';
+  // Device calendar via expo-calendar (iOS + Android)
+  const isEventKitAvailable = Platform.OS !== 'web' && Calendar !== null;
 
   // Request calendar permissions
   const requestPermissions = useCallback(async (): Promise<boolean> => {
@@ -132,8 +132,15 @@ export const [EventKitProvider, useEventKit] = createContextHook(() => {
         if (validIds.length !== selectedIds.length) {
           await AsyncStorage.setItem(SELECTED_CALENDARS_KEY, JSON.stringify(validIds));
         }
+      } else if (formattedCalendars.length > 0) {
+        const defaultIds = formattedCalendars
+          .filter((cal) => !cal.title.toLowerCase().includes('birthday'))
+          .slice(0, 4)
+          .map((cal) => cal.id);
+        setSelectedCalendarIds(defaultIds);
+        await AsyncStorage.setItem(SELECTED_CALENDARS_KEY, JSON.stringify(defaultIds));
+        console.log(`Auto-selected ${defaultIds.length} calendars for habit planning`);
       } else {
-        // Important on account switch: clear selection when this user has no saved choice.
         setSelectedCalendarIds([]);
         console.log('No stored EventKit calendar selection for current user, reset selection');
       }

@@ -102,7 +102,7 @@ export default function TeamsScreen() {
     if (profile?.interests?.includes('nba')) {
       return '/(onboarding)/nba-teams' as any;
     }
-    return '/(onboarding)/feed-tuning' as any;
+    return '/(onboarding)/calendar' as any;
   }, [profile?.interests]);
 
   const handleContinue = useCallback(() => {

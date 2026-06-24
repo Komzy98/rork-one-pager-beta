@@ -17,8 +17,9 @@
     "eas:build:dev": "eas build --profile development",
     "android": "expo run:android",
     "ios": "expo run:ios",
-    "ios:sim": "open -a Simulator && npx expo start --dev-client --localhost --port 8081 --ios",
-    "ios:sim:refresh": "open -a Simulator && npx expo start --dev-client --localhost --port 8081 --clear --ios",
+    "ios:sim": "node scripts/fix-ios-sim-deep-links.cjs && open -a Simulator && REACT_NATIVE_PACKAGER_HOSTNAME=127.0.0.1 EXPO_USE_LOCALHOST=1 npx expo start --dev-client --localhost --port 8081 --ios",
+    "ios:sim:refresh": "node scripts/fix-ios-sim-deep-links.cjs && open -a Simulator && REACT_NATIVE_PACKAGER_HOSTNAME=127.0.0.1 EXPO_USE_LOCALHOST=1 npx expo start --dev-client --localhost --port 8081 --clear --ios",
+    "ios:sim:fix-links": "node scripts/fix-ios-sim-deep-links.cjs",
     "ios:sim:full": "bash scripts/run-ios-with-younify-auth.sh",
     "younify-auth": "node backend/younify-auth/server.js",
     "api:public": "tsx backend/serve.ts"

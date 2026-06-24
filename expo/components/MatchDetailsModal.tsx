@@ -2,6 +2,7 @@ import React, { useState, useEffect, useRef, useCallback, useMemo } from 'react'
 import { StyleSheet, View, Text, Modal, TouchableOpacity, ScrollView, ActivityIndicator, Image, Animated, Platform, Dimensions, Linking } from 'react-native';
 import { X, MapPin, Users, BarChart3, History, AlertTriangle, Activity, Tv, Globe, Building2, Cloud, Thermometer, Wind, Droplets, Play, TrendingUp, Shield, Zap, Clock, Clapperboard } from 'lucide-react-native';
 import { formatMatchRoundLabel, isKnockoutRoundLabel } from '@/utils/matchRoundLabel';
+import { resolveLeagueLogoSource, isWorldCupLeague } from '@/utils/footballLeagueLabel';
 import { LinearGradient } from 'expo-linear-gradient';
 import * as Haptics from 'expo-haptics';
 import { COLORS } from '@/constants/colors';
@@ -10,9 +11,12 @@ import { useTheme } from '@/hooks/useTheme';
 
 const { width: SCREEN_WIDTH } = Dimensions.get('window');
 
-/** Team accent colors (home / away) — independent of app light/dark */
-const HOME_COLOR = '#00E5FF';
-const AWAY_COLOR = '#FF5C8A';
+/** Home / away kit accents — pitch green + warm away (aligned with Sports tab football chrome). */
+const FOOTBALL_AWAY_COLOR = '#FF6B8A';
+
+function getFootballHomeAccent(isDark: boolean): string {
+  return isDark ? '#32D74B' : '#15803D';
+}
 
 /** api-sports CDN portraits (same host as team logos). Lineup payloads often omit `photo`; id-based URL still works. */
 function footballPlayerPortraitUri(player: { id?: number; photo?: string | null }): string | null {
@@ -47,10 +51,11 @@ export type MatchModalTokens = {
 };
 
 function getMatchModalTokens(isDark: boolean): MatchModalTokens {
+  const footballAccent = getFootballHomeAccent(isDark);
   if (isDark) {
     return {
-      accent: '#00E5FF',
-      accentSecondary: '#7C4DFF',
+      accent: footballAccent,
+      accentSecondary: '#166534',
       surfaceMain: '#111318',
       surfaceCard: '#1A1D24',
       surfaceElevated: '#22262F',
@@ -64,8 +69,8 @@ function getMatchModalTokens(isDark: boolean): MatchModalTokens {
     };
   }
   return {
-    accent: '#0891B2',
-    accentSecondary: '#6366F1',
+    accent: footballAccent,
+    accentSecondary: '#166534',
     surfaceMain: '#FFFFFF',
     surfaceCard: '#F3F4F6',
     surfaceElevated: '#E5E7EB',
@@ -427,7 +432,9 @@ const LineupListView = ({ homeLineup, awayLineup, homeTeam, awayTeam, homeTeamLo
   homeTeamLogo?: string;
   awayTeamLogo?: string;
 }) => {
-  const { styles } = useMatchModalShell();
+  const { styles, tokens } = useMatchModalShell();
+  const homeAccent = tokens.accent;
+  const awayAccent = FOOTBALL_AWAY_COLOR;
   const [activeTab, setActiveTab] = useState<LineupTab>('home');
 
   const handleTabChange = async (tab: LineupTab) => {
@@ -440,7 +447,7 @@ const LineupListView = ({ homeLineup, awayLineup, homeTeam, awayTeam, homeTeamLo
   const currentLineup = activeTab === 'home' ? homeLineup : awayLineup;
   const currentTeam = activeTab === 'home' ? homeTeam : awayTeam;
   const currentLogo = activeTab === 'home' ? homeTeamLogo : awayTeamLogo;
-  const accentColor = activeTab === 'home' ? HOME_COLOR : AWAY_COLOR;
+  const accentColor = activeTab === 'home' ? homeAccent : awayAccent;
 
   const groupedPlayers = React.useMemo(() => {
     if (!currentLineup?.startXI) return [];
@@ -463,39 +470,38 @@ const LineupListView = ({ homeLineup, awayLineup, homeTeam, awayTeam, homeTeamLo
     <View style={styles.lineupContainer}>
       <View style={styles.lineupToggle}>
         <TouchableOpacity
-          style={[styles.lineupToggleBtn, activeTab === 'home' && { backgroundColor: HOME_COLOR + '18' }]}
+          style={[styles.lineupToggleBtn, activeTab === 'home' && { backgroundColor: homeAccent + '18' }]}
           onPress={() => handleTabChange('home')}
           activeOpacity={0.7}
         >
           {homeTeamLogo ? (
             <Image source={{ uri: homeTeamLogo }} style={styles.lineupToggleLogo} resizeMode="contain" />
           ) : (
-            <View style={[styles.lineupToggleLogoFallback, { backgroundColor: HOME_COLOR + '20' }]}>
-              <Text style={[styles.lineupToggleInitial, { color: HOME_COLOR }]}>{homeTeam.charAt(0)}</Text>
+            <View style={[styles.lineupToggleLogoFallback, { backgroundColor: homeAccent + '20' }]}>
+              <Text style={[styles.lineupToggleInitial, { color: homeAccent }]}>{homeTeam.charAt(0)}</Text>
             </View>
           )}
-          <Text style={[styles.lineupToggleName, activeTab === 'home' && { color: HOME_COLOR }]} numberOfLines={1}>{homeTeam}</Text>
-          {activeTab === 'home' && <View style={[styles.lineupToggleIndicator, { backgroundColor: HOME_COLOR }]} />}
+          <Text style={[styles.lineupToggleName, activeTab === 'home' && { color: homeAccent }]} numberOfLines={1}>{homeTeam}</Text>
+          {activeTab === 'home' && <View style={[styles.lineupToggleIndicator, { backgroundColor: homeAccent }]} />}
         </TouchableOpacity>
         <TouchableOpacity
-          style={[styles.lineupToggleBtn, activeTab === 'away' && { backgroundColor: AWAY_COLOR + '18' }]}
+          style={[styles.lineupToggleBtn, activeTab === 'away' && { backgroundColor: awayAccent + '18' }]}
           onPress={() => handleTabChange('away')}
           activeOpacity={0.7}
         >
           {awayTeamLogo ? (
             <Image source={{ uri: awayTeamLogo }} style={styles.lineupToggleLogo} resizeMode="contain" />
           ) : (
-            <View style={[styles.lineupToggleLogoFallback, { backgroundColor: AWAY_COLOR + '20' }]}>
-              <Text style={[styles.lineupToggleInitial, { color: AWAY_COLOR }]}>{awayTeam.charAt(0)}</Text>
+            <View style={[styles.lineupToggleLogoFallback, { backgroundColor: awayAccent + '20' }]}>
+              <Text style={[styles.lineupToggleInitial, { color: awayAccent }]}>{awayTeam.charAt(0)}</Text>
             </View>
           )}
-          <Text style={[styles.lineupToggleName, activeTab === 'away' && { color: AWAY_COLOR }]} numberOfLines={1}>{awayTeam}</Text>
-          {activeTab === 'away' && <View style={[styles.lineupToggleIndicator, { backgroundColor: AWAY_COLOR }]} />}
+          <Text style={[styles.lineupToggleName, activeTab === 'away' && { color: awayAccent }]} numberOfLines={1}>{awayTeam}</Text>
+          {activeTab === 'away' && <View style={[styles.lineupToggleIndicator, { backgroundColor: awayAccent }]} />}
         </TouchableOpacity>
       </View>
 
       <View style={[styles.lineupInfoCard, { borderColor: accentColor + '20' }]}>
-        <View style={[styles.lineupInfoAccent, { backgroundColor: accentColor }]} />
         <View style={styles.lineupInfoBody}>
           {currentLogo ? (
             <Image source={{ uri: currentLogo }} style={styles.lineupInfoLogo} resizeMode="contain" />
@@ -518,9 +524,6 @@ const LineupListView = ({ homeLineup, awayLineup, homeTeam, awayTeam, homeTeamLo
 
       <View style={styles.xiSection}>
         <View style={styles.xiHeader}>
-          <View style={[styles.xiHeaderIcon, { backgroundColor: accentColor + '18' }]}>
-            <Users size={13} color={accentColor} />
-          </View>
           <Text style={styles.xiHeaderText}>Starting XI</Text>
         </View>
 
@@ -671,8 +674,18 @@ export default function MatchDetailsModal({
 
   const leagueId = (data as any)?.fixture?.league?.id || fixture?.league?.id;
   const leagueCountry = (data as any)?.league?.country || fixture?.league?.country || 'World';
-  const leagueLogo = fixture?.league?.logo || leagueLogoProp;
   const leagueName = fixture?.league?.name || league;
+  const leagueLogoSource = resolveLeagueLogoSource({
+    leagueId,
+    league: leagueName,
+    leagueLogo: fixture?.league?.logo || leagueLogoProp,
+    round: fixture?.league?.round ?? roundProp,
+  });
+  const isWorldCupCompetition = isWorldCupLeague(
+    leagueId,
+    leagueName,
+    fixture?.league?.round ?? roundProp,
+  );
   const roundLabel = useMemo(
     () => formatMatchRoundLabel(fixture?.league?.round ?? roundProp),
     [fixture?.league?.round, roundProp],
@@ -819,11 +832,9 @@ export default function MatchDetailsModal({
             <View style={styles.highlightsTeamsDisplay}>
               <View style={styles.highlightsTeamCol}>
                 {homeTeamLogo ? (
-                  <View style={styles.highlightsLogoRing}>
-                    <Image source={{ uri: homeTeamLogo }} style={styles.highlightsTeamLogo} resizeMode="contain" />
-                  </View>
+                  <Image source={{ uri: homeTeamLogo }} style={styles.highlightsTeamLogo} resizeMode="contain" />
                 ) : (
-                  <View style={[styles.highlightsTeamLogoFallback, styles.highlightsLogoRing]}>
+                  <View style={styles.highlightsTeamLogoFallback}>
                     <Text style={styles.highlightsTeamInit}>{homeTeam.charAt(0)}</Text>
                   </View>
                 )}
@@ -847,11 +858,9 @@ export default function MatchDetailsModal({
 
               <View style={styles.highlightsTeamCol}>
                 {awayTeamLogo ? (
-                  <View style={styles.highlightsLogoRing}>
-                    <Image source={{ uri: awayTeamLogo }} style={styles.highlightsTeamLogo} resizeMode="contain" />
-                  </View>
+                  <Image source={{ uri: awayTeamLogo }} style={styles.highlightsTeamLogo} resizeMode="contain" />
                 ) : (
-                  <View style={[styles.highlightsTeamLogoFallback, styles.highlightsLogoRing]}>
+                  <View style={styles.highlightsTeamLogoFallback}>
                     <Text style={styles.highlightsTeamInit}>{awayTeam.charAt(0)}</Text>
                   </View>
                 )}
@@ -894,7 +903,7 @@ export default function MatchDetailsModal({
             </View>
             {goalEvents.map((event: MatchEvent, idx: number) => {
               const isHome = event.team?.name === homeTeam;
-              const accent = isHome ? HOME_COLOR : AWAY_COLOR;
+              const accent = isHome ? tokens.accent : FOOTBALL_AWAY_COLOR;
               return (
                 <View
                   key={idx}
@@ -1049,9 +1058,6 @@ export default function MatchDetailsModal({
 
         <View style={styles.subsCard}>
           <View style={styles.xiHeader}>
-            <View style={[styles.xiHeaderIcon, { backgroundColor: '#FFB80018' }]}>
-              <Activity size={13} color="#FFB800" />
-            </View>
             <Text style={styles.xiHeaderText}>Substitutes</Text>
           </View>
 
@@ -1065,8 +1071,8 @@ export default function MatchDetailsModal({
               </View>
               {homeLineup?.substitutes?.slice(0, 7).map((item: any, idx: number) => (
                 <View key={idx} style={styles.subRow}>
-                  <LineupPlayerAvatar size="sm" player={item.player} accentColor={HOME_COLOR} />
-                  <View style={[styles.subNum, { backgroundColor: HOME_COLOR }]}>
+                  <LineupPlayerAvatar size="sm" player={item.player} accentColor={tokens.accent} />
+                  <View style={[styles.subNum, { backgroundColor: tokens.accent }]}>
                     <Text style={styles.subNumText}>{item.player?.number}</Text>
                   </View>
                   <Text style={styles.subName} numberOfLines={1}>{item.player?.name}</Text>
@@ -1083,8 +1089,8 @@ export default function MatchDetailsModal({
               </View>
               {awayLineup?.substitutes?.slice(0, 7).map((item: any, idx: number) => (
                 <View key={idx} style={styles.subRow}>
-                  <LineupPlayerAvatar size="sm" player={item.player} accentColor={AWAY_COLOR} />
-                  <View style={[styles.subNum, { backgroundColor: AWAY_COLOR }]}>
+                  <LineupPlayerAvatar size="sm" player={item.player} accentColor={FOOTBALL_AWAY_COLOR} />
+                  <View style={[styles.subNum, { backgroundColor: FOOTBALL_AWAY_COLOR }]}>
                     <Text style={styles.subNumText}>{item.player?.number}</Text>
                   </View>
                   <Text style={[styles.subName, { textAlign: 'right' }]} numberOfLines={1}>{item.player?.name}</Text>
@@ -1338,7 +1344,7 @@ export default function MatchDetailsModal({
       );
     }
 
-    const renderTeamForm = (formMatches: any[], teamId: number, teamName: string, teamLogo?: string, accent: string = HOME_COLOR) => {
+    const renderTeamForm = (formMatches: any[], teamId: number, teamName: string, teamLogo?: string, accent: string = tokens.accent) => {
       const results = formMatches.map(m => getFormResult(m, teamId));
       const wins = results.filter(r => r === 'W').length;
       const draws = results.filter(r => r === 'D').length;
@@ -1415,8 +1421,8 @@ export default function MatchDetailsModal({
     return (
       <View style={styles.formSection}>
         <Text style={styles.formSectionTitle}>Last 5 {leagueName} Matches</Text>
-        {homeTeamId && homeFormData.length > 0 && renderTeamForm(homeFormData, homeTeamId, homeTeam, homeTeamLogo, HOME_COLOR)}
-        {awayTeamId && awayFormData.length > 0 && renderTeamForm(awayFormData, awayTeamId, awayTeam, awayTeamLogo, AWAY_COLOR)}
+        {homeTeamId && homeFormData.length > 0 && renderTeamForm(homeFormData, homeTeamId, homeTeam, homeTeamLogo, tokens.accent)}
+        {awayTeamId && awayFormData.length > 0 && renderTeamForm(awayFormData, awayTeamId, awayTeam, awayTeamLogo, FOOTBALL_AWAY_COLOR)}
       </View>
     );
   };
@@ -1459,7 +1465,7 @@ export default function MatchDetailsModal({
             <Text style={styles.h2hWinCount}>{homeWins}</Text>
             <Text style={styles.h2hTeamName} numberOfLines={1}>{homeTeam}</Text>
             <View style={styles.h2hBar}>
-              <View style={[styles.h2hBarFill, { width: `${total > 0 ? (homeWins / total) * 100 : 0}%`, backgroundColor: HOME_COLOR }]} />
+              <View style={[styles.h2hBarFill, { width: `${total > 0 ? (homeWins / total) * 100 : 0}%`, backgroundColor: tokens.accent }]} />
             </View>
           </View>
 
@@ -1482,7 +1488,7 @@ export default function MatchDetailsModal({
             <Text style={styles.h2hWinCount}>{awayWins}</Text>
             <Text style={styles.h2hTeamName} numberOfLines={1}>{awayTeam}</Text>
             <View style={styles.h2hBar}>
-              <View style={[styles.h2hBarFill, { width: `${total > 0 ? (awayWins / total) * 100 : 0}%`, backgroundColor: AWAY_COLOR }]} />
+              <View style={[styles.h2hBarFill, { width: `${total > 0 ? (awayWins / total) * 100 : 0}%`, backgroundColor: FOOTBALL_AWAY_COLOR }]} />
             </View>
           </View>
         </View>
@@ -1565,10 +1571,13 @@ export default function MatchDetailsModal({
                 accessibilityRole="image"
                 accessibilityLabel={`${leagueName} competition`}
               >
-                {leagueLogo ? (
+                {leagueLogoSource ? (
                   <Image
-                    source={{ uri: leagueLogo }}
-                    style={styles.topBarLeagueLogo}
+                    source={leagueLogoSource}
+                    style={[
+                      styles.topBarLeagueLogo,
+                      isWorldCupCompetition && styles.topBarLeagueLogoWorldCup,
+                    ]}
                     resizeMode="contain"
                   />
                 ) : (
@@ -1755,15 +1764,17 @@ function createMatchModalStyles(t: MatchModalTokens) {
     alignItems: 'center',
   },
   topBarCenter: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 6,
     flex: 1,
+    alignItems: 'center',
     justifyContent: 'center',
   },
   topBarLeagueLogo: {
-    width: 32,
-    height: 32,
+    width: 36,
+    height: 36,
+  },
+  topBarLeagueLogoWorldCup: {
+    width: 52,
+    height: 55,
   },
   topBarLeagueFallback: {
     width: 32,
@@ -1812,16 +1823,15 @@ function createMatchModalStyles(t: MatchModalTokens) {
     alignItems: 'center',
     gap: 8,
   },
-  /** Layout only — logo renders without ring/border (same pattern as onboarding team pickers) */
   heroLogoRing: {
-    width: 56,
-    height: 56,
+    width: 60,
+    height: 60,
     justifyContent: 'center',
     alignItems: 'center',
   },
   heroLogo: {
-    width: 52,
-    height: 52,
+    width: 60,
+    height: 60,
   },
   heroLogoInit: {
     fontSize: 22,
@@ -2113,25 +2123,17 @@ function createMatchModalStyles(t: MatchModalTokens) {
     gap: 8,
     paddingHorizontal: 4,
   },
-  highlightsLogoRing: {
-    padding: 3,
-    borderRadius: 999,
-    borderWidth: 1,
-    borderColor: 'rgba(255,255,255,0.14)',
-    backgroundColor: 'rgba(255,255,255,0.04)',
-  },
   highlightsTeamLogo: {
-    width: 40,
-    height: 40,
-    borderRadius: 20,
+    width: 44,
+    height: 44,
   },
   highlightsTeamLogoFallback: {
-    width: 40,
-    height: 40,
-    borderRadius: 20,
+    width: 44,
+    height: 44,
     backgroundColor: 'rgba(255,255,255,0.08)',
     justifyContent: 'center',
     alignItems: 'center',
+    borderRadius: 8,
   },
   highlightsTeamInit: {
     fontSize: 16,
@@ -2276,10 +2278,10 @@ function createMatchModalStyles(t: MatchModalTokens) {
     borderLeftColor: 'transparent',
   },
   highlightsGoalTintHome: {
-    backgroundColor: HOME_COLOR + '0D',
+    backgroundColor: t.accent + '0D',
   },
   highlightsGoalTintAway: {
-    backgroundColor: AWAY_COLOR + '0D',
+    backgroundColor: FOOTBALL_AWAY_COLOR + '0D',
   },
   highlightsGoalBadge: {
     width: 32,
@@ -2437,15 +2439,15 @@ function createMatchModalStyles(t: MatchModalTokens) {
     maxWidth: '95%',
   },
   eventCardHome: {
-    backgroundColor: HOME_COLOR + '0D',
+    backgroundColor: t.accent + '0D',
     borderWidth: 1,
-    borderColor: HOME_COLOR + '15',
+    borderColor: t.accent + '15',
     alignSelf: 'flex-end',
   },
   eventCardAway: {
-    backgroundColor: AWAY_COLOR + '0D',
+    backgroundColor: FOOTBALL_AWAY_COLOR + '0D',
     borderWidth: 1,
-    borderColor: AWAY_COLOR + '15',
+    borderColor: FOOTBALL_AWAY_COLOR + '15',
     alignSelf: 'flex-start',
   },
   eventPlayerName: {
@@ -2495,14 +2497,13 @@ function createMatchModalStyles(t: MatchModalTokens) {
     gap: 8,
   },
   lineupToggleLogo: {
-    width: 28,
-    height: 28,
-    borderRadius: 14,
+    width: 32,
+    height: 32,
   },
   lineupToggleLogoFallback: {
-    width: 28,
-    height: 28,
-    borderRadius: 14,
+    width: 32,
+    height: 32,
+    borderRadius: 8,
     justifyContent: 'center',
     alignItems: 'center',
   },
@@ -2528,9 +2529,6 @@ function createMatchModalStyles(t: MatchModalTokens) {
     marginBottom: 14,
     borderWidth: 1,
   },
-  lineupInfoAccent: {
-    height: 3,
-  },
   lineupInfoBody: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -2538,14 +2536,13 @@ function createMatchModalStyles(t: MatchModalTokens) {
     gap: 12,
   },
   lineupInfoLogo: {
-    width: 40,
-    height: 40,
-    borderRadius: 20,
+    width: 44,
+    height: 44,
   },
   lineupInfoLogoFallback: {
-    width: 40,
-    height: 40,
-    borderRadius: 20,
+    width: 44,
+    height: 44,
+    borderRadius: 8,
     justifyContent: 'center',
     alignItems: 'center',
   },
@@ -2586,22 +2583,14 @@ function createMatchModalStyles(t: MatchModalTokens) {
     marginBottom: 4,
   },
   xiHeader: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 8,
     marginBottom: 12,
   },
-  xiHeaderIcon: {
-    width: 28,
-    height: 28,
-    borderRadius: 8,
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
   xiHeaderText: {
-    fontSize: 14,
+    fontSize: 11,
     fontWeight: '700' as const,
-    color: t.textPrimary,
+    color: t.textMuted,
+    letterSpacing: 0.8,
+    textTransform: 'uppercase' as const,
   },
   posGroup: {
     marginBottom: 12,
@@ -2702,9 +2691,8 @@ function createMatchModalStyles(t: MatchModalTokens) {
     borderBottomColor: t.borderSubtle,
   },
   subsColLogo: {
-    width: 20,
-    height: 20,
-    borderRadius: 10,
+    width: 24,
+    height: 24,
   },
   subsColName: {
     fontSize: 11,
@@ -2753,14 +2741,14 @@ function createMatchModalStyles(t: MatchModalTokens) {
     flex: 1,
   },
   statsTeamLogo: {
-    width: 32,
-    height: 32,
-    borderRadius: 16,
+    width: 36,
+    height: 36,
   },
   statsTeamLogoFallback: {
     backgroundColor: t.surfaceElevated,
     justifyContent: 'center',
     alignItems: 'center',
+    borderRadius: 8,
   },
   statsTeamInit: {
     fontSize: 14,
@@ -2803,11 +2791,11 @@ function createMatchModalStyles(t: MatchModalTokens) {
     color: t.textSecondary,
   },
   statWinner: {
-    color: HOME_COLOR,
+    color: t.accent,
     fontSize: 15,
   },
   statWinnerAway: {
-    color: AWAY_COLOR,
+    color: FOOTBALL_AWAY_COLOR,
     fontSize: 15,
   },
   statCenter: {
@@ -2829,13 +2817,13 @@ function createMatchModalStyles(t: MatchModalTokens) {
     backgroundColor: t.surfaceElevated,
   },
   statBarHome: {
-    backgroundColor: HOME_COLOR,
+    backgroundColor: t.accent,
     height: '100%',
     borderTopLeftRadius: 3,
     borderBottomLeftRadius: 3,
   },
   statBarAway: {
-    backgroundColor: AWAY_COLOR,
+    backgroundColor: FOOTBALL_AWAY_COLOR,
     height: '100%',
     borderTopRightRadius: 3,
     borderBottomRightRadius: 3,
@@ -3077,14 +3065,14 @@ function createMatchModalStyles(t: MatchModalTokens) {
     gap: 6,
   },
   h2hTeamLogo: {
-    width: 42,
-    height: 42,
-    borderRadius: 21,
+    width: 44,
+    height: 44,
   },
   h2hTeamLogoFallback: {
     backgroundColor: t.surfaceElevated,
     justifyContent: 'center',
     alignItems: 'center',
+    borderRadius: 8,
   },
   h2hTeamInit: {
     fontSize: 16,
@@ -3221,14 +3209,13 @@ function createMatchModalStyles(t: MatchModalTokens) {
     flex: 1,
   },
   formTeamLogo: {
-    width: 28,
-    height: 28,
-    borderRadius: 14,
+    width: 32,
+    height: 32,
   },
   formTeamLogoFallback: {
-    width: 28,
-    height: 28,
-    borderRadius: 14,
+    width: 32,
+    height: 32,
+    borderRadius: 8,
     justifyContent: 'center',
     alignItems: 'center',
   },
@@ -3314,9 +3301,8 @@ function createMatchModalStyles(t: MatchModalTokens) {
     gap: 5,
   },
   formOpponentLogo: {
-    width: 16,
-    height: 16,
-    borderRadius: 8,
+    width: 18,
+    height: 18,
   },
   formOpponentName: {
     fontSize: 12,

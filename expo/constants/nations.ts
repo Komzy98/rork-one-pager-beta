@@ -82,7 +82,7 @@ export const ALL_NATIONS: Nation[] = [
   { id: 'nigeria', name: 'Nigeria', code: 'NG', flag: '🇳🇬', apiId: 1118, region: 'africa' },
   { id: 'rwanda', name: 'Rwanda', code: 'RW', flag: '🇷🇼', apiId: 1534, region: 'africa' },
   { id: 'sao-tome', name: 'Sao Tome and Principe', code: 'ST', flag: '🇸🇹', apiId: 2392, region: 'africa' },
-  { id: 'senegal', name: 'Senegal', code: 'SN', flag: '🇸🇳', apiId: 1544, region: 'africa' },
+  { id: 'senegal', name: 'Senegal', code: 'SN', flag: '🇸🇳', apiId: 13, region: 'africa' },
   { id: 'seychelles', name: 'Seychelles', code: 'SC', flag: '🇸🇨', apiId: 2393, region: 'africa' },
   { id: 'sierra-leone', name: 'Sierra Leone', code: 'SL', flag: '🇸🇱', apiId: 1535, region: 'africa' },
   { id: 'somalia', name: 'Somalia', code: 'SO', flag: '🇸🇴', apiId: 2394, region: 'africa' },

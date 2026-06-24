@@ -612,7 +612,7 @@ export default function NBASection({ isDark, insets, sportToggleSlot }: NBASecti
     standings: easternStandings.length + westernStandings.length,
   }), [liveGames.length, upcomingGames.length, completedGames.length, easternStandings.length, westernStandings.length]);
 
-  const isLoading = gamesQuery.isLoading;
+  const isLoading = gamesQuery.isLoading && !gamesQuery.data;
   const isError = gamesQuery.isError && !gamesQuery.data;
   const refreshing = gamesQuery.isRefetching;
 
@@ -697,7 +697,7 @@ export default function NBASection({ isDark, insets, sportToggleSlot }: NBASecti
         return (
           <View style={s.loadingState}>
             <ActivityIndicator size="large" color={NBA_ORANGE} />
-            <Text style={[s.loadingText, { color: isDark ? '#8B8BA7' : '#6B7A99' }]}>Loading NBA scores...</Text>
+            <Text style={[s.loadingText, { color: isDark ? '#8B8BA7' : '#6B7A99' }]}>Getting latest updates</Text>
           </View>
         );
       case 'error':

@@ -11,6 +11,7 @@ import type {
   DailySummaryContinueWatching,
   DailySummarySportsBeat,
 } from '@/utils/dailySummary';
+import { formatShowEpisodeLabel, formatYounifyContinueEpisodeLabel } from '@/utils/showEpisodeLabel';
 
 type FootballMatchLike = {
   homeTeam: string;
@@ -109,10 +110,7 @@ export function buildContinueWatchingHighlights(
 
   for (const item of items.slice(0, 3)) {
     if (item.kind === 'local') {
-      const ep =
-        item.show.type === 'Series' && item.show.currentSeason && item.show.currentEpisode
-          ? `S${item.show.currentSeason} E${item.show.currentEpisode}`
-          : undefined;
+      const ep = formatShowEpisodeLabel(item.show, undefined, 'spaced') ?? undefined;
       out.push({
         title: item.show.title,
         episode: ep,
@@ -121,9 +119,7 @@ export function buildContinueWatchingHighlights(
       continue;
     }
     const row = item.row;
-    const season = row.season != null ? String(row.season).trim() : '';
-    const episode = row.episode != null ? String(row.episode).trim() : '';
-    const epLabel = season || episode ? `S${season || '—'} E${episode || '—'}` : undefined;
+    const epLabel = formatYounifyContinueEpisodeLabel(row) ?? undefined;
     out.push({
       title: String(row.showTitle || row.title || 'Continue watching'),
       episode: epLabel,

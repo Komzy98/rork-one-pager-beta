@@ -18,6 +18,7 @@ import * as Haptics from 'expo-haptics';
 import OnboardingProgress from '@/components/OnboardingProgress';
 import { ONBOARDING } from '@/constants/onboardingTheme';
 import { COLORS } from '@/constants/colors';
+import { useOnboardingStepMeta } from '@/hooks/useOnboardingStepMeta';
 import { configureYounify, fetchYounifyServices } from '@/services/younify';
 import StreamingServiceListLogo from '@/components/streaming/StreamingServiceListLogo';
 
@@ -36,11 +37,10 @@ type YounifyService = {
   [key: string]: unknown;
 };
 
-const TOTAL_STEPS = 6;
-
 export default function OnboardingStreamingScreen() {
   const insets = useSafeAreaInsets();
   const router = useRouter();
+  const { totalSteps, stepStreaming } = useOnboardingStepMeta();
 
   const [services, setServices] = useState<YounifyService[]>([]);
   const [loading, setLoading] = useState(true);
@@ -231,7 +231,7 @@ export default function OnboardingStreamingScreen() {
           <ArrowLeft size={20} color={ONBOARDING.textMuted} />
         </TouchableOpacity>
         <View style={styles.progressWrap}>
-          <OnboardingProgress currentStep={2} totalSteps={TOTAL_STEPS} />
+          <OnboardingProgress currentStep={stepStreaming} totalSteps={totalSteps} />
         </View>
         <TouchableOpacity onPress={goNext} hitSlop={{ top: 12, bottom: 12, left: 8, right: 8 }}>
           <Text style={styles.skipText}>Skip</Text>

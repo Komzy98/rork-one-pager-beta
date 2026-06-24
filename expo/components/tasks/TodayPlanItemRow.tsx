@@ -30,6 +30,7 @@ interface TodayPlanItemRowProps {
   onSetFocus: (taskId: string) => void;
   onToggleHabit: (habit: Task) => void;
   weeklyProgressLabel?: string;
+  recommendedTimeLabel?: string;
   isLast?: boolean;
 }
 
@@ -49,6 +50,7 @@ export default function TodayPlanItemRow({
   onSetFocus,
   onToggleHabit,
   weeklyProgressLabel,
+  recommendedTimeLabel,
   isLast,
 }: TodayPlanItemRowProps) {
   if (item.kind === 'task') {
@@ -81,11 +83,13 @@ export default function TodayPlanItemRow({
     : 0;
   const habitMeta = isWeekItem
     ? `${weekDays} day${weekDays === 1 ? '' : 's'} completed this week`
-    : weeklyProgressLabel
-      ? weeklyProgressLabel
-      : habit.habitStreak
-        ? `${habit.habitStreak} day streak`
-        : 'Daily habit';
+    : !item.isCompleted && recommendedTimeLabel
+      ? `Best time today · ${recommendedTimeLabel}`
+      : weeklyProgressLabel
+        ? weeklyProgressLabel
+        : habit.habitStreak
+          ? `${habit.habitStreak} day streak`
+          : 'Daily habit';
 
   return (
     <TouchableOpacity

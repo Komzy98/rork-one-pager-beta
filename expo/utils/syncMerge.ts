@@ -214,6 +214,10 @@ export function mergeProfilesFromCloud(
       older.favoriteCountries ?? [],
       newer.favoriteCountries ?? []
     ) as UserProfile['favoriteCountries'],
+    nationalities: mergeRecordsById(
+      older.nationalities ?? [],
+      newer.nationalities ?? []
+    ).slice(0, 6) as UserProfile['nationalities'],
     favoriteBooks: mergeRecordsById(older.favoriteBooks ?? [], newer.favoriteBooks ?? []) as UserProfile['favoriteBooks'],
     interests: unionStrings(older.interests, newer.interests),
     tabOrder: newer.tabOrder?.length ? newer.tabOrder : older.tabOrder,
@@ -236,6 +240,10 @@ export function mergeProfilesFromCloud(
       prioritizeDomesticLeagues:
         newer.sportsFeedPrefs?.prioritizeDomesticLeagues ??
         older.sportsFeedPrefs?.prioritizeDomesticLeagues ??
+        true,
+      prioritizeNationalTeams:
+        newer.sportsFeedPrefs?.prioritizeNationalTeams ??
+        older.sportsFeedPrefs?.prioritizeNationalTeams ??
         true,
     },
     lastLoginAt:

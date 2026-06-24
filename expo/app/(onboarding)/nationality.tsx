@@ -8,15 +8,19 @@ import { useUserProfile } from '@/hooks/useUserProfile';
 import { useOnboardingStepMeta } from '@/hooks/useOnboardingStepMeta';
 import OnboardingProgress from '@/components/OnboardingProgress';
 import { ALL_NATIONS } from '@/constants/nations';
+import { MAX_FOLLOWED_NATIONALITIES } from '@/constants/nationalTeams';
 import { COLORS } from '@/constants/colors';
+import type { UserNationality } from '@/types/habit';
 
 export default function NationalityScreen() {
   const router = useRouter();
   const insets = useSafeAreaInsets();
-  const { profile, updateProfile } = useUserProfile();
+  const { profile, setNationalities } = useUserProfile();
   const { totalSteps, stepNationality } = useOnboardingStepMeta();
   const [search, setSearch] = useState('');
-  const [selectedId, setSelectedId] = useState<string | null>(profile?.nationalities?.[0]?.id ?? null);
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(
+    () => new Set((profile?.nationalities ?? []).map((n) => n.id)),
+  );
 
   const filteredNations = useMemo(() => {
     const q = search.trim().toLowerCase();
@@ -26,36 +30,49 @@ export default function NationalityScreen() {
 
   const continueNext = useCallback(() => {
     if (profile?.interests?.includes('football')) {
-      router.push('/(onboarding)/countries' as any);
+      router.push('/(onboarding)/teams' as any);
     } else if (profile?.interests?.includes('nba')) {
       router.push('/(onboarding)/nba-teams' as any);
     } else {
-      router.push('/(onboarding)/feed-tuning' as any);
+      router.push('/(onboarding)/calendar' as any);
     }
   }, [profile?.interests, router]);
 
+  const toggleNation = useCallback((nationId: string) => {
+    void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+    setSelectedIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(nationId)) {
+        next.delete(nationId);
+      } else if (next.size < MAX_FOLLOWED_NATIONALITIES) {
+        next.add(nationId);
+      }
+      return next;
+    });
+  }, []);
+
   const handleContinue = useCallback(() => {
     void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
-    const selectedNation = ALL_NATIONS.find((n) => n.id === selectedId);
-    if (selectedNation) {
-      updateProfile({
-        nationalities: [
-          {
-            id: selectedNation.id,
-            name: selectedNation.name,
-            code: selectedNation.code,
-            flag: selectedNation.flag,
-            apiId: selectedNation.apiId,
-          },
-        ],
-      });
+    const selected: UserNationality[] = ALL_NATIONS.filter((n) => selectedIds.has(n.id)).map(
+      (nation) => ({
+        id: nation.id,
+        name: nation.name,
+        code: nation.code,
+        flag: nation.flag,
+        apiId: nation.apiId,
+      }),
+    );
+    if (selected.length > 0) {
+      setNationalities(selected);
     }
     continueNext();
-  }, [selectedId, updateProfile, continueNext]);
+  }, [selectedIds, setNationalities, continueNext]);
 
   const handleSkip = useCallback(() => {
     continueNext();
   }, [continueNext]);
+
+  const selectedCount = selectedIds.size;
 
   return (
     <View style={styles.container}>
@@ -73,10 +90,16 @@ export default function NationalityScreen() {
 
       <View style={styles.titleWrap}>
         <Text style={styles.stepLabel}>STEP {stepNationality} · PERSONALISE</Text>
-        <Text style={styles.title}>What country should we prioritise?</Text>
+        <Text style={styles.title}>Which countries do you follow?</Text>
         <Text style={styles.subtitle}>
-          We use this for football match relevance, local food recipes, events and movie picks.
+          Pick up to {MAX_FOLLOWED_NATIONALITIES} — we surface World Cup, qualifier and tournament
+          matches for each one, plus local recipes, events and movie picks.
         </Text>
+        {selectedCount > 0 ? (
+          <Text style={styles.selectedHint}>
+            {selectedCount} selected{selectedCount >= MAX_FOLLOWED_NATIONALITIES ? ' (max)' : ''}
+          </Text>
+        ) : null}
       </View>
 
       <View style={styles.searchWrap}>
@@ -92,19 +115,18 @@ export default function NationalityScreen() {
 
       <ScrollView style={styles.list} contentContainerStyle={styles.listContent} showsVerticalScrollIndicator={false}>
         {filteredNations.map((nation) => {
-          const selected = selectedId === nation.id;
+          const selected = selectedIds.has(nation.id);
+          const atMax = selectedIds.size >= MAX_FOLLOWED_NATIONALITIES && !selected;
           return (
             <TouchableOpacity
               key={nation.id}
-              style={[styles.row, selected && styles.rowSelected]}
-              onPress={() => {
-                void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-                setSelectedId(nation.id);
-              }}
-              activeOpacity={0.8}
+              style={[styles.row, selected && styles.rowSelected, atMax && styles.rowDisabled]}
+              onPress={() => !atMax && toggleNation(nation.id)}
+              activeOpacity={atMax ? 1 : 0.8}
+              disabled={atMax}
             >
               <Text style={styles.flag}>{nation.flag}</Text>
-              <Text style={styles.name}>{nation.name}</Text>
+              <Text style={[styles.name, atMax && styles.nameDisabled]}>{nation.name}</Text>
               {selected ? (
                 <View style={styles.checkCircle}>
                   <Check size={12} color="#FFFFFF" />
@@ -118,7 +140,9 @@ export default function NationalityScreen() {
       <View style={[styles.footer, { paddingBottom: insets.bottom + 16 }]}>
         <TouchableOpacity style={styles.continueBtn} onPress={handleContinue} activeOpacity={0.85}>
           <View style={styles.continueBtnInner}>
-            <Text style={styles.continueText}>Continue</Text>
+            <Text style={styles.continueText}>
+              {selectedCount > 0 ? `Continue with ${selectedCount}` : 'Continue'}
+            </Text>
             <ArrowRight size={18} color="#FFFFFF" />
           </View>
         </TouchableOpacity>
@@ -144,6 +168,7 @@ const styles = StyleSheet.create({
   stepLabel: { fontSize: 11, fontWeight: '700', color: COLORS.textMuted, letterSpacing: 2, marginBottom: 8 },
   title: { fontSize: 26, fontWeight: '800', color: COLORS.text, marginBottom: 8 },
   subtitle: { fontSize: 14, color: COLORS.textSecondary, lineHeight: 20 },
+  selectedHint: { fontSize: 13, fontWeight: '600', color: COLORS.primary, marginTop: 10 },
   searchWrap: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -171,8 +196,10 @@ const styles = StyleSheet.create({
     borderColor: COLORS.border,
   },
   rowSelected: { borderColor: COLORS.primary, borderWidth: 2 },
+  rowDisabled: { opacity: 0.45 },
   flag: { fontSize: 20, marginRight: 10 },
   name: { flex: 1, color: COLORS.text, fontSize: 15, fontWeight: '600' },
+  nameDisabled: { color: COLORS.textMuted },
   checkCircle: {
     width: 22,
     height: 22,
@@ -199,4 +226,3 @@ const styles = StyleSheet.create({
   },
   continueText: { fontSize: 16, fontWeight: '700', color: '#FFFFFF' },
 });
-

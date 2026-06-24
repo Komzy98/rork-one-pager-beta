@@ -68,7 +68,8 @@ import { tmdbApi, TMDBMovie, TMDBTVShow, TMDBTVShowDetails, TMDBEpisode, getGenr
 import { navigateToShow, showNavigationAlert } from '@/utils/streamingNavigation';
 import { openStreamingApp, getStreamingPlatform, openStreamingTitleSearch, openYounifyBrowseItemOnPlatform, younifySourceToTmdbProviderId, tryOpenDisneyPlusFromHomepage } from '@/utils/streamingLinks';
 import { WatchProvider } from '@/utils/tmdbApi';
-import { buildYounifyProviderIndex, pickBestYounifyRowForEpisode, type YounifyProviderIndex } from '@/utils/younifyProviderIndex';
+import { buildYounifyProviderIndex, pickBestYounifyRowForEpisode, readSeasonEpisodeFromYounifyRow, type YounifyProviderIndex } from '@/utils/younifyProviderIndex';
+import { formatShowEpisodeLabel } from '@/utils/showEpisodeLabel';
 import { extractTmdbIdFromYounifyRow } from '@/utils/aroundYouImages';
 import { extractTmdbMediaTypeFromYounifyRow } from '@/utils/younifyTmdbPoster';
 
@@ -921,6 +922,17 @@ export default function ShowsScreen() {
     () => buildYounifyProviderIndex(streamingSections, linkedProviderIds),
     [streamingSections, linkedProviderIds],
   );
+  const younifyContinueByTmdbId = useMemo(() => {
+    const continueSection = streamingSections.find((s) => s.id === 'continue');
+    const map = new Map<number, Record<string, unknown>>();
+    for (const row of continueSection?.items ?? []) {
+      const tmdbId = extractTmdbIdFromYounifyRow(row);
+      if (tmdbId != null && !map.has(tmdbId)) {
+        map.set(tmdbId, row as Record<string, unknown>);
+      }
+    }
+    return map;
+  }, [streamingSections]);
 
   useEffect(() => {
     younifyContentRef.current = younifyContent;
@@ -1245,6 +1257,27 @@ export default function ShowsScreen() {
   const markEpisodeWatched = appContext?.markEpisodeWatched;
   const deleteShow = appContext?.deleteShow;
 
+  /** Pull real season/episode from linked streaming "Continue watching" into local list rows. */
+  useEffect(() => {
+    if (!updateShow || younifyContinueByTmdbId.size === 0) return;
+
+    for (const show of shows) {
+      if (show.type !== 'Series' || show.tmdbId == null) continue;
+      const row = younifyContinueByTmdbId.get(show.tmdbId);
+      if (!row) continue;
+      const progress = readSeasonEpisodeFromYounifyRow(row);
+      if (!progress) continue;
+      if (show.currentSeason === progress.season && show.currentEpisode === progress.episode) continue;
+
+      updateShow({
+        ...show,
+        currentSeason: progress.season,
+        currentEpisode: progress.episode,
+        status: show.status === 'Plan to Watch' ? 'Watching' : show.status,
+      });
+    }
+  }, [shows, updateShow, younifyContinueByTmdbId]);
+
   // Fetch thumbnails for all shows with tmdbId when component loads or shows change
   React.useEffect(() => {
     const fetchAllThumbnails = async () => {
@@ -1392,8 +1425,6 @@ export default function ShowsScreen() {
       title,
       platform: 'Other',
       type: type === 'movie' ? 'Movie' : 'Series',
-      currentSeason: type === 'tv' ? 1 : undefined,
-      currentEpisode: type === 'tv' ? 1 : undefined,
       tmdbId,
       mediaType: type,
       status: startWatching ? 'Watching' : 'Plan to Watch',
@@ -1802,6 +1833,8 @@ export default function ShowsScreen() {
   const renderMyListCard = useCallback(({ item }: { item: Show }) => {
     const thumbnailUrl = showThumbnails[item.id];
     const platformData = PLATFORMS.find(p => p.id === item.platform);
+    const younifyRow = item.tmdbId != null ? younifyContinueByTmdbId.get(item.tmdbId) : undefined;
+    const episodeLabel = formatShowEpisodeLabel(item, younifyRow, 'bullet');
     
     return (
       <Pressable 
@@ -1831,9 +1864,9 @@ export default function ShowsScreen() {
           </View>
           <View style={styles.myListCardBottom}>
             <Text style={styles.myListTitle} numberOfLines={2}>{item.title}</Text>
-            {item.type === 'Series' && item.currentSeason && (
-              <Text style={styles.myListProgress}>S{item.currentSeason} • E{item.currentEpisode || 1}</Text>
-            )}
+            {episodeLabel ? (
+              <Text style={styles.myListProgress}>{episodeLabel}</Text>
+            ) : null}
           </View>
         </View>
         <View style={[styles.myListStatusBar, { 
@@ -1859,7 +1892,7 @@ export default function ShowsScreen() {
         )}
       </Pressable>
     );
-  }, [showThumbnails, handleDeleteShow, markEpisodeWatched]);
+  }, [showThumbnails, handleDeleteShow, markEpisodeWatched, younifyContinueByTmdbId]);
 
   const renderStatusModal = () => {
     const show = showStatusModal.show;

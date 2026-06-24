@@ -28,7 +28,7 @@ import {
   Moon,
   ListChecks,
 } from 'lucide-react-native';
-import type { Task } from '@/types/task';
+import type { Task, TaskCompletion } from '@/types/task';
 import type { ThemeColors } from '@/types/theme';
 import type {
   TodayDoneScope,
@@ -135,10 +135,13 @@ export interface TasksDashboardViewProps {
   onOpenPeakScheduler: () => void;
   onOpenHabitCoach: () => void;
   showHabitCoach: boolean;
+  calendarPlanner?: React.ReactNode;
   completionFeedback?: CompletionFeedback;
   onDismissCompletionFeedback?: () => void;
+  onHabitMood?: (habitId: string, mood: NonNullable<TaskCompletion['mood']>) => void;
   todayLog?: TodayLogItem[];
   weeklyProgressByHabitId?: Record<string, string | undefined>;
+  habitTimeById?: Record<string, string | undefined>;
 }
 
 function MiniStat({
@@ -287,10 +290,13 @@ export default function TasksDashboardView({
   onOpenPeakScheduler,
   onOpenHabitCoach,
   showHabitCoach,
+  calendarPlanner,
   completionFeedback,
   onDismissCompletionFeedback,
+  onHabitMood,
   todayLog = [],
   weeklyProgressByHabitId = {},
+  habitTimeById = {},
 }: TasksDashboardViewProps) {
   const { width: windowWidth } = useWindowDimensions();
   const isNarrowHeader = windowWidth < NARROW_HEADER_WIDTH;
@@ -427,6 +433,7 @@ export default function TasksDashboardView({
   );
 
   return (
+    <>
     <ScrollView
       showsVerticalScrollIndicator={false}
       contentContainerStyle={[styles.scrollContent, { paddingTop, paddingBottom }]}
@@ -691,13 +698,9 @@ export default function TasksDashboardView({
             </View>
           </TouchableOpacity>
 
+          {calendarPlanner}
+
           <View style={styles.sectionHeader}>
-            {completionFeedback?.visible ? (
-              <HabitCompletionToast
-                feedback={completionFeedback}
-                onDismiss={onDismissCompletionFeedback}
-              />
-            ) : null}
             <TodayCompletionLog items={todayLog} />
             <Text style={[styles.sectionTitle, { color: colors.text }]}>Today</Text>
             <TouchableOpacity onPress={onSeeAllTasks}>
@@ -876,6 +879,9 @@ export default function TasksDashboardView({
                       ? weeklyProgressByHabitId[item.task.id]
                       : undefined
                   }
+                  recommendedTimeLabel={
+                    item.kind === 'habit' ? habitTimeById[item.task.id] : undefined
+                  }
                   isLast={index === todayPlanItems.length - 1}
                 />
               ))
@@ -941,6 +947,15 @@ export default function TasksDashboardView({
         </>
       )}
     </ScrollView>
+    {completionFeedback ? (
+      <HabitCompletionToast
+        feedback={completionFeedback}
+        onDismiss={onDismissCompletionFeedback}
+        onMood={onHabitMood}
+        bottomInset={paddingBottom - 12}
+      />
+    ) : null}
+    </>
   );
 }
 

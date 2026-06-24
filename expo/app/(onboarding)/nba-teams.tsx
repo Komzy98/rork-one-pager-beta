@@ -87,11 +87,11 @@ export default function NBATeamsScreen() {
       );
       updateProfile({ favoriteNBATeams: [...existing, ...newTeams] });
     }
-    router.push('/(onboarding)/feed-tuning' as any);
+    router.push('/(onboarding)/calendar' as any);
   }, [selectedTeams, profile, updateProfile, router]);
 
   const handleSkip = useCallback(() => {
-    router.push('/(onboarding)/feed-tuning' as any);
+    router.push('/(onboarding)/calendar' as any);
   }, [router]);
 
   const handleBack = useCallback(() => {

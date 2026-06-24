@@ -1,6 +1,5 @@
 import React, { useMemo, useState } from 'react';
 import {
-  Image,
   Modal,
   Pressable,
   ScrollView,
@@ -11,6 +10,7 @@ import {
   View,
 } from 'react-native';
 import { BarChart3, Check, Filter, Search, Shield, Target, Trophy, X } from 'lucide-react-native';
+import FootballLeagueLogo from '@/components/FootballLeagueLogo';
 
 /** Primary football surface filter (4 pills). */
 export type FootballSmartFilter = 'for-you' | 'following' | 'top-leagues' | 'worldwide';
@@ -304,11 +304,15 @@ export default function SportsSmartFilter({
                         onPress={() => toggleLeague(league.id)}
                       >
                         <View style={styles.logoWrap}>
-                          {league.logo ? (
-                            <Image source={{ uri: league.logo }} style={styles.logo} resizeMode="contain" />
-                          ) : (
-                            <Trophy size={13} color={isDark ? '#99AED8' : '#6288C8'} />
-                          )}
+                          <FootballLeagueLogo
+                            leagueId={league.id}
+                            leagueName={league.name}
+                            leagueLogo={league.logo}
+                            size={28}
+                            style={styles.logo}
+                            fallbackIconSize={13}
+                            fallbackColor={isDark ? '#99AED8' : '#6288C8'}
+                          />
                         </View>
                         <View style={{ flex: 1 }}>
                           <Text style={[styles.leagueName, { color: isDark ? '#F2F6FF' : '#12203A' }]}>{league.name}</Text>
@@ -351,11 +355,15 @@ export default function SportsSmartFilter({
                       onPress={() => toggleLeague(league.id)}
                     >
                       <View style={styles.logoWrap}>
-                        {league.logo ? (
-                          <Image source={{ uri: league.logo }} style={styles.logo} resizeMode="contain" />
-                        ) : (
-                          <Trophy size={13} color={isDark ? '#8CA0CA' : '#7A95C2'} />
-                        )}
+                        <FootballLeagueLogo
+                          leagueId={league.id}
+                          leagueName={league.name}
+                          leagueLogo={league.logo}
+                          size={28}
+                          style={styles.logo}
+                          fallbackIconSize={13}
+                          fallbackColor={isDark ? '#8CA0CA' : '#7A95C2'}
+                        />
                       </View>
                       <View style={{ flex: 1 }}>
                         <Text style={[styles.leagueName, { color: isDark ? '#F2F6FF' : '#12203A' }]}>{league.name}</Text>

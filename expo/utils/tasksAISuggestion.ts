@@ -32,6 +32,9 @@ export interface TasksAISuggestionInput {
   pendingCount: number;
   activeFocusTask: Task | null;
   activeTimerStartTime?: string | null;
+  calendarConnected?: boolean;
+  nextHabitTimeLabel?: string | null;
+  nextHabitTitle?: string | null;
 }
 
 function quoteTitle(title: string): string {
@@ -97,6 +100,9 @@ export function getTasksAISuggestion(input: TasksAISuggestionInput): TasksAISugg
     pendingCount,
     activeFocusTask,
     activeTimerStartTime,
+    calendarConnected,
+    nextHabitTimeLabel,
+    nextHabitTitle,
   } = input;
 
   if (activeFocusTask && activeTimerStartTime) {
@@ -113,6 +119,23 @@ export function getTasksAISuggestion(input: TasksAISuggestionInput): TasksAISugg
 
   const incompleteHabits = getIncompleteHabitsToday(todayHabits, todayStr);
   const overdueTasks = getOverdueTasks(pendingTasks);
+
+  if (
+    calendarConnected &&
+    nextHabitTimeLabel &&
+    nextHabitTitle &&
+    incompleteHabits.length > 0 &&
+    !activeFocusTask
+  ) {
+    const habit =
+      incompleteHabits.find((h) => h.title === nextHabitTitle) ?? incompleteHabits[0];
+    return build(
+      `Your calendar has a good window at ${nextHabitTimeLabel}.`,
+      `Ideal time for ${quoteTitle(habit.title)} before your next commitment.`,
+      { type: 'complete_habit', habitId: habit.id },
+    );
+  }
+
   const completedHabitsToday = todayHabits.length - incompleteHabits.length;
   const nextTask = pickEmphasisTask(focusTask, pendingTasks);
 

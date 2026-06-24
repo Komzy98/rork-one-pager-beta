@@ -22,6 +22,22 @@ function getAlternateSeason(): number {
   return year - 1;
 }
 
+/**
+ * API-Football indexes international tournaments by the tournament calendar year
+ * (World Cup 2026 → season=2026). Date-only queries without `season` often return [].
+ */
+function getInternationalSeasonCandidates(): number[] {
+  const calendarYear = new Date().getFullYear();
+  const candidates = [
+    calendarYear,
+    calendarYear + 1,
+    calendarYear - 1,
+    getCurrentSeason(),
+    getAlternateSeason(),
+  ];
+  return [...new Set(candidates.filter((y) => y >= 2000 && y <= 2100))];
+}
+
 /** Domestic cups / super cups — no season-long league table in API-Football. */
 const CUP_LEAGUES_WITHOUT_TABLE = new Set([
   45, 48, 46, 143, 556, 81, 529, 137, 66, 65, 90, 96, 531,
@@ -202,8 +218,7 @@ export { INTERNATIONAL_COMPETITIONS };
 
 /**
  * International tournaments where API-Football indexes fixtures by the tournament year
- * (e.g. World Cup 2026 → season 2026), not the Aug–May club season. Fetch these with a
- * date window and NO `season` param so a club-season mismatch can't return an empty list.
+ * (e.g. World Cup 2026 → season 2026). `fetchIntlLeague` tries calendar-year seasons first.
  * Ids: 1 World Cup, 4 Euro, 5 Nations League, 6 AFCON, 7 Asian Cup, 9 Copa América,
  * 10 Friendlies, 15–20 World Cup Qualifiers (all confederations), 21 Confederations Cup.
  */
@@ -211,8 +226,14 @@ const INTERNATIONAL_TOURNAMENT_IDS = new Set<number>([
   1, 4, 5, 6, 7, 9, 10, 15, 16, 17, 18, 19, 20, 21,
 ]);
 
+/** International tournaments that expose group/league tables in API-Football standings. */
+const INTERNATIONAL_STANDINGS_LEAGUE_IDS = new Set<number>([
+  1, 4, 5, 6, 7, 9, 15, 16, 17, 18, 19, 20, 21,
+]);
+
 /** International tournaments always probed in the default feed (cheap: empty outside their date window). */
 const DEFAULT_INTERNATIONAL_IDS = [1];
+const FIFA_WORLD_CUP_LEAGUE_ID = 1;
 
 const CORE_LEAGUES = [39, 140, 78, 135, 61];
 const CORE_COMPETITIONS = [2, 3, 848]; // UCL, UEL, UECL
@@ -240,7 +261,7 @@ async function fetchMatchesByType(input: GetMatchesInput) {
       teamIds,
       nationalTeamIds,
       includeAfcon,
-      _filterRev: 'intl-all-branches-v2',
+      _filterRev: 'intl-season-v6-wc-for-you-worldwide',
     });
     const topLevelTtl = CACHE_TTL[type] || 60000;
     const cachedResult = getFromCache(topLevelCacheKey, topLevelTtl);
@@ -392,22 +413,54 @@ async function fetchMatchesByType(input: GetMatchesInput) {
     };
 
     const fetchIntlLeague = async (leagueId: number): Promise<any[]> => {
-      let url = '';
-      if (type === 'today') {
-        url = `${BASE_URL}/fixtures?date=${today}&league=${leagueId}`;
-      } else if (type === 'results') {
-        url = `${BASE_URL}/fixtures?league=${leagueId}&from=${fromDate}&to=${toDate}&status=FT-AET-PEN`;
-      } else {
-        url = `${BASE_URL}/fixtures?league=${leagueId}&from=${fromDate}&to=${toDate}`;
+      const seasons = getInternationalSeasonCandidates();
+      const merged: any[] = [];
+      const seenFixtureIds = new Set<number>();
+
+      for (const fetchSeason of seasons) {
+        let url = '';
+        if (type === 'today') {
+          url = `${BASE_URL}/fixtures?date=${today}&league=${leagueId}&season=${fetchSeason}`;
+        } else if (type === 'results') {
+          url = `${BASE_URL}/fixtures?league=${leagueId}&season=${fetchSeason}&from=${fromDate}&to=${toDate}&status=FT-AET-PEN`;
+        } else {
+          url = `${BASE_URL}/fixtures?league=${leagueId}&season=${fetchSeason}&from=${fromDate}&to=${toDate}`;
+        }
+        const ck = `intl:${leagueId}:${type}:${fromDate}:${toDate}:${fetchSeason}`;
+        const data = await cachedFetch(url, headers, ck, topLevelTtl);
+        noteFetchErrors(data);
+        const batch = data.response || [];
+        for (const match of batch) {
+          const fixtureId = match.fixture?.id;
+          if (fixtureId && !seenFixtureIds.has(fixtureId)) {
+            seenFixtureIds.add(fixtureId);
+            merged.push(match);
+          }
+        }
+        if (batch.length > 0) {
+          console.log(`🌍 Intl league ${leagueId} season ${fetchSeason}: ${batch.length} fixtures`);
+          break;
+        }
       }
-      const ck = `intl:${leagueId}:${type}:${fromDate}:${toDate}`;
-      const data = await cachedFetch(url, headers, ck, topLevelTtl);
-      noteFetchErrors(data);
-      return data.response || [];
+
+      return merged;
     };
 
     try {
       const allPromises: Promise<any[]>[] = [];
+
+      /** World Cup first — parallel batch timeouts / rate limits must not drop tomorrow's fixtures. */
+      if (type !== 'today') {
+        try {
+          const wcFixtures = await fetchIntlLeague(FIFA_WORLD_CUP_LEAGUE_ID);
+          addMatches(wcFixtures);
+          if (wcFixtures.length > 0) {
+            console.log(`🏆 World Cup (${type}): ${wcFixtures.length} fixtures (priority fetch)`);
+          }
+        } catch (wcErr: any) {
+          console.warn(`⚠️ Priority World Cup fetch failed: ${wcErr?.message ?? wcErr}`);
+        }
+      }
 
       if (hasTeams) {
         /** Each favorite gets `fixtures?team=&last=20` so Overview form has enough results; cap limits API fan-out. */
@@ -434,7 +487,7 @@ async function fetchMatchesByType(input: GetMatchesInput) {
       DEFAULT_INTERNATIONAL_IDS.forEach(id => allPromises.push(fetchIntlLeague(id)));
 
       if (nationalTeamIds && nationalTeamIds.length > 0) {
-        const limitedNationals = nationalTeamIds.slice(0, 2);
+        const limitedNationals = nationalTeamIds.slice(0, 8);
         limitedNationals.forEach(id => allPromises.push(fetchNationalTeamMatches(id)));
       }
 
@@ -636,7 +689,13 @@ function hasStandingsPayload(data: { response?: unknown } | null | undefined): b
   return standings.some((group) => Array.isArray(group) && group.length > 0);
 }
 
-function buildStandingsSeasonCandidates(inputSeason?: number): number[] {
+function buildStandingsSeasonCandidates(inputSeason?: number, leagueId?: number): number[] {
+  if (leagueId != null && INTERNATIONAL_TOURNAMENT_IDS.has(leagueId)) {
+    const intl = getInternationalSeasonCandidates();
+    const candidates =
+      inputSeason != null && Number.isFinite(inputSeason) ? [inputSeason, ...intl] : intl;
+    return [...new Set(candidates.filter((s) => s >= 1900 && s <= 2100))];
+  }
   const current = getCurrentSeason();
   const alternate = getAlternateSeason();
   const calendarYear = new Date().getFullYear();
@@ -655,7 +714,7 @@ export const getLeagueStandingsRoute = publicProcedure
     const { leagueId, season: inputSeason } = input;
     
     const apiKey = getFootballApiKeyFromEnv();
-    const seasonsToTry = buildStandingsSeasonCandidates(inputSeason);
+    const seasonsToTry = buildStandingsSeasonCandidates(inputSeason, leagueId);
     
     console.log(
       `🏆 API-Football Standings Request - League: ${leagueId}, seasons: ${seasonsToTry.join(', ')}`,
@@ -894,6 +953,7 @@ type TopPlayerBase = {
   playerName: string;
   photo: string | null;
   teamId: number | null;
+  teamName: string | null;
   teamLogo: string | null;
   goals?: number;
   assists?: number;
@@ -906,6 +966,7 @@ const topScorerRow = (row: any): TopPlayerBase & { goals: number } => {
     playerName: String(row?.player?.name || 'Player'),
     photo: normalizePlayerPhotoFromTopRow(row),
     teamId: (stats?.team?.id as number | null) ?? null,
+    teamName: (stats?.team?.name as string | null) ?? null,
     teamLogo: (stats?.team?.logo as string | null) ?? null,
     goals: Number(stats?.goals?.total ?? 0) || 0,
   };
@@ -918,10 +979,96 @@ const topAssistRow = (row: any): TopPlayerBase & { assists: number } => {
     playerName: String(row?.player?.name || 'Player'),
     photo: normalizePlayerPhotoFromTopRow(row),
     teamId: (stats?.team?.id as number | null) ?? null,
+    teamName: (stats?.team?.name as string | null) ?? null,
     teamLogo: (stats?.team?.logo as string | null) ?? null,
     assists: Number(stats?.goals?.assists ?? 0) || 0,
   };
 };
+
+function statsForLeagueSeason(row: any, leagueId: number, season: number): any | null {
+  const list = row?.statistics;
+  if (!Array.isArray(list)) return null;
+  return (
+    list.find(
+      (s: any) =>
+        s?.league?.id === leagueId &&
+        Number(s?.league?.season) === season,
+    ) ??
+    list.find((s: any) => s?.league?.id === leagueId) ??
+    null
+  );
+}
+
+async function fetchTeamLeadersInLeague(
+  teamId: number,
+  leagueId: number,
+  season: number,
+  headers: Record<string, string>,
+  ttl: number,
+): Promise<{
+  scorers: (TopPlayerBase & { goals: number })[];
+  assists: (TopPlayerBase & { assists: number })[];
+}> {
+  const url = `${BASE_URL}/players?team=${teamId}&season=${season}`;
+  const cacheKey = `players:team:${teamId}:league:${leagueId}:season:${season}`;
+  try {
+    const data = await cachedFetch(url, headers, cacheKey, ttl);
+    const scorers: (TopPlayerBase & { goals: number })[] = [];
+    const assists: (TopPlayerBase & { assists: number })[] = [];
+    for (const entry of data.response ?? []) {
+      const stats = statsForLeagueSeason(entry, leagueId, season);
+      if (!stats) continue;
+      const goals = Number(stats?.goals?.total ?? 0) || 0;
+      const assistCount = Number(stats?.goals?.assists ?? 0) || 0;
+      const base: TopPlayerBase = {
+        playerId: readPlayerId(entry),
+        playerName: String(entry?.player?.name || 'Player'),
+        photo: normalizePlayerPhotoFromTopRow(entry),
+        teamId: (stats?.team?.id as number | null) ?? teamId,
+        teamName: (stats?.team?.name as string | null) ?? null,
+        teamLogo: (stats?.team?.logo as string | null) ?? null,
+      };
+      if (goals > 0) scorers.push({ ...base, goals });
+      if (assistCount > 0) assists.push({ ...base, assists: assistCount });
+    }
+    scorers.sort((a, b) => b.goals - a.goals);
+    assists.sort((a, b) => b.assists - a.assists);
+    return { scorers, assists };
+  } catch (e) {
+    console.warn(`⚠️ Team leaders fetch failed team=${teamId} league=${leagueId}`, e);
+    return { scorers: [], assists: [] };
+  }
+}
+
+function mergeUniqueScorers(
+  primary: (TopPlayerBase & { goals: number })[],
+  extra: (TopPlayerBase & { goals: number })[],
+): (TopPlayerBase & { goals: number })[] {
+  const seen = new Set(primary.map((r) => r.playerId ?? r.playerName));
+  const out = [...primary];
+  for (const row of extra) {
+    const key = row.playerId ?? row.playerName;
+    if (seen.has(key)) continue;
+    seen.add(key);
+    out.push(row);
+  }
+  return out.sort((a, b) => b.goals - a.goals);
+}
+
+function mergeUniqueAssists(
+  primary: (TopPlayerBase & { assists: number })[],
+  extra: (TopPlayerBase & { assists: number })[],
+): (TopPlayerBase & { assists: number })[] {
+  const seen = new Set(primary.map((r) => r.playerId ?? r.playerName));
+  const out = [...primary];
+  for (const row of extra) {
+    const key = row.playerId ?? row.playerName;
+    if (seen.has(key)) continue;
+    seen.add(key);
+    out.push(row);
+  }
+  return out.sort((a, b) => b.assists - a.assists);
+}
 
 /** Ensure portrait URL when API omitted it (enrich may still replace with signed URLs). */
 function withDefaultPlayerPhoto<T extends TopPlayerBase>(row: T): T {
@@ -979,6 +1126,8 @@ export const getLeagueTopPlayersRoute = publicProcedure
     z.object({
       leagueId: z.coerce.number().int().positive().max(99999),
       season: z.coerce.number().int().min(1900).max(2100).optional(),
+      /** For international fixtures — enrich with per-team leaders when competition list omits them. */
+      focusTeamIds: z.array(z.coerce.number().int().positive().max(99999)).max(2).optional(),
     }),
   )
   .query(async ({ input }) => {
@@ -1022,6 +1171,19 @@ export const getLeagueTopPlayersRoute = publicProcedure
         const previous = await fetchTopRowsForSeason(season - 1);
         scorers = previous.scorers;
         assists = previous.assists;
+      }
+
+      const focusIds = (input.focusTeamIds ?? []).filter((id) => id > 0);
+      if (focusIds.length > 0 && INTERNATIONAL_TOURNAMENT_IDS.has(input.leagueId)) {
+        const teamScorers: (TopPlayerBase & { goals: number })[] = [];
+        const teamAssists: (TopPlayerBase & { assists: number })[] = [];
+        for (const teamId of focusIds) {
+          const leaders = await fetchTeamLeadersInLeague(teamId, input.leagueId, season, headers, ttl);
+          teamScorers.push(...leaders.scorers);
+          teamAssists.push(...leaders.assists);
+        }
+        scorers = mergeUniqueScorers(scorers, teamScorers);
+        assists = mergeUniqueAssists(assists, teamAssists);
       }
 
       scorers = await enrichMissingPlayerPhotos(scorers, headers, ttl);

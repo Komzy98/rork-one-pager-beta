@@ -18,6 +18,7 @@ import { BlurView } from 'expo-blur';
 import { trpc } from '@/lib/trpc';
 import { useTheme } from '@/hooks/useTheme';
 import { getCompetitionById } from '@/constants/competitions';
+import FootballLeagueLogo from '@/components/FootballLeagueLogo';
 import * as Haptics from 'expo-haptics';
 
 interface LeagueStandingsModalProps {
@@ -377,7 +378,16 @@ export default function LeagueStandingsModal({
         <View style={[styles.modalContainer, { backgroundColor: colors.background }]}>
           <View style={[styles.modalHeader, { borderBottomColor: colors.border }]}>
             <View style={styles.headerContent}>
-              {leagueData?.logo && <Image source={{ uri: leagueData.logo }} style={styles.leagueLogo} />}
+              <FootballLeagueLogo
+                leagueId={leagueId}
+                leagueName={leagueData?.name || leagueName}
+                leagueLogo={leagueData?.logo}
+                size={40}
+                style={styles.leagueLogo}
+                fallbackStyle={{ backgroundColor: colors.surfaceSecondary }}
+                fallbackIconSize={18}
+                fallbackColor={colors.textSecondary}
+              />
               <View style={styles.headerText}>
                 <Text style={[styles.modalTitle, { color: colors.text }]}>
                   {leagueData?.name || leagueName}

@@ -96,7 +96,7 @@ export default function EventKitManager({ visible, onClose }: EventKitManagerPro
             <Smartphone size={48} color={COLORS.textLight} />
             <Text style={styles.unavailableTitle}>Not Available</Text>
             <Text style={styles.unavailableText}>
-              Device calendar integration is only available on iOS devices.
+              Device calendar integration is available on iOS and Android builds, not in the web preview.
             </Text>
           </View>
         </View>
@@ -141,8 +141,8 @@ export default function EventKitManager({ visible, onClose }: EventKitManagerPro
                 <Calendar size={48} color={COLORS.primary} />
                 <Text style={styles.permissionTitle}>Access Your Calendars</Text>
                 <Text style={styles.permissionDescription}>
-                  Connect your device calendars to see your events alongside imported calendars. 
-                  This allows you to view all your appointments in one place.
+                  Connect your device calendars so One Pager can find free windows for habits,
+                  show events on Overview, and recommend the best times to complete your routine.
                 </Text>
                 
                 <TouchableOpacity 

@@ -24,6 +24,7 @@ import { LinearGradient } from 'expo-linear-gradient';
 import { useTheme } from '@/hooks/useTheme';
 import { sportsFixedPalette } from '@/utils/sportsPalette';
 import { formatMatchRoundLabel, isKnockoutRoundLabel } from '@/utils/matchRoundLabel';
+import { resolveLeagueLogoSource } from '@/utils/footballLeagueLabel';
 import type { LiveFootballMatch } from '@/types/habit';
 
 /** Favourite club indicator — always gold, independent of sports-tab green chrome. */
@@ -65,7 +66,7 @@ export function liveFootballMatchToCardModel(m: LiveFootballMatch): SportsMatchC
     awayScore: m.awayScore ?? null,
     status: m.status,
     league: m.league,
-    leagueId: 0,
+    leagueId: m.leagueId ?? 0,
     leagueCountry: m.country ?? '',
     date: m.date,
     time: m.time,
@@ -148,6 +149,7 @@ export const PremiumSportsMatchCard = React.memo(
     isNotified,
     onToggleNotification,
     isPinned,
+    onTogglePin,
     surfaceColors,
   }: {
     match: SportsMatchCardModel;
@@ -156,6 +158,7 @@ export const PremiumSportsMatchCard = React.memo(
     isNotified?: boolean;
     onToggleNotification?: (matchId: string) => void;
     isPinned?: boolean;
+    onTogglePin?: (matchId: string) => void;
     /** When set (e.g. club profile sheet), card matches parent surface instead of sports-tab gold/blue. */
     surfaceColors?: MatchCardSurfaceColors;
   }) => {
@@ -224,6 +227,12 @@ export const PremiumSportsMatchCard = React.memo(
     const resultStyle = getResultStyle();
     const roundLabel = formatMatchRoundLabel(match.round);
     const isKnockoutRound = isKnockoutRoundLabel(roundLabel);
+    const leagueLogoSource = resolveLeagueLogoSource({
+      leagueId: match.leagueId,
+      league: match.league,
+      leagueLogo: match.leagueLogo,
+      round: match.round,
+    });
 
     return (
       <View style={cardStyles.cardWrapper}>
@@ -270,8 +279,8 @@ export const PremiumSportsMatchCard = React.memo(
             ) : null}
             <View style={cardStyles.matchHeader}>
               <View style={cardStyles.leagueInfo}>
-                {match.leagueLogo ? (
-                  <Image source={{ uri: match.leagueLogo }} style={cardStyles.leagueLogo} resizeMode="contain" />
+                {leagueLogoSource ? (
+                  <Image source={leagueLogoSource} style={cardStyles.leagueLogo} resizeMode="contain" />
                 ) : (
                   <View style={[cardStyles.leagueIconFallback, { backgroundColor: sf.surfaceSecondary }]}>
                     <Trophy size={11} color={sf.textMuted} />
@@ -420,23 +429,54 @@ export const PremiumSportsMatchCard = React.memo(
                   </View>
                 ) : null}
               </View>
-              {match.status !== 'Completed' && onToggleNotification && (
-                <TouchableOpacity
-                  style={[cardStyles.bellBtn, { backgroundColor: isNotified ? `${sf.primary}22` : sf.surfaceSecondary }]}
-                  onPress={(e) => {
-                    e.stopPropagation?.();
-                    onToggleNotification(match.id);
-                  }}
-                  activeOpacity={0.7}
-                  hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
-                >
-                  {isNotified ? (
-                    <Bell size={14} color={sf.primary} fill={sf.primary} />
-                  ) : (
-                    <BellOff size={14} color={sf.textMuted} />
-                  )}
-                </TouchableOpacity>
-              )}
+              <View style={cardStyles.footerActions}>
+                {onTogglePin && (
+                  <TouchableOpacity
+                    style={[
+                      cardStyles.actionBtn,
+                      {
+                        backgroundColor: isPinned ? `${sf.warning}22` : sf.surfaceSecondary,
+                      },
+                    ]}
+                    onPress={(e) => {
+                      e.stopPropagation?.();
+                      onTogglePin(match.id);
+                    }}
+                    activeOpacity={0.7}
+                    hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+                    accessibilityRole="button"
+                    accessibilityLabel={isPinned ? 'Unpin match' : 'Pin match'}
+                  >
+                    <Pin
+                      size={14}
+                      color={isPinned ? sf.warning : sf.textMuted}
+                      fill={isPinned ? sf.warning : 'transparent'}
+                    />
+                  </TouchableOpacity>
+                )}
+                {match.status !== 'Completed' && onToggleNotification && (
+                  <TouchableOpacity
+                    style={[
+                      cardStyles.actionBtn,
+                      { backgroundColor: isNotified ? `${sf.primary}22` : sf.surfaceSecondary },
+                    ]}
+                    onPress={(e) => {
+                      e.stopPropagation?.();
+                      onToggleNotification(match.id);
+                    }}
+                    activeOpacity={0.7}
+                    hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+                    accessibilityRole="button"
+                    accessibilityLabel={isNotified ? 'Turn off match notifications' : 'Notify me for this match'}
+                  >
+                    {isNotified ? (
+                      <Bell size={14} color={sf.primary} fill={sf.primary} />
+                    ) : (
+                      <BellOff size={14} color={sf.textMuted} />
+                    )}
+                  </TouchableOpacity>
+                )}
+              </View>
             </View>
           </View>
         </TouchableOpacity>
@@ -451,6 +491,7 @@ export const PremiumSportsMatchCard = React.memo(
     prev.match.elapsed === next.match.elapsed &&
     prev.isNotified === next.isNotified &&
     prev.isPinned === next.isPinned &&
+    prev.onTogglePin === next.onTogglePin &&
     prev.surfaceColors === next.surfaceColors,
 );
 
@@ -707,12 +748,17 @@ const cardStyles = StyleSheet.create({
     flex: 1,
     fontWeight: '500',
   },
-  bellBtn: {
+  footerActions: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    marginLeft: 8,
+  },
+  actionBtn: {
     width: 34,
     height: 34,
     borderRadius: 11,
     justifyContent: 'center',
     alignItems: 'center',
-    marginLeft: 8,
   },
 });

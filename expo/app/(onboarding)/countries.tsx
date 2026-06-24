@@ -79,6 +79,7 @@ export default function CountriesScreen() {
           includeFollowedLeagues: profile?.sportsFeedPrefs?.includeFollowedLeagues ?? true,
           discoveryLevel: profile?.sportsFeedPrefs?.discoveryLevel ?? 'med',
           prioritizeDomesticLeagues,
+          prioritizeNationalTeams: profile?.sportsFeedPrefs?.prioritizeNationalTeams ?? true,
         },
       });
     } else {
@@ -88,6 +89,7 @@ export default function CountriesScreen() {
           includeFollowedLeagues: profile?.sportsFeedPrefs?.includeFollowedLeagues ?? true,
           discoveryLevel: profile?.sportsFeedPrefs?.discoveryLevel ?? 'med',
           prioritizeDomesticLeagues,
+          prioritizeNationalTeams: profile?.sportsFeedPrefs?.prioritizeNationalTeams ?? true,
         },
       });
     }

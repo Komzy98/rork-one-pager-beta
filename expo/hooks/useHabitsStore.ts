@@ -826,6 +826,7 @@ export const [AppProvider, useApp] = createContextHook(() => {
         const newEpisode = (show.currentEpisode || 0) + 1;
         return {
           ...show,
+          currentSeason: show.currentSeason || 1,
           currentEpisode: newEpisode,
           status: 'Watching' as const,
           updatedAt: new Date().toISOString(),

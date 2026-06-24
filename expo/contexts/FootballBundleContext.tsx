@@ -2,17 +2,15 @@ import React, {
   createContext,
   useCallback,
   useContext,
-  useEffect,
   useMemo,
   useState,
   type ReactNode,
 } from 'react';
-import AsyncStorage from '@react-native-async-storage/async-storage';
 import type { inferRouterInputs, inferRouterOutputs } from '@trpc/server';
 import type { AppRouter } from '@/backend/trpc/app-router';
 import { trpc } from '@/lib/trpc';
-import { useAuth } from '@/hooks/useAuth';
 import { useUserProfile } from '@/hooks/useUserProfile';
+import { mergeFollowedClubTeamIds } from '@/utils/footballQueryContext';
 
 export type FootballBundleInput = inferRouterInputs<AppRouter>['football']['getMatchesBundle'];
 export type FootballMatchesBundleData = inferRouterOutputs<AppRouter>['football']['getMatchesBundle'];
@@ -42,33 +40,22 @@ const BUNDLE_DAYS = 14;
 
 function buildProfileFallbackInput(params: {
   favoriteTeamApiIds: readonly number[];
-  nationalTeamApiIds: readonly number[];
-  manualLeagueIds: readonly number[];
   includeResults: boolean;
 }): FootballBundleInput {
-  const { favoriteTeamApiIds, nationalTeamApiIds, manualLeagueIds, includeResults } = params;
-  return {
-    days: BUNDLE_DAYS,
-    teamIds: favoriteTeamApiIds.length > 0 ? [...favoriteTeamApiIds] : undefined,
-    leagueIds: manualLeagueIds.length > 0 ? [...manualLeagueIds] : undefined,
-    nationalTeamIds: nationalTeamApiIds.length > 0 ? [...nationalTeamApiIds] : undefined,
-    includeAfcon: nationalTeamApiIds.length > 0 ? true : undefined,
-    includeResults,
-  };
+  const { favoriteTeamApiIds, includeResults } = params;
+    return {
+      days: BUNDLE_DAYS,
+      teamIds: favoriteTeamApiIds.length > 0 ? [...favoriteTeamApiIds] : undefined,
+      includeResults,
+    };
 }
 
 export function FootballBundleProvider({ children }: { children: ReactNode }) {
   const { profile } = useUserProfile();
-  const { user } = useAuth();
-  const scopedKey = useCallback(
-    (base: string) => (user?.id ? `${base}_${user.id}` : base),
-    [user?.id],
-  );
 
   const [publishedInput, setPublishedInput] = useState<FootballBundleInput | null>(null);
   const [pollLive, setPollLive] = useState(false);
   const [includeResults, setIncludeResults] = useState(false);
-  const [manualLeagueIds, setManualLeagueIds] = useState<number[]>([]);
 
   const favoriteTeamApiIds = useMemo(
     () =>
@@ -78,49 +65,19 @@ export function FootballBundleProvider({ children }: { children: ReactNode }) {
     [profile?.favoriteTeams],
   );
 
-  const nationalTeamApiIds = useMemo(
-    () =>
-      (profile?.nationalities ?? [])
-        .map((n) => n.apiId)
-        .filter((id): id is number => typeof id === 'number' && id > 0),
-    [profile?.nationalities],
-  );
-
-  useEffect(() => {
-    let cancelled = false;
-    void (async () => {
-      try {
-        let stored = await AsyncStorage.getItem(scopedKey('sports_selected_leagues'));
-        if (!stored) {
-          const legacy = await AsyncStorage.getItem('sports_selected_leagues');
-          if (legacy) stored = legacy;
-        }
-        if (cancelled || !stored) return;
-        const parsed = JSON.parse(stored);
-        if (Array.isArray(parsed)) {
-          setManualLeagueIds(parsed.filter((id): id is number => typeof id === 'number' && id > 0));
-        }
-      } catch {
-        /* optional */
-      }
-    })();
-    return () => {
-      cancelled = true;
-    };
-  }, [scopedKey]);
-
   const fallbackInput = useMemo(
     () =>
       buildProfileFallbackInput({
         favoriteTeamApiIds,
-        nationalTeamApiIds,
-        manualLeagueIds,
         includeResults,
       }),
-    [favoriteTeamApiIds, nationalTeamApiIds, manualLeagueIds, includeResults],
+    [favoriteTeamApiIds, includeResults],
   );
 
-  const effectiveInput = publishedInput ?? fallbackInput;
+  const effectiveInput = useMemo(
+    () => mergeFollowedClubTeamIds(publishedInput ?? fallbackInput, favoriteTeamApiIds),
+    [publishedInput, fallbackInput, favoriteTeamApiIds],
+  );
 
   const query = trpc.football.getMatchesBundle.useQuery(effectiveInput, {
     staleTime: 45 * 1000,

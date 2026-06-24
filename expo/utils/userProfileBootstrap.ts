@@ -15,6 +15,7 @@ export function createDefaultUserProfile(userId: string, email: string, name: st
       includeFollowedLeagues: true,
       discoveryLevel: 'med',
       prioritizeDomesticLeagues: true,
+      prioritizeNationalTeams: true,
     },
     favoriteBooks: [],
     interests: [],

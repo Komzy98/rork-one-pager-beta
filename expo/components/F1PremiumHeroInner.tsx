@@ -20,6 +20,11 @@ type Props = {
   featuredRace: F1Race | null;
   onRefresh: () => void;
   onFeaturedPress: () => void;
+  /** When OpenF1 reports an active session */
+  isSessionLive?: boolean;
+  sessionSubtitle?: string | null;
+  heroLabel?: string;
+  meetingTitle?: string | null;
 };
 
 function formatRaceTimeLine(race: F1Race): string {
@@ -41,7 +46,15 @@ function formatRaceTimeLine(race: F1Race): string {
   return timePart ? `${datePart} · ${timePart} UTC` : datePart;
 }
 
-export default function F1PremiumHeroInner({ featuredRace, onRefresh, onFeaturedPress }: Props) {
+export default function F1PremiumHeroInner({
+  featuredRace,
+  onRefresh,
+  onFeaturedPress,
+  isSessionLive = false,
+  sessionSubtitle,
+  heroLabel,
+  meetingTitle,
+}: Props) {
   const { width: windowWidth } = useWindowDimensions();
   const insets = useSafeAreaInsets();
   const edgePad = useMemo(() => {
@@ -58,6 +71,9 @@ export default function F1PremiumHeroInner({ featuredRace, onRefresh, onFeatured
   const venueLine = featuredRace
     ? [featuredRace.city, featuredRace.country].filter(Boolean).join(', ')
     : '';
+  const label = heroLabel ?? (isSessionLive ? 'LIVE' : 'NEXT RACE');
+  const displayTitle = meetingTitle ?? featuredRace?.name ?? '';
+  const metaLine = isSessionLive && sessionSubtitle ? sessionSubtitle : timeLine;
 
   return (
     <View style={styles.root}>
@@ -68,7 +84,7 @@ export default function F1PremiumHeroInner({ featuredRace, onRefresh, onFeatured
       </View>
 
       <View style={styles.heroContent}>
-        {featuredRace ? (
+        {(featuredRace || meetingTitle) ? (
           <TouchableOpacity
             activeOpacity={0.9}
             onPress={onFeaturedPress}
@@ -77,53 +93,80 @@ export default function F1PremiumHeroInner({ featuredRace, onRefresh, onFeatured
             <BlurView
               intensity={34}
               tint="dark"
-              style={[styles.featuredMatch, compactHero && styles.featuredMatchCompact]}
+              style={[
+                styles.featuredMatch,
+                compactHero && styles.featuredMatchCompact,
+                isSessionLive && styles.featuredMatchLive,
+              ]}
             >
-              <Text style={styles.featuredLabel}>NEXT RACE</Text>
+              {isSessionLive ? (
+                <View style={styles.liveBadgeRow}>
+                  <View style={styles.liveDot} />
+                  <Text style={styles.liveBadgeText}>{label}</Text>
+                </View>
+              ) : (
+                <Text style={styles.featuredLabel}>{label}</Text>
+              )}
               <View style={styles.titleRow}>
                 <View style={styles.titleBlock}>
-                  <Text style={styles.roundLabel}>ROUND {featuredRace.round}</Text>
+                  {featuredRace ? (
+                    <Text style={styles.roundLabel}>ROUND {featuredRace.round}</Text>
+                  ) : null}
                   <Text
                     style={[styles.raceName, compactHero && styles.raceNameCompact]}
                     numberOfLines={compactHero ? 1 : 2}
                   >
-                    {featuredRace.name}
+                    {displayTitle}
                   </Text>
                 </View>
-                <View style={[styles.flagBadge, compactHero && styles.flagBadgeCompact]}>
-                  <Text style={[styles.flagEmoji, compactHero && styles.flagEmojiCompact]}>
-                    {featuredRace.flag}
-                  </Text>
-                </View>
-              </View>
-              <View style={styles.circuitRow}>
-                <Flag size={11} color={F1_RED} strokeWidth={2.2} />
-                <Text style={styles.circuitText} numberOfLines={1}>
-                  {featuredRace.circuit}
-                </Text>
-              </View>
-              <View style={styles.statsRow}>
-                <View style={styles.statChip}>
-                  <Gauge size={11} color={F1_RED} />
-                  <Text style={styles.statText}>{featuredRace.laps} laps</Text>
-                </View>
-                <View style={styles.statChip}>
-                  <Text style={styles.statText}>{featuredRace.circuitLength}</Text>
-                </View>
-              </View>
-              <View style={styles.featuredMetaRow}>
-                <CalendarDays size={11} color={F1_RED} />
-                <Text style={styles.featuredMetaAccent}>{timeLine}</Text>
-                {venueLine ? (
-                  <>
-                    <View style={styles.metaDivider} />
-                    <MapPin size={11} color="#D0D5DD" />
-                    <Text style={styles.featuredMeta} numberOfLines={1}>
-                      {venueLine}
+                {featuredRace ? (
+                  <View style={[styles.flagBadge, compactHero && styles.flagBadgeCompact]}>
+                    <Text style={[styles.flagEmoji, compactHero && styles.flagEmojiCompact]}>
+                      {featuredRace.flag}
                     </Text>
-                  </>
+                  </View>
                 ) : null}
               </View>
+              {featuredRace ? (
+                <>
+                  <View style={styles.circuitRow}>
+                    <Flag size={11} color={F1_RED} strokeWidth={2.2} />
+                    <Text style={styles.circuitText} numberOfLines={1}>
+                      {featuredRace.circuit}
+                    </Text>
+                  </View>
+                  {!isSessionLive ? (
+                    <View style={styles.statsRow}>
+                      <View style={styles.statChip}>
+                        <Gauge size={11} color={F1_RED} />
+                        <Text style={styles.statText}>{featuredRace.laps} laps</Text>
+                      </View>
+                      <View style={styles.statChip}>
+                        <Text style={styles.statText}>{featuredRace.circuitLength}</Text>
+                      </View>
+                    </View>
+                  ) : null}
+                </>
+              ) : null}
+              {(metaLine || venueLine) ? (
+                <View style={styles.featuredMetaRow}>
+                  <CalendarDays size={11} color={F1_RED} />
+                  {metaLine ? (
+                    <Text style={[styles.featuredMetaAccent, isSessionLive && styles.liveMetaAccent]}>
+                      {metaLine}
+                    </Text>
+                  ) : null}
+                  {venueLine ? (
+                    <>
+                      {metaLine ? <View style={styles.metaDivider} /> : null}
+                      <MapPin size={11} color="#D0D5DD" />
+                      <Text style={styles.featuredMeta} numberOfLines={1}>
+                        {venueLine}
+                      </Text>
+                    </>
+                  ) : null}
+                </View>
+              ) : null}
             </BlurView>
           </TouchableOpacity>
         ) : null}
@@ -185,6 +228,31 @@ const styles = StyleSheet.create({
   featuredMatchCompact: {
     paddingHorizontal: 9,
     paddingVertical: 5,
+  },
+  featuredMatchLive: {
+    borderColor: 'rgba(242,13,24,0.55)',
+    backgroundColor: 'rgba(242,13,24,0.12)',
+  },
+  liveBadgeRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 5,
+  },
+  liveDot: {
+    width: 6,
+    height: 6,
+    borderRadius: 3,
+    backgroundColor: F1_RED,
+  },
+  liveBadgeText: {
+    color: F1_RED,
+    fontSize: 9,
+    letterSpacing: 1,
+    fontWeight: '900',
+  },
+  liveMetaAccent: {
+    color: '#FFFFFF',
+    fontWeight: '800',
   },
   featuredLabel: {
     color: F1_RED,

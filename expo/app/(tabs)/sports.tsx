@@ -64,6 +64,7 @@ import { ErrorBoundary } from '@/components/ErrorBoundary';
 import { getCompetitionById } from '@/constants/competitions';
 import MatchDetailsModal from '@/components/MatchDetailsModal';
 import LeagueStandingsModal from '@/components/LeagueStandingsModal';
+import FootballLeagueLogo from '@/components/FootballLeagueLogo';
 import TabWalkthrough from '@/components/TabWalkthrough';
 import UFCFightDetailModal from '@/components/UFCFightDetailModal';
 import F1Section from '@/components/F1Section';
@@ -92,10 +93,18 @@ import {
 import {
   TOP_LEAGUE_BUNDLE_IDS,
   ALWAYS_VISIBLE_INTERNATIONAL_LEAGUE_IDS,
+  FIFA_WORLD_CUP_LEAGUE_ID,
   applyFootballVisibilityRules,
   buildFootballQueryContext,
+  isWorldCupMatch,
+  withWorldCupLeagueIds,
 } from '@/utils/footballQueryContext';
 import { getTeamIdFromName } from '@/utils/footballApi';
+import { formatFootballLeagueLabel, resolveMatchLeagueLogo, resolveLeagueLogoSource } from '@/utils/footballLeagueLabel';
+import { collectNationalTeamApiIds } from '@/utils/nationalTeamApiIds';
+import { usePinnedMatches } from '@/hooks/usePinnedMatches';
+import { sportsCardModelToLiveFootball } from '@/utils/pinnedMatches';
+import type { LiveFootballMatch } from '@/types/habit';
 import {
   HERO_SECONDARY_GAP_BELOW_SPORT_STRIP,
   getSportsHeroEdgePad,
@@ -419,6 +428,37 @@ interface Match {
   elapsed?: number;
 }
 
+function sportsTabMatchToLive(m: Match): LiveFootballMatch {
+  const leagueId = m.leagueId > 0 ? m.leagueId : undefined;
+  return sportsCardModelToLiveFootball({
+    id: m.id,
+    homeTeam: m.homeTeam,
+    awayTeam: m.awayTeam,
+    homeTeamId: m.homeTeamId,
+    awayTeamId: m.awayTeamId,
+    homeScore: m.homeScore,
+    awayScore: m.awayScore,
+    status: m.status,
+    league: m.league,
+    leagueId: m.leagueId,
+    leagueCountry: m.leagueCountry,
+    date: m.date,
+    time: m.time,
+    venue: m.venue,
+    venueCity: m.venueCity,
+    homeTeamLogo: m.homeTeamLogo,
+    awayTeamLogo: m.awayTeamLogo,
+    leagueLogo: resolveMatchLeagueLogo({
+      leagueId,
+      league: m.league,
+      leagueLogo: m.leagueLogo,
+      round: m.round,
+    }),
+    round: m.round,
+    elapsed: m.elapsed,
+  });
+}
+
 function countFormWinsInLastN(form: any[] | undefined, teamId: number | undefined, n: number): number {
   if (!form?.length || !teamId) return 0;
   let wins = 0;
@@ -689,8 +729,18 @@ function transformApiFootballData(fixtures: any[]): Match[] {
       homeScore: fixture.goals?.home ?? null,
       awayScore: fixture.goals?.away ?? null,
       status: matchStatus,
-      league: fixture.league?.name || 'League',
-      leagueId: fixture.league?.id || 0,
+      league: formatFootballLeagueLabel(
+        fixture.league?.name || 'League',
+        fixture.league?.country,
+        fixture.league?.id,
+      ),
+      leagueId:
+        fixture.league?.id ||
+        (String(fixture.league?.name ?? '')
+          .toLowerCase()
+          .includes('world cup')
+          ? 1
+          : 0),
       leagueCountry: fixture.league?.country || '',
       date: fixture.fixture?.date || new Date().toISOString(),
       time: timeString,
@@ -698,7 +748,12 @@ function transformApiFootballData(fixtures: any[]): Match[] {
       venueCity: fixture.fixture?.venue?.city,
       homeTeamLogo: fixture.teams?.home?.logo,
       awayTeamLogo: fixture.teams?.away?.logo,
-      leagueLogo: fixture.league?.logo,
+      leagueLogo: resolveMatchLeagueLogo({
+        leagueId: fixture.league?.id,
+        league: fixture.league?.name,
+        leagueLogo: fixture.league?.logo,
+        round: fixture.league?.round,
+      }),
       round: fixture.league?.round,
       leagueSeason:
         typeof fixture.league?.season === 'number'
@@ -775,6 +830,12 @@ const LiveTickerCard = React.memo(({
   const homeScoreVal = Number(match.homeScore ?? 0);
   const awayScoreVal = Number(match.awayScore ?? 0);
   const homeMomentum = ((homeScoreVal + 1) / (homeScoreVal + awayScoreVal + 2)) * 100;
+  const leagueLogoSource = resolveLeagueLogoSource({
+    leagueId: match.leagueId,
+    league: match.league,
+    leagueLogo: match.leagueLogo,
+    round: match.round,
+  });
 
   return (
     <View style={[styles.tickerCardWrapper, solo && styles.tickerCardWrapperSolo]}>
@@ -852,8 +913,8 @@ const LiveTickerCard = React.memo(({
           </View>
 
           <View style={styles.tickerLeague}>
-            {match.leagueLogo ? (
-              <Image source={{ uri: match.leagueLogo }} style={styles.tickerLeagueLogo} resizeMode="contain" />
+            {leagueLogoSource ? (
+              <Image source={leagueLogoSource} style={styles.tickerLeagueLogo} resizeMode="contain" />
             ) : (
               <Trophy size={6} color="rgba(255,255,255,0.45)" />
             )}
@@ -1564,6 +1625,42 @@ const UFCFightCard = React.memo(({ fight, isFirst, isLast, onPress }: { fight: U
   );
 });
 
+const SportFetchingBanner = React.memo(
+  ({
+    accentColor,
+    textColor,
+    surfaceColor,
+    message = 'Getting latest updates',
+    floating = false,
+    topInset = 0,
+  }: {
+    accentColor: string;
+    textColor: string;
+    surfaceColor: string;
+    message?: string;
+    floating?: boolean;
+    topInset?: number;
+  }) => (
+    <View
+      style={
+        floating
+          ? [styles.sportUpdateFloatingWrap, { paddingTop: topInset + 8 }]
+          : styles.sportFetchingInline
+      }
+      pointerEvents="none"
+    >
+      <BlurView
+        intensity={floating ? 48 : 24}
+        tint="dark"
+        style={[styles.sportFetchingBanner, { backgroundColor: surfaceColor }]}
+      >
+        <ActivityIndicator size="small" color={accentColor} />
+        <Text style={[styles.sportFetchingText, { color: textColor }]}>{message}</Text>
+      </BlurView>
+    </View>
+  ),
+);
+
 const EmptyState = React.memo(
   ({ type, hint }: { type: 'live' | 'upcoming' | 'results'; hint?: string | null }) => {
   const { colors } = useTheme();
@@ -1600,6 +1697,7 @@ function SportsScreenInner() {
   );
   const { isFavoriteTeam, profile } = useUserProfile();
   const { user } = useAuth();
+  const { isPinned: isMatchPinned, togglePin: toggleMatchPin } = usePinnedMatches();
   const { colors, isDark } = useTheme();
   const sf = sportsFixedPalette(isDark);
   const fc = footballChrome(isDark);
@@ -1720,12 +1818,10 @@ function SportsScreenInner() {
       .filter((id): id is number => id !== undefined);
   }, [profile?.favoriteTeams]);
 
-  const nationalTeamApiIds = useMemo(() => {
-    if (!profile?.nationalities) return [];
-    return profile.nationalities
-      .map(nation => nation.apiId)
-      .filter((id): id is number => id !== undefined && id > 0);
-  }, [profile?.nationalities]);
+  const nationalTeamApiIds = useMemo(
+    () => collectNationalTeamApiIds(profile?.nationalities),
+    [profile?.nationalities],
+  );
 
   const hasNationalTeams = nationalTeamApiIds.length > 0;
   const favoriteTeamApiIdSet = useMemo(() => new Set(teamApiIds), [teamApiIds]);
@@ -1812,21 +1908,53 @@ function SportsScreenInner() {
 
   const footballBundleInput = useMemo<FootballBundleInput | null>(() => {
     if (sportMode !== 'football') return null;
+    /** Fetch national-team fixtures whenever the user follows countries (not only in Following mode). */
+    const scopeNationalTeamsOnApi =
+      hasNationalTeams &&
+      (footballSmartFilter === 'following' ||
+        footballSmartFilter === 'for-you' ||
+        footballSmartFilter === 'worldwide');
+    const narrowApiByFollowedTeams =
+      footballSmartFilter === 'following' ||
+      (footballSmartFilter === 'for-you' && sportsFeedPrefs?.strictFollowing === true);
+    const resolvedTeamIds =
+      queryTeamIds && queryTeamIds.length > 0
+        ? queryTeamIds
+        : teamApiIds.length > 0
+          ? teamApiIds
+          : undefined;
+    /**
+     * For You / Worldwide use a broad league + international feed (`teamIds: []` prevents
+     * mergeFollowedClubTeamIds from re-scoping to clubs only). Following / strict For You keep
+     * club-scoped team queries for production API compatibility.
+     */
+    const apiTeamIds: number[] | undefined = narrowApiByFollowedTeams
+      ? resolvedTeamIds
+      : [];
+    const apiLeagueIds =
+      queryLeagueIds && queryLeagueIds.length > 0
+        ? withWorldCupLeagueIds(queryLeagueIds)
+        : footballSmartFilter === 'for-you' || footballSmartFilter === 'worldwide'
+          ? withWorldCupLeagueIds([FIFA_WORLD_CUP_LEAGUE_ID])
+          : undefined;
     return {
       days: 14,
-      teamIds: queryTeamIds,
-      leagueIds: queryLeagueIds,
-      nationalTeamIds: hasNationalTeams ? nationalTeamApiIds : undefined,
-      includeAfcon: hasNationalTeams ? true : undefined,
+      teamIds: apiTeamIds,
+      leagueIds: apiLeagueIds,
+      nationalTeamIds: scopeNationalTeamsOnApi ? nationalTeamApiIds : undefined,
+      includeAfcon: scopeNationalTeamsOnApi ? true : undefined,
       includeResults: includeResultsTab,
     };
   }, [
     sportMode,
+    footballSmartFilter,
     queryTeamIds,
     queryLeagueIds,
+    teamApiIds,
     hasNationalTeams,
     nationalTeamApiIds,
     includeResultsTab,
+    sportsFeedPrefs?.strictFollowing,
   ]);
 
   useEffect(() => {
@@ -1861,23 +1989,34 @@ function SportsScreenInner() {
     return transformApiFootballData(data).filter(m => m.status === 'Completed');
   }, [footballBundleQuery.data?.results]);
 
+  const nationalTeamApiIdSet = useMemo(() => new Set(nationalTeamApiIds), [nationalTeamApiIds]);
+
   const applyFootballFiltersEarly = useCallback(
     (matches: Match[]) =>
       applyFootballVisibilityRules(matches, {
         smartFilter: footballSmartFilter,
-        manualLeagueIds: selectedLeagues,
+        manualLeagueIds: footballSmartFilter === 'worldwide' ? selectedLeagues : [],
         favoriteTeamIds: favoriteTeamApiIdSet,
+        nationalTeamIds: hasNationalTeams ? nationalTeamApiIdSet : undefined,
+        nationalityNamesLower: nationalitySignals.countryNamesLower,
+        prioritizeNationalTeams: sportsFeedPrefs?.prioritizeNationalTeams ?? hasNationalTeams,
         scopedLeagueIds: queryLeagueIds,
       }),
-    [footballSmartFilter, selectedLeagues, favoriteTeamApiIdSet, queryLeagueIds],
+    [
+      footballSmartFilter,
+      selectedLeagues,
+      favoriteTeamApiIdSet,
+      nationalTeamApiIdSet,
+      nationalitySignals.countryNamesLower,
+      queryLeagueIds,
+      hasNationalTeams,
+      sportsFeedPrefs?.prioritizeNationalTeams,
+    ],
   );
 
   const availableLeaguesForStandings = useMemo(() => {
-    const allMatches = applyFootballFiltersEarly([
-      ...liveMatches,
-      ...upcomingMatches,
-      ...completedMatches,
-    ]);
+    /** Use full bundle (not visibility-filtered) so World Cup / intl tables stay discoverable. */
+    const allMatches = [...liveMatches, ...upcomingMatches, ...completedMatches];
     const leagueMap = new Map<
       number,
       { id: number; name: string; logo?: string; country: string; season?: number }
@@ -1888,16 +2027,9 @@ function SportsScreenInner() {
       if (!m.leagueId || m.leagueId <= 0) return;
 
       const leagueNameLower = m.league.toLowerCase();
-      const isInternational =
-        leagueNameLower.includes('world cup') ||
-        leagueNameLower.includes('euro') ||
-        leagueNameLower.includes('afcon') ||
-        leagueNameLower.includes('copa america') ||
-        leagueNameLower.includes('nations league') ||
-        leagueNameLower.includes('friendly') ||
-        leagueNameLower.includes('qualification');
-
-      if (isInternational) return;
+      const isFriendly =
+        leagueNameLower.includes('friendly') || leagueNameLower.includes('friendlies');
+      if (isFriendly) return;
 
       if (!leagueMap.has(m.leagueId)) {
         leagueMap.set(m.leagueId, {
@@ -1913,6 +2045,7 @@ function SportsScreenInner() {
       }
 
       let score = leagueScore.get(m.leagueId) ?? 0;
+      if (m.leagueId === 1) score += 20;
       if (selectedLeagues.includes(m.leagueId)) score += 8;
       if (selectedProfileLeagueIds.has(m.leagueId)) score += 6;
       if (
@@ -1920,6 +2053,12 @@ function SportsScreenInner() {
         (typeof m.awayTeamId === 'number' && favoriteTeamApiIdSet.has(m.awayTeamId))
       ) {
         score += 5;
+      }
+      if (
+        (typeof m.homeTeamId === 'number' && nationalTeamApiIdSet.has(m.homeTeamId)) ||
+        (typeof m.awayTeamId === 'number' && nationalTeamApiIdSet.has(m.awayTeamId))
+      ) {
+        score += 6;
       }
       const matchCountry = (m.leagueCountry || '').toLowerCase();
       if (countryInterestNamesLower.some((country) => matchCountry.includes(country))) {
@@ -1929,8 +2068,22 @@ function SportsScreenInner() {
       leagueScore.set(m.leagueId, score);
     });
 
+    const calendarYear = new Date().getFullYear();
+    if (!leagueMap.has(1)) {
+      const worldCup = getCompetitionById(1);
+      if (worldCup) {
+        leagueMap.set(1, {
+          id: 1,
+          name: 'World Cup',
+          country: 'World',
+          season: calendarYear,
+        });
+        leagueScore.set(1, (leagueScore.get(1) ?? 0) + 25);
+      }
+    }
+
     const leagues = Array.from(leagueMap.values());
-    const TOP_LEAGUES = ['premier league', 'la liga', 'bundesliga', 'serie a', 'ligue 1', 'champions league', 'europa league'];
+    const TOP_LEAGUES = ['premier league', 'la liga', 'bundesliga', 'serie a', 'ligue 1', 'champions league', 'europa league', 'world cup'];
     return leagues.sort((a, b) => {
       const scoreDiff = (leagueScore.get(b.id) ?? 0) - (leagueScore.get(a.id) ?? 0);
       if (scoreDiff !== 0) return scoreDiff;
@@ -1946,10 +2099,10 @@ function SportsScreenInner() {
     liveMatches,
     upcomingMatches,
     completedMatches,
-    applyFootballFiltersEarly,
     selectedLeagues,
     selectedProfileLeagueIds,
     favoriteTeamApiIdSet,
+    nationalTeamApiIdSet,
     countryInterestNamesLower,
   ]);
   
@@ -2004,11 +2157,17 @@ function SportsScreenInner() {
   }, [availableLeagueIds, selectedLeagues, preferencesLoaded, scopedKey]);
 
   const isFavoriteMatchByTeamId = useCallback((match: Match) => {
-    if (favoriteTeamApiIdSet.size === 0) return false;
-    if (typeof match.homeTeamId === 'number' && favoriteTeamApiIdSet.has(match.homeTeamId)) return true;
-    if (typeof match.awayTeamId === 'number' && favoriteTeamApiIdSet.has(match.awayTeamId)) return true;
+    if (
+      (typeof match.homeTeamId === 'number' && favoriteTeamApiIdSet.has(match.homeTeamId)) ||
+      (typeof match.awayTeamId === 'number' && favoriteTeamApiIdSet.has(match.awayTeamId))
+    ) {
+      return true;
+    }
+    if (nationalTeamApiIdSet.size === 0) return false;
+    if (typeof match.homeTeamId === 'number' && nationalTeamApiIdSet.has(match.homeTeamId)) return true;
+    if (typeof match.awayTeamId === 'number' && nationalTeamApiIdSet.has(match.awayTeamId)) return true;
     return false;
-  }, [favoriteTeamApiIdSet]);
+  }, [favoriteTeamApiIdSet, nationalTeamApiIdSet]);
 
   const nationalityCountryRegexes = useMemo(() => {
     return countryInterestNamesLower.map((country) => new RegExp(`\\b${escapeRegExp(country)}\\b`, 'i'));
@@ -2022,10 +2181,27 @@ function SportsScreenInner() {
     ) {
       return true;
     }
+    const home = match.homeTeam?.toLowerCase().trim() ?? '';
+    const away = match.awayTeam?.toLowerCase().trim() ?? '';
+    if (home || away) {
+      for (const country of countryInterestNamesLower) {
+        if (!country) continue;
+        if (
+          home === country ||
+          away === country ||
+          home.includes(country) ||
+          away.includes(country) ||
+          country.includes(home) ||
+          country.includes(away)
+        ) {
+          return true;
+        }
+      }
+    }
     const normalizedCountry = match.leagueCountry?.trim() || '';
     if (!normalizedCountry) return false;
     return nationalityCountryRegexes.some((regex) => regex.test(normalizedCountry));
-  }, [nationalityCountryRegexes, nationalTeamApiIds]);
+  }, [nationalityCountryRegexes, nationalTeamApiIds, countryInterestNamesLower]);
 
   const pinFavorites = useCallback((matches: Match[]) => {
     const pinned: Match[] = [];
@@ -2046,6 +2222,8 @@ function SportsScreenInner() {
     (m: Match) => {
       let s = 0;
       if (isFavoriteMatchByTeamId(m)) s += 100;
+      if (m.leagueId === FIFA_WORLD_CUP_LEAGUE_ID && matchesNationalityCountry(m)) s += 120;
+      else if (matchesNationalityCountry(m)) s += 60;
       if (isMajorLeagueName(m.league)) s += 40;
       if (m.status === 'Live') s += 80;
       const h = hoursUntilMatchKickoff(m);
@@ -2077,20 +2255,29 @@ function SportsScreenInner() {
 
   const sortMatchesForDisplay = useCallback(
     (matches: Match[]) => {
+      const worldCup = matches
+        .filter(isWorldCupMatch)
+        .sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime());
+      const rest = matches.filter((m) => !isWorldCupMatch(m));
+
+      let sortedRest: Match[];
       if (footballSortMode === 'smart') {
-        return sortMatchesBySmartForYou(matches);
-      }
-      const arr = [...matches];
-      if (footballSortMode === 'competition') {
-        arr.sort((a, b) => {
+        sortedRest = sortMatchesBySmartForYou(rest);
+      } else if (footballSortMode === 'competition') {
+        sortedRest = [...rest];
+        sortedRest.sort((a, b) => {
           const c = a.league.localeCompare(b.league);
           if (c !== 0) return c;
           return new Date(a.date).getTime() - new Date(b.date).getTime();
         });
-        return arr;
+      } else {
+        sortedRest = [...rest].sort(
+          (a, b) => new Date(a.date).getTime() - new Date(b.date).getTime(),
+        );
+        sortedRest = pinFavorites(sortedRest);
       }
-      arr.sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime());
-      return pinFavorites(arr);
+
+      return worldCup.length > 0 ? [...worldCup, ...sortedRest] : sortedRest;
     },
     [footballSortMode, sortMatchesBySmartForYou, pinFavorites],
   );
@@ -2108,7 +2295,30 @@ function SportsScreenInner() {
     [filteredUpcomingMatches, sortMatchesBySmartForYou],
   );
 
-  const featuredUpcomingMatch = smartSortedUpcomingMatches[0] ?? null;
+  const featuredUpcomingMatch = useMemo(() => {
+    const chronological = [...filteredUpcomingMatches].sort(
+      (a, b) => new Date(a.date).getTime() - new Date(b.date).getTime(),
+    );
+    const nextWorldCup = chronological.find(isWorldCupMatch);
+    if (
+      nextWorldCup &&
+      (footballSmartFilter === 'for-you' ||
+        footballSmartFilter === 'worldwide' ||
+        footballSmartFilter === 'top-leagues')
+    ) {
+      return nextWorldCup;
+    }
+    const nextNationalWorldCup = chronological.find(
+      (m) => isWorldCupMatch(m) && matchesNationalityCountry(m),
+    );
+    if (nextNationalWorldCup) return nextNationalWorldCup;
+    return smartSortedUpcomingMatches[0] ?? null;
+  }, [
+    filteredUpcomingMatches,
+    smartSortedUpcomingMatches,
+    matchesNationalityCountry,
+    footballSmartFilter,
+  ]);
   /** Insight target follows the active football tab (smart-sorted). */
   const aiInsightMatch = useMemo(() => {
     if (activeTab === 'upcoming') {
@@ -2177,8 +2387,23 @@ function SportsScreenInner() {
     return liveMatches.some((m) => m.leagueId === trendingLeagueId);
   }, [trendingLeagueId, insightLiveProbeQuery.data?.response, liveMatches]);
 
+  const trendingFocusTeamIds = useMemo(() => {
+    const home = insightMatchDetailsQuery.data?.fixture?.teams?.home?.id ?? aiInsightMatch?.homeTeamId;
+    const away = insightMatchDetailsQuery.data?.fixture?.teams?.away?.id ?? aiInsightMatch?.awayTeamId;
+    return [home, away].filter((id): id is number => typeof id === 'number' && id > 0);
+  }, [
+    insightMatchDetailsQuery.data?.fixture?.teams?.home?.id,
+    insightMatchDetailsQuery.data?.fixture?.teams?.away?.id,
+    aiInsightMatch?.homeTeamId,
+    aiInsightMatch?.awayTeamId,
+  ]);
+
   const leagueTopPlayersQuery = trpc.football.getLeagueTopPlayers.useQuery(
-    { leagueId: trendingLeagueId, season: trendingSeason },
+    {
+      leagueId: trendingLeagueId,
+      season: trendingSeason,
+      ...(trendingFocusTeamIds.length > 0 ? { focusTeamIds: trendingFocusTeamIds } : {}),
+    },
     {
       enabled: sportMode === 'football' && trendingLeagueId > 0,
       staleTime: 45 * 60 * 1000,
@@ -2305,20 +2530,47 @@ function SportsScreenInner() {
     const scorers = leagueTopPlayersQuery.data?.topScorers ?? [];
     const assists = leagueTopPlayersQuery.data?.topAssists ?? [];
 
+    const normalizeTeamName = (name: string) =>
+      name.toLowerCase().replace(/\s+/g, ' ').trim();
+    const focusTeamIds = new Set(
+      [homeId, awayId].filter((id): id is number => typeof id === 'number' && id > 0),
+    );
+    const focusTeamNames = new Set(
+      [match.homeTeam, match.awayTeam].map(normalizeTeamName).filter(Boolean),
+    );
+
+    const rowMatchesFocusTeam = (row: { teamId?: number | null; teamName?: string | null }) => {
+      if (row.teamId != null && focusTeamIds.has(row.teamId)) return true;
+      const name = row.teamName ? normalizeTeamName(row.teamName) : '';
+      return name.length > 0 && focusTeamNames.has(name);
+    };
+
+    // National-team tournaments aggregate unrelated teams under one league id, so only
+    // surface leaders from the two sides in this fixture — never the overall leader
+    // (e.g. a Morocco scorer on a Belgium vs Egypt card).
+    const isAggregatedComp =
+      ALWAYS_VISIBLE_INTERNATIONAL_LEAGUE_IDS.has(trendingLeagueId) || trendingLeagueId === 667;
+
+    type ScorerRow = (typeof scorers)[number];
+    type AssistRow = (typeof assists)[number];
+
     const pickScorer = () => {
-      const forTeams = scorers.find(
-        (r: (typeof scorers)[number]) =>
-          r.teamId != null && (r.teamId === homeId || r.teamId === awayId)
-      );
-      return forTeams ?? scorers[0] ?? null;
+      const forTeams = scorers
+        .filter(rowMatchesFocusTeam)
+        .sort((a: ScorerRow, b: ScorerRow) => (b.goals ?? 0) - (a.goals ?? 0));
+      if (forTeams.length) return forTeams[0];
+      return isAggregatedComp ? null : scorers[0] ?? null;
     };
     const pickAssist = () => {
-      const forTeams = assists.find(
-        (r: (typeof assists)[number]) =>
-          r.teamId != null && (r.teamId === homeId || r.teamId === awayId)
-      );
-      return forTeams ?? assists[0] ?? null;
+      const forTeams = assists
+        .filter(rowMatchesFocusTeam)
+        .sort((a: AssistRow, b: AssistRow) => (b.assists ?? 0) - (a.assists ?? 0));
+      if (forTeams.length) return forTeams[0];
+      return isAggregatedComp ? null : assists[0] ?? null;
     };
+
+    const leadersUnavailableHint =
+      match.status === 'Upcoming' ? 'No tournament goals yet' : 'Not available';
 
     return {
       formName,
@@ -2327,6 +2579,7 @@ function SportsScreenInner() {
       topScorer: pickScorer(),
       topAssist: pickAssist(),
       leagueLabel: match.league,
+      leadersUnavailableHint,
     };
   }, [
     aiInsightMatch,
@@ -2334,6 +2587,7 @@ function SportsScreenInner() {
     leagueTopPlayersQuery.data?.topScorers,
     leagueTopPlayersQuery.data?.topAssists,
     profile?.favoriteTeams,
+    trendingLeagueId,
   ]);
 
   useEffect(() => {
@@ -2407,6 +2661,7 @@ function SportsScreenInner() {
         groups.push({ date: dateKey, matches: [match] });
       }
     });
+    groups.sort((a, b) => a.date.localeCompare(b.date));
     return groups;
   }, [displayMatches, activeTab]);
 
@@ -2427,6 +2682,17 @@ function SportsScreenInner() {
       return next;
     });
   }, [scopedKey]);
+
+  const handleToggleMatchPin = useCallback(
+    (matchId: string) => {
+      const pools = [...liveMatches, ...upcomingMatches, ...completedMatches];
+      const found = pools.find((m) => m.id === matchId);
+      if (found) {
+        void toggleMatchPin(sportsTabMatchToLive(found));
+      }
+    },
+    [liveMatches, upcomingMatches, completedMatches, toggleMatchPin],
+  );
 
   type FlatListItem = { type: 'date'; date: string; key: string } | { type: 'match'; match: Match; key: string };
 
@@ -2461,11 +2727,12 @@ function SportsScreenInner() {
         isFavoriteTeam={isFavoriteTeam}
         isNotified={notifiedMatches.has(match.id)}
         onToggleNotification={toggleMatchNotification}
-        isPinned={isFavoriteMatchByTeamId(match)}
+        isPinned={isMatchPinned(match.id)}
+        onTogglePin={handleToggleMatchPin}
         onPress={() => handleMatchCardPress(match)}
       />
     );
-  }, [isFavoriteTeam, notifiedMatches, toggleMatchNotification, handleMatchCardPress, isFavoriteMatchByTeamId]);
+  }, [isFavoriteTeam, notifiedMatches, toggleMatchNotification, handleMatchCardPress, isMatchPinned, handleToggleMatchPin]);
 
   const flatListKeyExtractor = useCallback((item: FlatListItem) => item.key, []);
 
@@ -2706,15 +2973,30 @@ function SportsScreenInner() {
     setRefreshing(false);
   }, [footballBundleQuery, ufcUpcomingQuery, ufcResultsQuery, sportMode]);
 
-  const isLoading =
-    sportMode === 'football'
-      ? footballBundleQuery.isLoading
-      : sportMode === 'ufc'
-        ? ufcUpcomingQuery.isPending || ufcResultsQuery.isPending
-        : false;
   const hasAnyFootballData = (footballBundleQuery.data?.live?.response?.length ?? 0) > 0
     || (footballBundleQuery.data?.upcoming?.response?.length ?? 0) > 0
     || (footballBundleQuery.data?.results?.response?.length ?? 0) > 0;
+  const ufcHasCachedData = ufcUpcomingFights.length > 0 || ufcResultsFights.length > 0;
+  const isInitialSportLoad =
+    sportMode === 'football'
+      ? footballBundleQuery.isLoading && !hasAnyFootballData
+      : sportMode === 'ufc'
+        ? (ufcUpcomingQuery.isPending || ufcResultsQuery.isPending) && !ufcHasCachedData
+        : false;
+  const isSportFetching =
+    sportMode === 'football'
+      ? footballBundleQuery.isFetching && hasAnyFootballData
+      : sportMode === 'ufc'
+        ? (ufcUpcomingQuery.isFetching || ufcResultsQuery.isFetching) && ufcHasCachedData
+        : false;
+  const sportFetchAccent =
+    sportMode === 'ufc'
+      ? UFC_RED
+      : sportMode === 'f1'
+        ? '#F20D18'
+        : sportMode === 'nba'
+          ? '#F58426'
+          : colors.primary;
   const hasConfigError = sportMode === 'football'
     ? !!(footballBundleQuery.data?.live?.errors?.config
       || footballBundleQuery.data?.upcoming?.errors?.config
@@ -2736,9 +3018,9 @@ function SportsScreenInner() {
   const allFootballErrored =
     footballBundleQuery.isFetched && footballBundleQuery.isError;
   const hasError = sportMode === 'football'
-    ? (allFootballErrored && !isLoading && !hasAnyFootballData && !hasConfigError)
+    ? (allFootballErrored && !isInitialSportLoad && !hasAnyFootballData && !hasConfigError)
     : sportMode === 'ufc'
-      ? ((ufcUpcomingQuery.isError && ufcResultsQuery.isError) && !isLoading)
+      ? ((ufcUpcomingQuery.isError && ufcResultsQuery.isError) && !isInitialSportLoad)
       : false;
   const footballErrorDetail = useMemo(() => {
     const candidate =
@@ -2810,6 +3092,15 @@ function SportsScreenInner() {
     ] as const;
 
     const found: { id: number; label: string; rank: number; logo?: string }[] = [];
+    const worldCup = getCompetitionById(1);
+    if (worldCup) {
+      found.push({
+        id: worldCup.id,
+        label: 'World Cup',
+        rank: 0,
+      });
+    }
+
     availableLeaguesForStandings.forEach((league) => {
       const name = league.name || '';
       const matched = competitionMatchers.find((c) => c.matcher.test(name));
@@ -3190,7 +3481,7 @@ function SportsScreenInner() {
                     <Text numberOfLines={1} style={styles.trendingColSub}>
                       {footballTrendingPreview.topScorer
                         ? `${footballTrendingPreview.topScorer.goals} goals`
-                        : 'League leaders'}
+                        : footballTrendingPreview.leadersUnavailableHint}
                     </Text>
                   </View>
                   <View style={styles.trendingCol}>
@@ -3212,7 +3503,7 @@ function SportsScreenInner() {
                     <Text numberOfLines={1} style={styles.trendingColSub}>
                       {footballTrendingPreview.topAssist
                         ? `${footballTrendingPreview.topAssist.assists} assists`
-                        : 'League leaders'}
+                        : footballTrendingPreview.leadersUnavailableHint}
                     </Text>
                   </View>
                 </View>
@@ -3635,6 +3926,16 @@ function SportsScreenInner() {
       <TabWalkthrough tabName="sports" />
       <StatusBar barStyle={sportMode === 'ufc' || sportMode === 'f1' || isDark ? 'light-content' : 'dark-content'} />
 
+      {isSportFetching ? (
+        <SportFetchingBanner
+          floating
+          topInset={insets.top}
+          accentColor={sportFetchAccent}
+          textColor="#F4F4F8"
+          surfaceColor="rgba(16, 17, 19, 0.82)"
+        />
+      ) : null}
+
       {sportMode !== 'football' && sportMode !== 'nba' && sportMode !== 'ufc' && sportMode !== 'f1' && (
         <Animated.View style={[
           styles.header,
@@ -3667,7 +3968,7 @@ function SportsScreenInner() {
       {sportMode === 'football' &&
       !hasTeams &&
       !hasAnyFootballData &&
-      !isLoading &&
+      !isInitialSportLoad &&
       !hasError &&
       !hasConfigError ? (
         <ScrollView
@@ -3710,14 +4011,7 @@ function SportsScreenInner() {
           </View>
         </ScrollView>
       ) : sportMode === 'ufc' ? (
-        isLoading ? (
-          <View style={styles.loadingContainer}>
-            <View style={styles.loadingPulse}>
-              <ActivityIndicator size="large" color={UFC_RED} />
-            </View>
-            <Text style={[styles.loadingText, { color: colors.textSecondary }]}>Loading fights...</Text>
-          </View>
-        ) : hasConfigError ? (
+        hasConfigError ? (
           <View style={styles.errorContainer}>
             <View style={[styles.errorIcon, { backgroundColor: colors.errorLight }]}>
               <AlertCircle size={28} color={colors.warning} strokeWidth={2} />
@@ -3769,6 +4063,13 @@ function SportsScreenInner() {
             }
           >
             {renderUfcChromeHeader()}
+            {isInitialSportLoad ? (
+              <SportFetchingBanner
+                accentColor={UFC_RED}
+                textColor={isDark ? UFC_TEXT : '#F7F6FA'}
+                surfaceColor={isDark ? 'rgba(16, 17, 19, 0.88)' : 'rgba(5, 5, 6, 0.9)'}
+              />
+            ) : (
             <View style={ufcStyles.emptyHero}>
               <LinearGradient
                 colors={[...sf.ufcGradient]}
@@ -3861,6 +4162,7 @@ function SportsScreenInner() {
                 )}
               </LinearGradient>
             </View>
+            )}
           </ScrollView>
         ) : (
           <View style={{ flex: 1 }}>
@@ -3911,13 +4213,22 @@ function SportsScreenInner() {
             )}
           </View>
         )
-      ) : isLoading ? (
-        <View style={styles.loadingContainer}>
-          <View style={styles.loadingPulse}>
-            <ActivityIndicator size="large" color={colors.primary} />
-          </View>
-          <Text style={[styles.loadingText, { color: colors.textSecondary }]}>Loading matches...</Text>
-        </View>
+      ) : sportMode === 'football' && isInitialSportLoad ? (
+        <ScrollView
+          style={styles.scrollView}
+          contentContainerStyle={[styles.scrollContent, { paddingBottom: insets.bottom + 100 }]}
+          showsVerticalScrollIndicator={false}
+          refreshControl={
+            <RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={colors.primary} colors={[colors.primary]} />
+          }
+        >
+          {renderFootballHeader()}
+          <SportFetchingBanner
+            accentColor={colors.primary}
+            textColor={colors.text}
+            surfaceColor={isDark ? 'rgba(16, 17, 19, 0.88)' : 'rgba(255, 255, 255, 0.92)'}
+          />
+        </ScrollView>
       ) : hasConfigError ? (
         <View style={styles.errorContainer}>
           <View style={[styles.errorIcon, { backgroundColor: colors.errorLight }]}>
@@ -3947,7 +4258,7 @@ function SportsScreenInner() {
             <Text style={[styles.retryBtnText, { color: colors.primary }]}>Try Again</Text>
           </TouchableOpacity>
         </View>
-      ) : sportMode === 'football' && displayMatches.length === 0 && !isLoading ? (
+      ) : sportMode === 'football' && displayMatches.length === 0 && !isInitialSportLoad ? (
         <ScrollView
           style={styles.scrollView}
           contentContainerStyle={[styles.scrollContent, { paddingBottom: insets.bottom + 100 }]}
@@ -3966,7 +4277,7 @@ function SportsScreenInner() {
             }
           />
         </ScrollView>
-      ) : sportMode === 'football' && !isLoading ? (
+      ) : sportMode === 'football' && !isInitialSportLoad ? (
         <FlatList
           data={flatListData}
           renderItem={renderFlatListItem}
@@ -4126,6 +4437,14 @@ function SportsScreenInner() {
                     >
                       {competition.logo ? (
                         <Image source={{ uri: competition.logo }} style={styles.competitionQuickChipLogo} resizeMode="contain" />
+                      ) : competition.id === 1 ? (
+                        <FootballLeagueLogo
+                          leagueId={1}
+                          leagueName="World Cup"
+                          size={18}
+                          fallbackIconSize={11}
+                          fallbackColor={selected ? fc.accent : colors.textSecondary}
+                        />
                       ) : (
                         <Trophy size={11} color={selected ? fc.accent : colors.textSecondary} />
                       )}
@@ -4255,13 +4574,16 @@ function SportsScreenInner() {
                   onPress={() => handleSelectLeagueForStandings(league)}
                   activeOpacity={0.7}
                 >
-                  {league.logo ? (
-                    <Image source={{ uri: league.logo }} style={styles.pickerLogo} resizeMode="contain" />
-                  ) : (
-                    <View style={[styles.pickerLogoFallback, { backgroundColor: colors.surfaceSecondary }]}>
-                      <Trophy size={16} color={colors.textMuted} />
-                    </View>
-                  )}
+                  <FootballLeagueLogo
+                    leagueId={league.id}
+                    leagueName={league.name}
+                    leagueLogo={league.logo}
+                    size={36}
+                    style={styles.pickerLogo}
+                    fallbackStyle={{ ...styles.pickerLogoFallback, backgroundColor: colors.surfaceSecondary }}
+                    fallbackIconSize={16}
+                    fallbackColor={colors.textMuted}
+                  />
                   <View style={styles.pickerInfo}>
                     <Text style={[styles.pickerName, { color: colors.text }]}>{league.name}</Text>
                     {league.country ? (
@@ -5456,6 +5778,33 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     paddingVertical: 100,
     gap: 16,
+  },
+  sportFetchingInline: {
+    alignItems: 'center',
+    paddingVertical: 48,
+    paddingHorizontal: 24,
+  },
+  sportFetchingBanner: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+    paddingHorizontal: 16,
+    paddingVertical: 12,
+    borderRadius: 14,
+    overflow: 'hidden',
+  },
+  sportFetchingText: {
+    fontSize: 14,
+    fontWeight: '600' as const,
+  },
+  sportUpdateFloatingWrap: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    zIndex: 100,
+    alignItems: 'center',
+    paddingHorizontal: 16,
   },
   loadingPulse: {
     width: 64,

@@ -318,6 +318,7 @@ export interface LiveFootballMatch {
   homeTeamId?: number;
   awayTeamId?: number;
   league: string;
+  leagueId?: number;
   leagueLogo?: string;
   country?: string;
   date: string;
@@ -395,6 +396,8 @@ export interface UserProfile {
     includeFollowedLeagues: boolean;
     discoveryLevel: 'low' | 'med' | 'high';
     prioritizeDomesticLeagues: boolean;
+    /** Pin and keep national-team fixtures in For You (World Cup, qualifiers, friendlies). */
+    prioritizeNationalTeams?: boolean;
   };
   favoriteBooks: Book[];
   interests: string[];

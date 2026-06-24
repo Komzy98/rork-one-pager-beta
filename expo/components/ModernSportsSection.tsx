@@ -1,6 +1,7 @@
 import React, { useMemo, useState, useRef, useEffect, useCallback } from 'react';
 import { StyleSheet, View, Text, TouchableOpacity, ScrollView, Platform, Animated, Image, Dimensions } from 'react-native';
-import { Trophy, Clock, Calendar, Zap, Shield, Heart, ChevronRight, MapPin, Radio } from 'lucide-react-native';
+import { Image as ExpoImage } from 'expo-image';
+import { Trophy, Clock, Calendar, Zap, Shield, Heart, ChevronRight, MapPin, Radio, Pin } from 'lucide-react-native';
 import * as Haptics from 'expo-haptics';
 import { LinearGradient } from 'expo-linear-gradient';
 import { useUserProfile } from '@/hooks/useUserProfile';
@@ -12,6 +13,9 @@ import { SPACING, cardShadow } from '@/constants/design';
 import EnhancedLoadingState from './EnhancedLoadingState';
 import MatchDetailsModal from './MatchDetailsModal';
 import { PremiumSportsMatchCard, liveFootballMatchToCardModel } from './PremiumSportsMatchCard';
+import { formatMatchRoundLabel } from '@/utils/matchRoundLabel';
+import { isWorldCupLeague } from '@/utils/footballLeagueLabel';
+import { WORLD_CUP_LOGO } from '@/constants/worldCupAssets';
 
 const { width: SCREEN_WIDTH } = Dimensions.get('window');
 
@@ -23,6 +27,9 @@ interface ModernSportsSectionProps {
   onViewAll?: () => void;
   onRefresh?: () => void;
   rawUpcomingCount?: number;
+  pinnedMatches?: LiveFootballMatch[];
+  isPinned?: (matchId: string) => boolean;
+  onTogglePin?: (match: LiveFootballMatch) => void;
 }
 
 const TEAM_GRADIENTS: [string, string][] = [
@@ -139,7 +146,17 @@ const LivePulse = () => {
   );
 };
 
-const PremiumLiveMatchCard = React.memo(({ match, onPress }: { match: LiveFootballMatch; onPress: () => void }) => {
+const PremiumLiveMatchCard = React.memo(({
+  match,
+  onPress,
+  isPinned,
+  onTogglePin,
+}: {
+  match: LiveFootballMatch;
+  onPress: () => void;
+  isPinned?: boolean;
+  onTogglePin?: () => void;
+}) => {
   const scaleAnim = useRef(new Animated.Value(1)).current;
 
   const handlePressIn = useCallback(() => {
@@ -181,6 +198,24 @@ const PremiumLiveMatchCard = React.memo(({ match, onPress }: { match: LiveFootba
               ) : null}
               <Text style={styles.premiumLeagueName} numberOfLines={1}>{match.league}</Text>
             </View>
+            {onTogglePin ? (
+              <TouchableOpacity
+                style={styles.premiumPinBtn}
+                onPress={(e) => {
+                  e.stopPropagation?.();
+                  onTogglePin();
+                }}
+                hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+                accessibilityRole="button"
+                accessibilityLabel={isPinned ? 'Unpin match' : 'Pin match'}
+              >
+                <Pin
+                  size={13}
+                  color={isPinned ? '#F59E0B' : 'rgba(255,255,255,0.55)'}
+                  fill={isPinned ? '#F59E0B' : 'transparent'}
+                />
+              </TouchableOpacity>
+            ) : null}
           </View>
 
           <View style={styles.premiumMatchBody}>
@@ -229,7 +264,19 @@ const PremiumLiveMatchCard = React.memo(({ match, onPress }: { match: LiveFootba
   );
 });
 
-const PremiumUpcomingCard = React.memo(({ match, isFirst, onPress }: { match: LiveFootballMatch; isFirst: boolean; onPress: () => void }) => {
+const PremiumUpcomingCard = React.memo(({
+  match,
+  isFirst,
+  onPress,
+  isPinned,
+  onTogglePin,
+}: {
+  match: LiveFootballMatch;
+  isFirst: boolean;
+  onPress: () => void;
+  isPinned?: boolean;
+  onTogglePin?: () => void;
+}) => {
   const scaleAnim = useRef(new Animated.Value(1)).current;
   const countdown = formatTimeUntilMatch(match.date, match.time);
   const dateLabel = formatMatchDate(match.date);
@@ -268,11 +315,31 @@ const PremiumUpcomingCard = React.memo(({ match, isFirst, onPress }: { match: Li
               )}
               <Text style={styles.upcomingLeagueName} numberOfLines={1}>{match.league}</Text>
             </View>
-            <View style={[styles.upcomingCountdownPill, isSoon && styles.upcomingCountdownSoon]}>
-              {isSoon && <Clock size={10} color="#FF9500" />}
-              <Text style={[styles.upcomingCountdownText, isSoon && styles.upcomingCountdownTextSoon]}>
-                {countdown}
-              </Text>
+            <View style={styles.upcomingHeaderActions}>
+              <View style={[styles.upcomingCountdownPill, isSoon && styles.upcomingCountdownSoon]}>
+                {isSoon && <Clock size={10} color="#FF9500" />}
+                <Text style={[styles.upcomingCountdownText, isSoon && styles.upcomingCountdownTextSoon]}>
+                  {countdown}
+                </Text>
+              </View>
+              {onTogglePin ? (
+                <TouchableOpacity
+                  style={[styles.upcomingPinBtn, isPinned && styles.upcomingPinBtnActive]}
+                  onPress={(e) => {
+                    e.stopPropagation?.();
+                    onTogglePin();
+                  }}
+                  hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+                  accessibilityRole="button"
+                  accessibilityLabel={isPinned ? 'Unpin match' : 'Pin match'}
+                >
+                  <Pin
+                    size={13}
+                    color={isPinned ? '#F59E0B' : '#8E8E93'}
+                    fill={isPinned ? '#F59E0B' : 'transparent'}
+                  />
+                </TouchableOpacity>
+              ) : null}
             </View>
           </View>
 
@@ -316,6 +383,227 @@ const PremiumUpcomingCard = React.memo(({ match, isFirst, onPress }: { match: Li
         </View>
       </TouchableOpacity>
     </Animated.View>
+  );
+});
+
+const PINNED_MATCH_GRADIENTS: [string, string][] = [
+  ['#0B1D3A', '#1E4A8C'],
+  ['#1A0A2E', '#4A1D6E'],
+  ['#0D2818', '#1A472A'],
+  ['#4A0E0E', '#8B1A1A'],
+];
+
+/** Pinned fixture — same gradient team-card shell as club rows in My Teams. */
+const PinnedMatchTeamCard = React.memo(({
+  match,
+  index,
+  onPress,
+  isPinned,
+  onTogglePin,
+}: {
+  match: LiveFootballMatch;
+  index: number;
+  onPress: () => void;
+  isPinned?: boolean;
+  onTogglePin?: () => void;
+}) => {
+  const gradient = PINNED_MATCH_GRADIENTS[index % PINNED_MATCH_GRADIENTS.length];
+  const isLive = match.status === 'Live';
+  const isUpcoming = match.status === 'Upcoming';
+  const roundLabel = formatMatchRoundLabel(match.round);
+  const isWorldCup = isWorldCupLeague(match.leagueId, match.league, match.round);
+  const headerSubtitle = roundLabel || match.venue || '';
+
+  const handlePinPress = useCallback(async () => {
+    if (Platform.OS !== 'web') {
+      await Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+    }
+    onTogglePin?.();
+  }, [onTogglePin]);
+
+  return (
+    <TouchableOpacity style={styles.teamCard} onPress={onPress} activeOpacity={0.95}>
+      <LinearGradient
+        colors={gradient}
+        start={{ x: 0, y: 0 }}
+        end={{ x: 1, y: 1 }}
+        style={styles.teamCardGradient}
+      >
+        <View style={styles.teamCardContent}>
+          <View style={styles.teamCardTop}>
+            <View style={styles.teamInfo}>
+              {isWorldCup ? (
+                <ExpoImage source={WORLD_CUP_LOGO} style={styles.teamBadgeLogo} contentFit="contain" />
+              ) : match.leagueLogo ? (
+                <ExpoImage source={{ uri: match.leagueLogo }} style={styles.teamBadgeLogo} contentFit="contain" />
+              ) : (
+                <Shield size={18} color="#fff" />
+              )}
+              <View style={styles.teamTextInfo}>
+                <Text style={styles.teamName} numberOfLines={1}>
+                  {match.league}
+                </Text>
+                {headerSubtitle ? (
+                  <Text style={styles.teamLeague} numberOfLines={1}>
+                    {headerSubtitle.toUpperCase()}
+                  </Text>
+                ) : null}
+              </View>
+            </View>
+
+            <View style={styles.pinnedCardTopActions}>
+              {isLive ? (
+                <View style={styles.liveBadge}>
+                  <LivePulse />
+                  <Text style={styles.liveBadgeText}>LIVE</Text>
+                </View>
+              ) : null}
+              {onTogglePin ? (
+                <TouchableOpacity
+                  style={[
+                    styles.pinnedMatchPinBtn,
+                    isPinned && styles.pinnedMatchPinBtnActive,
+                  ]}
+                  onPress={handlePinPress}
+                  hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+                  accessibilityRole="button"
+                  accessibilityLabel={isPinned ? 'Unpin match' : 'Pin match'}
+                >
+                  <Pin
+                    size={14}
+                    color={isPinned ? '#FCD34D' : '#fff'}
+                    fill={isPinned ? '#F59E0B' : 'transparent'}
+                  />
+                </TouchableOpacity>
+              ) : null}
+            </View>
+          </View>
+
+          {isLive ? (
+            <View style={styles.liveMatchSection}>
+              <View style={styles.liveScoreRow}>
+                <View style={styles.liveTeamCol}>
+                  {match.homeTeamLogo ? (
+                    <Image source={{ uri: match.homeTeamLogo }} style={styles.teamLogo} />
+                  ) : null}
+                  <Text style={styles.liveTeamName} numberOfLines={1}>
+                    {match.homeTeam}
+                  </Text>
+                </View>
+                <View style={styles.scoreCenter}>
+                  <View style={styles.scoreBox}>
+                    <Text style={styles.scoreText}>{match.homeScore ?? 0}</Text>
+                    <Text style={styles.scoreDivider}>-</Text>
+                    <Text style={styles.scoreText}>{match.awayScore ?? 0}</Text>
+                  </View>
+                  {match.elapsed ? (
+                    <View style={styles.elapsedBadge}>
+                      <Text style={styles.elapsedText}>{match.elapsed}&apos;</Text>
+                    </View>
+                  ) : null}
+                </View>
+                <View style={styles.liveTeamCol}>
+                  {match.awayTeamLogo ? (
+                    <Image source={{ uri: match.awayTeamLogo }} style={styles.teamLogo} />
+                  ) : null}
+                  <Text style={styles.liveTeamName} numberOfLines={1}>
+                    {match.awayTeam}
+                  </Text>
+                </View>
+              </View>
+              {match.venue ? (
+                <Text style={styles.matchLeague} numberOfLines={1}>
+                  {match.venue}
+                </Text>
+              ) : null}
+            </View>
+          ) : isUpcoming ? (
+            <View style={styles.nextMatchSection}>
+              <View style={styles.nextMatchHeader}>
+                <Clock size={12} color="rgba(255,255,255,0.7)" />
+                <Text style={styles.nextMatchLabel}>NEXT MATCH</Text>
+              </View>
+              <View style={styles.nextMatchTeamsRow}>
+                <View style={styles.nextMatchTeamCol}>
+                  {match.homeTeamLogo ? (
+                    <Image source={{ uri: match.homeTeamLogo }} style={styles.nextMatchTeamLogo} />
+                  ) : (
+                    <View style={[styles.nextMatchTeamLogo, styles.nextMatchTeamLogoPlaceholder]}>
+                      <Shield size={16} color="rgba(255,255,255,0.5)" />
+                    </View>
+                  )}
+                  <Text style={styles.nextMatchTeamName} numberOfLines={1}>
+                    {match.homeTeam}
+                  </Text>
+                </View>
+                <View style={styles.vsContainer}>
+                  <Text style={styles.vsText}>vs</Text>
+                </View>
+                <View style={styles.nextMatchTeamCol}>
+                  {match.awayTeamLogo ? (
+                    <Image source={{ uri: match.awayTeamLogo }} style={styles.nextMatchTeamLogo} />
+                  ) : (
+                    <View style={[styles.nextMatchTeamLogo, styles.nextMatchTeamLogoPlaceholder]}>
+                      <Shield size={16} color="rgba(255,255,255,0.5)" />
+                    </View>
+                  )}
+                  <Text style={styles.nextMatchTeamName} numberOfLines={1}>
+                    {match.awayTeam}
+                  </Text>
+                </View>
+              </View>
+              <View style={styles.nextMatchMeta}>
+                <Calendar size={12} color="rgba(255,255,255,0.6)" />
+                <Text style={styles.nextMatchDate}>
+                  {formatMatchDate(match.date)} • {match.time}
+                </Text>
+                <View style={styles.countdownBadge}>
+                  <Text style={styles.countdownText}>
+                    {formatTimeUntilMatch(match.date, match.time)}
+                  </Text>
+                </View>
+              </View>
+            </View>
+          ) : (
+            <View style={styles.nextMatchSection}>
+              <View style={styles.nextMatchHeader}>
+                <Trophy size={12} color="rgba(255,255,255,0.7)" />
+                <Text style={styles.nextMatchLabel}>FULL TIME</Text>
+              </View>
+              <View style={styles.nextMatchTeamsRow}>
+                <View style={styles.nextMatchTeamCol}>
+                  {match.homeTeamLogo ? (
+                    <Image source={{ uri: match.homeTeamLogo }} style={styles.nextMatchTeamLogo} />
+                  ) : null}
+                  <Text style={styles.nextMatchTeamName} numberOfLines={1}>
+                    {match.homeTeam}
+                  </Text>
+                  <Text style={styles.pinnedResultScore}>{match.homeScore ?? 0}</Text>
+                </View>
+                <View style={styles.vsContainer}>
+                  <Text style={styles.vsText}>-</Text>
+                </View>
+                <View style={styles.nextMatchTeamCol}>
+                  {match.awayTeamLogo ? (
+                    <Image source={{ uri: match.awayTeamLogo }} style={styles.nextMatchTeamLogo} />
+                  ) : null}
+                  <Text style={styles.nextMatchTeamName} numberOfLines={1}>
+                    {match.awayTeam}
+                  </Text>
+                  <Text style={styles.pinnedResultScore}>{match.awayScore ?? 0}</Text>
+                </View>
+              </View>
+              <View style={styles.nextMatchMeta}>
+                <Calendar size={12} color="rgba(255,255,255,0.6)" />
+                <Text style={styles.nextMatchDate}>
+                  {formatMatchDate(match.date)} • {match.time}
+                </Text>
+              </View>
+            </View>
+          )}
+        </View>
+      </LinearGradient>
+    </TouchableOpacity>
   );
 });
 
@@ -373,7 +661,10 @@ function ModernSportsSectionComponent({
   upcomingMatches,
   isLoading,
   onViewAll,
-  rawUpcomingCount: _rawUpcomingCount = 0
+  rawUpcomingCount: _rawUpcomingCount = 0,
+  pinnedMatches = [],
+  isPinned,
+  onTogglePin,
 }: ModernSportsSectionProps) {
   const { colors } = useTheme();
   const { profile, isLoading: profileLoading, getTeamLogo } = useUserProfile();
@@ -680,6 +971,20 @@ function ModernSportsSectionComponent({
     return matches;
   }, [uniqueTeamMatches, selectedTab]);
 
+  const renderPinnedMatchCard = useCallback(
+    (match: LiveFootballMatch, index: number) => (
+      <PinnedMatchTeamCard
+        key={`pinned-${match.id}-${index}`}
+        match={match}
+        index={index}
+        onPress={() => handleMatchPress(match)}
+        isPinned={isPinned?.(match.id) ?? true}
+        onTogglePin={onTogglePin ? () => onTogglePin(match) : undefined}
+      />
+    ),
+    [handleMatchPress, isPinned, onTogglePin],
+  );
+
   if (isLoading || profileLoading) {
     return (
       <View style={styles.container}>
@@ -694,8 +999,10 @@ function ModernSportsSectionComponent({
     );
   }
 
-  const hasTeamsOrNationalities = (profile?.favoriteTeams && profile.favoriteTeams.length > 0) ||
-                                    (profile?.nationalities && profile.nationalities.length > 0);
+  const hasTeamsOrNationalities =
+    (profile?.favoriteTeams && profile.favoriteTeams.length > 0) ||
+    (profile?.nationalities && profile.nationalities.length > 0) ||
+    pinnedMatches.length > 0;
 
   if (!hasTeamsOrNationalities) {
     return (
@@ -941,6 +1248,15 @@ function ModernSportsSectionComponent({
             showsVerticalScrollIndicator={false}
             contentContainerStyle={styles.teamsScrollContent}
           >
+            {pinnedMatches.length > 0 ? (
+              <View style={styles.pinnedSection}>
+                <View style={styles.pinnedSectionHeader}>
+                  <Pin size={14} color="#F59E0B" fill="#F59E0B" />
+                  <Text style={[styles.pinnedSectionTitle, { color: colors.text }]}>Pinned</Text>
+                </View>
+                {pinnedMatches.map((match, index) => renderPinnedMatchCard(match, index))}
+              </View>
+            ) : null}
             {sortedFavoriteTeams.map((team, index) => renderTeamCard(team, index))}
           </ScrollView>
         ) : selectedTab === 'live' ? (
@@ -1147,6 +1463,22 @@ const styles = StyleSheet.create({
     paddingBottom: 16,
     gap: 12,
   },
+  pinnedSection: {
+    gap: 10,
+    marginBottom: 8,
+  },
+  pinnedSectionHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    paddingHorizontal: 4,
+    marginBottom: 2,
+  },
+  pinnedSectionTitle: {
+    fontSize: 13,
+    fontWeight: '700',
+    letterSpacing: 0.2,
+  },
   premiumListContent: {
     paddingHorizontal: 20,
     paddingBottom: 16,
@@ -1293,6 +1625,15 @@ const styles = StyleSheet.create({
     backgroundColor: '#FF3B30',
     opacity: 0.05,
   },
+  premiumPinBtn: {
+    width: 30,
+    height: 30,
+    borderRadius: 10,
+    backgroundColor: 'rgba(255,255,255,0.08)',
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginLeft: 8,
+  },
 
   upcomingCard: {
     backgroundColor: '#FFFFFF',
@@ -1351,6 +1692,25 @@ const styles = StyleSheet.create({
   },
   upcomingCountdownTextSoon: {
     color: '#FF9500',
+  },
+  upcomingHeaderActions: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    flexShrink: 0,
+  },
+  upcomingPinBtn: {
+    width: 30,
+    height: 30,
+    borderRadius: 10,
+    backgroundColor: '#F2F2F7',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  upcomingPinBtnActive: {
+    backgroundColor: '#F59E0B18',
+    borderWidth: 1,
+    borderColor: '#F59E0B30',
   },
   upcomingBody: {
     flexDirection: 'row',
@@ -1528,6 +1888,31 @@ const styles = StyleSheet.create({
     fontWeight: '800' as const,
     color: '#fff',
     letterSpacing: 0.5,
+  },
+  pinnedCardTopActions: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    flexShrink: 0,
+  },
+  pinnedMatchPinBtn: {
+    width: 34,
+    height: 34,
+    borderRadius: 12,
+    backgroundColor: 'rgba(255,255,255,0.15)',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  pinnedMatchPinBtnActive: {
+    backgroundColor: 'rgba(245, 158, 11, 0.35)',
+    borderWidth: 1,
+    borderColor: 'rgba(245, 158, 11, 0.55)',
+  },
+  pinnedResultScore: {
+    fontSize: 22,
+    fontWeight: '800' as const,
+    color: '#fff',
+    marginTop: 2,
   },
   livePulseContainer: {
     width: 8,

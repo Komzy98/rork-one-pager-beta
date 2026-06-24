@@ -103,9 +103,11 @@ import { MOCK_CHALLENGES } from '@/mocks/socialData';
 import { ThemeSettings } from '@/components/ThemeSettings';
 import { GOOGLE_G_LOGO } from '@/constants/googleBrandAssets';
 
-import { UserTeam, UserCountry, NBAFavoriteTeam } from '@/types/habit';
+import { UserTeam, UserCountry, NBAFavoriteTeam, UserNationality } from '@/types/habit';
 import { FOOTBALL_COUNTRIES, FOOTBALL_TEAMS, getFootballTeamLogoUrl, searchTeams as searchAllTeams } from '@/constants/footballData';
 import { ALL_NBA_TEAMS, searchNBATeams, NBATeamInfo } from '@/constants/nbaData';
+import { ALL_NATIONS } from '@/constants/nations';
+import { MAX_FOLLOWED_NATIONALITIES } from '@/constants/nationalTeams';
 import TabWalkthrough from '@/components/TabWalkthrough';
 import { useWalkthrough } from '@/hooks/useWalkthrough';
 import { NationFlag } from '@/components/NationFlag';
@@ -183,6 +185,8 @@ export default function ProfileScreen() {
     removeFavoriteTeam,
     addFavoriteCountry,
     removeFavoriteCountry,
+    addNationality,
+    removeNationality,
     updateDisplayPreferences,
     updateInterests,
     getPersonalizedTabs,
@@ -229,10 +233,12 @@ export default function ProfileScreen() {
   const [showTeamModal, setShowTeamModal] = useState<boolean>(false);
   const [showNBATeamModal, setShowNBATeamModal] = useState<boolean>(false);
   const [showCountryModal, setShowCountryModal] = useState<boolean>(false);
+  const [showNationalityModal, setShowNationalityModal] = useState<boolean>(false);
   const [showInterestsModal, setShowInterestsModal] = useState<boolean>(false);
   const [teamSearch, setTeamSearch] = useState<string>('');
   const [nbaTeamSearch, setNbaTeamSearch] = useState<string>('');
   const [countrySearch, setCountrySearch] = useState<string>('');
+  const [nationalitySearch, setNationalitySearch] = useState<string>('');
   const [editingName, setEditingName] = useState<boolean>(false);
   const [tempName, setTempName] = useState<string>(profile?.name || '');
   const [expandedSection, setExpandedSection] = useState<ExpandedSection>(null);
@@ -592,6 +598,11 @@ export default function ProfileScreen() {
     country.leagues.some(league => league.toLowerCase().includes(countrySearch.toLowerCase()))
   );
 
+  const nationalities = profile?.nationalities ?? [];
+  const filteredNationalities = ALL_NATIONS.filter((nation) =>
+    nation.name.toLowerCase().includes(nationalitySearch.toLowerCase()),
+  );
+
   const handleSaveName = () => {
     updateProfile({ name: tempName });
     setEditingName(false);
@@ -658,6 +669,30 @@ export default function ProfileScreen() {
       setShowCountryModal(false);
       setCountrySearch('');
     }
+  };
+
+  const handleAddNationality = (nation: (typeof ALL_NATIONS)[number]) => {
+    const isAlreadyAdded = nationalities.some((n) => n.id === nation.id);
+    if (isAlreadyAdded || nationalities.length >= MAX_FOLLOWED_NATIONALITIES) return;
+    const entry: UserNationality = {
+      id: nation.id,
+      name: nation.name,
+      code: nation.code,
+      flag: nation.flag,
+      apiId: nation.apiId,
+    };
+    addNationality(entry);
+    if (nationalities.length + 1 >= MAX_FOLLOWED_NATIONALITIES) {
+      setShowNationalityModal(false);
+      setNationalitySearch('');
+    }
+  };
+
+  const handleRemoveNationality = (nationalityId: string) => {
+    Alert.alert('Remove Country', 'Stop following this national team?', [
+      { text: 'Cancel', style: 'cancel' },
+      { text: 'Remove', style: 'destructive', onPress: () => removeNationality(nationalityId) },
+    ]);
   };
 
   const handleLogout = () => {
@@ -877,7 +912,7 @@ export default function ProfileScreen() {
                 <View style={styles.settingsItemContent}>
                   <Text style={[styles.settingsItemTitle, { color: colors.text }]}>Favorite Teams</Text>
                   <Text style={[styles.settingsItemSubtitle, { color: colors.textTertiary }]}>
-                    {profile.favoriteTeams.length + (profile.favoriteNBATeams?.length || 0)} teams, {profile.favoriteCountries.length} leagues
+                    {profile.favoriteTeams.length + (profile.favoriteNBATeams?.length || 0)} teams, {nationalities.length} countries, {profile.favoriteCountries.length} leagues
                   </Text>
                 </View>
                 {expandedSection === 'favorites' ? (
@@ -941,6 +976,42 @@ export default function ProfileScreen() {
                   ) : (
                     <Text style={[styles.emptyFavText, { color: colors.textTertiary }]}>No teams added</Text>
                   )}
+                </View>
+
+                {/* National Teams (World Cup / international) */}
+                <View style={styles.favSubSection}>
+                  <View style={styles.favSubHeader}>
+                    <Text style={[styles.favSubTitle, { color: colors.text }]}>National Teams</Text>
+                    <TouchableOpacity
+                      style={[styles.addSmallBtn, { backgroundColor: colors.primary + '15' }]}
+                      onPress={() => setShowNationalityModal(true)}
+                      disabled={nationalities.length >= MAX_FOLLOWED_NATIONALITIES}
+                    >
+                      <Plus size={14} color={nationalities.length >= MAX_FOLLOWED_NATIONALITIES ? colors.textTertiary : colors.primary} />
+                    </TouchableOpacity>
+                  </View>
+                  {nationalities.length > 0 ? (
+                    <View style={styles.favChipsList}>
+                      {nationalities.map((nation) => (
+                        <View key={nation.id} style={[styles.favChip, { backgroundColor: colors.card, borderColor: colors.border }]}>
+                          <Text style={styles.nationFlagChip}>{nation.flag}</Text>
+                          <Text style={[styles.favChipText, { color: colors.text }]} numberOfLines={1}>{nation.name}</Text>
+                          <TouchableOpacity onPress={() => handleRemoveNationality(nation.id)} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
+                            <X size={12} color={colors.textTertiary} />
+                          </TouchableOpacity>
+                        </View>
+                      ))}
+                    </View>
+                  ) : (
+                    <Text style={[styles.emptyFavText, { color: colors.textTertiary }]}>
+                      Follow countries to track World Cup matches
+                    </Text>
+                  )}
+                  {nationalities.length > 0 && nationalities.length < MAX_FOLLOWED_NATIONALITIES ? (
+                    <Text style={[styles.favHintText, { color: colors.textTertiary }]}>
+                      Up to {MAX_FOLLOWED_NATIONALITIES} countries
+                    </Text>
+                  ) : null}
                 </View>
 
                 {/* Domestic Leagues */}
@@ -2048,6 +2119,57 @@ export default function ProfileScreen() {
           </View>
         </Modal>
 
+        <Modal visible={showNationalityModal} animationType="slide" presentationStyle="pageSheet">
+          <View style={[styles.modalContainer, { backgroundColor: colors.background }]}>
+            <View style={[styles.modalHeader, { borderBottomColor: colors.border }]}>
+              <Text style={[styles.modalTitle, { color: colors.text }]}>Follow National Team</Text>
+              <TouchableOpacity
+                style={[styles.modalClose, { backgroundColor: colors.surfaceSecondary }]}
+                onPress={() => {
+                  setShowNationalityModal(false);
+                  setNationalitySearch('');
+                }}
+              >
+                <X size={20} color={colors.text} />
+              </TouchableOpacity>
+            </View>
+            <Text style={[styles.modalSubtitle, { color: colors.textTertiary }]}>
+              {nationalities.length}/{MAX_FOLLOWED_NATIONALITIES} selected — World Cup & international fixtures
+            </Text>
+            <View style={[styles.searchBox, { backgroundColor: colors.surfaceSecondary }]}>
+              <TextInput
+                style={[styles.searchInput, { color: colors.text }]}
+                placeholder="Search countries..."
+                placeholderTextColor={colors.textTertiary}
+                value={nationalitySearch}
+                onChangeText={setNationalitySearch}
+              />
+            </View>
+            <ScrollView style={styles.modalList}>
+              {filteredNationalities.map((nation) => {
+                const isAdded = nationalities.some((n) => n.id === nation.id);
+                const atMax = nationalities.length >= MAX_FOLLOWED_NATIONALITIES && !isAdded;
+                return (
+                  <TouchableOpacity
+                    key={nation.id}
+                    style={[styles.modalOption, { borderBottomColor: colors.border }, (isAdded || atMax) && styles.modalOptionDisabled]}
+                    onPress={() => handleAddNationality(nation)}
+                    disabled={isAdded || atMax}
+                  >
+                    <Text style={styles.modalNationFlag}>{nation.flag}</Text>
+                    <View style={styles.modalOptionInfo}>
+                      <Text style={[styles.modalOptionName, { color: isAdded || atMax ? colors.textTertiary : colors.text }]}>
+                        {nation.name}
+                      </Text>
+                    </View>
+                    {isAdded ? <Text style={[styles.addedLabel, { color: colors.primary }]}>Following</Text> : null}
+                  </TouchableOpacity>
+                );
+              })}
+            </ScrollView>
+          </View>
+        </Modal>
+
         <Modal visible={showTabOrderModal} animationType="slide" presentationStyle="pageSheet">
           <View style={[styles.modalContainer, { backgroundColor: colors.background }]}>
             <View style={[styles.modalHeader, { borderBottomColor: colors.border }]}>
@@ -2612,6 +2734,13 @@ const styles = StyleSheet.create({
     fontSize: 13,
     fontStyle: 'italic',
   },
+  favHintText: {
+    fontSize: 12,
+    marginTop: 6,
+  },
+  nationFlagChip: {
+    fontSize: 14,
+  },
   enableBtn: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -2818,6 +2947,15 @@ const styles = StyleSheet.create({
   modalTitle: {
     fontSize: 20,
     fontWeight: '700',
+  },
+  modalSubtitle: {
+    fontSize: 13,
+    paddingHorizontal: 20,
+    marginBottom: 4,
+  },
+  modalNationFlag: {
+    fontSize: 24,
+    marginRight: 12,
   },
   modalClose: {
     width: 36,

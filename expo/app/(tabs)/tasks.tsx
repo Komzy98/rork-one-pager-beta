@@ -26,7 +26,10 @@ import TasksDashboardView, {
 import TasksAllListModal from '@/components/tasks/TasksAllListModal';
 import HabitsAllListModal from '@/components/tasks/HabitsAllListModal';
 import PeakPerformanceScheduler from '@/components/PeakPerformanceScheduler';
+import CalendarHabitPlanner from '@/components/CalendarHabitPlanner';
+import EventKitManager from '@/components/EventKitManager';
 import { getTasksAISuggestion } from '@/utils/tasksAISuggestion';
+import { useCalendarHabitRecommendations } from '@/hooks/useCalendarHabitRecommendations';
 import {
   buildTodayPlanItems,
   buildWeekCompletedPlanItems,
@@ -105,6 +108,7 @@ export default function TasksScreen() {
   const [showAllHabitsModal, setShowAllHabitsModal] = useState(false);
   const [showPeakScheduler, setShowPeakScheduler] = useState(false);
   const [showHabitCoach, setShowHabitCoach] = useState(false);
+  const [showEventKitManager, setShowEventKitManager] = useState(false);
   const [isCreatingHabit, setIsCreatingHabit] = useState(false);
 
   const pulseAnim = useRef(new Animated.Value(1)).current;
@@ -132,6 +136,7 @@ export default function TasksScreen() {
     feedback: completionFeedback,
     dismissFeedback,
     toggleTodayHabit,
+    setTodayMood,
   } = useTodayHabits();
 
   const todayHabits = useMemo(
@@ -258,6 +263,16 @@ export default function TasksScreen() {
     [todayHabits, todayStr],
   );
 
+  const calendarHabits = useCalendarHabitRecommendations(incompleteHabitsToday, chronoInfo);
+
+  const habitTimeById = useMemo(() => {
+    const map: Record<string, string> = {};
+    calendarHabits.recommendations.forEach((rec) => {
+      map[rec.habitId] = rec.timeLabel;
+    });
+    return map;
+  }, [calendarHabits.recommendations]);
+
   const focusHabit = useMemo(() => {
     if (pendingTasks.length > 0) return null;
     return incompleteHabitsToday[0] ?? null;
@@ -293,6 +308,9 @@ export default function TasksScreen() {
         pendingCount: pendingTasks.length,
         activeFocusTask,
         activeTimerStartTime: activeTimer?.startTime ?? null,
+        calendarConnected: calendarHabits.isConnected,
+        nextHabitTimeLabel: calendarHabits.nextRecommendation?.timeLabel ?? null,
+        nextHabitTitle: calendarHabits.nextRecommendation?.habitTitle ?? null,
       }),
     [
       chronoInfo,
@@ -307,6 +325,8 @@ export default function TasksScreen() {
       activeFocusTask,
       activeTimer?.startTime,
       elapsedSeconds,
+      calendarHabits.isConnected,
+      calendarHabits.nextRecommendation,
     ],
   );
 
@@ -379,8 +399,9 @@ export default function TasksScreen() {
 
   const handleRefresh = useCallback(async () => {
     setRefreshing(true);
+    await calendarHabits.refreshCalendar();
     setTimeout(() => setRefreshing(false), 600);
-  }, []);
+  }, [calendarHabits.refreshCalendar]);
 
   const handleToggleFocus = useCallback(() => {
     if (!focusTask) return;
@@ -577,6 +598,31 @@ export default function TasksScreen() {
     return parts.join(' · ');
   }, []);
 
+  const handleConnectCalendar = useCallback(async () => {
+    const connected = await calendarHabits.connectCalendar();
+    if (!connected) {
+      setShowEventKitManager(true);
+      return;
+    }
+    if (Platform.OS !== 'web') {
+      void Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+    }
+  }, [calendarHabits.connectCalendar]);
+
+  const calendarPlannerEl = (
+    <CalendarHabitPlanner
+      colors={colors}
+      isDark={isDark}
+      isCalendarAvailable={calendarHabits.isCalendarAvailable}
+      isConnected={calendarHabits.isConnected}
+      isLoading={calendarHabits.isLoading}
+      todayEventCount={calendarHabits.todayEventCount}
+      recommendations={calendarHabits.recommendations}
+      onConnectPress={handleConnectCalendar}
+      onManageCalendarsPress={() => setShowEventKitManager(true)}
+    />
+  );
+
   const hasContent = allTasks.length > 0 || todayHabits.length > 0;
   const isFocusActive = !!(focusTask && activeTimer?.taskId === focusTask.id);
 
@@ -615,6 +661,7 @@ export default function TasksScreen() {
           onCompleteFocusHabit={() => focusHabit && handleToggleHabit(focusHabit)}
           completionFeedback={completionFeedback}
           onDismissCompletionFeedback={dismissFeedback}
+          onHabitMood={setTodayMood}
           todayLog={todayLog}
           weeklyProgressByHabitId={weeklyProgressByHabitId}
           onEditFocusHabit={() => focusHabit && setEditingTask(focusHabit)}
@@ -676,8 +723,15 @@ export default function TasksScreen() {
           onOpenPeakScheduler={() => setShowPeakScheduler(true)}
           onOpenHabitCoach={() => setShowHabitCoach((v) => !v)}
           showHabitCoach={showHabitCoach}
+          calendarPlanner={calendarPlannerEl}
+          habitTimeById={habitTimeById}
         />
       </View>
+
+      <EventKitManager
+        visible={showEventKitManager}
+        onClose={() => setShowEventKitManager(false)}
+      />
 
       <TasksAllListModal
         visible={showAllTasksModal}

@@ -278,7 +278,7 @@ function getSuggestedReminder(hour: number): string {
   return formatTimeLabel(reminderHour);
 }
 
-function guessOptimalTime(habitName: string): number {
+export function guessOptimalTime(habitName: string): number {
   const name = habitName.toLowerCase();
   
   if (name.includes('morning') || name.includes('wake') || name.includes('breakfast')) return 7;

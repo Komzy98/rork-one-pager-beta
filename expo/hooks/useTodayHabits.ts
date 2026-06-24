@@ -69,11 +69,6 @@ export function useTodayHabits() {
 
   const showFeedback = useCallback((result: HabitToggleResult) => {
     setFeedback({ ...result, visible: true });
-    setTimeout(() => {
-      setFeedback((prev) =>
-        prev.visible && prev.title === result.title ? HIDDEN_FEEDBACK : prev
-      );
-    }, 2800);
   }, []);
 
   // Keep one timestamped completion log per day so analytics (peak hours, mood)

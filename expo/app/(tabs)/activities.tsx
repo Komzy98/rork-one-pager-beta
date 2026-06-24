@@ -28,6 +28,12 @@ import EnhancedLoadingState from '@/components/EnhancedLoadingState';
 import WeatherDetailModal from '@/components/WeatherDetailModal';
 import { trpc } from '@/lib/trpc';
 import { useFootballBundle } from '@/contexts/FootballBundleContext';
+import {
+  apiFixtureToLiveFootballMatch,
+  apiFixturesToLiveFootballMatches,
+} from '@/utils/footballFixtureTransform';
+import { collectNationalTeamApiIds } from '@/utils/nationalTeamApiIds';
+import { usePinnedMatches } from '@/hooks/usePinnedMatches';
 import { getCurrentWeather, getHeroGradientColors } from '@/utils/weatherApi';
 import { LiveFootballMatch, Show } from '@/types/habit';
 import { useCalendar } from '@/hooks/useCalendar';
@@ -100,6 +106,7 @@ import {
   younifySourceToTmdbProviderId,
 } from '@/utils/streamingLinks';
 import { buildYounifyProviderIndex, pickBestYounifyRowForEpisode } from '@/utils/younifyProviderIndex';
+import { formatShowEpisodeLabel, formatYounifyContinueEpisodeLabel } from '@/utils/showEpisodeLabel';
 import { SHOWS_HREF } from '@/constants/showsNavigation';
 
 type AvailableSpeechVoice = Awaited<ReturnType<typeof Speech.getAvailableVoicesAsync>>[number];
@@ -107,6 +114,22 @@ type AvailableSpeechVoice = Awaited<ReturnType<typeof Speech.getAvailableVoicesA
 type ActivitiesContinueItem =
   | { kind: 'local'; show: Show & { posterUrl?: string | null } }
   | { kind: 'younify'; row: Record<string, unknown>; key: string };
+
+function getContinueWatchingDismissKey(item: ActivitiesContinueItem): string {
+  if (item.kind === 'local') {
+    if (item.show.tmdbId != null) return `tmdb:${item.show.tmdbId}`;
+    return `local:${item.show.id}`;
+  }
+  const tmdbId = extractTmdbIdFromYounifyRow(item.row);
+  if (tmdbId != null) return `tmdb:${tmdbId}`;
+  return `younify:${item.key}`;
+}
+
+function getContinueWatchingTitle(item: ActivitiesContinueItem): string {
+  if (item.kind === 'local') return item.show.title;
+  const row = item.row;
+  return String(row.showTitle || row.title || 'This title');
+}
 
 const ELEVENLABS_SUMMARY_VOICE_ID = '21m00Tcm4TlvDq8ikWAM';
 
@@ -219,6 +242,7 @@ export default function ActivitiesScreen() {
   const [showInfoModal, setShowInfoModal] = useState<{ visible: boolean; tmdbId: number | null; mediaType: 'movie' | 'tv'; title: string; platform: string }>({ visible: false, tmdbId: null, mediaType: 'tv', title: '', platform: '' });
   const [sportsSelectedLeagues, setSportsSelectedLeagues] = useState<number[]>([]);
   const [dismissedEpisodes, setDismissedEpisodes] = useState<string[]>([]);
+  const [dismissedContinueWatching, setDismissedContinueWatching] = useState<string[]>([]);
   const scopedStorageKey = useCallback((base: string) => `${base}_${user?.id || 'guest'}`, [user?.id]);
 
   useEffect(() => {
@@ -240,6 +264,29 @@ export default function ActivitiesScreen() {
         }
       } else {
         setDismissedEpisodes([]);
+      }
+    });
+  }, [scopedStorageKey]);
+
+  useEffect(() => {
+    AsyncStorage.getItem(scopedStorageKey('dismissed_continue_watching')).then(async (raw) => {
+      let stored = raw;
+      if (!stored) {
+        const legacy = await AsyncStorage.getItem('dismissed_continue_watching');
+        if (legacy) {
+          stored = legacy;
+          await AsyncStorage.setItem(scopedStorageKey('dismissed_continue_watching'), legacy);
+        }
+      }
+      if (stored) {
+        try {
+          const parsed = JSON.parse(stored) as string[];
+          if (Array.isArray(parsed)) setDismissedContinueWatching(parsed);
+        } catch (e) {
+          console.log('Failed to parse dismissed continue watching', e);
+        }
+      } else {
+        setDismissedContinueWatching([]);
       }
     });
   }, [scopedStorageKey]);
@@ -269,6 +316,45 @@ export default function ActivitiesScreen() {
       ],
     );
   }, [dismissEpisode]);
+
+  const dismissContinueWatching = useCallback((key: string) => {
+    setDismissedContinueWatching((prev) => {
+      const next = prev.includes(key) ? prev : [...prev, key];
+      AsyncStorage.setItem(scopedStorageKey('dismissed_continue_watching'), JSON.stringify(next)).catch((e) =>
+        console.log('Failed to save dismissed continue watching', e),
+      );
+      return next;
+    });
+    if (Platform.OS !== 'web') {
+      Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light).catch(() => {});
+    }
+  }, [scopedStorageKey]);
+
+  const confirmDismissContinueWatching = useCallback((item: ActivitiesContinueItem) => {
+    const key = getContinueWatchingDismissKey(item);
+    const title = getContinueWatchingTitle(item);
+    if (Platform.OS !== 'web') {
+      void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+    }
+    Alert.alert(
+      'Remove from Continue Watching',
+      `Hide "${title}" from this section? You can still find it in your watchlist.`,
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Remove',
+          style: 'destructive',
+          onPress: () => {
+            dismissContinueWatching(key);
+            if (item.kind === 'local' && appContext?.updateShow) {
+              appContext.updateShow({ ...item.show, status: 'Plan to Watch' });
+              setShowsWithThumbnails((prev) => prev.filter((s) => s.id !== item.show.id));
+            }
+          },
+        },
+      ],
+    );
+  }, [dismissContinueWatching, appContext]);
 
   interface TrackedShowEpisode {
     showId: string;
@@ -487,10 +573,7 @@ export default function ActivitiesScreen() {
 
   // Get national team IDs from user's nationalities for AFCON/international matches
   const nationalTeamIds = useMemo(() => {
-    if (!profile?.nationalities) return [];
-    const nationalIds = profile.nationalities
-      .map(nation => nation.apiId)
-      .filter((id): id is number => id !== undefined && id !== null);
+    const nationalIds = collectNationalTeamApiIds(profile?.nationalities);
     if (__DEV__) console.log('🌍 [Activities] National team IDs for API:', nationalIds);
     return nationalIds;
   }, [profile?.nationalities]);
@@ -533,52 +616,17 @@ export default function ActivitiesScreen() {
   }, [sportsSelectedLeagues]);
 
   /** Shared with Sports tab via FootballBundleProvider — no duplicate polling. */
-  const { query: footballBundleQuery, requestIncludeResults } = useFootballBundle();
+  const { query: footballBundleQuery, requestIncludeResults, setPollLive } = useFootballBundle();
+  const { isPinned, togglePin, resolvePinnedMatches, records } = usePinnedMatches();
 
   useEffect(() => {
     requestIncludeResults();
   }, [requestIncludeResults]);
 
-  // Transform API data to LiveFootballMatch format
-  const transformApiFootballData = useCallback((fixtures: any[]): LiveFootballMatch[] => {
-    if (!Array.isArray(fixtures)) return [];
-    const LIVE_SHORT_STATUSES = new Set(['LIVE', '1H', '2H', 'HT', 'ET', 'P', 'BT', 'INT', 'SUSP']);
-    const COMPLETED_SHORT_STATUSES = new Set(['FT', 'AET', 'PEN', 'AWD', 'WO']);
-    
-    return fixtures.map((fixture: any) => {
-      const status = fixture.fixture?.status?.short;
-      let matchStatus: 'Live' | 'Upcoming' | 'Completed' = 'Upcoming';
-      
-      if (LIVE_SHORT_STATUSES.has(String(status || '').toUpperCase())) {
-        matchStatus = 'Live';
-      } else if (COMPLETED_SHORT_STATUSES.has(String(status || '').toUpperCase())) {
-        matchStatus = 'Completed';
-      }
-
-      const date = new Date(fixture.fixture?.date || Date.now());
-      const timeString = date.toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit', hour12: true });
-
-      return {
-        id: String(fixture.fixture?.id || Math.random()),
-        homeTeam: fixture.teams?.home?.name || 'Home Team',
-        awayTeam: fixture.teams?.away?.name || 'Away Team',
-        homeTeamId: fixture.teams?.home?.id,
-        awayTeamId: fixture.teams?.away?.id,
-        homeScore: fixture.goals?.home ?? null,
-        awayScore: fixture.goals?.away ?? null,
-        status: matchStatus,
-        league: fixture.league?.name || 'League',
-        date: fixture.fixture?.date || new Date().toISOString(),
-        time: timeString,
-        venue: fixture.fixture?.venue?.name,
-        elapsed: fixture.fixture?.status?.elapsed,
-        homeTeamLogo: fixture.teams?.home?.logo,
-        awayTeamLogo: fixture.teams?.away?.logo,
-        leagueLogo: fixture.league?.logo,
-        round: fixture.league?.round,
-      };
-    });
-  }, []);
+  const transformApiFootballData = useCallback(
+    (fixtures: unknown[]): LiveFootballMatch[] => apiFixturesToLiveFootballMatches(fixtures),
+    [],
+  );
 
   // Helper to check if a team is one of user's national teams
   const isFavoriteNationalTeam = useCallback((teamName: string): boolean => {
@@ -684,6 +732,57 @@ export default function ActivitiesScreen() {
     if (!data || !Array.isArray(data)) return [];
     return transformApiFootballData(data).filter(m => m.status === 'Completed');
   }, [footballBundleQuery.data?.results, transformApiFootballData]);
+
+  const orphanedPinnedFixtureIds = useMemo(() => {
+    const poolIds = new Set(
+      [...rawLiveMatches, ...rawUpcomingMatches, ...rawCompletedMatches].map((m) => m.id),
+    );
+    return records
+      .filter((r) => !poolIds.has(r.id))
+      .map((r) => parseInt(r.id, 10))
+      .filter((id) => Number.isFinite(id) && id > 0)
+      .slice(0, 6);
+  }, [records, rawLiveMatches, rawUpcomingMatches, rawCompletedMatches]);
+
+  const orphanedPinnedDetailQueries = trpc.useQueries((t) =>
+    orphanedPinnedFixtureIds.map((fixtureId) =>
+      t.football.getMatchDetails(
+        { fixtureId },
+        {
+          staleTime: 60 * 1000,
+          retry: 1,
+        },
+      ),
+    ),
+  );
+
+  const pinnedRefreshById = useMemo(() => {
+    const map = new Map<string, LiveFootballMatch>();
+    orphanedPinnedFixtureIds.forEach((fixtureId, index) => {
+      const fixture = orphanedPinnedDetailQueries[index]?.data?.fixture;
+      const match = apiFixtureToLiveFootballMatch(fixture);
+      if (match) map.set(String(fixtureId), match);
+    });
+    return map;
+  }, [orphanedPinnedFixtureIds, orphanedPinnedDetailQueries]);
+
+  const pinnedMatchesForSection = useMemo(
+    () =>
+      resolvePinnedMatches(
+        rawLiveMatches,
+        rawUpcomingMatches,
+        rawCompletedMatches,
+        pinnedRefreshById,
+      ),
+    [resolvePinnedMatches, rawLiveMatches, rawUpcomingMatches, rawCompletedMatches, pinnedRefreshById],
+  );
+
+  useEffect(() => {
+    const hasActiveLive =
+      rawLiveMatches.length > 0 || pinnedMatchesForSection.some((m) => m.status === 'Live');
+    setPollLive(hasActiveLive);
+    return () => setPollLive(false);
+  }, [rawLiveMatches, pinnedMatchesForSection, setPollLive]);
 
   // Filtered matches - used for hero banner, summary, and other sections
   const liveMatches = useMemo(() => {
@@ -939,8 +1038,8 @@ export default function ActivitiesScreen() {
       if (show.tmdbId != null && seenTmdb.has(show.tmdbId)) continue;
       out.push({ kind: 'local', show });
     }
-    return out;
-  }, [younifyContinueItems, showsWithThumbnails]);
+    return out.filter((item) => !dismissedContinueWatching.includes(getContinueWatchingDismissKey(item)));
+  }, [younifyContinueItems, showsWithThumbnails, dismissedContinueWatching]);
 
   const younifyContinueByTmdbId = useMemo(() => {
     const map = new Map<number, Record<string, unknown>>();
@@ -1410,10 +1509,8 @@ export default function ActivitiesScreen() {
 
     const providerId = platformNameToProviderId(show.platform);
     if (providerId != null) {
-      const episodeHint =
-        show.type === 'Series' && show.currentSeason && show.currentEpisode
-          ? `S${show.currentSeason}E${show.currentEpisode}`
-          : undefined;
+      const younifyRow = show.tmdbId ? younifyContinueByTmdbId.get(show.tmdbId) : undefined;
+      const episodeHint = formatShowEpisodeLabel(show, younifyRow, 'compact') ?? undefined;
       const openedSearch = await openStreamingTitleSearch(providerId, show.title, undefined, episodeHint);
       if (openedSearch) return;
       const openedApp = await openStreamingApp(providerId, show.title);
@@ -1458,18 +1555,30 @@ export default function ActivitiesScreen() {
   }, [planToWatchWithThumbnails, currentWatchingShows, linkedProviderIds]);
 
   const renderContinueWatchingCard = useCallback(({ item, index }: { item: ActivitiesContinueItem; index: number }) => {
+    const dismissBtn = (
+      <TouchableOpacity
+        style={styles.cwRemoveBtn}
+        onPress={() => confirmDismissContinueWatching(item)}
+        hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+        accessibilityLabel="Remove from Continue Watching"
+        accessibilityRole="button"
+        testID={`cw-dismiss-${getContinueWatchingDismissKey(item)}`}
+      >
+        <X size={12} color="#fff" strokeWidth={2.5} />
+      </TouchableOpacity>
+    );
+
     if (item.kind === 'local') {
       const show = item.show;
       const reliableRow = show.tmdbId ? younifyContinueByTmdbId.get(show.tmdbId) : undefined;
       const providerProgress = reliableRow ? getContinueWatchingProgressPercent(reliableRow) : 0;
+      const resolvedEpisode = formatShowEpisodeLabel(show, reliableRow, 'spaced');
       const localProgress = show.type === 'Series' && show.totalEpisodes && show.currentEpisode
         ? Math.min((show.currentEpisode / show.totalEpisodes) * 100, 100)
         : 0;
-      const progress = providerProgress > 0 ? providerProgress : localProgress;
-      const episodeLabel =
-        show.type === 'Series' && show.currentSeason && show.currentEpisode
-          ? `S${show.currentSeason} E${show.currentEpisode}`
-          : 'Resume';
+      const progress =
+        providerProgress > 0 ? providerProgress : resolvedEpisode ? localProgress : 0;
+      const episodeLabel = resolvedEpisode ?? (show.type === 'Series' ? 'Resume' : null);
       return (
         <TouchableOpacity
           key={show.id}
@@ -1479,12 +1588,11 @@ export default function ActivitiesScreen() {
             index === 0 && { marginLeft: 0 },
           ]}
           onPress={() => handleContinueWatching(show)}
-          onLongPress={() => handleRemoveShow(show.id, show.title)}
-          delayLongPress={350}
           activeOpacity={0.85}
           testID={`cw-card-${show.id}`}
         >
           <View style={styles.cwPosterWrap}>
+            {dismissBtn}
             {show.posterUrl ? (
               <Image source={{ uri: show.posterUrl }} style={styles.cwPoster} resizeMode="cover" />
             ) : (
@@ -1501,20 +1609,22 @@ export default function ActivitiesScreen() {
           <View style={styles.cwCardInfo}>
             <Text style={[styles.cwCardTitle, { color: colors.text }]} numberOfLines={2}>{show.title}</Text>
             <View style={styles.cwCardMeta}>
-              <Text style={[styles.cwCardEpisode, { color: colors.textSecondary }]} numberOfLines={1}>{episodeLabel}</Text>
+              {episodeLabel ? (
+                <Text style={[styles.cwCardEpisode, { color: colors.textSecondary }]} numberOfLines={1}>{episodeLabel}</Text>
+              ) : null}
             </View>
-            <View style={styles.cwProgressTrack}>
-              <View style={[styles.cwProgressFill, { width: `${progress}%` }]} />
-            </View>
+            {progress > 0 ? (
+              <View style={styles.cwProgressTrack}>
+                <View style={[styles.cwProgressFill, { width: `${progress}%` }]} />
+              </View>
+            ) : null}
           </View>
         </TouchableOpacity>
       );
     }
 
     const { row, key } = item;
-    const season = row.season != null ? String(row.season).trim() : '';
-    const episode = row.episode != null ? String(row.episode).trim() : '';
-    const continueEpisodeLabel = season || episode ? `S${season || '—'} E${episode || '—'}` : 'Resume';
+    const continueEpisodeLabel = formatYounifyContinueEpisodeLabel(row) ?? 'Resume';
     const svc = row.younifySourceService as YounifySourceServiceSnapshot | undefined;
     const yProgress = getContinueWatchingProgressPercent(row);
 
@@ -1536,6 +1646,7 @@ export default function ActivitiesScreen() {
         testID={`cw-card-younify-${key}`}
       >
         <View style={styles.cwPosterWrap}>
+          {dismissBtn}
           <TmdbStreamingPosterImage younifyRow={row} width={CW_CARD_WIDTH} style={styles.cwPoster} />
           {linkedStreamingCount >= 2 && svc?.id ? (
             <View style={styles.cwYounifyLogoMark} pointerEvents="none">
@@ -1558,7 +1669,7 @@ export default function ActivitiesScreen() {
         </View>
       </TouchableOpacity>
     );
-  }, [younifyContinueByTmdbId, handleContinueWatching, handleRemoveShow, linkedStreamingCount, colors.card, colors.border, colors.text, colors.textSecondary]);
+  }, [younifyContinueByTmdbId, handleContinueWatching, confirmDismissContinueWatching, linkedStreamingCount, colors.card, colors.border, colors.text, colors.textSecondary]);
 
   const handleContinueWatchingYounify = useCallback(async (row: Record<string, unknown>) => {
     if (Platform.OS !== 'web') {
@@ -2507,6 +2618,9 @@ export default function ActivitiesScreen() {
               completedMatches={rawCompletedMatches}
               upcomingMatches={rawUpcomingMatches}
               isLoading={isLoadingMatches}
+              pinnedMatches={pinnedMatchesForSection}
+              isPinned={isPinned}
+              onTogglePin={togglePin}
               onViewAll={() => router.push('/sports' as any)}
               onRefresh={async () => {
                 setRefreshing(true);
@@ -3355,8 +3469,8 @@ const styles = StyleSheet.create({
   },
   cwRemoveBtn: {
     position: 'absolute',
-    top: 8,
-    right: 8,
+    top: 6,
+    left: 6,
     zIndex: 10,
     width: 24,
     height: 24,

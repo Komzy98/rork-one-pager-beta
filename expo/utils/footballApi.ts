@@ -1,6 +1,7 @@
 import { ApiFootballResponse, ApiFootballFixture, LiveFootballMatch } from '@/types/habit';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { getLocalDateStr } from '@/utils/dateUtils';
+import { formatFootballLeagueLabel } from '@/utils/footballLeagueLabel';
 
 // Using API-Football (api-football.com) - the only football data source
 // Dashboard: https://dashboard.api-football.com
@@ -600,7 +601,7 @@ function transformFixtureToMatch(fixture: ApiFootballFixture): LiveFootballMatch
       awayTeamLogo: fixture.teams.away.logo,
       homeTeamId: fixture.teams.home.id,
       awayTeamId: fixture.teams.away.id,
-      league: fixture.league.name,
+      league: formatFootballLeagueLabel(fixture.league.name, fixture.league.country, fixture.league.id),
       leagueLogo: fixture.league.logo,
       country: fixture.league.country,
       date: localDate,
@@ -631,7 +632,7 @@ function transformFixtureToMatch(fixture: ApiFootballFixture): LiveFootballMatch
     awayTeamLogo: fixture.teams.away.logo,
     homeTeamId: fixture.teams.home.id,
     awayTeamId: fixture.teams.away.id,
-    league: fixture.league.name,
+    league: formatFootballLeagueLabel(fixture.league.name, fixture.league.country, fixture.league.id),
     leagueLogo: fixture.league.logo,
     country: fixture.league.country,
     date: localDate,

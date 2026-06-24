@@ -16,6 +16,8 @@ export interface F1Race {
   fastestLap?: string;
   podium?: [string, string, string];
   circuitImage?: string;
+  apiRaceId?: number;
+  apiCircuitId?: number;
 }
 
 export interface F1Team {
@@ -39,6 +41,7 @@ export interface F1Driver {
   wins: number;
   podiums: number;
   photo?: string;
+  apiDriverId?: number;
 }
 
 export const F1_TEAM_LOGOS: Record<string, string> = {
@@ -168,9 +171,23 @@ export function getTeamLogo(teamName: string): string | undefined {
   return F1_TEAMS_2026.find(t => t.name === teamName)?.logo;
 }
 
-export function getConstructorStandings(): { name: string; color: string; points: number; drivers: string[]; logo?: string }[] {
+export function getConstructorStandings(): {
+  name: string;
+  color: string;
+  points: number;
+  drivers: string[];
+  logo?: string;
+  apiTeamId?: number;
+}[] {
   const driverStandings = getDriverStandings();
-  const teamMap = new Map<string, { name: string; color: string; points: number; drivers: string[] }>();
+  const teamMap = new Map<string, {
+    name: string;
+    color: string;
+    points: number;
+    drivers: string[];
+    logo?: string;
+    apiTeamId?: number;
+  }>();
 
   F1_TEAMS_2026.forEach(team => {
     teamMap.set(team.name, { name: team.name, color: team.color, points: 0, drivers: team.drivers, logo: team.logo });

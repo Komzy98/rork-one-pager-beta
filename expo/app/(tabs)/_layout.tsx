@@ -11,6 +11,7 @@ import { useUserProfile } from "@/hooks/useUserProfile";
 import { useTheme } from "@/hooks/useTheme";
 import type { ThemeColors } from "@/types/theme";
 import { FootballBundleProvider } from "@/contexts/FootballBundleContext";
+import { F1BundleProvider } from "@/contexts/F1BundleContext";
 
 
 
@@ -337,13 +338,15 @@ export default function TabLayout() {
   if (isLoading) {
     return (
       <FootballBundleProvider>
-        <Tabs
-          screenOptions={commonScreenOptions}
-          tabBar={(props) => <CustomTabBar {...props} />}
-        >
-          <Tabs.Screen name="activities" />
-          <Tabs.Screen name="profile" />
-        </Tabs>
+        <F1BundleProvider>
+          <Tabs
+            screenOptions={commonScreenOptions}
+            tabBar={(props) => <CustomTabBar {...props} />}
+          >
+            <Tabs.Screen name="activities" />
+            <Tabs.Screen name="profile" />
+          </Tabs>
+        </F1BundleProvider>
       </FootballBundleProvider>
     );
   }
@@ -353,24 +356,26 @@ export default function TabLayout() {
 
   return (
     <FootballBundleProvider>
-      <Tabs
-        screenOptions={commonScreenOptions}
-        tabBar={(props) => <CustomTabBar {...props} />}
-      >
-        {allTabs.map((tabName) => {
-          const isVisible = personalizedTabs.includes(tabName);
+      <F1BundleProvider>
+        <Tabs
+          screenOptions={commonScreenOptions}
+          tabBar={(props) => <CustomTabBar {...props} />}
+        >
+          {allTabs.map((tabName) => {
+            const isVisible = personalizedTabs.includes(tabName);
 
-          return (
-            <Tabs.Screen
-              key={tabName}
-              name={tabName}
-              options={{
-                href: isVisible ? undefined : null,
-              }}
-            />
-          );
-        })}
-      </Tabs>
+            return (
+              <Tabs.Screen
+                key={tabName}
+                name={tabName}
+                options={{
+                  href: isVisible ? undefined : null,
+                }}
+              />
+            );
+          })}
+        </Tabs>
+      </F1BundleProvider>
     </FootballBundleProvider>
   );
 }
