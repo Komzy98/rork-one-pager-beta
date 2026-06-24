@@ -14,7 +14,7 @@ import {
   type CoachLite,
   type SquadPlayerLite,
   type TeamLeagueEntry,
-} from '@/utils/footballApi';
+} from '@/utils/footballClubProfileShared';
 
 const LIVE_SHORT = new Set(['LIVE', '1H', '2H', 'HT', 'ET', 'P', 'BT', 'INT', 'SUSP']);
 const COMPLETED_SHORT = new Set(['FT', 'AET', 'PEN', 'AWD', 'WO']);
