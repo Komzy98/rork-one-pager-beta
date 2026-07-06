@@ -11,6 +11,7 @@ import {
   getCircuitRoute,
 } from "./routes/f1/apiSports";
 import { generateVoiceRoute } from "./routes/ai/voice/route";
+import { getNearbyEventsRoute } from "./routes/events/nearby/route";
 
 export const appRouter = createTRPCRouter({
   example: createTRPCRouter({
@@ -39,6 +40,9 @@ export const appRouter = createTRPCRouter({
   }),
   ai: createTRPCRouter({
     generateVoice: generateVoiceRoute,
+  }),
+  events: createTRPCRouter({
+    getNearby: getNearbyEventsRoute,
   }),
 });
 
