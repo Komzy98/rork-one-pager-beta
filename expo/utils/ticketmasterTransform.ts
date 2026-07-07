@@ -155,6 +155,13 @@ export function mapTicketmasterResponse(payload: unknown): LocalEvent[] {
     .filter((e): e is LocalEvent => e != null);
 }
 
+export function mapTicketmasterSingleResponse(payload: unknown): LocalEvent | null {
+  if (!payload || typeof payload !== 'object') return null;
+  const root = payload as TmEvent;
+  if (!root.id || !root.name) return null;
+  return mapTicketmasterEvent(root);
+}
+
 export const TICKETMASTER_CATEGORY_FILTER: Record<string, string | undefined> = {
   music: 'Music',
   sports: 'Sports',

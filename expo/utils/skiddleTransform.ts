@@ -169,6 +169,18 @@ export function mapSkiddleResponse(payload: unknown): LocalEvent[] {
   return rawEvents.map(mapSkiddleEvent).filter((e): e is LocalEvent => e != null);
 }
 
+export function mapSkiddleSingleResponse(payload: unknown): LocalEvent | null {
+  if (!payload || typeof payload !== 'object') return null;
+  const root = payload as { results?: SkiddleEvent[] } & SkiddleEvent;
+  if (Array.isArray(root.results) && root.results[0]) {
+    return mapSkiddleEvent(root.results[0]);
+  }
+  if (root.eventname || root.id) {
+    return mapSkiddleEvent(root);
+  }
+  return null;
+}
+
 export function filterSkiddleEventsByCategory(
   events: LocalEvent[],
   category?: string,

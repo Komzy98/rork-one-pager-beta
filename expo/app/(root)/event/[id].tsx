@@ -1,6 +1,7 @@
 import { useCallback, useMemo, useRef, useState } from 'react';
 import {
   Alert,
+  ActivityIndicator,
   Animated,
   Dimensions,
   Image,
@@ -36,11 +37,14 @@ import { useEventKit } from '@/hooks/useEventKit';
 import { useNearbyEvents } from '@/hooks/useNearbyEvents';
 import { useSocialActivity } from '@/hooks/useSocialActivity';
 import { getCatalogEvent, listCatalogEvents } from '@/utils/eventCatalog';
-import { savedSnapshotToOnePager, onePagerToLocalEvent } from '@/utils/eventMappers';
+import { savedSnapshotToOnePager, onePagerToLocalEvent, localEventToOnePager } from '@/utils/eventMappers';
+import { useEventById } from '@/hooks/useEventById';
 import { formatDistanceKm, getEventCountdownLabel } from '@/utils/eventDiscovery';
 import { buildNightOutPlan, mergeGroupMeetStep, defaultGroupMeetTime } from '@/utils/eventNightOutPlanner';
 import { useEventSocial } from '@/hooks/useEventSocial';
+import { useFriends } from '@/hooks/useFriends';
 import { EventPlanRsvp } from '@/components/events/EventPlanRsvp';
+import { EventInviteFriendsModal } from '@/components/events/EventInviteFriendsModal';
 import { WhoIsGoing } from '@/components/events/WhoIsGoing';
 import {
   explainEventPersonalization,
@@ -58,6 +62,8 @@ import { EventNightOutPlanner } from '@/components/events/EventNightOutPlanner';
 import { PremiumEventPosterCard } from '@/components/events/PremiumEventPosterCard';
 import { buildEventLink } from '@/utils/deepLinks';
 import type { OnePagerEvent } from '@/types/events';
+import type { PlanRsvpStatus } from '@/utils/sharedPlansService';
+import type { SocialProfile } from '@/utils/friendsService';
 
 const { width: SCREEN_WIDTH, height: SCREEN_HEIGHT } = Dimensions.get('window');
 const HERO_HEIGHT = Math.round(SCREEN_HEIGHT * 0.6);
@@ -74,12 +80,21 @@ export default function EventDetailScreen() {
   const { createEvent, hasPermission, requestPermissions } = useEventKit();
   const { logEventPlanned } = useSocialActivity();
 
-  const event: OnePagerEvent | null = useMemo(() => {
+  const cachedEvent: OnePagerEvent | null = useMemo(() => {
     if (!id) return null;
     const snapshot = getSnapshotById(id);
     if (snapshot) return savedSnapshotToOnePager(snapshot);
     return getCatalogEvent(id) ?? null;
   }, [getSnapshotById, id]);
+
+  const needsRemoteFetch = !!id && !cachedEvent;
+  const remoteEvent = useEventById(id, needsRemoteFetch);
+
+  const event: OnePagerEvent | null = useMemo(() => {
+    if (cachedEvent) return cachedEvent;
+    if (remoteEvent.event) return localEventToOnePager(remoteEvent.event);
+    return null;
+  }, [cachedEvent, remoteEvent.event]);
 
   const localEvent = useMemo(
     () => (event ? onePagerToLocalEvent({ ...event, isSaved: id ? isSaved(id) : false }) : null),
@@ -87,7 +102,10 @@ export default function EventDetailScreen() {
   );
 
   const eventSocial = useEventSocial(localEvent);
+  const { friends, nudge: nudgeFriend, available: friendsAvailable } = useFriends();
   const [rsvpBusy, setRsvpBusy] = useState(false);
+  const [rsvpPending, setRsvpPending] = useState<PlanRsvpStatus | null>(null);
+  const [showInviteModal, setShowInviteModal] = useState(false);
 
   const saved = id ? isSaved(id) : false;
 
@@ -195,40 +213,63 @@ export default function EventDetailScreen() {
   }, [createEvent, event, hasPermission, localEvent, requestPermissions, logEventPlanned]);
 
   const handleRsvp = useCallback(
-    async (status: import('@/utils/sharedPlansService').PlanRsvpStatus) => {
+    async (status: PlanRsvpStatus) => {
       setRsvpBusy(true);
+      setRsvpPending(status);
       try {
         await eventSocial.setRsvp(status);
+        void Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+      } catch (error) {
+        Alert.alert(
+          'Could not save RSVP',
+          error instanceof Error ? error.message : 'Please try again in a moment.',
+        );
       } finally {
         setRsvpBusy(false);
+        setRsvpPending(null);
       }
     },
     [eventSocial]
   );
 
-  const handleInviteToNight = useCallback(async () => {
-    if (!event || !localEvent) return;
+  const handleInviteFriend = useCallback(
+    async (friend: SocialProfile, message: string) => {
+      if (friendsAvailable !== true) {
+        await Share.share({ message });
+        return;
+      }
+      await nudgeFriend(friend.id, message);
+      await eventSocial.ensurePlan();
+    },
+    [friendsAvailable, nudgeFriend, eventSocial]
+  );
+
+  const openInviteModal = useCallback(() => {
     void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-    const link = buildEventLink(event.id);
-    const planLine = nightOutSteps.find((s) => s.kind === 'doors');
-    const message = [
-      `Join me for ${event.title}`,
-      `${event.dateLabel ?? ''} ${event.timeLabel ?? ''}`.trim(),
-      planLine ? `Doors ${planLine.timeLabel} · ${event.venueName}` : event.venueName,
-      link,
-    ]
-      .filter(Boolean)
-      .join('\n');
-    await Share.share({ message, ...(Platform.OS === 'ios' ? { url: link } : {}) });
-    await eventSocial.ensurePlan();
-  }, [event, localEvent, nightOutSteps, eventSocial]);
+    setShowInviteModal(true);
+  }, []);
+
+  const handleInviteToNight = useCallback(async () => {
+    openInviteModal();
+  }, [openInviteModal]);
 
   const handleShare = useCallback(async () => {
     if (!event) return;
     void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-    const message = `${event.title}\n${event.dateLabel ?? ''} ${event.timeLabel ?? ''}\n${event.venueName}${event.city ? `, ${event.city}` : ''}${event.ticketUrl ? `\n${event.ticketUrl}` : ''}`;
-    await Share.share({ message });
-  }, [event]);
+    const link = buildEventLink(event.id, { from: profile?.username });
+    const message = [
+      event.title,
+      `${event.dateLabel ?? ''} ${event.timeLabel ?? ''}`.trim(),
+      `${event.venueName}${event.city ? `, ${event.city}` : ''}`,
+      link,
+    ]
+      .filter(Boolean)
+      .join('\n');
+    await Share.share({
+      message,
+      ...(Platform.OS === 'ios' ? { url: link } : {}),
+    });
+  }, [event, profile?.username]);
 
   const handleTickets = useCallback(() => {
     if (!localEvent) return;
@@ -261,6 +302,16 @@ export default function EventDetailScreen() {
     outputRange: [0, 1],
     extrapolate: 'clamp',
   });
+
+  if ((!event || !localEvent) && needsRemoteFetch && remoteEvent.isLoading) {
+    return (
+      <View style={[styles.centered, { backgroundColor: palette.background, paddingTop: insets.top }]}>
+        <Stack.Screen options={{ headerShown: false }} />
+        <ActivityIndicator size="large" color={palette.primary} />
+        <Text style={{ color: palette.textSecondary, fontSize: 15, marginTop: 16 }}>Loading event…</Text>
+      </View>
+    );
+  }
 
   if (!event || !localEvent) {
     return (
@@ -395,22 +446,22 @@ export default function EventDetailScreen() {
           ) : null}
 
           {eventSocial.available ? (
-            <>
-              <WhoIsGoing
-                palette={palette}
-                rsvpsGoing={eventSocial.goingRsvps}
-                friendsSaved={eventSocial.friendsSaved}
-              />
-              <EventPlanRsvp
-                palette={palette}
-                myStatus={eventSocial.myRsvpStatus}
-                goingCount={eventSocial.goingRsvps.length}
-                maybeCount={eventSocial.maybeRsvps.length}
-                loading={rsvpBusy}
-                onSelect={handleRsvp}
-              />
-            </>
+            <WhoIsGoing
+              palette={palette}
+              rsvpsGoing={eventSocial.goingRsvps}
+              friendsSaved={eventSocial.friendsSaved}
+            />
           ) : null}
+          <EventPlanRsvp
+            palette={palette}
+            myStatus={eventSocial.myRsvpStatus}
+            goingCount={eventSocial.goingRsvps.length}
+            maybeCount={eventSocial.maybeRsvps.length}
+            loading={rsvpBusy}
+            pendingStatus={rsvpPending}
+            onSelect={handleRsvp}
+            onInviteFriends={openInviteModal}
+          />
 
           {nightOutSteps.length > 0 ? (
             <View style={styles.plannerSection}>
@@ -578,6 +629,20 @@ export default function EventDetailScreen() {
           </TouchableOpacity>
         </View>
       </View>
+
+      <EventInviteFriendsModal
+        visible={showInviteModal}
+        onClose={() => setShowInviteModal(false)}
+        palette={palette}
+        eventTitle={event.title}
+        eventDateLabel={event.dateLabel}
+        eventTimeLabel={event.timeLabel}
+        venueName={event.venueName}
+        eventId={event.id}
+        inviterUsername={profile?.username}
+        friends={friends}
+        onInviteFriend={handleInviteFriend}
+      />
     </View>
   );
 }

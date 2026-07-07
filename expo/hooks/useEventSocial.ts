@@ -18,6 +18,8 @@ import {
 import { defaultGroupMeetTime } from '@/utils/eventNightOutPlanner';
 import { supabaseConfigured } from '@/utils/supabaseClient';
 
+type EventPlanCache = Awaited<ReturnType<typeof getEventPlanBundle>>;
+
 export function useEventSocial(event: LocalEvent | null) {
   const { supabaseUser, isGuest } = useAuth();
   const { friends } = useFriends();
@@ -71,27 +73,64 @@ export function useEventSocial(event: LocalEvent | null) {
     return plan;
   }, [queriesEnabled, event, myUserId, invalidate]);
 
+  const applyOptimisticRsvp = useCallback(
+    (status: PlanRsvpStatus) => {
+      if (!myUserId) return;
+      queryClient.setQueryData<EventPlanCache>(['event-plan', eventId, myUserId], (prev) => {
+        const base = prev ?? { plan: null, rsvps: [], myStatus: null };
+        const others = base.rsvps.filter((r) => r.userId !== myUserId);
+        return {
+          ...base,
+          myStatus: status,
+          rsvps: [
+            ...others,
+            {
+              planId: base.plan?.id ?? 'optimistic',
+              userId: myUserId,
+              status,
+              updatedAt: new Date().toISOString(),
+            },
+          ],
+        };
+      });
+    },
+    [queryClient, eventId, myUserId],
+  );
+
   const setRsvp = useCallback(
     async (status: PlanRsvpStatus) => {
-      if (!queriesEnabled || !event || !myUserId) return;
-      const plan = planQuery.data?.plan ?? (await getOrCreateEventPlan(myUserId, event));
-      if (!plan) return;
-      await setPlanRsvp(plan.id, myUserId, status);
-
-      if (status === 'in') {
-        const bundle = await getEventPlanBundle(event.id, myUserId);
-        const goingCount = bundle.rsvps.filter((r) => r.status === 'in').length;
-        if (goingCount >= 2 && !bundle.plan?.meetAt) {
-          const meetAt = defaultGroupMeetTime(event);
-          if (meetAt && bundle.plan) {
-            await updatePlanMeetAt(bundle.plan.id, meetAt);
-          }
-        }
+      if (!queriesEnabled || !event || !myUserId) {
+        throw new Error('Sign in to respond to this plan.');
       }
 
-      invalidate();
+      applyOptimisticRsvp(status);
+
+      try {
+        const plan = planQuery.data?.plan ?? (await getOrCreateEventPlan(myUserId, event));
+        if (!plan) {
+          throw new Error('Could not start a plan for this event. Try again in a moment.');
+        }
+
+        await setPlanRsvp(plan.id, myUserId, status);
+
+        if (status === 'in') {
+          const bundle = await getEventPlanBundle(event.id, myUserId);
+          const goingCount = bundle.rsvps.filter((r) => r.status === 'in').length;
+          if (goingCount >= 2 && !bundle.plan?.meetAt) {
+            const meetAt = defaultGroupMeetTime(event);
+            if (meetAt && bundle.plan) {
+              await updatePlanMeetAt(bundle.plan.id, meetAt);
+            }
+          }
+        }
+
+        invalidate();
+      } catch (error) {
+        invalidate();
+        throw error;
+      }
     },
-    [queriesEnabled, event, myUserId, planQuery.data?.plan, invalidate]
+    [queriesEnabled, event, myUserId, planQuery.data?.plan, applyOptimisticRsvp, invalidate],
   );
 
   const setGroupMeetAt = useCallback(
@@ -101,7 +140,7 @@ export function useEventSocial(event: LocalEvent | null) {
       await updatePlanMeetAt(plan.id, meetAt);
       invalidate();
     },
-    [planQuery.data?.plan, invalidate]
+    [planQuery.data?.plan, invalidate],
   );
 
   const goingRsvps = (planQuery.data?.rsvps ?? []).filter((r) => r.status === 'in');
@@ -109,6 +148,7 @@ export function useEventSocial(event: LocalEvent | null) {
 
   return {
     available,
+    canRsvp: queriesEnabled,
     plan: planQuery.data?.plan ?? null,
     rsvps: planQuery.data?.rsvps ?? [],
     myRsvpStatus: planQuery.data?.myStatus ?? null,

@@ -93,6 +93,11 @@ export function buildTicketmasterEventsSearchUrl(input: BuildTicketmasterEventsQ
   return `https://app.ticketmaster.com/discovery/v2/events.json?${params.toString()}`;
 }
 
+export function buildTicketmasterEventDetailUrl(apiKey: string, eventId: string): string {
+  const params = new URLSearchParams({ apikey: apiKey });
+  return `https://app.ticketmaster.com/discovery/v2/events/${encodeURIComponent(eventId)}.json?${params.toString()}`;
+}
+
 export function parseTicketmasterFault(body: unknown): string | null {
   if (!body || typeof body !== 'object') return null;
   const fault = (body as { fault?: { faultstring?: string; detail?: { errorcode?: string } } }).fault;

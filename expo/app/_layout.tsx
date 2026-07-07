@@ -219,7 +219,7 @@ export default function RootLayout() {
           return;
         }
         if (parsed.kind === 'event') {
-          router.push(`/(root)/event/${parsed.id}` as any);
+          router.push({ pathname: '/(root)/event/[id]', params: { id: parsed.id } } as any);
           return;
         }
         if (parsed.kind === 'tab') {
