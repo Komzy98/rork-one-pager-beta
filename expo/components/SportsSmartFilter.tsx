@@ -12,8 +12,11 @@ import {
 import { BarChart3, Check, Filter, Search, Shield, Target, Trophy, X } from 'lucide-react-native';
 import FootballLeagueLogo from '@/components/FootballLeagueLogo';
 
-/** Primary football surface filter (4 pills). */
-export type FootballSmartFilter = 'for-you' | 'following' | 'top-leagues' | 'worldwide';
+/** Primary football surface filter (2 pills). */
+export type FootballSmartFilter = 'for-you' | 'explore';
+
+/** @deprecated Migrated to `explore` on read — kept for AsyncStorage migration only. */
+export type LegacyFootballSmartFilter = 'top-leagues' | 'worldwide';
 
 /** @deprecated Legacy storage values; migrate to FootballSmartFilter */
 export type FootballFocusMode =

@@ -19,6 +19,12 @@ import { trpc } from '@/lib/trpc';
 import { useTheme } from '@/hooks/useTheme';
 import { getCompetitionById } from '@/constants/competitions';
 import FootballLeagueLogo from '@/components/FootballLeagueLogo';
+import {
+  buildKnockoutRoundGroups,
+  detectKnockoutPhase,
+  mapApiFixturesToKnockoutLite,
+  type KnockoutFixtureLite,
+} from '@/utils/footballKnockout';
 import * as Haptics from 'expo-haptics';
 
 interface LeagueStandingsModalProps {
@@ -28,13 +34,12 @@ interface LeagueStandingsModalProps {
   leagueName: string;
   /** When known from fixtures, improves first fetch (API season year). */
   season?: number;
+  /** Fixtures for this league from the feed — powers knockout bracket without an extra fetch. */
+  leagueFixtures?: KnockoutFixtureLite[];
+  onFixturePress?: (fixture: KnockoutFixtureLite) => void;
 }
 
-const STATS_TABS = [
-  { key: 'table', label: 'Table' },
-  { key: 'goals', label: 'Top scorers' },
-  { key: 'assists', label: 'Assists' },
-] as const;
+type StatsTabKey = 'knockout' | 'groups' | 'table' | 'goals' | 'assists';
 
 export default function LeagueStandingsModal({
   visible,
@@ -42,6 +47,8 @@ export default function LeagueStandingsModal({
   leagueId,
   leagueName,
   season: seasonHint,
+  leagueFixtures,
+  onFixturePress,
 }: LeagueStandingsModalProps) {
   const { colors } = useTheme();
   const { width: windowWidth } = useWindowDimensions();
@@ -57,12 +64,6 @@ export default function LeagueStandingsModal({
     }
   }, [visible]);
 
-  useEffect(() => {
-    setStatsTabIndex(0);
-    setSelectedGroup('all');
-    pagerRef.current?.scrollTo({ x: 0, animated: false });
-  }, [leagueId]);
-
   const liveFootballQuery = trpc.football.getMatches.useQuery(
     { type: 'live' },
     {
@@ -77,6 +78,73 @@ export default function LeagueStandingsModal({
     if (!Array.isArray(rows)) return false;
     return rows.some((m: { league?: { id?: number } }) => m?.league?.id === leagueId);
   }, [liveFootballQuery.data?.response, leagueId]);
+
+  const needsFixtureFetch = visible && (!leagueFixtures || leagueFixtures.length === 0);
+  const tournamentBundleQuery = trpc.football.getMatchesBundle.useQuery(
+    {
+      leagueIds: [leagueId],
+      days: 90,
+      teamIds: [],
+      includeResults: true,
+    },
+    {
+      enabled: needsFixtureFetch,
+      staleTime: 5 * 60 * 1000,
+    },
+  );
+
+  const effectiveLeagueFixtures = useMemo((): KnockoutFixtureLite[] => {
+    if (leagueFixtures && leagueFixtures.length > 0) {
+      return leagueFixtures.filter((f) => !f.leagueId || f.leagueId === leagueId);
+    }
+    const bundle = tournamentBundleQuery.data;
+    if (!bundle) return [];
+    const raw = [
+      ...(bundle.live?.response ?? []),
+      ...(bundle.upcoming?.response ?? []),
+      ...(bundle.results?.response ?? []),
+    ];
+    const seen = new Set<string>();
+    return mapApiFixturesToKnockoutLite(raw)
+      .filter((f) => f.leagueId === leagueId || f.leagueId == null)
+      .filter((f) => {
+        if (!f.id || seen.has(f.id)) return false;
+        seen.add(f.id);
+        return true;
+      });
+  }, [leagueFixtures, tournamentBundleQuery.data, leagueId]);
+
+  const knockoutPhase = useMemo(
+    () => detectKnockoutPhase(effectiveLeagueFixtures),
+    [effectiveLeagueFixtures],
+  );
+
+  const knockoutRoundGroups = useMemo(
+    () => buildKnockoutRoundGroups(effectiveLeagueFixtures),
+    [effectiveLeagueFixtures],
+  );
+
+  const statsTabs = useMemo((): { key: StatsTabKey; label: string }[] => {
+    if (knockoutPhase) {
+      return [
+        { key: 'knockout', label: 'Knockout' },
+        { key: 'groups', label: 'Final standings' },
+        { key: 'goals', label: 'Top scorers' },
+        { key: 'assists', label: 'Assists' },
+      ];
+    }
+    return [
+      { key: 'table', label: 'Table' },
+      { key: 'goals', label: 'Top scorers' },
+      { key: 'assists', label: 'Assists' },
+    ];
+  }, [knockoutPhase]);
+
+  useEffect(() => {
+    setStatsTabIndex(0);
+    setSelectedGroup('all');
+    pagerRef.current?.scrollTo({ x: 0, animated: false });
+  }, [leagueId, knockoutPhase]);
 
   const standingsQuery = trpc.football.getLeagueStandings.useQuery(
     { leagueId, ...(seasonHint != null ? { season: seasonHint } : {}) },
@@ -112,23 +180,23 @@ export default function LeagueStandingsModal({
 
   const goToTab = useCallback(
     (idx: number) => {
-      const i = Math.min(STATS_TABS.length - 1, Math.max(0, idx));
+      const i = Math.min(statsTabs.length - 1, Math.max(0, idx));
       setStatsTabIndex(i);
       pagerRef.current?.scrollTo({ x: i * pageWidth, animated: true });
       if (Platform.OS !== 'web') {
         void Haptics.selectionAsync();
       }
     },
-    [pageWidth],
+    [pageWidth, statsTabs.length],
   );
 
   const onPagerMomentumEnd = useCallback(
     (e: NativeSyntheticEvent<NativeScrollEvent>) => {
       const x = e.nativeEvent.contentOffset.x;
       const idx = Math.round(x / pageWidth);
-      setStatsTabIndex(Math.min(STATS_TABS.length - 1, Math.max(0, idx)));
+      setStatsTabIndex(Math.min(statsTabs.length - 1, Math.max(0, idx)));
     },
-    [pageWidth],
+    [pageWidth, statsTabs.length],
   );
 
   const standings = standingsQuery.data?.response?.[0]?.league?.standings;
@@ -170,8 +238,108 @@ export default function LeagueStandingsModal({
     return 'transparent';
   };
 
+  const renderKnockoutBody = () => {
+    if (knockoutRoundGroups.length === 0) {
+      return (
+        <View style={styles.leadersEmpty}>
+          <Text style={[styles.leadersEmptyText, { color: colors.textSecondary }]}>
+            Knockout fixtures will appear here once the bracket is published.
+          </Text>
+        </View>
+      );
+    }
+
+    return (
+      <ScrollView style={styles.standingsScroll} showsVerticalScrollIndicator={false} nestedScrollEnabled>
+        <Text style={[styles.knockoutHint, { color: colors.textSecondary }]}>
+          Live bracket from tournament fixtures — group tables are under Final standings.
+        </Text>
+        {knockoutRoundGroups.map((group) => (
+          <View key={group.roundLabel} style={styles.knockoutRoundBlock}>
+            <Text style={[styles.knockoutRoundTitle, { color: colors.text }]}>{group.roundLabel}</Text>
+            {group.fixtures.map((fixture) => {
+              const scoreKnown =
+                fixture.homeScore != null &&
+                fixture.awayScore != null &&
+                fixture.status !== 'Upcoming';
+              const row = (
+                <>
+                  <View style={styles.knockoutTeamSide}>
+                    {fixture.homeTeamLogo ? (
+                      <Image source={{ uri: fixture.homeTeamLogo }} style={styles.knockoutCrest} />
+                    ) : (
+                      <Shield size={16} color={colors.textSecondary} />
+                    )}
+                    <Text style={[styles.knockoutTeamName, { color: colors.text }]} numberOfLines={2}>
+                      {fixture.homeTeam}
+                    </Text>
+                  </View>
+                  <View style={styles.knockoutScoreBlock}>
+                    {fixture.status === 'Live' ? (
+                      <Text style={[styles.knockoutLiveBadge, { color: colors.error }]}>LIVE</Text>
+                    ) : null}
+                    <Text style={[styles.knockoutScore, { color: colors.text }]}>
+                      {scoreKnown
+                        ? `${fixture.homeScore} – ${fixture.awayScore}`
+                        : fixture.time ?? 'vs'}
+                    </Text>
+                  </View>
+                  <View style={[styles.knockoutTeamSide, styles.knockoutTeamSideAway]}>
+                    {fixture.awayTeamLogo ? (
+                      <Image source={{ uri: fixture.awayTeamLogo }} style={styles.knockoutCrest} />
+                    ) : (
+                      <Shield size={16} color={colors.textSecondary} />
+                    )}
+                    <Text
+                      style={[styles.knockoutTeamName, styles.knockoutTeamNameAway, { color: colors.text }]}
+                      numberOfLines={2}
+                    >
+                      {fixture.awayTeam}
+                    </Text>
+                  </View>
+                </>
+              );
+              return onFixturePress ? (
+                <TouchableOpacity
+                  key={fixture.id}
+                  style={[styles.knockoutFixtureRow, { borderBottomColor: colors.border }]}
+                  activeOpacity={0.85}
+                  onPress={() => {
+                    if (Platform.OS !== 'web') {
+                      void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+                    }
+                    onFixturePress(fixture);
+                  }}
+                  accessibilityRole="button"
+                  accessibilityLabel={`${fixture.homeTeam} vs ${fixture.awayTeam}`}
+                >
+                  {row}
+                </TouchableOpacity>
+              ) : (
+                <View
+                  key={fixture.id}
+                  style={[styles.knockoutFixtureRow, { borderBottomColor: colors.border }]}
+                >
+                  {row}
+                </View>
+              );
+            })}
+          </View>
+        ))}
+      </ScrollView>
+    );
+  };
+
   const renderStandingsBody = () => {
-    if (!standings) return null;
+    if (!standings) {
+      return (
+        <View style={styles.leadersEmpty}>
+          <Text style={[styles.leadersEmptyText, { color: colors.textSecondary }]}>
+            Final group tables are not available right now.
+          </Text>
+        </View>
+      );
+    }
     return (
       <ScrollView style={styles.standingsScroll} showsVerticalScrollIndicator={false} nestedScrollEnabled>
         <View style={[styles.tableHeader, { backgroundColor: colors.surfaceSecondary }]}>
@@ -366,6 +534,11 @@ export default function LeagueStandingsModal({
     );
   };
 
+  const canShowStatsPager = hasStandingsRows || knockoutPhase;
+  const statsDataLoading =
+    standingsQuery.isLoading ||
+    (needsFixtureFetch && tournamentBundleQuery.isLoading && effectiveLeagueFixtures.length === 0);
+
   return (
     <Modal visible={visible} animationType="slide" transparent onRequestClose={handleClose}>
       <View style={styles.modalOverlay}>
@@ -405,7 +578,7 @@ export default function LeagueStandingsModal({
             </TouchableOpacity>
           </View>
 
-          {hasMultipleGroups && (
+          {hasMultipleGroups && statsTabIndex === (knockoutPhase ? 1 : 0) && (
             <ScrollView
               horizontal
               showsHorizontalScrollIndicator={false}
@@ -454,12 +627,12 @@ export default function LeagueStandingsModal({
             </ScrollView>
           )}
 
-          {standingsQuery.isLoading ? (
+          {statsDataLoading ? (
             <View style={styles.loadingContainer}>
               <ActivityIndicator size="large" color={colors.primary} />
               <Text style={[styles.loadingText, { color: colors.textSecondary }]}>Loading standings…</Text>
             </View>
-          ) : standingsQuery.error || !hasStandingsRows ? (
+          ) : !canShowStatsPager ? (
             <View style={styles.errorContainer}>
               <Text style={[styles.errorText, { color: colors.error }]}>
                 {isCupCompetition
@@ -475,7 +648,7 @@ export default function LeagueStandingsModal({
           ) : (
             <View style={styles.pagerShell}>
               <View style={[styles.statsTabBar, { borderBottomColor: colors.border }]}>
-                {STATS_TABS.map((tab, idx) => {
+                {statsTabs.map((tab, idx) => {
                   const active = statsTabIndex === idx;
                   return (
                     <TouchableOpacity
@@ -514,9 +687,14 @@ export default function LeagueStandingsModal({
                 nestedScrollEnabled
                 style={styles.pager}
               >
-                <View style={[styles.pagerPage, { width: pageWidth }]}>{renderStandingsBody()}</View>
-                <View style={[styles.pagerPage, { width: pageWidth }]}>{renderGoalsPage()}</View>
-                <View style={[styles.pagerPage, { width: pageWidth }]}>{renderAssistsPage()}</View>
+                {statsTabs.map((tab) => (
+                  <View key={tab.key} style={[styles.pagerPage, { width: pageWidth }]}>
+                    {tab.key === 'knockout' ? renderKnockoutBody() : null}
+                    {tab.key === 'groups' || tab.key === 'table' ? renderStandingsBody() : null}
+                    {tab.key === 'goals' ? renderGoalsPage() : null}
+                    {tab.key === 'assists' ? renderAssistsPage() : null}
+                  </View>
+                ))}
               </ScrollView>
             </View>
           )}
@@ -842,5 +1020,67 @@ const styles = StyleSheet.create({
     fontWeight: '700',
     textTransform: 'uppercase',
     marginTop: 2,
+  },
+  knockoutHint: {
+    fontSize: 12,
+    lineHeight: 17,
+    paddingHorizontal: 16,
+    paddingTop: 12,
+    paddingBottom: 4,
+  },
+  knockoutRoundBlock: {
+    paddingHorizontal: 16,
+    paddingTop: 14,
+  },
+  knockoutRoundTitle: {
+    fontSize: 15,
+    fontWeight: '800',
+    marginBottom: 10,
+    letterSpacing: -0.2,
+  },
+  knockoutFixtureRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    paddingVertical: 12,
+    borderBottomWidth: StyleSheet.hairlineWidth,
+  },
+  knockoutTeamSide: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    minWidth: 0,
+  },
+  knockoutTeamSideAway: {
+    flexDirection: 'row-reverse',
+  },
+  knockoutCrest: {
+    width: 26,
+    height: 26,
+    resizeMode: 'contain',
+  },
+  knockoutTeamName: {
+    flex: 1,
+    fontSize: 13,
+    fontWeight: '600',
+  },
+  knockoutTeamNameAway: {
+    textAlign: 'right',
+  },
+  knockoutScoreBlock: {
+    alignItems: 'center',
+    minWidth: 56,
+    gap: 2,
+  },
+  knockoutScore: {
+    fontSize: 15,
+    fontWeight: '800',
+    letterSpacing: -0.3,
+  },
+  knockoutLiveBadge: {
+    fontSize: 9,
+    fontWeight: '800',
+    letterSpacing: 0.6,
   },
 });

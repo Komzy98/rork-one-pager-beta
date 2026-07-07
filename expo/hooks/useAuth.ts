@@ -12,6 +12,7 @@ import {
   supabaseUrl,
   signInWithPasswordDirect,
   signUpDirect,
+  persistSupabaseSession,
 } from '@/utils/supabaseClient';
 import * as AuthSession from 'expo-auth-session';
 import * as Linking from 'expo-linking';
@@ -548,7 +549,7 @@ export const [AuthProvider, useAuth] = createContextHook(() => {
         let authUserRecord: { user: { id: string; email?: string; user_metadata?: Record<string, unknown> }; session: { access_token: string; refresh_token: string } } | null = null;
         let lastError: Error | null = null;
 
-        for (let attempt = 0; attempt < 3; attempt++) {
+        for (let attempt = 0; attempt < 5; attempt++) {
           const direct = await signInWithPasswordDirect(normalizedEmail, credentials.password);
           if (direct.data?.user && direct.data.session) {
             authUserRecord = {
@@ -564,8 +565,8 @@ export const [AuthProvider, useAuth] = createContextHook(() => {
 
           lastError = direct.error;
           const msg = direct.error?.message ?? '';
-          if (!isRetryableAuthNetworkMessage(msg) || attempt >= 2) break;
-          await new Promise((r) => setTimeout(r, 450 * (attempt + 1)));
+          if (!isRetryableAuthNetworkMessage(msg) || attempt >= 4) break;
+          await new Promise((r) => setTimeout(r, 600 * (attempt + 1)));
         }
 
         if (!authUserRecord) {
@@ -581,50 +582,52 @@ export const [AuthProvider, useAuth] = createContextHook(() => {
         }
 
         try {
-          await supabase.auth.setSession({
-            access_token: authUserRecord.session.access_token,
-            refresh_token: authUserRecord.session.refresh_token,
-          });
-        } catch (sessionErr) {
-          console.warn('setSession after direct login failed (session may still work locally):', sessionErr);
-        }
+          const data = { user: authUserRecord.user };
+          const meta = (data.user.user_metadata || {}) as Record<string, string | undefined>;
+          const firstName: string = meta.firstName || '';
+          const lastName: string = meta.lastName || '';
+          const displayName: string = meta.name || [firstName, lastName].filter(Boolean).join(' ') || String(data.user.email).split('@')[0];
+          const authUser: AuthUser = {
+            id: data.user.id,
+            email: data.user.email || credentials.email,
+            name: displayName,
+            avatar: meta.avatar_url || meta.picture,
+            isAuthenticated: true,
+          };
+          setIsGuest(false);
+          setUser(authUser);
+          setSupabaseUser(data.user);
+          await AsyncStorage.setItem(AUTH_STORAGE_KEY, JSON.stringify(authUser));
 
-        const data = { user: authUserRecord.user };
-        const meta = (data.user.user_metadata || {}) as Record<string, string | undefined>;
-        const firstName: string = meta.firstName || '';
-        const lastName: string = meta.lastName || '';
-        const displayName: string = meta.name || [firstName, lastName].filter(Boolean).join(' ') || String(data.user.email).split('@')[0];
-        const authUser: AuthUser = {
-          id: data.user.id,
-          email: data.user.email || credentials.email,
-          name: displayName,
-          avatar: meta.avatar_url || meta.picture,
-          isAuthenticated: true,
-        };
-        setIsGuest(false);
-        setUser(authUser);
-        setSupabaseUser(data.user);
-        await AsyncStorage.setItem(AUTH_STORAGE_KEY, JSON.stringify(authUser));
-        try {
-          const guestUserId =
-            user?.id?.startsWith('guest_') ? user.id : (await getLastGuestUserId()) ?? undefined;
-          await migrateLocalDataToSupabaseUser(authUser.email, data.user.id, {
-            sessionDisplayName: authUser.name,
-            guestUserId,
-          });
-        } catch (migrationError) {
-          console.warn('Local->Supabase migration skipped (login):', migrationError);
+          void persistSupabaseSession(
+            authUserRecord.session.access_token,
+            authUserRecord.session.refresh_token,
+          );
+
+          try {
+            const guestUserId =
+              user?.id?.startsWith('guest_') ? user.id : (await getLastGuestUserId()) ?? undefined;
+            await migrateLocalDataToSupabaseUser(authUser.email, data.user.id, {
+              sessionDisplayName: authUser.name,
+              guestUserId,
+            });
+          } catch (migrationError) {
+            console.warn('Local->Supabase migration skipped (login):', migrationError);
+          }
+          try {
+            const newSync = new SupabaseUserSync(data.user.id);
+            setSupabaseSync(newSync);
+            setAutoSyncEnabled(true);
+            void setSyncUserId(data.user.id);
+          } catch (syncError) {
+            console.log('Supabase sync setup skipped:', syncError);
+          }
+          console.log('✅ Supabase login successful');
+          return { success: true };
+        } catch (sessionErr) {
+          console.warn('Login post-auth setup failed:', sessionErr);
+          return { success: false, error: 'Signed in but could not finish setup. Please try again.' };
         }
-        try {
-          const newSync = new SupabaseUserSync(data.user.id);
-          setSupabaseSync(newSync);
-          setAutoSyncEnabled(true);
-          void setSyncUserId(data.user.id);
-        } catch (syncError) {
-          console.log('Supabase sync setup skipped:', syncError);
-        }
-        console.log('✅ Supabase login successful');
-        return { success: true };
       }
 
       const users = await getUsersDb();
@@ -728,14 +731,10 @@ export const [AuthProvider, useAuth] = createContextHook(() => {
         }
 
         if (signupSession) {
-          try {
-            await supabase.auth.setSession({
-              access_token: signupSession.access_token,
-              refresh_token: signupSession.refresh_token,
-            });
-          } catch (sessionErr) {
-            console.warn('setSession after direct signup failed:', sessionErr);
-          }
+          void persistSupabaseSession(
+            signupSession.access_token,
+            signupSession.refresh_token,
+          );
         }
 
         const authUser: AuthUser = {
@@ -880,6 +879,7 @@ export const [AuthProvider, useAuth] = createContextHook(() => {
       await rememberGuestUserId(guestUser.id);
       setUser(guestUser);
       setIsGuest(true);
+      await AsyncStorage.setItem(AUTH_STORAGE_KEY, JSON.stringify(guestUser));
       console.log('✅ Guest session created');
       return { success: true };
     } catch (error) {

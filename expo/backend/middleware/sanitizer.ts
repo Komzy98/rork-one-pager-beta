@@ -120,8 +120,14 @@ export function payloadSizeLimiter(maxBytes: number = MAX_JSON_BODY_SIZE) {
 export function inputSanitizer() {
   return async (c: Context, next: Next) => {
     const method = c.req.method;
+    const pathname = new URL(c.req.url).pathname;
+    const isTrpcRoute =
+      pathname === "/api/trpc" ||
+      pathname.startsWith("/api/trpc/") ||
+      pathname === "/trpc" ||
+      pathname.startsWith("/trpc/");
 
-    if (["POST", "PUT", "PATCH"].includes(method)) {
+    if (["POST", "PUT", "PATCH"].includes(method) && !isTrpcRoute) {
       const contentType = c.req.header("content-type") || "";
 
       if (contentType.includes("application/json")) {

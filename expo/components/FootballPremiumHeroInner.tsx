@@ -5,6 +5,7 @@ import {
   StyleSheet,
   TouchableOpacity,
   Image,
+  ScrollView,
   useWindowDimensions,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -23,6 +24,8 @@ import {
   SPORTS_TALL_HERO_MIN_HEIGHT_PX,
 } from '@/constants/sportsHeroLayout';
 
+import { formatFootballKickoffLabel } from '@/utils/footballKickoffLabel';
+
 /** Reserve space for baked-in “FOOTBALL CENTER” artwork at the tall-hero baseline. */
 const HERO_ART_SPACER_BASE_PX = 112;
 
@@ -37,7 +40,7 @@ export type FeaturedMatchFields = {
   venueCity?: string;
 };
 
-/** Up to four favourite clubs shown on the hero — tap opens club profile when `onClubAvatarPress` is set. */
+/** Favourite clubs shown on the hero — tap opens club profile when `onClubAvatarPress` is set. */
 export type FootballHeroFavoriteClub = {
   apiId?: number | null;
   name: string;
@@ -46,7 +49,7 @@ export type FootballHeroFavoriteClub = {
 
 type Props = {
   liveCount: number;
-  /** First-row club crests (max 4). Prefer over legacy `clubLogoUris`. */
+  /** First-row club crests (horizontally scrollable when many). Prefer over legacy `clubLogoUris`. */
   clubSlots?: FootballHeroFavoriteClub[];
   /** @deprecated Use `clubSlots` with structured teams. */
   clubLogoUris?: (string | undefined)[];
@@ -57,26 +60,12 @@ type Props = {
   onFeaturedPress: () => void;
   onAddClub: () => void;
   onClubAvatarPress?: (club: FootballHeroFavoriteClub) => void;
+  /** Shrinks art spacer when user already has favourite clubs. */
+  compactProfileHero?: boolean;
 };
 
 function formatFeaturedTimeLine(match: FeaturedMatchFields): string {
-  if (match.date.includes('T')) {
-    const d = new Date(match.date);
-    const today = new Date();
-    today.setHours(0, 0, 0, 0);
-    const tomorrow = new Date(today);
-    tomorrow.setDate(tomorrow.getDate() + 1);
-    const dn = new Date(d);
-    dn.setHours(0, 0, 0, 0);
-    if (dn.getTime() === tomorrow.getTime()) {
-      return `Tomorrow ${match.time}`;
-    }
-    if (dn.getTime() === today.getTime()) {
-      return `Today ${match.time}`;
-    }
-    return `${d.toLocaleDateString('en-GB', { day: 'numeric', month: 'short' })} ${match.time}`;
-  }
-  return match.time;
+  return formatFootballKickoffLabel(match.date, match.time);
 }
 
 function splitTeamNameLines(name: string): { line1: string; line2: string | null } {
@@ -167,14 +156,15 @@ export default function FootballPremiumHeroInner({
   onFeaturedPress,
   onAddClub,
   onClubAvatarPress,
+  compactProfileHero = false,
 }: Props) {
   const { width: windowWidth } = useWindowDimensions();
   const insets = useSafeAreaInsets();
   const heroMinHeight = useMemo(() => getSportsTallHeroMinHeight(windowWidth), [windowWidth]);
-  const heroArtSpacerHeight = useMemo(
-    () => Math.round((heroMinHeight / SPORTS_TALL_HERO_MIN_HEIGHT_PX) * HERO_ART_SPACER_BASE_PX),
-    [heroMinHeight],
-  );
+  const heroArtSpacerHeight = useMemo(() => {
+    const base = Math.round((heroMinHeight / SPORTS_TALL_HERO_MIN_HEIGHT_PX) * HERO_ART_SPACER_BASE_PX);
+    return compactProfileHero ? Math.min(48, base) : base;
+  }, [heroMinHeight, compactProfileHero]);
   const myClubsDropPx = useMemo(() => Math.round(heroMinHeight * 0.03), [heroMinHeight]);
   const edgePad = useMemo(() => {
     const base = windowWidth <= 360 ? 12 : windowWidth <= 400 ? 14 : 20;
@@ -216,40 +206,54 @@ export default function FootballPremiumHeroInner({
         <View style={[styles.heroArtSpacer, { minHeight: heroArtSpacerHeight }]} />
 
         <View style={styles.heroBottomStack}>
-        <View style={[styles.clubRow, { marginTop: 12 + myClubsDropPx }]}>
-          {slots.slice(0, 4).map((club, i) => {
-            const uri = club.logoUri;
-            const inner = (
-              <>
-                {uri ? (
-                  <Image source={{ uri }} style={styles.clubLogo} resizeMode="contain" />
-                ) : (
-                  <View style={styles.clubLogoPlaceholder} />
-                )}
-              </>
-            );
-            const key = `${club.name}-${club.apiId ?? i}-${i}`;
-            if (onClubAvatarPress && clubSlots != null) {
-              return (
-                <TouchableOpacity
-                  key={key}
-                  style={styles.clubAvatar}
-                  onPress={() => onClubAvatarPress(club)}
-                  activeOpacity={0.85}
-                  accessibilityRole="button"
-                  accessibilityLabel={`Open ${club.name} club profile`}
-                >
-                  {inner}
-                </TouchableOpacity>
+        <View style={[styles.clubRow, { marginTop: 12 + myClubsDropPx, paddingHorizontal: edgePad }]}>
+          <ScrollView
+            horizontal
+            showsHorizontalScrollIndicator={false}
+            style={styles.clubScroll}
+            contentContainerStyle={styles.clubScrollContent}
+            keyboardShouldPersistTaps="handled"
+          >
+            {slots.map((club, i) => {
+              const uri = club.logoUri;
+              const inner = (
+                <>
+                  {uri ? (
+                    <Image source={{ uri }} style={styles.clubLogo} resizeMode="contain" />
+                  ) : (
+                    <View style={styles.clubLogoPlaceholder} />
+                  )}
+                </>
               );
-            }
-            return (
-              <View key={key} style={styles.clubAvatar}>
-                {inner}
-              </View>
-            );
-          })}
-          <TouchableOpacity style={styles.addClub} onPress={onAddClub} activeOpacity={0.85}>
+              const key = `${club.name}-${club.apiId ?? i}-${i}`;
+              if (onClubAvatarPress && clubSlots != null) {
+                return (
+                  <TouchableOpacity
+                    key={key}
+                    style={styles.clubAvatar}
+                    onPress={() => onClubAvatarPress(club)}
+                    activeOpacity={0.85}
+                    accessibilityRole="button"
+                    accessibilityLabel={`Open ${club.name} club profile`}
+                  >
+                    {inner}
+                  </TouchableOpacity>
+                );
+              }
+              return (
+                <View key={key} style={styles.clubAvatar}>
+                  {inner}
+                </View>
+              );
+            })}
+          </ScrollView>
+          <TouchableOpacity
+            style={styles.addClub}
+            onPress={onAddClub}
+            activeOpacity={0.85}
+            accessibilityRole="button"
+            accessibilityLabel="Add favourite club"
+          >
             <Plus size={18} color="#FFFFFF" strokeWidth={2.2} />
           </TouchableOpacity>
         </View>
@@ -372,6 +376,16 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     gap: 7,
+  },
+  clubScroll: {
+    flex: 1,
+    minWidth: 0,
+  },
+  clubScrollContent: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 7,
+    paddingRight: 4,
   },
   clubAvatar: {
     width: 34,

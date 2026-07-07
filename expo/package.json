@@ -17,12 +17,18 @@
     "eas:build:dev": "eas build --profile development",
     "android": "expo run:android",
     "ios": "expo run:ios",
-    "ios:sim": "node scripts/fix-ios-sim-deep-links.cjs && open -a Simulator && REACT_NATIVE_PACKAGER_HOSTNAME=127.0.0.1 EXPO_USE_LOCALHOST=1 npx expo start --dev-client --localhost --port 8081 --ios",
+    "dev": "bash scripts/run-ios-with-younify-auth.sh",
+    "ios:sim": "bash scripts/run-ios-with-younify-auth.sh",
+    "ios:sim:metro-only": "node scripts/fix-ios-sim-deep-links.cjs && open -a Simulator && REACT_NATIVE_PACKAGER_HOSTNAME=127.0.0.1 EXPO_USE_LOCALHOST=1 npx expo start --dev-client --localhost --port 8081 --ios",
     "ios:sim:refresh": "node scripts/fix-ios-sim-deep-links.cjs && open -a Simulator && REACT_NATIVE_PACKAGER_HOSTNAME=127.0.0.1 EXPO_USE_LOCALHOST=1 npx expo start --dev-client --localhost --port 8081 --clear --ios",
     "ios:sim:fix-links": "node scripts/fix-ios-sim-deep-links.cjs",
     "ios:sim:full": "bash scripts/run-ios-with-younify-auth.sh",
     "younify-auth": "node backend/younify-auth/server.js",
-    "api:public": "tsx backend/serve.ts"
+    "api:public": "tsx backend/serve.ts",
+    "smoke:football": "node scripts/smoke-football-api.mjs",
+    "smoke:events": "node scripts/smoke-events-api.mjs",
+    "test": "node --import tsx --test utils/__tests__/*.test.ts",
+    "test:football": "node --import tsx --test utils/__tests__/football*.test.ts"
   },
   "dependencies": {
     "@expo/vector-icons": "^15.0.3",
@@ -54,6 +60,7 @@
     "expo-linear-gradient": "~15.0.7",
     "expo-linking": "~8.0.11",
     "expo-local-authentication": "~17.0.8",
+    "expo-location": "~19.0.8",
     "expo-notifications": "~0.32.13",
     "expo-router": "~6.0.14",
     "expo-secure-store": "~15.0.7",

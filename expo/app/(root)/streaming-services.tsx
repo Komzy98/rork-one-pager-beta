@@ -14,6 +14,7 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { ArrowLeft, Check, Sparkles } from "lucide-react-native";
 import { useRouter } from "expo-router";
 import { configureYounify, fetchYounifyServices } from "@/services/younify";
+import YounifyAuthUnavailablePanel from "@/components/younify/YounifyAuthUnavailablePanel";
 import { TMDB_POSTER_ATTRIBUTION } from "@/utils/younifyTmdbPoster";
 import StreamingServiceListLogo from "@/components/streaming/StreamingServiceListLogo";
 
@@ -349,25 +350,11 @@ export default function StreamingServicesScreen() {
           </Text>
         </View>
       ) : error ? (
-        <View style={styles.centerState}>
-          <Text style={styles.errorTitle}>Connection interrupted</Text>
-          <Text style={styles.errorText}>{error}</Text>
-
-          <Pressable
-            style={({ pressed }) => [
-              styles.retryButton,
-              styles.primaryButton,
-              pressed && styles.buttonPressed,
-            ]}
-            onPress={() => {
-              void loadServices("initial");
-            }}
-          >
-            <Text style={[styles.retryText, styles.primaryButtonText]}>
-              Try again
-            </Text>
-          </Pressable>
-        </View>
+        <YounifyAuthUnavailablePanel
+          error={error}
+          onRetry={() => void loadServices("initial")}
+          compact
+        />
       ) : (
         <>
           <View style={styles.heroCard}>

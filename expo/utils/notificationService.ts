@@ -25,7 +25,8 @@ export interface NotificationData {
     | 'daily_summary'
     | 'social'
     | 'challenge'
-    | 'achievement';
+    | 'achievement'
+    | 'event_reminder';
   id?: string;
   payload?: Record<string, any>;
 }
@@ -421,6 +422,71 @@ export const notificationService = {
     }
   },
 
+  async cancelMatchReminder(matchId: string): Promise<void> {
+    try {
+      const scheduled = await this.getScheduledNotifications();
+      const matchNotifications = scheduled.filter(
+        n => n.type === 'match_reminder' && n.id === matchId
+      );
+
+      for (const notification of matchNotifications) {
+        await this.cancelNotification(notification.identifier);
+      }
+    } catch (error) {
+      console.error('❌ Error cancelling match reminder:', error);
+    }
+  },
+
+  async scheduleEventReminder(
+    eventId: string,
+    title: string,
+    venue: string,
+    eventTime: Date,
+    reminderMinutesBefore: number = 30
+  ): Promise<string | null> {
+    try {
+      const reminderTime = new Date(eventTime.getTime() - reminderMinutesBefore * 60 * 1000);
+
+      if (reminderTime <= new Date()) {
+        console.log('⚠️ Event reminder time is in the past');
+        return null;
+      }
+
+      await this.cancelEventReminder(eventId);
+
+      const identifier = await this.scheduleNotification(
+        '🎟️ Event Starting Soon',
+        `"${title}" at ${venue} starts in ${reminderMinutesBefore} minutes`,
+        reminderTime,
+        {
+          type: 'event_reminder',
+          id: eventId,
+          payload: { title, venue, eventTime: eventTime.toISOString() },
+        }
+      );
+
+      return identifier;
+    } catch (error) {
+      console.error('❌ Error scheduling event reminder:', error);
+      return null;
+    }
+  },
+
+  async cancelEventReminder(eventId: string): Promise<void> {
+    try {
+      const scheduled = await this.getScheduledNotifications();
+      const eventNotifications = scheduled.filter(
+        (n) => n.type === 'event_reminder' && n.id === eventId
+      );
+
+      for (const notification of eventNotifications) {
+        await this.cancelNotification(notification.identifier);
+      }
+    } catch (error) {
+      console.error('❌ Error cancelling event reminder:', error);
+    }
+  },
+
   async cancelNotificationsByType(type: NotificationData['type']): Promise<void> {
     try {
       const scheduled = await this.getScheduledNotifications();
@@ -480,21 +546,6 @@ export const notificationService = {
     } catch (error) {
       console.error('❌ Error scheduling daily summary reminder:', error);
       return null;
-    }
-  },
-
-  async cancelMatchReminder(matchId: string): Promise<void> {
-    try {
-      const scheduled = await this.getScheduledNotifications();
-      const matchNotifications = scheduled.filter(
-        n => n.type === 'match_reminder' && n.id === matchId
-      );
-
-      for (const notification of matchNotifications) {
-        await this.cancelNotification(notification.identifier);
-      }
-    } catch (error) {
-      console.error('❌ Error cancelling match reminder:', error);
     }
   },
 

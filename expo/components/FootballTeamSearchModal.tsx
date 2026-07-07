@@ -37,6 +37,7 @@ import {
 import { trpc } from '@/lib/trpc';
 import type { LiveFootballMatch, UserTeam } from '@/types/habit';
 import { useUserProfile } from '@/hooks/useUserProfile';
+import { getFootballTeamLogoUrl } from '@/constants/footballData';
 import {
   PremiumSportsMatchCard,
   liveFootballMatchToCardModel,
@@ -363,6 +364,9 @@ export default function FootballTeamSearchModal({
       apiId: selected.id,
     };
     addFavoriteTeam(team);
+    setSelected(null);
+    setQuery('');
+    setDebouncedQuery('');
   }, [selected, alreadyFavorite, profile, clubProfile, addFavoriteTeam]);
 
   return (
@@ -417,10 +421,52 @@ export default function FootballTeamSearchModal({
                 autoCorrect={false}
                 autoCapitalize="none"
                 returnKeyType="search"
+                autoFocus
               />
               {searchLoading ? <ActivityIndicator size="small" color={GREEN} /> : null}
             </View>
             <Text style={[styles.hint, { color: muted }]}>Type at least 2 characters. Results from live football data.</Text>
+            {profile?.favoriteTeams && profile.favoriteTeams.length > 0 ? (
+              <View style={styles.favoritesSection}>
+                <Text style={[styles.favoritesLabel, { color: muted }]}>
+                  Your clubs ({profile.favoriteTeams.length})
+                </Text>
+                <ScrollView
+                  horizontal
+                  showsHorizontalScrollIndicator={false}
+                  contentContainerStyle={styles.favoritesRow}
+                  keyboardShouldPersistTaps="handled"
+                >
+                  {profile.favoriteTeams.map((team) => {
+                    const logoUri = getFootballTeamLogoUrl(team) ?? team.logo;
+                    const apiId = team.apiId;
+                    return (
+                      <Pressable
+                        key={team.id}
+                        onPress={() => {
+                          if (apiId != null && apiId > 0) {
+                            onPickTeam({ id: apiId, name: team.name, logo: logoUri });
+                          }
+                        }}
+                        style={({ pressed }) => [
+                          styles.favoriteChip,
+                          { backgroundColor: card, borderColor: border, opacity: pressed ? 0.85 : 1 },
+                        ]}
+                      >
+                        {logoUri ? (
+                          <Image source={{ uri: logoUri }} style={styles.favoriteChipLogo} contentFit="contain" />
+                        ) : (
+                          <View style={[styles.favoriteChipLogo, { backgroundColor: border }]} />
+                        )}
+                        <Text style={[styles.favoriteChipName, { color: text }]} numberOfLines={1}>
+                          {team.name}
+                        </Text>
+                      </Pressable>
+                    );
+                  })}
+                </ScrollView>
+              </View>
+            ) : null}
             <FlatList
               data={results}
               keyExtractor={(item) => String(item.id)}
@@ -858,6 +904,21 @@ const styles = StyleSheet.create({
   },
   searchInput: { flex: 1, fontSize: 16, paddingVertical: 0 },
   hint: { fontSize: 12, marginTop: 8, marginBottom: 12 },
+  favoritesSection: { marginBottom: 8 },
+  favoritesLabel: { fontSize: 12, fontWeight: '700', marginBottom: 8 },
+  favoritesRow: { flexDirection: 'row', gap: 8, paddingBottom: 4 },
+  favoriteChip: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    paddingHorizontal: 10,
+    paddingVertical: 8,
+    borderRadius: 999,
+    borderWidth: 1,
+    maxWidth: 160,
+  },
+  favoriteChipLogo: { width: 22, height: 22, borderRadius: 11 },
+  favoriteChipName: { fontSize: 13, fontWeight: '700', flexShrink: 1 },
   resultRow: {
     flexDirection: 'row',
     alignItems: 'center',

@@ -25,7 +25,7 @@ import { useTheme } from '@/hooks/useTheme';
 import { sportsFixedPalette } from '@/utils/sportsPalette';
 import { formatMatchRoundLabel, isKnockoutRoundLabel } from '@/utils/matchRoundLabel';
 import { resolveLeagueLogoSource } from '@/utils/footballLeagueLabel';
-import type { LiveFootballMatch } from '@/types/habit';
+import { formatFootballMatchBadgeTime } from '@/utils/footballKickoffLabel';
 
 /** Favourite club indicator — always gold, independent of sports-tab green chrome. */
 const FAVORITE_STAR_COLOR = '#F5B800';
@@ -150,6 +150,7 @@ export const PremiumSportsMatchCard = React.memo(
     onToggleNotification,
     isPinned,
     onTogglePin,
+    onLeaguePress,
     surfaceColors,
   }: {
     match: SportsMatchCardModel;
@@ -159,6 +160,7 @@ export const PremiumSportsMatchCard = React.memo(
     onToggleNotification?: (matchId: string) => void;
     isPinned?: boolean;
     onTogglePin?: (matchId: string) => void;
+    onLeaguePress?: (leagueId: number, leagueName: string) => void;
     /** When set (e.g. club profile sheet), card matches parent surface instead of sports-tab gold/blue. */
     surfaceColors?: MatchCardSurfaceColors;
   }) => {
@@ -196,25 +198,7 @@ export const PremiumSportsMatchCard = React.memo(
     const getMatchTime = () => {
       if (isLive && match.elapsed) return `${match.elapsed}'`;
       if (isCompleted) return 'FT';
-
-      let matchDate: Date;
-      if (match.date.includes('T')) {
-        matchDate = new Date(match.date);
-      } else {
-        const [year, month, day] = match.date.split('-').map(Number);
-        matchDate = new Date(year, month - 1, day);
-      }
-
-      const today = new Date();
-      today.setHours(0, 0, 0, 0);
-      const tomorrow = new Date(today);
-      tomorrow.setDate(tomorrow.getDate() + 1);
-      const matchDateNormalized = new Date(matchDate);
-      matchDateNormalized.setHours(0, 0, 0, 0);
-
-      if (matchDateNormalized.getTime() === today.getTime()) return match.time;
-      if (matchDateNormalized.getTime() === tomorrow.getTime()) return 'Tomorrow';
-      return matchDate.toLocaleDateString('en-GB', { month: 'short', day: 'numeric' });
+      return formatFootballMatchBadgeTime(match.date, match.time);
     };
 
     const getResultStyle = () => {
@@ -278,6 +262,54 @@ export const PremiumSportsMatchCard = React.memo(
               />
             ) : null}
             <View style={cardStyles.matchHeader}>
+              {onLeaguePress && match.leagueId > 0 ? (
+                <TouchableOpacity
+                  style={cardStyles.leagueInfo}
+                  activeOpacity={0.75}
+                  onPress={(e) => {
+                    e.stopPropagation?.();
+                    onLeaguePress(match.leagueId, match.league);
+                  }}
+                  accessibilityRole="button"
+                  accessibilityLabel={`Open ${match.league} in Explore`}
+                >
+                  {leagueLogoSource ? (
+                    <Image source={leagueLogoSource} style={cardStyles.leagueLogo} resizeMode="contain" />
+                  ) : (
+                    <View style={[cardStyles.leagueIconFallback, { backgroundColor: sf.surfaceSecondary }]}>
+                      <Trophy size={11} color={sf.textMuted} />
+                    </View>
+                  )}
+                  <Text style={[cardStyles.leagueName, { color: sf.textMuted }]} numberOfLines={1}>
+                    {match.league}
+                  </Text>
+                  {roundLabel ? (
+                    <View
+                      style={[
+                        cardStyles.roundBadge,
+                        isKnockoutRound && cardStyles.roundBadgeKnockout,
+                        !isKnockoutRound && /group/i.test(roundLabel) && cardStyles.roundBadgeGroup,
+                      ]}
+                    >
+                      <Text
+                        style={[
+                          cardStyles.roundBadgeText,
+                          isKnockoutRound && cardStyles.roundBadgeTextKnockout,
+                          !isKnockoutRound && /group/i.test(roundLabel) && cardStyles.roundBadgeTextGroup,
+                        ]}
+                        numberOfLines={1}
+                      >
+                        {roundLabel}
+                      </Text>
+                    </View>
+                  ) : null}
+                  {(homeIsFavorite || awayIsFavorite) && (
+                    <View style={[cardStyles.favStarHeader, { backgroundColor: FAVORITE_STAR_BG }]}>
+                      <Star size={9} color={FAVORITE_STAR_COLOR} fill={FAVORITE_STAR_COLOR} />
+                    </View>
+                  )}
+                </TouchableOpacity>
+              ) : (
               <View style={cardStyles.leagueInfo}>
                 {leagueLogoSource ? (
                   <Image source={leagueLogoSource} style={cardStyles.leagueLogo} resizeMode="contain" />
@@ -294,12 +326,14 @@ export const PremiumSportsMatchCard = React.memo(
                     style={[
                       cardStyles.roundBadge,
                       isKnockoutRound && cardStyles.roundBadgeKnockout,
+                      !isKnockoutRound && /group/i.test(roundLabel) && cardStyles.roundBadgeGroup,
                     ]}
                   >
                     <Text
                       style={[
                         cardStyles.roundBadgeText,
                         isKnockoutRound && cardStyles.roundBadgeTextKnockout,
+                        !isKnockoutRound && /group/i.test(roundLabel) && cardStyles.roundBadgeTextGroup,
                       ]}
                       numberOfLines={1}
                     >
@@ -313,6 +347,7 @@ export const PremiumSportsMatchCard = React.memo(
                   </View>
                 )}
               </View>
+              )}
 
               {isLive ? (
                 <View style={cardStyles.liveIndicator}>
@@ -492,6 +527,7 @@ export const PremiumSportsMatchCard = React.memo(
     prev.isNotified === next.isNotified &&
     prev.isPinned === next.isPinned &&
     prev.onTogglePin === next.onTogglePin &&
+    prev.onLeaguePress === next.onLeaguePress &&
     prev.surfaceColors === next.surfaceColors,
 );
 
@@ -595,6 +631,12 @@ const cardStyles = StyleSheet.create({
   },
   roundBadgeTextKnockout: {
     color: '#B45309',
+  },
+  roundBadgeGroup: {
+    backgroundColor: 'rgba(59, 130, 246, 0.18)',
+  },
+  roundBadgeTextGroup: {
+    color: '#1D4ED8',
   },
   liveIndicator: {
     flexDirection: 'row',

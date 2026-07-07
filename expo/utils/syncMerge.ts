@@ -1,4 +1,7 @@
-import type { Habit, UserProfile, UserTeam } from '@/types/habit';
+import { mergeJoySourcesForSync } from '@/utils/joySources';
+import { mergeTabVisitCounts } from '@/utils/tabUsage';
+import type { Habit, RecoveryWellbeingLog, UserProfile, UserTeam } from '@/types/habit';
+import type { SavedEventSnapshot } from '@/types/events';
 import type { Task, TaskProject, TaskTimeEntry } from '@/types/task';
 
 export function parseRecordTimestamp(
@@ -137,6 +140,18 @@ function unionStrings(a: string[] = [], b: string[] = []): string[] {
   return [...new Set([...a, ...b])];
 }
 
+function mergeWellbeingLogs(
+  a: RecoveryWellbeingLog[] = [],
+  b: RecoveryWellbeingLog[] = []
+): RecoveryWellbeingLog[] {
+  const byDate = new Map<string, RecoveryWellbeingLog>();
+  for (const log of [...a, ...b]) {
+    const prev = byDate.get(log.date);
+    byDate.set(log.date, prev ? { ...prev, ...log } : log);
+  }
+  return [...byDate.values()].sort((x, y) => x.date.localeCompare(y.date));
+}
+
 function isPlaceholderDisplayName(name: string | undefined): boolean {
   const n = (name ?? '').trim();
   return n === 'Guest User' || n === 'Guest' || n.length === 0;
@@ -221,6 +236,7 @@ export function mergeProfilesFromCloud(
     favoriteBooks: mergeRecordsById(older.favoriteBooks ?? [], newer.favoriteBooks ?? []) as UserProfile['favoriteBooks'],
     interests: unionStrings(older.interests, newer.interests),
     tabOrder: newer.tabOrder?.length ? newer.tabOrder : older.tabOrder,
+    tabVisitCounts: mergeTabVisitCounts(older.tabVisitCounts, newer.tabVisitCounts),
     onboardingCompleted: newer.onboardingCompleted || older.onboardingCompleted,
     notificationSettings: {
       ...older.notificationSettings,
@@ -246,11 +262,36 @@ export function mergeProfilesFromCloud(
         older.sportsFeedPrefs?.prioritizeNationalTeams ??
         true,
     },
+    identityGoals: unionStrings(older.identityGoals, newer.identityGoals),
+    joySources: mergeJoySourcesForSync(older.joySources, newer.joySources),
+    recoveryMode:
+      Date.parse(newer.recoveryMode?.lastEvaluatedAt || '') >=
+      Date.parse(older.recoveryMode?.lastEvaluatedAt || '')
+        ? newer.recoveryMode ?? older.recoveryMode
+        : older.recoveryMode ?? newer.recoveryMode,
+    wellbeingLogs: mergeWellbeingLogs(older.wellbeingLogs, newer.wellbeingLogs),
+    savedEvents: mergeSavedEvents(older.savedEvents, newer.savedEvents),
     lastLoginAt:
       localTs >= cloudTs ? localProfile.lastLoginAt : cloudProfile.lastLoginAt,
   };
 
   return reconcileProfileWithSession(merged, session);
+}
+
+function mergeSavedEvents(
+  older?: SavedEventSnapshot[],
+  newer?: SavedEventSnapshot[]
+): SavedEventSnapshot[] {
+  const map = new Map<string, SavedEventSnapshot>();
+  for (const item of [...(older ?? []), ...(newer ?? [])]) {
+    const prev = map.get(item.id);
+    if (!prev || Date.parse(item.savedAt) >= Date.parse(prev.savedAt)) {
+      map.set(item.id, item);
+    }
+  }
+  return [...map.values()].sort(
+    (a, b) => Date.parse(b.savedAt) - Date.parse(a.savedAt)
+  );
 }
 
 export type CloudMergeStats = {

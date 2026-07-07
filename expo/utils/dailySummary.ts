@@ -105,8 +105,23 @@ export function computeDailyScore(input: DailySummaryScoreInput): number {
   return Math.max(0, Math.min(100, Math.round(weighted * 100)));
 }
 
+const RECOVERY_SYSTEM_PROMPT = `You are a compassionate recovery coach for One Pager during Turbulent Times / Recovery Mode.
+Rules:
+- Keep "summary" ≤ 80 words. Warm, human, zero guilt.
+- NEVER mention broken streaks, overdue counts, or incomplete task totals.
+- Acknowledge difficulty first when signals suggest a hard period.
+- Offer exactly ONE tiny win for today (e.g. ten minutes outside, water, text someone).
+- Include one Daily Hope if sportsBeats, continueWatching, or todayCalendar provides it — something to look forward to.
+- "wins" should celebrate any small effort (one habit, one moment of rest, showing up).
+- "challenges" must be gentle — frame as optional, never shame.
+- "streaks" MUST be an empty array [] — do not surface streak data in recovery mode.
+- "recommendations" ≤ 2, tiny and achievable only.
+- sentiment should lean neutral or gently positive — never punitive negative.
+- Do not invent data. Output valid JSON with the exact structure provided.`;
+
 export async function summarizeDailyProgress(input: {
   date: string; // e.g., "2025-09-08"
+  recoveryMode?: boolean;
   activities?: { name: string; minutes?: number; details?: string }[];
   habits?: DailySummaryHabit[];
   habitRollup?: DailySummaryHabitRollup | null;
@@ -120,6 +135,7 @@ export async function summarizeDailyProgress(input: {
   upcomingMatches?: { homeTeam: string; awayTeam: string; date: string; time: string; competition: string }[];
   recentWins?: { team: string; opponent: string; score: string; date: string }[];
   upcomingEvents?: { title: string; startDate: string; endDate: string; location?: string; isAllDay?: boolean }[];
+  savedDiscoveryEvents?: { title: string; dateLabel: string; timeLabel?: string; venue: string; daysUntil: number | null }[];
   todayCalendar?: DailySummaryCalendarEvent[];
   weather?: { condition: string; temp: number; description: string; city: string; humidity?: number; windSpeed?: number };
   notes?: string;
@@ -135,7 +151,9 @@ export async function summarizeDailyProgress(input: {
         messages: [
           {
             role: 'system',
-            content: `You are an assistant that writes crisp, motivational daily progress summaries for the One-Pager app.
+            content: input.recoveryMode
+              ? RECOVERY_SYSTEM_PROMPT
+              : `You are an assistant that writes crisp, motivational daily progress summaries for the One-Pager app.
 Rules:
 - Keep "summary" ≤ 80 words. Be specific, motivational, and warm — the user should feel seen.
 - MUST name at least one real habit or task by exact title in "summary" (never only "your main task" or "a habit").
@@ -150,6 +168,7 @@ Rules:
 - TOUGH WEATHER (rain, snow, storms, cold ≤8°C, strong wind, fog): acknowledge local conditions and praise effort for showing up indoors or despite weather.
 - Include upcoming matches for favourite teams if available (mention next 1-2 important matches) when sportsBeats is empty.
 - CRITICAL: When mentioning match timing, compare the match date to TODAY'S DATE (${input.date}). If the match date equals today's date, say "today". If it's the next day, say "tomorrow". Be accurate!
+- SAVED DISCOVERY EVENTS: If savedDiscoveryEvents has entries the user saved from the Events tab, mention at most one by exact title when planning the week (e.g. comedy night Friday — weave with habits/tasks if relevant). Do not invent events.
 - CRITICAL: For upcomingEvents (broader calendar), compare each event's startDate to TODAY'S DATE (${input.date}). Only say "today" if the date EXACTLY matches ${input.date}.
 - "wins" must include 2–4 specific bullets from real data (habits done, priority tasks, sports beats, calendar survived, weather grit). At least one bullet uses an exact habit/task title.
 - "streaks": include every habit in habits[] with streak ≥ 2 and done true today; use exact habit name and day count.
@@ -179,6 +198,7 @@ Upcoming Matches: ${JSON.stringify(input.upcomingMatches ?? [])}
 Recent Team Wins: ${JSON.stringify(input.recentWins ?? [])}
 Today's calendar (already today-only): ${JSON.stringify(input.todayCalendar ?? [])}
 Upcoming Calendar Events (future window): ${JSON.stringify(input.upcomingEvents ?? [])}
+Saved discovery events (Events tab — user chose these): ${JSON.stringify(input.savedDiscoveryEvents ?? [])}
 Weather: ${input.weather ? `${input.weather.condition}, ${input.weather.temp}°C, ${input.weather.description} in ${input.weather.city}` : 'Not available'}
 Other notes: ${input.notes ?? ""}
 
@@ -241,9 +261,24 @@ Generate a daily summary with this exact JSON structure:
     // The model tends to echo the example score (85); always use the real,
     // data-derived score so it reflects the actual day.
     summary.score = computeDailyScore(input);
+    if (input.recoveryMode) {
+      summary.streaks = [];
+    }
     return summary;
   } catch (error) {
     console.error('Error generating daily summary:', error);
+    if (input.recoveryMode) {
+      return {
+        date: input.date,
+        summary: "You've been carrying a lot. One small win today is enough — be gentle with yourself.",
+        wins: ["You're still here, still trying"],
+        challenges: ["Rest is allowed"],
+        streaks: [],
+        recommendations: ["Ten minutes outside", "Text someone you trust"],
+        sentiment: "neutral",
+        score: computeDailyScore(input),
+      };
+    }
     // Return a fallback summary
     return {
       date: input.date,

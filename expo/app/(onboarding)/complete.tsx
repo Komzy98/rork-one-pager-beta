@@ -258,6 +258,26 @@ export default function CompleteScreen() {
       ),
     });
 
+    if (hasFootball && profile?.nationalities && profile.nationalities.length > 0) {
+      rows.push({
+        key: 'national-teams',
+        node: (
+          <View style={styles.summaryItem}>
+            <View style={styles.summaryIconWrap}>
+              <Text style={styles.summaryEmoji}>🌍</Text>
+            </View>
+            <View style={styles.summaryTextWrap}>
+              <Text style={styles.summaryLabel}>National teams</Text>
+              <Text style={styles.summaryValue}>
+                {profile.nationalities.slice(0, 3).map((n) => `${n.flag} ${n.name}`).join(' · ')}
+                {profile.nationalities.length > 3 && ` +${profile.nationalities.length - 3}`}
+              </Text>
+            </View>
+          </View>
+        ),
+      });
+    }
+
     if (hasFootball && profile?.favoriteTeams && profile.favoriteTeams.length > 0) {
       rows.push({
         key: 'teams',
@@ -267,7 +287,7 @@ export default function CompleteScreen() {
               <Text style={styles.summaryEmoji}>⚽</Text>
             </View>
             <View style={styles.summaryTextWrap}>
-              <Text style={styles.summaryLabel}>Teams</Text>
+              <Text style={styles.summaryLabel}>Club teams</Text>
               <Text style={styles.summaryValue}>
                 {profile.favoriteTeams.slice(0, 2).map(t => t.name).join(', ')}
                 {profile.favoriteTeams.length > 2 && ` +${profile.favoriteTeams.length - 2}`}
@@ -302,14 +322,14 @@ export default function CompleteScreen() {
 
     if (profile?.favoriteCountries && profile.favoriteCountries.length > 0) {
       rows.push({
-        key: 'countries',
+        key: 'domestic-countries',
         node: (
           <View style={styles.summaryItem}>
             <View style={styles.summaryIconWrap}>
-              <Text style={styles.summaryEmoji}>🌍</Text>
+              <Text style={styles.summaryEmoji}>🏟️</Text>
             </View>
             <View style={styles.summaryTextWrap}>
-              <Text style={styles.summaryLabel}>Countries</Text>
+              <Text style={styles.summaryLabel}>Domestic leagues</Text>
               <Text style={styles.summaryValue}>
                 {profile.favoriteCountries.slice(0, 2).map(c => c.name).join(', ')}
                 {profile.favoriteCountries.length > 2 && ` +${profile.favoriteCountries.length - 2}`}
@@ -363,9 +383,9 @@ export default function CompleteScreen() {
               <TouchableOpacity
                 style={styles.feedEditBtn}
                 activeOpacity={0.8}
-                onPress={() => router.push('/(onboarding)/leagues' as any)}
+                onPress={() => router.push('/(onboarding)/football-favorites' as any)}
               >
-                <Text style={styles.feedEditBtnText}>Edit leagues</Text>
+                <Text style={styles.feedEditBtnText}>Edit football</Text>
               </TouchableOpacity>
               <TouchableOpacity
                 style={styles.feedEditBtn}

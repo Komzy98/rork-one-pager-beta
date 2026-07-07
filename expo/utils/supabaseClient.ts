@@ -1,9 +1,13 @@
 // Required for @supabase/supabase-js on React Native / Hermes (avoids broken URL → "Network request failed").
 import 'react-native-url-polyfill/auto';
+import { fetch as expoFetch } from 'expo/fetch';
 import { createClient, SupabaseClient, type Session, type User } from '@supabase/supabase-js';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { Platform } from 'react-native';
 import Constants from 'expo-constants';
+import * as Device from 'expo-device';
+import { getMetroApiBaseUrl } from '@/utils/metroApiBaseUrl';
+import { trpcClient } from '@/lib/trpc';
 
 type PublicSupabaseExtra = { url?: string; anonKey?: string };
 
@@ -53,6 +57,22 @@ export const supabaseUrl = isValidSupabaseUrl(rawUrl) ? normalizeSupabaseUrl(raw
 export const supabaseAnonKey = rawKey;
 
 export const supabaseConfigured = !!supabaseUrl && !!supabaseAnonKey;
+
+/** iOS simulator dev: route Supabase through Metro proxy (direct HTTPS to *.supabase.co often fails). */
+function shouldUseDevSupabaseProxy(): boolean {
+  if (typeof __DEV__ === 'undefined' || !__DEV__) return false;
+  if (Device.isDevice) return false;
+  if ((process.env.EXPO_PUBLIC_RORK_API_BASE_URL || '').trim()) return false;
+  return Platform.OS === 'ios' || Platform.OS === 'android';
+}
+
+function getEffectiveSupabaseOrigin(): string {
+  if (!supabaseUrl) return '';
+  if (shouldUseDevSupabaseProxy()) {
+    return `${getMetroApiBaseUrl()}/api/trpc/supabase-proxy`;
+  }
+  return supabaseUrl;
+}
 
 function isLikelyTransientNetworkFailure(e: unknown): boolean {
   return /network request failed|failed to fetch|load failed|network connection was lost|timed out|ECONNRESET|ETIMEDOUT/i.test(
@@ -173,6 +193,16 @@ function fetchViaXhr(url: string, init: RequestInit): Promise<Response> {
   });
 }
 
+function isLocalMetroSupabaseProxyUrl(url: string): boolean {
+  try {
+    const u = new URL(url);
+    if (u.hostname !== '127.0.0.1' && u.hostname !== 'localhost') return false;
+    return u.pathname.includes('/api/trpc/supabase-proxy');
+  } catch {
+    return false;
+  }
+}
+
 function createSupabaseFetch(): typeof fetch {
   if (Platform.OS === 'web') {
     return fetch;
@@ -182,19 +212,22 @@ function createSupabaseFetch(): typeof fetch {
     const { url, init: safeInit } = toFetchParams(input, init);
     let lastErr: unknown;
 
-    const strategies: Array<() => Promise<Response>> = [
-      () => fetch(url, safeInit),
-      () => fetchViaXhr(url, safeInit),
-    ];
+    const strategies: Array<() => Promise<Response>> = isLocalMetroSupabaseProxyUrl(url)
+      ? [() => fetchViaXhr(url, safeInit), () => fetch(url, safeInit)]
+      : [
+          () => expoFetch(url, safeInit as Parameters<typeof expoFetch>[1]) as unknown as Promise<Response>,
+          () => fetchViaXhr(url, safeInit),
+          () => fetch(url, safeInit),
+        ];
 
     for (const strategy of strategies) {
-      for (let retry = 0; retry < 2; retry++) {
+      for (let retry = 0; retry < 3; retry++) {
         try {
           return await strategy();
         } catch (e) {
           lastErr = e;
           if (!isLikelyTransientNetworkFailure(e)) break;
-          await new Promise<void>((r) => setTimeout(r, 350 * (retry + 1)));
+          await new Promise<void>((r) => setTimeout(r, 400 * (retry + 1)));
         }
       }
     }
@@ -249,12 +282,13 @@ function sessionFromGrant(json: PasswordGrantJson): Session | null {
 }
 
 async function postSupabaseAuth(path: string, body: object): Promise<{ ok: boolean; status: number; json: PasswordGrantJson }> {
-  const http = createSupabaseFetch();
-  const res = await http(`${supabaseUrl}${path}`, {
+  const targetUrl = `${getEffectiveSupabaseOrigin()}${path}`;
+  const init: RequestInit = {
     method: 'POST',
     headers: supabaseAuthHeaders(),
     body: JSON.stringify(body),
-  });
+  };
+  const res = await createSupabaseFetch()(targetUrl, init);
   let json: PasswordGrantJson = {};
   try {
     json = (await res.json()) as PasswordGrantJson;
@@ -273,9 +307,34 @@ export async function signInWithPasswordDirect(
     return { data: null, error: new Error('Supabase not configured') };
   }
 
+  const normalizedEmail = email.trim().toLowerCase();
+
+  if (shouldUseDevSupabaseProxy()) {
+    try {
+      const result = await trpcClient.auth.signInWithPassword.mutate({
+        email: normalizedEmail,
+        password,
+      });
+      const session = sessionFromGrant({
+        access_token: result.access_token,
+        refresh_token: result.refresh_token,
+        expires_in: result.expires_in,
+        token_type: result.token_type,
+        user: result.user as User,
+      });
+      if (!session) {
+        return { data: null, error: new Error('Invalid auth response from server') };
+      }
+      return { data: { user: result.user as User, session }, error: null };
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : String(e);
+      return { data: null, error: new Error(msg) };
+    }
+  }
+
   try {
     const { ok, status, json } = await postSupabaseAuth('/auth/v1/token?grant_type=password', {
-      email: email.trim().toLowerCase(),
+      email: normalizedEmail,
       password,
     });
 
@@ -381,7 +440,7 @@ function createStubClient(): SupabaseClient {
 
 function safeCreateClient(): SupabaseClient {
   try {
-    return createClient(supabaseUrl, supabaseAnonKey, {
+    return createClient(getEffectiveSupabaseOrigin(), supabaseAnonKey, {
       auth: {
         storage: Platform.OS === 'web' ? undefined : AsyncStorage,
         autoRefreshToken: true,
@@ -403,7 +462,8 @@ export const supabase: SupabaseClient = supabaseConfigured
   : createStubClient();
 
 if (supabaseConfigured) {
-  console.log('Supabase client initialized:', supabaseUrl.replace(/^https?:\/\//, '').slice(0, 40));
+  const via = shouldUseDevSupabaseProxy() ? 'via Metro proxy' : 'direct';
+  console.log('Supabase client initialized:', supabaseUrl.replace(/^https?:\/\//, '').slice(0, 40), via);
 } else {
   if (!rawUrl && !rawKey) {
     console.warn('Supabase env vars missing - cloud sync disabled, using local storage only');
@@ -417,13 +477,56 @@ if (supabaseConfigured) {
   }
 }
 
+/** Best-effort session persistence — never block UI on slow/hung SDK network calls. */
+export async function persistSupabaseSession(
+  accessToken: string,
+  refreshToken: string,
+  timeoutMs = 8000,
+): Promise<void> {
+  try {
+    await Promise.race([
+      supabase.auth.setSession({
+        access_token: accessToken,
+        refresh_token: refreshToken,
+      }),
+      new Promise<never>((_, reject) => {
+        setTimeout(() => reject(new Error('setSession timed out')), timeoutMs);
+      }),
+    ]);
+    return;
+  } catch (err) {
+    console.warn('persistSupabaseSession failed, writing local session fallback:', err);
+  }
+
+  if (Platform.OS === 'web' || !supabaseUrl) return;
+
+  try {
+    const ref = new URL(supabaseUrl).hostname.split('.')[0];
+    if (!ref) return;
+    const expiresIn = 3600;
+    const storageKey = `sb-${ref}-auth-token`;
+    await AsyncStorage.setItem(
+      storageKey,
+      JSON.stringify({
+        access_token: accessToken,
+        refresh_token: refreshToken,
+        expires_in: expiresIn,
+        expires_at: Math.floor(Date.now() / 1000) + expiresIn,
+        token_type: 'bearer',
+      }),
+    );
+  } catch (storageErr) {
+    console.warn('Could not write Supabase session fallback to storage:', storageErr);
+  }
+}
+
 export async function probeSupabaseConnectivity(): Promise<{ ok: boolean; detail: string }> {
   if (!supabaseConfigured) {
     return { ok: false, detail: 'Supabase is not configured' };
   }
   try {
     const http = createSupabaseFetch();
-    const res = await http(`${supabaseUrl}/auth/v1/health`, {
+    const res = await http(`${getEffectiveSupabaseOrigin()}/auth/v1/health`, {
       headers: { apikey: supabaseAnonKey },
     });
     return { ok: res.ok || res.status === 401, detail: `HTTP ${res.status}` };

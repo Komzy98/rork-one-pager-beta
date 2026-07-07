@@ -19,7 +19,10 @@ import OnboardingProgress from '@/components/OnboardingProgress';
 import { ONBOARDING } from '@/constants/onboardingTheme';
 import { COLORS } from '@/constants/colors';
 import { useOnboardingStepMeta } from '@/hooks/useOnboardingStepMeta';
+import { useUserProfile } from '@/hooks/useUserProfile';
 import { configureYounify, fetchYounifyServices } from '@/services/younify';
+import { getNextOnboardingRoute, hasMoviesOnboarding } from '@/utils/onboardingFlow';
+import YounifyAuthUnavailablePanel from '@/components/younify/YounifyAuthUnavailablePanel';
 import StreamingServiceListLogo from '@/components/streaming/StreamingServiceListLogo';
 
 type YounifyService = {
@@ -40,7 +43,15 @@ type YounifyService = {
 export default function OnboardingStreamingScreen() {
   const insets = useSafeAreaInsets();
   const router = useRouter();
-  const { totalSteps, stepStreaming } = useOnboardingStepMeta();
+  const { profile } = useUserProfile();
+  const { totalSteps, currentStep } = useOnboardingStepMeta('streaming');
+  const interests = profile?.interests ?? [];
+
+  useEffect(() => {
+    if (profile && !hasMoviesOnboarding(interests)) {
+      router.replace(getNextOnboardingRoute('interests', interests) as any);
+    }
+  }, [profile, interests, router]);
 
   const [services, setServices] = useState<YounifyService[]>([]);
   const [loading, setLoading] = useState(true);
@@ -159,8 +170,8 @@ export default function OnboardingStreamingScreen() {
     if (Platform.OS !== 'web') {
       void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
     }
-    router.push('/(onboarding)/chronotype' as any);
-  }, [router]);
+    router.push(getNextOnboardingRoute('streaming', interests) as any);
+  }, [router, interests]);
 
   const handleBack = useCallback(() => {
     router.back();
@@ -231,7 +242,7 @@ export default function OnboardingStreamingScreen() {
           <ArrowLeft size={20} color={ONBOARDING.textMuted} />
         </TouchableOpacity>
         <View style={styles.progressWrap}>
-          <OnboardingProgress currentStep={stepStreaming} totalSteps={totalSteps} />
+          <OnboardingProgress currentStep={currentStep} totalSteps={totalSteps} />
         </View>
         <TouchableOpacity onPress={goNext} hitSlop={{ top: 12, bottom: 12, left: 8, right: 8 }}>
           <Text style={styles.skipText}>Skip</Text>
@@ -239,7 +250,7 @@ export default function OnboardingStreamingScreen() {
       </View>
 
       <View style={styles.hero}>
-        <Text style={styles.stepLabel}>STEP 2</Text>
+        <Text style={styles.stepLabel}>STEP {currentStep}</Text>
         <Text style={styles.title}>Streaming services</Text>
         <Text style={styles.subtitle}>
           Link Netflix, Disney+, Prime Video, and more to sync Continue watching and personalised picks.
@@ -258,13 +269,11 @@ export default function OnboardingStreamingScreen() {
           <Text style={styles.centerText}>Loading providers…</Text>
         </View>
       ) : error ? (
-        <View style={styles.center}>
-          <Text style={styles.errorTitle}>Could not load services</Text>
-          <Text style={styles.errorBody}>{error}</Text>
-          <TouchableOpacity style={styles.retryBtn} onPress={() => void loadServices('initial')}>
-            <Text style={styles.retryBtnText}>Try again</Text>
-          </TouchableOpacity>
-        </View>
+        <YounifyAuthUnavailablePanel
+          error={error}
+          onRetry={() => void loadServices('initial')}
+          onContinue={goNext}
+        />
       ) : (
         <FlatList
           data={sortedServices}
@@ -467,6 +476,16 @@ const styles = StyleSheet.create({
   retryBtnText: {
     color: '#FFF',
     fontWeight: '700',
+  },
+  softRetryBtn: {
+    marginTop: 12,
+    paddingVertical: 10,
+    paddingHorizontal: 16,
+  },
+  softRetryText: {
+    fontSize: 15,
+    fontWeight: '600',
+    color: COLORS.primary,
   },
   empty: {
     textAlign: 'center',

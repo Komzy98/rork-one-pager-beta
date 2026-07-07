@@ -7,6 +7,11 @@ export type ActivityType =
   | 'challenge_joined'
   | 'achievement'
   | 'workout'
+  | 'event_saved'
+  | 'event_planned'
+  | 'event_attending'
+  | 'match_pinned'
+  | 'show_saved'
   | 'custom';
 
 export interface FeedAuthor {

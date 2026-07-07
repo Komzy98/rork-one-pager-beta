@@ -1,6 +1,11 @@
 /**
  * Standalone Hono + tRPC server for production (e.g. Railway).
- * Local dev still uses Metro/Rork; TestFlight needs EXPO_PUBLIC_RORK_API_BASE_URL → this process.
+ *
+ * Deploy story (see docs/FOOTBALL_DEPLOY.md):
+ * - Simulator (no EXPO_PUBLIC_RORK_API_BASE_URL) → Metro :8081 embeds tRPC from this repo.
+ * - TestFlight / EAS → EXPO_PUBLIC_RORK_API_BASE_URL must point at this process on Railway.
+ *
+ * Health: GET /health, GET /health/football (WC bundle smoke, teamIds []).
  */
 import { config } from "dotenv";
 import { serve } from "@hono/node-server";

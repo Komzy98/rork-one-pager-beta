@@ -94,7 +94,7 @@ export interface LocalEvent {
   distanceKm?: number;
 }
 
-export type NearbyEventsSource = 'ticketmaster' | 'fallback' | 'none';
+export type NearbyEventsSource = 'ticketmaster' | 'skiddle' | 'mixed' | 'fallback' | 'none';
 
 export interface NearbyEventsResult {
   events: LocalEvent[];

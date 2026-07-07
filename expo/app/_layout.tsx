@@ -1,4 +1,5 @@
 import { configureYounify } from "../services/younify";
+import { isYounifyAuthUnreachableError } from "@/utils/onboardingProfileSave";
 
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { Stack, useRouter } from "expo-router";
@@ -49,6 +50,7 @@ import { TaskProvider } from "@/hooks/useTasksStore";
 import { CloudSyncProvider } from "@/hooks/useCloudSync";
 import { HabitsEnhancementProvider } from "@/hooks/useHabitsEnhancement";
 import { FriendsProvider } from "@/hooks/useFriends";
+import { PartnerEventSaveSync } from "@/hooks/usePartnerEventSaveSync";
 import { CommunityProvider } from "@/hooks/useCommunity";
 import { ActivityProvider } from "@/hooks/useActivity";
 import { BusyModeProvider } from "@/hooks/useBusyMode";
@@ -56,6 +58,7 @@ import { BackgroundServicesProvider } from "@/hooks/useBackgroundServices";
 import { WalkthroughProvider } from "@/hooks/useWalkthrough";
 import { EventKitProvider } from "@/hooks/useEventKit";
 import { CalendarProvider } from "@/hooks/useCalendar";
+import { YounifyAuthDevBanner } from "@/components/younify/YounifyAuthUnavailablePanel";
 
 import { trpc, trpcReactClient } from "@/lib/trpc";
 
@@ -163,12 +166,10 @@ export default function RootLayout() {
   useEffect(() => {
     configureYounify().catch((error) => {
       const msg = error instanceof Error ? error.message : String(error);
-      const authDown =
-        /Younify auth unreachable|Network request failed/i.test(msg) ||
-        /127\.0\.0\.1:3000|create-younify-user/i.test(msg);
+      const authDown = isYounifyAuthUnreachableError(msg);
       if (__DEV__ && authDown) {
         console.warn(
-          "[Younify] Auth on :3000 is not running — streaming/linked services are off until you start it. Run: npm run younify-auth",
+          "[Younify] Auth on :3000 is not running — use npm run dev (simulator) or npm run younify-auth in another terminal.",
         );
         return;
       }
@@ -215,6 +216,10 @@ export default function RootLayout() {
         }
         if (parsed.kind === 'user') {
           router.push({ pathname: '/friends', params: { addUsername: parsed.username } } as any);
+          return;
+        }
+        if (parsed.kind === 'event') {
+          router.push(`/(root)/event/${parsed.id}` as any);
           return;
         }
         if (parsed.kind === 'tab') {
@@ -282,6 +287,7 @@ export default function RootLayout() {
                         <SafeProvider provider={CloudSyncProvider}>
                             <SafeProvider provider={HabitsEnhancementProvider}>
                               <SafeProvider provider={FriendsProvider}>
+                              <PartnerEventSaveSync />
                               <SafeProvider provider={CommunityProvider}>
                               <SafeProvider provider={ActivityProvider}>
                               <SafeProvider provider={BusyModeProvider}>
@@ -290,6 +296,9 @@ export default function RootLayout() {
                                     <SafeProvider provider={EventKitProvider}>
                                       <SafeProvider provider={CalendarProvider}>
                                         <StatusBarManager />
+                                        {typeof __DEV__ !== "undefined" && __DEV__ ? (
+                                          <YounifyAuthDevBanner />
+                                        ) : null}
                                         <RootLayoutNav />
                                       </SafeProvider>
                                     </SafeProvider>

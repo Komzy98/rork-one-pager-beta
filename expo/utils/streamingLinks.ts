@@ -1,4 +1,12 @@
 import { Platform, Linking } from 'react-native';
+import {
+  buildPrimeVideoOpenTargets,
+  buildPrimeVideoSearchUrl,
+  extractAsinFromPrimeUrl,
+  extractGtiFromPrimeUrl,
+  isPrimeVideoProviderId,
+  normalizePrimeVideoWatchUrl,
+} from '@/utils/primeVideoLinks';
 
 export interface StreamingPlatform {
   id: number;
@@ -29,8 +37,8 @@ export const STREAMING_PLATFORMS: Record<number, StreamingPlatform> = {
     appScheme: 'aiv://',
     iosAppId: '545519333',
     androidPackage: 'com.amazon.avod.thirdpartyclient',
-    webUrl: 'https://www.amazon.com/gp/video',
-    searchUrl: (title) => `https://www.amazon.com/s?i=instant-video&k=${encodeURIComponent(title)}`,
+    webUrl: 'https://app.primevideo.com',
+    searchUrl: (title) => buildPrimeVideoSearchUrl(title),
   },
   337: {
     id: 337,
@@ -133,8 +141,8 @@ export const STREAMING_PLATFORMS: Record<number, StreamingPlatform> = {
     name: 'Amazon Video',
     color: '#FF9900',
     appScheme: 'aiv://',
-    webUrl: 'https://www.amazon.com/gp/video',
-    searchUrl: (title) => `https://www.amazon.com/s?i=instant-video&k=${encodeURIComponent(title)}`,
+    webUrl: 'https://app.primevideo.com',
+    searchUrl: (title) => buildPrimeVideoSearchUrl(title),
   },
   192: {
     id: 192,
@@ -227,6 +235,23 @@ export function getStreamingPlatform(providerId: number): StreamingPlatform | nu
   return STREAMING_PLATFORMS[providerId] || null;
 }
 
+export { buildPrimeVideoSearchUrl, normalizePrimeVideoWatchUrl } from '@/utils/primeVideoLinks';
+
+function primeVideoRowStub(): Record<string, unknown> {
+  return { younifySourceService: { id: '9', name: 'Amazon Prime Video' } };
+}
+
+function extractGtiFromRow(row: Record<string, unknown>): string | null {
+  for (const key of ['gti', 'globalTitleId', 'global_title_id', 'primeGti', 'prime_gti'] as const) {
+    const v = row[key];
+    if (typeof v === 'string') {
+      const t = v.trim();
+      if (t.includes('amzn1.')) return t;
+    }
+  }
+  return null;
+}
+
 /**
  * Open the provider’s catalog search for this title (web URL). Prefer this over `openStreamingApp`
  * when you want the user to land on title results, not only the app home screen.
@@ -243,7 +268,13 @@ export async function openStreamingTitleSearch(
   const t = title.trim();
   const hint = episodeSearchHint?.trim();
   const queryTitle = hint ? `${t} ${hint}` : t;
-  const url = platform.searchUrl?.(queryTitle, year) ?? platform.webUrl;
+  let url = platform.searchUrl?.(queryTitle, year) ?? platform.webUrl;
+  url = normalizeStreamingWatchUrl(url);
+
+  if (isPrimeVideoProviderId(providerId)) {
+    return openWatchUrlWithProviderFallbacks(url, primeVideoRowStub());
+  }
+
   try {
     await Linking.openURL(url);
     return true;
@@ -385,38 +416,6 @@ function extractAmazonVideoAsinFromRow(row: Record<string, unknown>): string | n
   return null;
 }
 
-function extractAsinFromAmazonStyleVideoUrl(url: string): string | null {
-  const m = url.match(/\/(?:gp\/video\/|video\/)?detail\/([A-Z0-9]{10})(?:[\/?#]|$)/i);
-  return m ? m[1].toUpperCase() : null;
-}
-
-/**
- * Raw `amazon.com/gp/video/detail/...` links often open in the browser; `app.primevideo.com/detail/...`
- * is registered with the Prime Video app on iOS/Android and resumes Continue watching reliably (similar to Netflix+nflx).
- */
-export function normalizePrimeVideoWatchUrl(url: string): string {
-  const lower = url.toLowerCase();
-  if (!lower.includes("amazon") && !lower.includes("primevideo")) return url;
-
-  try {
-    if (lower.includes("app.primevideo.com")) return url;
-
-    const u = new URL(url);
-    const gti = u.searchParams.get("gti");
-    if (gti && lower.includes("primevideo")) {
-      return `https://app.primevideo.com/detail?gti=${encodeURIComponent(gti)}`;
-    }
-
-    const asin = extractAsinFromAmazonStyleVideoUrl(url);
-    if (asin) {
-      return `https://app.primevideo.com/detail/${asin}`;
-    }
-  } catch {
-    /* keep original */
-  }
-  return url;
-}
-
 /** Build a Prime Video detail URL when Younify omits watch URLs but exposes ASIN/GTI in row metadata. */
 function buildPrimeVideoWatchUrlFromRow(row: Record<string, unknown>): string | null {
   const svc = row.younifySourceService as { id?: string; name?: string } | undefined;
@@ -552,35 +551,54 @@ async function openWatchUrlWithProviderFallbacks(
   watchUrl: string,
   row: Record<string, unknown>,
 ): Promise<boolean> {
+  const normalizedUrl = normalizeStreamingWatchUrl(watchUrl);
+  const svc = row.younifySourceService as { id?: string; name?: string } | undefined;
+  const pid = younifySourceToTmdbProviderId(svc);
+  const lower = normalizedUrl.toLowerCase();
+  const isPrime =
+    isPrimeVideoProviderId(pid) ||
+    /amazon\.|primevideo|aiv/i.test(watchUrl) ||
+    /amazon\.|primevideo|aiv/i.test(normalizedUrl);
+
+  if (isPrime) {
+    const asin =
+      extractAmazonVideoAsinFromRow(row) ??
+      extractAsinFromPrimeUrl(watchUrl) ??
+      extractAsinFromPrimeUrl(normalizedUrl);
+    const gti =
+      extractGtiFromRow(row) ??
+      extractGtiFromPrimeUrl(watchUrl) ??
+      extractGtiFromPrimeUrl(normalizedUrl);
+    const resumeSec = getPlaybackResumeSeconds(row);
+    const targets = buildPrimeVideoOpenTargets({
+      url: watchUrl,
+      asin,
+      gti,
+      resumeSeconds: resumeSec,
+    });
+    for (const target of targets) {
+      try {
+        await Linking.openURL(target);
+        return true;
+      } catch {
+        /* try next handoff */
+      }
+    }
+    return false;
+  }
+
   try {
-    await Linking.openURL(watchUrl);
+    await Linking.openURL(normalizedUrl);
     return true;
   } catch {
     /* try native schemes */
   }
 
-  const svc = row.younifySourceService as { id?: string; name?: string } | undefined;
-  const pid = younifySourceToTmdbProviderId(svc);
-  const lower = watchUrl.toLowerCase();
-
   if (pid === 8 || lower.includes("netflix.com")) {
-    const m = watchUrl.match(/netflix\.com\/watch\/(\d+)/i);
+    const m = normalizedUrl.match(/netflix\.com\/watch\/(\d+)/i);
     if (m) {
       try {
         await Linking.openURL(`nflx://www.netflix.com/watch/${m[1]}`);
-        return true;
-      } catch {
-        /* continue */
-      }
-    }
-  }
-
-  if ((pid === 9 || pid === 10 || pid == null) && /amazon\.|primevideo|aiv/i.test(watchUrl)) {
-    const asin =
-      extractAmazonVideoAsinFromRow(row) ?? extractAsinFromAmazonStyleVideoUrl(watchUrl);
-    if (asin) {
-      try {
-        await Linking.openURL(`aiv://aiv/detail?asin=${asin}`);
         return true;
       } catch {
         /* continue */
@@ -626,7 +644,7 @@ async function openWatchUrlWithProviderFallbacks(
     if (!lower.includes(att.hostIncludes)) continue;
     if (pid != null && !att.providerIds.includes(pid)) continue;
 
-    const primary = httpsUrlToNativeScheme(watchUrl, att.scheme);
+    const primary = httpsUrlToNativeScheme(normalizedUrl, att.scheme);
     if (primary) {
       try {
         await Linking.openURL(primary);
@@ -636,7 +654,7 @@ async function openWatchUrlWithProviderFallbacks(
       }
     }
     if (att.altScheme) {
-      const alt = httpsUrlToNativeScheme(watchUrl, att.altScheme);
+      const alt = httpsUrlToNativeScheme(normalizedUrl, att.altScheme);
       if (alt) {
         try {
           await Linking.openURL(alt);
@@ -948,7 +966,7 @@ export async function openStreamingApp(
   const tryFallback = async (): Promise<boolean> => {
     if (!fallbackUrl) return false;
     try {
-      await Linking.openURL(fallbackUrl);
+      await Linking.openURL(normalizeStreamingWatchUrl(fallbackUrl));
       return true;
     } catch {
       return false;
@@ -956,9 +974,16 @@ export async function openStreamingApp(
   };
 
   try {
-    // Prefer title-specific universal links first. On iOS/Android these often deep-link
-    // into the installed provider app and land closer to the selected title.
-    const searchUrl = platform.searchUrl?.(title, year) || platform.webUrl;
+    const searchUrl = normalizeStreamingWatchUrl(
+      platform.searchUrl?.(title, year) || platform.webUrl,
+    );
+
+    if (isPrimeVideoProviderId(providerId)) {
+      const opened = await openWatchUrlWithProviderFallbacks(searchUrl, primeVideoRowStub());
+      if (opened) return true;
+      return await tryFallback();
+    }
+
     try {
       await Linking.openURL(searchUrl);
       return true;

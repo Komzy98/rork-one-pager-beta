@@ -191,7 +191,7 @@ const AnimatedTabItem = React.memo(({
 AnimatedTabItem.displayName = 'AnimatedTabItem';
 
 function CustomTabBar({ state, descriptors, navigation }: BottomTabBarProps) {
-  const { getPersonalizedTabs, profile } = useUserProfile();
+  const { getPersonalizedTabs, profile, recordTabVisit } = useUserProfile();
   const { colors, isDark } = useTheme();
   const { user } = useAuth();
   const personalizedTabs = getPersonalizedTabs();
@@ -220,6 +220,16 @@ function CustomTabBar({ state, descriptors, navigation }: BottomTabBarProps) {
   const currentRouteName = state.routes[state.index]?.name;
   const isShowsTabActive = currentRouteName === 'shows';
   const scrollableTabNames = scrollableRoutes.map((route) => route.name).join(',');
+  const lastRecordedTabRef = useRef<string | null>(null);
+
+  useEffect(() => {
+    if (!currentRouteName || lastRecordedTabRef.current === currentRouteName) {
+      return;
+    }
+
+    lastRecordedTabRef.current = currentRouteName;
+    recordTabVisit(currentRouteName);
+  }, [currentRouteName, recordTabVisit]);
 
   const scrollMiddleTabIntoView = useCallback((tabName: string, animated: boolean) => {
     const layout = middleTabLayouts.current[tabName];

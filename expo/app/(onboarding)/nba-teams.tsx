@@ -19,6 +19,8 @@ import { NBAFavoriteTeam } from '@/types/habit';
 import { ALL_NBA_TEAMS, searchNBATeams, NBATeamInfo, getTeamColor } from '@/constants/nbaData';
 import OnboardingProgress from '@/components/OnboardingProgress';
 import { COLORS } from '@/constants/colors';
+import { getNextOnboardingRoute, hasNbaOnboarding } from '@/utils/onboardingFlow';
+import { pickOnboardingNbaTeams } from '@/utils/onboardingProfileSave';
 
 type ConferenceFilter = 'all' | 'Eastern' | 'Western';
 
@@ -26,7 +28,16 @@ export default function NBATeamsScreen() {
   const router = useRouter();
   const insets = useSafeAreaInsets();
   const { updateProfile, profile } = useUserProfile();
-  const { totalSteps, stepSportsPick } = useOnboardingStepMeta();
+  const { totalSteps, currentStep } = useOnboardingStepMeta('nba-teams');
+  const interests = profile?.interests ?? [];
+
+  useEffect(() => {
+    if (profile && !hasNbaOnboarding(interests)) {
+      router.replace(getNextOnboardingRoute('interests', interests) as any);
+    }
+  }, [profile, interests, router]);
+  const hydratedFromProfile = useRef(false);
+  const [teamsDirty, setTeamsDirty] = useState(false);
   const [selectedTeams, setSelectedTeams] = useState<NBAFavoriteTeam[]>([]);
   const [searchQuery, setSearchQuery] = useState<string>('');
   const [conferenceFilter, setConferenceFilter] = useState<ConferenceFilter>('all');
@@ -49,6 +60,14 @@ export default function NBATeamsScreen() {
     ]).start();
   }, [fadeAnim, titleSlide, searchScale, listOpacity]);
 
+  useEffect(() => {
+    if (!profile || hydratedFromProfile.current) return;
+    hydratedFromProfile.current = true;
+    if (profile.favoriteNBATeams?.length) {
+      setSelectedTeams(profile.favoriteNBATeams);
+    }
+  }, [profile]);
+
   const filteredTeams = useMemo(() => {
     let teams: NBATeamInfo[] = searchQuery.trim()
       ? searchNBATeams(searchQuery)
@@ -63,6 +82,7 @@ export default function NBATeamsScreen() {
 
   const toggleTeam = useCallback((team: NBATeamInfo) => {
     void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+    setTeamsDirty(true);
     setSelectedTeams(prev => {
       const isSelected = prev.some(t => t.id === team.id);
       if (isSelected) {
@@ -80,19 +100,20 @@ export default function NBATeamsScreen() {
 
   const handleContinue = useCallback(() => {
     void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
-    if (selectedTeams.length > 0) {
-      const existing = profile?.favoriteNBATeams || [];
-      const newTeams = selectedTeams.filter(team =>
-        !existing.some(e => e.id === team.id)
-      );
-      updateProfile({ favoriteNBATeams: [...existing, ...newTeams] });
+    const teams = pickOnboardingNbaTeams({
+      dirty: teamsDirty,
+      selected: selectedTeams,
+      existing: profile?.favoriteNBATeams,
+    });
+    if (teams !== undefined) {
+      updateProfile({ favoriteNBATeams: teams });
     }
-    router.push('/(onboarding)/calendar' as any);
-  }, [selectedTeams, profile, updateProfile, router]);
+    router.push(getNextOnboardingRoute('nba-teams', interests) as any);
+  }, [selectedTeams, teamsDirty, profile?.favoriteNBATeams, updateProfile, router, interests]);
 
   const handleSkip = useCallback(() => {
-    router.push('/(onboarding)/calendar' as any);
-  }, [router]);
+    router.push(getNextOnboardingRoute('nba-teams', interests) as any);
+  }, [router, interests]);
 
   const handleBack = useCallback(() => {
     router.back();
@@ -105,7 +126,7 @@ export default function NBATeamsScreen() {
           <ArrowLeft size={20} color={COLORS.textMuted} />
         </TouchableOpacity>
         <View style={styles.progressWrap}>
-          <OnboardingProgress currentStep={stepSportsPick} totalSteps={totalSteps} />
+          <OnboardingProgress currentStep={currentStep} totalSteps={totalSteps} />
         </View>
         <TouchableOpacity onPress={handleSkip} activeOpacity={0.7}>
           <Text style={styles.skipText}>Skip</Text>
@@ -113,7 +134,7 @@ export default function NBATeamsScreen() {
       </View>
 
       <Animated.View style={[styles.titleWrap, { opacity: fadeAnim, transform: [{ translateY: titleSlide }] }]}>
-        <Text style={styles.stepKicker}>STEP {stepSportsPick} · NBA</Text>
+        <Text style={styles.stepKicker}>STEP {currentStep} · NBA</Text>
         <View style={styles.nbaEmojiRow}>
           <Text style={styles.nbaEmoji}>🏀</Text>
         </View>

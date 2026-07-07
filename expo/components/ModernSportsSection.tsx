@@ -15,6 +15,8 @@ import MatchDetailsModal from './MatchDetailsModal';
 import { PremiumSportsMatchCard, liveFootballMatchToCardModel } from './PremiumSportsMatchCard';
 import { formatMatchRoundLabel } from '@/utils/matchRoundLabel';
 import { isWorldCupLeague } from '@/utils/footballLeagueLabel';
+import { teamNameMatchesNationalInterest } from '@/utils/nationalTeamNameMatch';
+import { formatFootballKickoffLabel, resolveFootballKickoffTime } from '@/utils/footballKickoffLabel';
 import { WORLD_CUP_LOGO } from '@/constants/worldCupAssets';
 
 const { width: SCREEN_WIDTH } = Dimensions.get('window');
@@ -94,28 +96,8 @@ const isWithin24Hours = (dateString: string, timeString: string): boolean => {
   return diffMs > 0 && diffMs <= 24 * 60 * 60 * 1000;
 };
 
-const formatMatchDate = (dateString: string): string => {
-  try {
-    if (!dateString) return 'TBD';
-    let dateOnly = dateString;
-    if (dateString.includes('T')) {
-      dateOnly = dateString.split('T')[0];
-    }
-    const [year, month, day] = dateOnly.split('-').map(Number);
-    const matchDate = new Date(year, month - 1, day);
-    const today = new Date();
-    today.setHours(0, 0, 0, 0);
-    const tomorrow = new Date(today);
-    tomorrow.setDate(tomorrow.getDate() + 1);
-    const matchDateNormalized = new Date(matchDate);
-    matchDateNormalized.setHours(0, 0, 0, 0);
-    if (matchDateNormalized.getTime() === today.getTime()) return 'Today';
-    if (matchDateNormalized.getTime() === tomorrow.getTime()) return 'Tomorrow';
-    return matchDate.toLocaleDateString('en-GB', { weekday: 'short', month: 'short', day: 'numeric' });
-  } catch {
-    return 'TBD';
-  }
-};
+const formatMatchDate = (dateString: string, timeString?: string): string =>
+  formatFootballKickoffLabel(dateString, timeString);
 
 const LivePulse = () => {
   const scaleAnim = useRef(new Animated.Value(1)).current;
@@ -279,7 +261,8 @@ const PremiumUpcomingCard = React.memo(({
 }) => {
   const scaleAnim = useRef(new Animated.Value(1)).current;
   const countdown = formatTimeUntilMatch(match.date, match.time);
-  const dateLabel = formatMatchDate(match.date);
+  const dateLabel = formatMatchDate(match.date, match.time);
+  const kickoffTime = resolveFootballKickoffTime(match.date, match.time);
   const isSoon = isWithin24Hours(match.date, match.time);
 
   const handlePressIn = useCallback(() => {
@@ -357,7 +340,7 @@ const PremiumUpcomingCard = React.memo(({
 
             <View style={styles.upcomingVsCol}>
               <View style={styles.upcomingTimeBubble}>
-                <Text style={styles.upcomingTimeText}>{match.time}</Text>
+                <Text style={styles.upcomingTimeText}>{kickoffTime || 'TBD'}</Text>
               </View>
               <Text style={styles.upcomingDateText}>{dateLabel}</Text>
             </View>
@@ -555,7 +538,7 @@ const PinnedMatchTeamCard = React.memo(({
               <View style={styles.nextMatchMeta}>
                 <Calendar size={12} color="rgba(255,255,255,0.6)" />
                 <Text style={styles.nextMatchDate}>
-                  {formatMatchDate(match.date)} • {match.time}
+                  {formatMatchDate(match.date, match.time)}
                 </Text>
                 <View style={styles.countdownBadge}>
                   <Text style={styles.countdownText}>
@@ -596,7 +579,7 @@ const PinnedMatchTeamCard = React.memo(({
               <View style={styles.nextMatchMeta}>
                 <Calendar size={12} color="rgba(255,255,255,0.6)" />
                 <Text style={styles.nextMatchDate}>
-                  {formatMatchDate(match.date)} • {match.time}
+                  {formatMatchDate(match.date, match.time)}
                 </Text>
               </View>
             </View>
@@ -761,7 +744,9 @@ function ModernSportsSectionComponent({
   const getTeamStats = useCallback((team: UserTeam) => {
     const teamMatches = getTeamMatches(team);
     const liveMatch = teamMatches.find(m => m.status === 'Live');
-    const nextMatch = teamMatches.find(m => m.status === 'Upcoming');
+    const nextMatch = teamMatches
+      .filter((m) => m.status === 'Upcoming')
+      .sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime())[0];
     const primaryLeague = team.league || '';
     const contextLeague = nextMatch?.league || liveMatch?.league || '';
     const completedMatches_all = teamMatches.filter(m => m.status === 'Completed')
@@ -828,41 +813,36 @@ function ModernSportsSectionComponent({
 
     const normalizedMatch = matchTeamName.toLowerCase().trim();
     const normalizedNation = nationality.name.toLowerCase().trim();
-    if (normalizedMatch === normalizedNation) return true;
-    if (normalizedMatch.includes(normalizedNation) || normalizedNation.includes(normalizedMatch)) return true;
+    if (teamNameMatchesNationalInterest(normalizedMatch, normalizedNation)) return true;
 
     const nationalTeamVariations: Record<string, string[]> = {
-      'england': ['england', 'three lions', 'english'],
-      'nigeria': ['nigeria', 'super eagles', 'nigerian'],
-      'algeria': ['algeria', 'les fennecs', 'algerian', 'algérie'],
-      'cameroon': ['cameroon', 'indomitable lions', 'cameroonian', 'cameroun'],
-      'egypt': ['egypt', 'pharaohs', 'egyptian'],
-      'ghana': ['ghana', 'black stars', 'ghanaian'],
-      'ivory coast': ['ivory coast', "côte d'ivoire", 'cote d ivoire', 'elephants', 'ivorian'],
-      'morocco': ['morocco', 'atlas lions', 'moroccan', 'maroc'],
-      'senegal': ['senegal', 'lions of teranga', 'senegalese', 'sénégal'],
-      'tunisia': ['tunisia', 'eagles of carthage', 'tunisian', 'tunisie'],
-      'south africa': ['south africa', 'bafana bafana', 'south african'],
-      'brazil': ['brazil', 'brasil', 'seleção', 'brazilian'],
-      'germany': ['germany', 'deutschland', 'german', 'die mannschaft'],
-      'france': ['france', 'les bleus', 'french'],
-      'spain': ['spain', 'españa', 'la roja', 'spanish'],
-      'italy': ['italy', 'italia', 'azzurri', 'italian'],
-      'argentina': ['argentina', 'la albiceleste', 'argentinian'],
-      'portugal': ['portugal', 'portuguese'],
-      'netherlands': ['netherlands', 'holland', 'dutch', 'oranje'],
-      'belgium': ['belgium', 'belgique', 'belgian', 'red devils'],
-      'scotland': ['scotland', 'scottish'],
-      'wales': ['wales', 'welsh', 'cymru'],
+      'england': ['three lions', 'english'],
+      'nigeria': ['super eagles', 'nigerian'],
+      'algeria': ['les fennecs', 'algerian', 'algérie'],
+      'cameroon': ['indomitable lions', 'cameroonian', 'cameroun'],
+      'egypt': ['pharaohs', 'egyptian'],
+      'ghana': ['black stars', 'ghanaian'],
+      'ivory coast': ["côte d'ivoire", 'cote d ivoire', 'elephants', 'ivorian'],
+      'morocco': ['atlas lions', 'moroccan', 'maroc'],
+      'senegal': ['lions of teranga', 'senegalese', 'sénégal'],
+      'tunisia': ['eagles of carthage', 'tunisian', 'tunisie'],
+      'south africa': ['bafana bafana', 'south african'],
+      'brazil': ['brasil', 'seleção', 'brazilian'],
+      'germany': ['deutschland', 'german', 'die mannschaft'],
+      'france': ['les bleus', 'french'],
+      'spain': ['españa', 'la roja', 'spanish'],
+      'italy': ['italia', 'azzurri', 'italian'],
+      'argentina': ['la albiceleste', 'argentinian'],
+      'portugal': ['portuguese'],
+      'netherlands': ['holland', 'dutch', 'oranje'],
+      'belgium': ['belgique', 'belgian', 'red devils'],
+      'scotland': ['scottish'],
+      'wales': ['welsh', 'cymru'],
     };
 
     const variations = nationalTeamVariations[normalizedNation];
     if (variations) {
-      for (const variant of variations) {
-        if (normalizedMatch === variant || normalizedMatch.includes(variant) || variant.includes(normalizedMatch)) {
-          return true;
-        }
-      }
+      return variations.some((variant) => normalizedMatch === variant);
     }
 
     return false;
@@ -890,15 +870,41 @@ function ModernSportsSectionComponent({
     });
   }, [liveMatches, completedMatches, upcomingMatches, isNationalTeamMatch]);
 
-  const teamsCount = profile?.favoriteTeams?.length || 0;
-
-  const teamStatsMap = useMemo(() => {
-    const map = new Map<string, ReturnType<typeof getTeamStats>>();
-    profile?.favoriteTeams?.forEach(team => {
-      map.set(team.id, getTeamStats(team));
+  const getNationalTeamStats = useCallback((nationality: UserNationality) => {
+    const teamMatches = getNationalTeamMatches(nationality);
+    const liveMatch = teamMatches.find((m) => m.status === 'Live');
+    const nextMatch = teamMatches
+      .filter((m) => m.status === 'Upcoming')
+      .sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime())[0];
+    const recentResults = teamMatches
+      .filter((m) => m.status === 'Completed')
+      .sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime())
+      .slice(0, FORM_DISPLAY_MAX);
+    let wins = 0;
+    let draws = 0;
+    let losses = 0;
+    recentResults.forEach((match) => {
+      const isHome = isNationalTeamMatch(match.homeTeam, nationality, match.homeTeamId);
+      const teamScore = isHome ? (match.homeScore ?? 0) : (match.awayScore ?? 0);
+      const opponentScore = isHome ? (match.awayScore ?? 0) : (match.homeScore ?? 0);
+      if (teamScore > opponentScore) wins++;
+      else if (teamScore < opponentScore) losses++;
+      else draws++;
     });
-    return map;
-  }, [profile?.favoriteTeams, getTeamStats]);
+    const leagueLogo = teamMatches.find((m) => m.leagueLogo)?.leagueLogo ?? null;
+    return {
+      liveMatch,
+      nextMatch,
+      recentResults,
+      totalMatches: teamMatches.length,
+      form: { wins, draws, losses },
+      leagueLogo,
+    };
+  }, [getNationalTeamMatches, isNationalTeamMatch]);
+
+  const clubsCount = profile?.favoriteTeams?.length || 0;
+  const nationalitiesCount = profile?.nationalities?.length || 0;
+  const teamsCount = clubsCount + nationalitiesCount;
 
   const sortedFavoriteTeams = useMemo(() => {
     if (!profile?.favoriteTeams) return [];
@@ -1026,7 +1032,7 @@ function ModernSportsSectionComponent({
   }
 
   const renderTeamCard = (team: UserTeam, index: number) => {
-    const stats = teamStatsMap.get(team.id) || getTeamStats(team);
+    const stats = getTeamStats(team);
     const gradient = getTeamGradient(index);
     const hasLive = !!stats.liveMatch;
     const teamLogo = getTeamLogo(team);
@@ -1132,7 +1138,7 @@ function ModernSportsSectionComponent({
                 <View style={styles.nextMatchMeta}>
                   <Calendar size={12} color="rgba(255,255,255,0.6)" />
                   <Text style={styles.nextMatchDate}>
-                    {formatMatchDate(stats.nextMatch.date)} • {stats.nextMatch.time}
+                    {formatMatchDate(stats.nextMatch.date, stats.nextMatch.time)}
                   </Text>
                   <View style={styles.countdownBadge}>
                     <Text style={styles.countdownText}>
@@ -1178,7 +1184,7 @@ function ModernSportsSectionComponent({
   };
 
   const tabItems = [
-    { key: 'teams' as const, label: 'Clubs', count: teamsCount, icon: Heart },
+    { key: 'teams' as const, label: 'Clubs', count: clubsCount, icon: Heart },
     { key: 'live' as const, label: 'Live', count: liveCount, icon: Zap, isLive: true },
     { key: 'next' as const, label: 'Next', count: upcomingCount, icon: Clock },
     { key: 'results' as const, label: 'Results', count: resultsCount, icon: Trophy },
@@ -1258,6 +1264,17 @@ function ModernSportsSectionComponent({
               </View>
             ) : null}
             {sortedFavoriteTeams.map((team, index) => renderTeamCard(team, index))}
+            {(profile?.nationalities ?? []).map((nationality, index) => {
+              const stats = getNationalTeamStats(nationality);
+              const pseudoTeam: UserTeam = {
+                id: `nation-${nationality.name}`,
+                name: nationality.name,
+                league: 'International',
+                country: nationality.name,
+                apiId: nationality.apiId,
+              };
+              return renderTeamCard(pseudoTeam, sortedFavoriteTeams.length + index);
+            })}
           </ScrollView>
         ) : selectedTab === 'live' ? (
           filteredMatches.length === 0 ? (

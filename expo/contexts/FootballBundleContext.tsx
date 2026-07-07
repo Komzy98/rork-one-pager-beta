@@ -6,11 +6,16 @@ import React, {
   useState,
   type ReactNode,
 } from 'react';
+import { keepPreviousData } from '@tanstack/react-query';
 import type { inferRouterInputs, inferRouterOutputs } from '@trpc/server';
 import type { AppRouter } from '@/backend/trpc/app-router';
 import { trpc } from '@/lib/trpc';
 import { useUserProfile } from '@/hooks/useUserProfile';
-import { mergeFollowedClubTeamIds } from '@/utils/footballQueryContext';
+import { collectNationalTeamApiIds } from '@/utils/nationalTeamApiIds';
+import {
+  mergeFollowedClubTeamIds,
+  mergeFollowedNationalTeamIds,
+} from '@/utils/footballQueryContext';
 
 export type FootballBundleInput = inferRouterInputs<AppRouter>['football']['getMatchesBundle'];
 export type FootballMatchesBundleData = inferRouterOutputs<AppRouter>['football']['getMatchesBundle'];
@@ -40,14 +45,17 @@ const BUNDLE_DAYS = 14;
 
 function buildProfileFallbackInput(params: {
   favoriteTeamApiIds: readonly number[];
+  nationalTeamApiIds: readonly number[];
   includeResults: boolean;
 }): FootballBundleInput {
-  const { favoriteTeamApiIds, includeResults } = params;
-    return {
-      days: BUNDLE_DAYS,
-      teamIds: favoriteTeamApiIds.length > 0 ? [...favoriteTeamApiIds] : undefined,
-      includeResults,
-    };
+  const { favoriteTeamApiIds, nationalTeamApiIds, includeResults } = params;
+  return {
+    days: BUNDLE_DAYS,
+    teamIds: favoriteTeamApiIds.length > 0 ? [...favoriteTeamApiIds] : undefined,
+    nationalTeamIds: nationalTeamApiIds.length > 0 ? [...nationalTeamApiIds] : undefined,
+    includeAfcon: nationalTeamApiIds.length > 0 ? true : undefined,
+    includeResults,
+  };
 }
 
 export function FootballBundleProvider({ children }: { children: ReactNode }) {
@@ -65,19 +73,28 @@ export function FootballBundleProvider({ children }: { children: ReactNode }) {
     [profile?.favoriteTeams],
   );
 
+  const nationalTeamApiIds = useMemo(
+    () => collectNationalTeamApiIds(profile?.nationalities),
+    [profile?.nationalities],
+  );
+
   const fallbackInput = useMemo(
     () =>
       buildProfileFallbackInput({
         favoriteTeamApiIds,
+        nationalTeamApiIds,
         includeResults,
       }),
-    [favoriteTeamApiIds, includeResults],
+    [favoriteTeamApiIds, nationalTeamApiIds, includeResults],
   );
 
-  const effectiveInput = useMemo(
-    () => mergeFollowedClubTeamIds(publishedInput ?? fallbackInput, favoriteTeamApiIds),
-    [publishedInput, fallbackInput, favoriteTeamApiIds],
-  );
+  const effectiveInput = useMemo(() => {
+    const base = publishedInput ?? fallbackInput;
+    return mergeFollowedNationalTeamIds(
+      mergeFollowedClubTeamIds(base, favoriteTeamApiIds),
+      nationalTeamApiIds,
+    );
+  }, [publishedInput, fallbackInput, favoriteTeamApiIds, nationalTeamApiIds]);
 
   const query = trpc.football.getMatchesBundle.useQuery(effectiveInput, {
     staleTime: 45 * 1000,
@@ -88,6 +105,7 @@ export function FootballBundleProvider({ children }: { children: ReactNode }) {
     refetchOnReconnect: true,
     refetchOnMount: publishedInput == null,
     refetchInterval: pollLive ? 60 * 1000 : false,
+    placeholderData: keepPreviousData,
   });
 
   const publishBundleInput = useCallback((input: FootballBundleInput | null) => {

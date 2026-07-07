@@ -1,5 +1,14 @@
 import { COMPETITIONS_DATA, QUICK_FILTERS, type Continent } from '@/constants/competitions';
 import type { FootballSmartFilter } from '@/components/SportsSmartFilter';
+import { shouldShowFriendlyMatch } from '@/utils/footballFeedQuality';
+import { teamNameMatchesNationalInterest } from '@/utils/nationalTeamNameMatch';
+import {
+  FIFA_WORLD_CUP_LEAGUE_ID,
+  WORLD_CUP_FAMILY_LEAGUE_IDS,
+  normalizeFavoriteLeagueIds,
+} from '@/utils/footballLeagueFamily';
+
+export { FIFA_WORLD_CUP_LEAGUE_ID, WORLD_CUP_FAMILY_LEAGUE_IDS } from '@/utils/footballLeagueFamily';
 
 /** Curated top-league bundle for API scoping (top 5 + main UEFA club comps). */
 export const TOP_LEAGUE_BUNDLE_IDS: number[] = (() => {
@@ -25,11 +34,6 @@ const UEFA_DISCOVERY_LEAGUE_IDS = {
 
 export type FootballDiscoveryLevel = 'low' | 'med' | 'high';
 
-export const FIFA_WORLD_CUP_LEAGUE_ID = 1;
-
-/** World Cup + confederation qualifiers — selecting WC should include the full tournament family. */
-export const WORLD_CUP_FAMILY_LEAGUE_IDS: readonly number[] = [1, 15, 16, 17, 18, 19, 20];
-
 /** Always request the World Cup league on the bundle so TestFlight/production never miss intl fixtures. */
 export function withWorldCupLeagueIds(leagueIds: number[] | undefined): number[] {
   return Array.from(new Set([FIFA_WORLD_CUP_LEAGUE_ID, ...(leagueIds ?? [])]));
@@ -54,6 +58,22 @@ export function isWorldCupMatch(match: { leagueId?: number; league?: string }): 
   if (match.leagueId === FIFA_WORLD_CUP_LEAGUE_ID) return true;
   const label = (match.league ?? '').toLowerCase();
   return label.includes('world cup') || label.includes('fifa');
+}
+
+/** Normalizes persisted filter keys (legacy values → for-you / explore). */
+export function normalizeFootballSmartFilter(raw: string | null | undefined): FootballSmartFilter {
+  if (raw === 'for-you' || raw === 'explore') return raw;
+  if (
+    raw === 'top-leagues' ||
+    raw === 'worldwide' ||
+    raw === 'my-leagues' ||
+    raw === 'my-countries' ||
+    raw === 'all'
+  ) {
+    return 'explore';
+  }
+  if (raw === 'following' || raw === 'my-teams') return 'for-you';
+  return 'for-you';
 }
 
 export interface FootballMatchForVisibility {
@@ -88,37 +108,70 @@ export function computeCountryLeagueIds(
   return Array.from(ids);
 }
 
+/** UEFA club comps surfaced in Explore via feed-tuning discovery level — not For You. */
+export function computeUefaDiscoveryLeagueIds(
+  discoveryLevel: FootballDiscoveryLevel | undefined,
+): number[] {
+  const level = discoveryLevel ?? 'med';
+  if (level === 'high') return [...UEFA_DISCOVERY_LEAGUE_IDS.high];
+  if (level === 'med') return [...UEFA_DISCOVERY_LEAGUE_IDS.med];
+  return [];
+}
+
+/** Map followed clubs' league labels (e.g. "Premier League") to API league ids for fixture fetch. */
+export function resolveLeagueIdsFromTeamLeagueNames(
+  teams: readonly { league?: string; country?: string }[],
+  competitionsData: readonly Continent[] = COMPETITIONS_DATA,
+): number[] {
+  const ids = new Set<number>();
+  for (const team of teams) {
+    const name = team.league?.trim().toLowerCase();
+    if (!name || name === 'football') continue;
+    const countryHint = team.country?.trim().toLowerCase();
+    competitionsData.forEach((continent) => {
+      continent.countries.forEach((country) => {
+        if (countryHint && !country.name.toLowerCase().includes(countryHint)) return;
+        country.competitions.forEach((comp) => {
+          if (comp.type !== 'league') return;
+          if (comp.name.toLowerCase() === name) {
+            ids.add(comp.id);
+          }
+        });
+      });
+    });
+  }
+  return Array.from(ids);
+}
+
+/**
+ * For You league scope: saved leagues, domestic country leagues, and followed clubs' leagues only.
+ * Top-5 / UEFA discovery belongs in Explore — no broad fallback bundle here.
+ */
 export function computeForYouLeagueScope(input: {
   favoriteLeagueIds: readonly number[];
   countryLeagueIds: readonly number[];
+  followedClubLeagueIds: readonly number[];
   includeFollowedLeagues: boolean | undefined;
-  discoveryLevel: FootballDiscoveryLevel | undefined;
 }): number[] {
-  const preferredLeagueIds = input.includeFollowedLeagues === false ? [] : [...input.favoriteLeagueIds];
-  const discoveryLevel = input.discoveryLevel ?? 'med';
-  const discoveryLeagueIds =
-    discoveryLevel === 'high'
-      ? UEFA_DISCOVERY_LEAGUE_IDS.high
-      : discoveryLevel === 'med'
-        ? UEFA_DISCOVERY_LEAGUE_IDS.med
-        : UEFA_DISCOVERY_LEAGUE_IDS.low;
-  const merged = Array.from(new Set([...preferredLeagueIds, ...input.countryLeagueIds, ...discoveryLeagueIds]));
-  if (merged.length > 0) {
-    return merged.slice(0, 24);
-  }
-  const fallbackSize = discoveryLevel === 'low' ? 4 : discoveryLevel === 'high' ? 12 : 8;
-  return TOP_LEAGUE_BUNDLE_IDS.slice(0, fallbackSize);
+  const preferredRaw = input.includeFollowedLeagues === false ? [] : [...input.favoriteLeagueIds];
+  const preferredLeagueIds = normalizeFavoriteLeagueIds(preferredRaw);
+  const merged = Array.from(
+    new Set([...preferredLeagueIds, ...input.countryLeagueIds, ...input.followedClubLeagueIds]),
+  );
+  return merged.slice(0, 16);
 }
 
 export interface BuildFootballQueryContextInput {
   smartFilter: FootballSmartFilter;
-  /** Persisted manual leagues; narrows fetch only when `smartFilter === 'worldwide'` and non-empty */
+  /** Persisted manual leagues; narrows fetch when `smartFilter === 'explore'` and non-empty */
   manualLeagueIds: readonly number[];
   contextTopLeagueIds: readonly number[] | null;
   contextFollowingTeamIds: readonly number[] | null;
   followedTeamApiIds: readonly number[];
   strictFollowing: boolean | undefined;
   favoriteLeagueIds: readonly number[];
+  /** Followed clubs — league + country used to resolve domestic league ids for For You fetch. */
+  followedTeams: readonly { league?: string; country?: string }[];
   countryInterestNamesLower: readonly string[];
   prioritizeDomesticLeagues: boolean | undefined;
   includeFollowedLeagues: boolean | undefined;
@@ -130,8 +183,31 @@ export interface FootballQueryContext {
   leagueIds: number[] | undefined;
   /** Pass to `getMatchesBundle.teamIds`; `undefined` = no team filter */
   teamIds: number[] | undefined;
-  /** True when manual league list narrows the bundle (worldwide + selection) */
+  /** True when manual league list narrows the bundle (explore + selection) */
   manualLeagueScopeActive: boolean;
+}
+
+/** Explore default scope: top-5 bundle + profile leagues + UEFA discovery. */
+export function computeExploreLeagueScope(input: {
+  favoriteLeagueIds: readonly number[];
+  countryLeagueIds: readonly number[];
+  followedClubLeagueIds: readonly number[];
+  includeFollowedLeagues: boolean | undefined;
+  discoveryLevel: FootballDiscoveryLevel | undefined;
+  contextTopLeagueIds: readonly number[] | null;
+}): number[] {
+  const bundle =
+    input.contextTopLeagueIds != null && input.contextTopLeagueIds.length > 0
+      ? [...input.contextTopLeagueIds]
+      : [...TOP_LEAGUE_BUNDLE_IDS];
+  const fromProfile = computeForYouLeagueScope({
+    favoriteLeagueIds: input.favoriteLeagueIds,
+    countryLeagueIds: input.countryLeagueIds,
+    followedClubLeagueIds: input.followedClubLeagueIds,
+    includeFollowedLeagues: input.includeFollowedLeagues,
+  });
+  const discoveryLeagueIds = computeUefaDiscoveryLeagueIds(input.discoveryLevel);
+  return Array.from(new Set([...bundle, ...fromProfile, ...discoveryLeagueIds])).slice(0, 28);
 }
 
 /** Ensure followed clubs are always in the shared bundle fetch (Activities My Teams). */
@@ -140,25 +216,46 @@ export function mergeFollowedClubTeamIds<T extends { teamIds?: number[] }>(
   followedClubApiIds: readonly number[],
 ): T {
   if (followedClubApiIds.length === 0) return input;
-  /** Explicit `teamIds: []` = broad league/international feed — do not merge clubs back in. */
-  if (Array.isArray(input.teamIds) && input.teamIds.length === 0) return input;
   const existing = input.teamIds ?? [];
   const merged = Array.from(new Set([...followedClubApiIds, ...existing]));
-  return merged.length > 0 ? { ...input, teamIds: merged } : input;
+  return { ...input, teamIds: merged };
+}
+
+/** Ensure followed national teams stay in the bundle when Sports uses a league-only feed. */
+export function mergeFollowedNationalTeamIds<
+  T extends { nationalTeamIds?: number[]; includeAfcon?: boolean },
+>(input: T, followedNationalApiIds: readonly number[]): T {
+  if (followedNationalApiIds.length === 0) return input;
+  const existing = input.nationalTeamIds ?? [];
+  const merged = Array.from(new Set([...followedNationalApiIds, ...existing]));
+  return {
+    ...input,
+    nationalTeamIds: merged,
+    includeAfcon: input.includeAfcon ?? true,
+  };
 }
 
 export function buildFootballQueryContext(input: BuildFootballQueryContextInput): FootballQueryContext {
-  const manualLeagueScopeActive = input.smartFilter === 'worldwide' && input.manualLeagueIds.length > 0;
+  const manualLeagueScopeActive = input.smartFilter === 'explore' && input.manualLeagueIds.length > 0;
 
   const countryLeagueIds = computeCountryLeagueIds(
     input.countryInterestNamesLower,
     input.prioritizeDomesticLeagues,
   );
+  const followedClubLeagueIds = resolveLeagueIdsFromTeamLeagueNames(input.followedTeams);
   const forYouLeagueScope = computeForYouLeagueScope({
     favoriteLeagueIds: input.favoriteLeagueIds,
     countryLeagueIds,
+    followedClubLeagueIds,
+    includeFollowedLeagues: input.includeFollowedLeagues,
+  });
+  const exploreLeagueScope = computeExploreLeagueScope({
+    favoriteLeagueIds: input.favoriteLeagueIds,
+    countryLeagueIds,
+    followedClubLeagueIds,
     includeFollowedLeagues: input.includeFollowedLeagues,
     discoveryLevel: input.discoveryLevel,
+    contextTopLeagueIds: input.contextTopLeagueIds,
   });
 
   let leagueIds: number[] | undefined;
@@ -168,26 +265,15 @@ export function buildFootballQueryContext(input: BuildFootballQueryContextInput)
     leagueIds =
       forYouLeagueScope.length > 0
         ? mergeWorldCupFamilyLeagueIds(forYouLeagueScope)
-        : mergeWorldCupFamilyLeagueIds(TOP_LEAGUE_BUNDLE_IDS.slice(0, 8));
-  } else if (input.smartFilter === 'top-leagues') {
-    if (input.contextTopLeagueIds != null && input.contextTopLeagueIds.length > 0) {
-      leagueIds = [...input.contextTopLeagueIds];
-    } else {
-      leagueIds = TOP_LEAGUE_BUNDLE_IDS.length > 0 ? TOP_LEAGUE_BUNDLE_IDS : undefined;
-    }
+        : mergeWorldCupFamilyLeagueIds([FIFA_WORLD_CUP_LEAGUE_ID]);
+  } else if (input.smartFilter === 'explore') {
+    leagueIds = mergeWorldCupFamilyLeagueIds(exploreLeagueScope);
   } else {
     leagueIds = undefined;
   }
 
   let teamIds: number[] | undefined;
   if (input.smartFilter === 'for-you' && input.strictFollowing) {
-    if (input.followedTeamApiIds.length === 0) teamIds = undefined;
-    else if (input.contextFollowingTeamIds != null && input.contextFollowingTeamIds.length > 0) {
-      teamIds = [...input.contextFollowingTeamIds];
-    } else {
-      teamIds = [...input.followedTeamApiIds];
-    }
-  } else if (input.smartFilter === 'following') {
     if (input.followedTeamApiIds.length === 0) teamIds = undefined;
     else if (input.contextFollowingTeamIds != null && input.contextFollowingTeamIds.length > 0) {
       teamIds = [...input.contextFollowingTeamIds];
@@ -227,12 +313,8 @@ function matchInvolvesNationalityByName(
   return nationalityNamesLower.some((name) => {
     if (!name) return false;
     return (
-      home === name ||
-      away === name ||
-      home.includes(name) ||
-      away.includes(name) ||
-      name.includes(home) ||
-      name.includes(away)
+      teamNameMatchesNationalInterest(home, name) ||
+      teamNameMatchesNationalInterest(away, name)
     );
   });
 }
@@ -253,7 +335,7 @@ function pinFavorites<T extends FootballMatchForVisibility>(
 
 export interface ApplyFootballVisibilityRulesInput {
   smartFilter: FootballSmartFilter;
-  /** Only applied when `smartFilter === 'worldwide'` */
+  /** Only applied when `smartFilter === 'explore'` */
   manualLeagueIds: readonly number[];
   favoriteTeamIds: ReadonlySet<number>;
   /** National team API ids from profile nationalities — used for Following filter */
@@ -267,8 +349,8 @@ export interface ApplyFootballVisibilityRulesInput {
 }
 
 /**
- * Client-side visibility after fetch: manual league narrowing (worldwide only), following-only,
- * For You / Top leagues scoping (live feed is global from API), then pin followed clubs.
+ * Client-side visibility after fetch: manual league narrowing (explore only), following-only,
+ * For You / Explore scoping (live feed is global from API), friendlies filter, then pin followed clubs.
  */
 export function applyFootballVisibilityRules<T extends FootballMatchForVisibility>(
   matches: readonly T[],
@@ -279,10 +361,9 @@ export function applyFootballVisibilityRules<T extends FootballMatchForVisibilit
   const alwaysKeep = (m: T) =>
     isWorldCupMatch(m) || ALWAYS_VISIBLE_INTERNATIONAL_LEAGUE_IDS.has(m.leagueId);
 
-  if (input.smartFilter === 'worldwide' && input.manualLeagueIds.length > 0) {
+  if (input.smartFilter === 'explore' && input.manualLeagueIds.length > 0) {
     const set = expandCompetitionSelection(input.manualLeagueIds);
     const narrowed = filtered.filter((m) => set.has(m.leagueId));
-    /** Respect competition chips on Worldwide only; keep WC family when chip selected. */
     if (narrowed.length > 0) {
       filtered = narrowed;
     }
@@ -302,20 +383,16 @@ export function applyFootballVisibilityRules<T extends FootballMatchForVisibilit
           matchInvolvesNationalityByName(m, input.nationalityNamesLower ?? [])),
     );
   } else if (
-    input.smartFilter === 'top-leagues' &&
+    input.smartFilter === 'explore' &&
     input.scopedLeagueIds &&
     input.scopedLeagueIds.length > 0
   ) {
     const leagueSet = new Set(input.scopedLeagueIds);
-    filtered = filtered.filter((m) => leagueSet.has(m.leagueId) || alwaysKeep(m));
-  }
-
-  if (input.smartFilter === 'following') {
     filtered = filtered.filter(
       (m) =>
-        isFavoriteTeamMatch(m, input.favoriteTeamIds, input.nationalTeamIds) ||
-        isWorldCupMatch(m) ||
-        matchInvolvesNationalityByName(m, input.nationalityNamesLower ?? []),
+        alwaysKeep(m) ||
+        leagueSet.has(m.leagueId) ||
+        isFavoriteTeamMatch(m, input.favoriteTeamIds, input.nationalTeamIds),
     );
   }
 
@@ -324,7 +401,7 @@ export function applyFootballVisibilityRules<T extends FootballMatchForVisibilit
   const matchKey = (m: T) =>
     `${m.leagueId ?? 0}:${m.homeTeamId ?? ''}:${m.awayTeamId ?? ''}:${(m as { date?: string }).date ?? ''}`;
   filtered.forEach((m) => kept.set(matchKey(m), m));
-  if (input.smartFilter === 'for-you' || input.smartFilter === 'worldwide') {
+  if (input.smartFilter === 'for-you' || input.smartFilter === 'explore') {
     matches.forEach((m) => {
       if (alwaysKeep(m)) kept.set(matchKey(m), m);
     });
@@ -334,5 +411,9 @@ export function applyFootballVisibilityRules<T extends FootballMatchForVisibilit
     });
   }
 
-  return pinFavorites([...kept.values()], input.favoriteTeamIds, input.nationalTeamIds);
+  const afterFriendlies = [...kept.values()].filter((m) =>
+    shouldShowFriendlyMatch(m, input.favoriteTeamIds, input.nationalTeamIds),
+  );
+
+  return pinFavorites(afterFriendlies, input.favoriteTeamIds, input.nationalTeamIds);
 }

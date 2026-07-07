@@ -1,11 +1,22 @@
 import { z } from 'zod';
 import { publicProcedure } from '@/backend/trpc/create-context';
+import { getSkiddleApiKeyFromEnv } from '@/backend/utils/skiddleApiKey';
 import { getTicketmasterApiKeyFromEnv } from '@/backend/utils/ticketmasterApiKey';
-import type { NearbyEventsResult } from '@/types/events';
+import type { NearbyEventsResult, NearbyEventsSource } from '@/types/events';
 import {
   filterUpcomingEvents,
   sortEventsByStartDate,
 } from '@/utils/eventDiscovery';
+import { mergeDiscoveryEvents } from '@/utils/mergeDiscoveryEvents';
+import {
+  buildSkiddleEventsSearchUrl,
+  parseSkiddleError,
+} from '@/utils/skiddleQuery';
+import {
+  filterSkiddleEventsByCategory,
+  mapSkiddleResponse,
+  SKIDDLE_EVENT_CODES_BY_CATEGORY,
+} from '@/utils/skiddleTransform';
 import {
   buildTicketmasterEventsSearchUrl,
   inferTicketmasterCountryCode,
@@ -26,7 +37,7 @@ interface CacheEntry {
 const cache = new Map<string, CacheEntry>();
 
 function getCacheKey(input: Record<string, unknown>): string {
-  return `events:nearby:v2:${JSON.stringify(input)}`;
+  return `events:nearby:v3:${JSON.stringify(input)}`;
 }
 
 function getCached(key: string): NearbyEventsResult | null {
@@ -47,15 +58,41 @@ function setCached(key: string, data: NearbyEventsResult): void {
   }
 }
 
+type FetchInput = {
+  latitude: number;
+  longitude: number;
+  radiusMiles: number;
+  category?: string;
+  size: number;
+};
+
+type LocalEventPayload = NearbyEventsResult['events'][number];
+
+async function fetchJsonWithTimeout(url: string, label: string): Promise<unknown | null> {
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), 15000);
+
+  try {
+    const response = await fetch(url, { signal: controller.signal });
+    clearTimeout(timeoutId);
+    const payload = await response.json().catch(() => null);
+
+    if (!response.ok) {
+      console.error(`❌ ${label} HTTP ${response.status}`);
+      return null;
+    }
+
+    return payload;
+  } catch (error) {
+    clearTimeout(timeoutId);
+    console.error(`💥 ${label} fetch error:`, error);
+    return null;
+  }
+}
+
 async function fetchTicketmasterEvents(
   apiKey: string,
-  input: {
-    latitude: number;
-    longitude: number;
-    radiusMiles: number;
-    category?: string;
-    size: number;
-  },
+  input: FetchInput,
 ): Promise<LocalEventPayload[]> {
   const classification = input.category
     ? TICKETMASTER_CATEGORY_FILTER[input.category]
@@ -76,38 +113,94 @@ async function fetchTicketmasterEvents(
     `🎟️ Ticketmaster Discovery v2: country=${country} radius=${input.radiusMiles}mi size=${input.size}`,
   );
 
-  const controller = new AbortController();
-  const timeoutId = setTimeout(() => controller.abort(), 15000);
+  const payload = await fetchJsonWithTimeout(url, 'Ticketmaster');
+  if (!payload) return [];
 
-  try {
-    const response = await fetch(url, { signal: controller.signal });
-    clearTimeout(timeoutId);
-
-    const payload = await response.json().catch(() => null);
-
-    if (!response.ok) {
-      const fault = parseTicketmasterFault(payload);
-      const detail = fault ?? `HTTP ${response.status}`;
-      if (response.status === 401) {
-        console.error(`❌ Ticketmaster auth failed — check TICKETMASTER_API_KEY: ${detail}`);
-      } else {
-        console.error(`❌ Ticketmaster HTTP ${response.status}: ${detail}`);
-      }
-      return [];
-    }
-
-    const mapped = mapTicketmasterResponse(payload);
-    const events = sortEventsByStartDate(filterUpcomingEvents(mapped));
-    console.log(`✅ Ticketmaster: ${events.length} upcoming events (${mapped.length} raw)`);
-    return events;
-  } catch (error) {
-    clearTimeout(timeoutId);
-    console.error('💥 Ticketmaster fetch error:', error);
+  const fault = parseTicketmasterFault(payload);
+  if (fault) {
+    console.error(`❌ Ticketmaster: ${fault}`);
     return [];
   }
+
+  const mapped = mapTicketmasterResponse(payload);
+  const events = sortEventsByStartDate(filterUpcomingEvents(mapped));
+  console.log(`✅ Ticketmaster: ${events.length} upcoming events (${mapped.length} raw)`);
+  return events;
 }
 
-type LocalEventPayload = NearbyEventsResult['events'][number];
+async function fetchSkiddleEventsForCode(
+  apiKey: string,
+  input: FetchInput,
+  eventCode: string | undefined,
+  limit: number,
+): Promise<LocalEventPayload[]> {
+  const url = buildSkiddleEventsSearchUrl({
+    apiKey,
+    latitude: input.latitude,
+    longitude: input.longitude,
+    radiusMiles: input.radiusMiles,
+    limit,
+    eventCode,
+    daysAhead: 90,
+  });
+
+  const payload = await fetchJsonWithTimeout(
+    url,
+    eventCode ? `Skiddle (${eventCode})` : 'Skiddle',
+  );
+  if (!payload) return [];
+
+  const error = parseSkiddleError(payload);
+  if (error) {
+    console.error(`❌ Skiddle: ${error}`);
+    return [];
+  }
+
+  const mapped = mapSkiddleResponse(payload);
+  const filtered = filterSkiddleEventsByCategory(mapped, input.category);
+  return sortEventsByStartDate(filterUpcomingEvents(filtered));
+}
+
+async function fetchSkiddleEvents(
+  apiKey: string,
+  input: FetchInput,
+): Promise<LocalEventPayload[]> {
+  const codes = input.category ? SKIDDLE_EVENT_CODES_BY_CATEGORY[input.category] : undefined;
+
+  console.log(
+    `🎶 Skiddle: radius=${input.radiusMiles}mi size=${input.size} category=${input.category ?? 'all'}`,
+  );
+
+  if (!codes || codes.length === 0) {
+    const events = await fetchSkiddleEventsForCode(apiKey, input, undefined, input.size);
+    console.log(`✅ Skiddle: ${events.length} upcoming events`);
+    return events;
+  }
+
+  if (codes.length === 1) {
+    const events = await fetchSkiddleEventsForCode(apiKey, input, codes[0], input.size);
+    console.log(`✅ Skiddle: ${events.length} upcoming events (${codes[0]})`);
+    return events;
+  }
+
+  const perCode = Math.max(5, Math.ceil(input.size / codes.length));
+  const batches = await Promise.all(
+    codes.map((code) => fetchSkiddleEventsForCode(apiKey, input, code, perCode)),
+  );
+  const events = mergeDiscoveryEvents(batches, input.size);
+  console.log(`✅ Skiddle: ${events.length} upcoming events (${codes.join('+')})`);
+  return events;
+}
+
+function resolveSource(
+  ticketmasterCount: number,
+  skiddleCount: number,
+): NearbyEventsSource {
+  if (ticketmasterCount > 0 && skiddleCount > 0) return 'mixed';
+  if (ticketmasterCount > 0) return 'ticketmaster';
+  if (skiddleCount > 0) return 'skiddle';
+  return 'none';
+}
 
 export const getNearbyEventsRoute = publicProcedure
   .input(
@@ -134,20 +227,88 @@ export const getNearbyEventsRoute = publicProcedure
       return cached;
     }
 
-    const apiKey = getTicketmasterApiKeyFromEnv();
-    if (!apiKey) {
+    const ticketmasterKey = getTicketmasterApiKeyFromEnv();
+    const skiddleKey = getSkiddleApiKeyFromEnv();
+
+    if (!ticketmasterKey && !skiddleKey) {
       console.warn(
-        '⚠️ TICKETMASTER_API_KEY not set — set TICKETMASTER_API_KEY on the API server (Railway) or in expo/.env for local Metro',
+        '⚠️ No event API keys set — add TICKETMASTER_API_KEY and/or SKIDDLE_API_KEY on the API server (Railway) or in expo/.env for local Metro',
       );
       return { events: [], source: 'none' };
     }
 
-    const events = await fetchTicketmasterEvents(apiKey, input);
+    const [ticketmasterEvents, skiddleEvents] = await Promise.all([
+      ticketmasterKey ? fetchTicketmasterEvents(ticketmasterKey, input) : Promise.resolve([]),
+      skiddleKey ? fetchSkiddleEvents(skiddleKey, input) : Promise.resolve([]),
+    ]);
+
+    const events = mergeDiscoveryEvents([ticketmasterEvents, skiddleEvents], input.size);
     const result: NearbyEventsResult = {
       events,
-      source: events.length > 0 ? 'ticketmaster' : 'none',
+      source: resolveSource(ticketmasterEvents.length, skiddleEvents.length),
     };
 
     setCached(cacheKey, result);
     return result;
   });
+
+/** Used by /health/events and CI — catches missing keys or stale deploys without Skiddle merge. */
+export async function runEventsDiscoverySmokeCheck(): Promise<{
+  ok: boolean;
+  ticketmasterKeyConfigured: boolean;
+  skiddleKeyConfigured: boolean;
+  source: NearbyEventsSource;
+  total: number;
+  ticketmaster: number;
+  skiddle: number;
+  minRequired: number;
+  errors: string[];
+}> {
+  const minRequired = 1;
+  const errors: string[] = [];
+  const ticketmasterKey = getTicketmasterApiKeyFromEnv();
+  const skiddleKey = getSkiddleApiKeyFromEnv();
+
+  if (!ticketmasterKey && !skiddleKey) {
+    errors.push('No event API keys configured (TICKETMASTER_API_KEY / SKIDDLE_API_KEY)');
+  }
+  if (!skiddleKey) {
+    errors.push('SKIDDLE_API_KEY not set — Skiddle listings will be skipped');
+  }
+
+  const input: FetchInput = {
+    latitude: 51.5074,
+    longitude: -0.1278,
+    radiusMiles: 25,
+    size: 20,
+  };
+
+  const [ticketmasterEvents, skiddleEvents] = await Promise.all([
+    ticketmasterKey ? fetchTicketmasterEvents(ticketmasterKey, input) : Promise.resolve([]),
+    skiddleKey ? fetchSkiddleEvents(skiddleKey, input) : Promise.resolve([]),
+  ]);
+
+  const events = mergeDiscoveryEvents([ticketmasterEvents, skiddleEvents], input.size);
+  const source = resolveSource(ticketmasterEvents.length, skiddleEvents.length);
+  const skiddle = events.filter((e) => e.id.startsWith('sk-')).length;
+  const ticketmaster = events.filter((e) => e.id.startsWith('tm-')).length;
+
+  if (events.length < minRequired) {
+    errors.push(`Expected at least ${minRequired} events, got ${events.length}`);
+  }
+  if (skiddleKey && skiddle === 0) {
+    errors.push('Skiddle key is set but returned 0 events for London smoke coords');
+  }
+
+  return {
+    ok: events.length >= minRequired && errors.length === 0,
+    ticketmasterKeyConfigured: Boolean(ticketmasterKey),
+    skiddleKeyConfigured: Boolean(skiddleKey),
+    source,
+    total: events.length,
+    ticketmaster,
+    skiddle,
+    minRequired,
+    errors,
+  };
+}

@@ -1,6 +1,3 @@
-import Constants from "expo-constants";
-import * as Device from "expo-device";
-import { Platform } from "react-native";
 import {
   Connect,
   ConnectOptions,
@@ -8,45 +5,12 @@ import {
   StreamingCategories,
   type TokenHandler,
 } from "react-native-younify-connect-sdk";
+import {
+  checkYounifyAuthHealth,
+  getYounifyAuthBackendBaseUrl,
+} from "@/utils/younifyAuthUrl";
 
-/**
- * Younify token minting hits your small Node backend (`create-younify-user`, etc.).
- * - **Explicit:** `EXPO_PUBLIC_YOUNIFY_AUTH_URL` or `expo.extra.younifyAuthUrl` (required for production devices).
- * - **Simulator / emulator (__DEV__):** `expo-device` reports `!isDevice` → auth uses host loopback (`127.0.0.1` iOS,
- *   `10.0.2.2` Android) so a server bound only to localhost on your Mac is reachable.
- * - **Physical device (__DEV__):** Uses `http://<metro-host>:3000` from Metro’s `hostUri` (auth should listen on `0.0.0.0`
- *   or set `EXPO_PUBLIC_YOUNIFY_AUTH_URL`). Override with `EXPO_PUBLIC_YOUNIFY_AUTH_USE_METRO_HOST=1` / `USE_LAN` if needed.
- */
-function getYounifyAuthBackendBaseUrl(): string {
-  const extra = Constants.expoConfig?.extra as Record<string, unknown> | undefined;
-  const fromExtra = [extra?.younifyAuthUrl, extra?.younifyBackendUrl]
-    .map((x) => (typeof x === "string" ? x.trim() : ""))
-    .find((s) => s.length > 0);
-  const fromEnv = process.env.EXPO_PUBLIC_YOUNIFY_AUTH_URL?.trim();
-
-  const explicit = fromEnv || fromExtra;
-  if (explicit) {
-    return explicit.replace(/\/$/, "");
-  }
-
-  const forceMetroLanHost =
-    process.env.EXPO_PUBLIC_YOUNIFY_AUTH_USE_METRO_HOST === "1" ||
-    process.env.EXPO_PUBLIC_YOUNIFY_AUTH_USE_LAN === "1";
-
-  if (__DEV__ && !forceMetroLanHost && !Device.isDevice) {
-    if (Platform.OS === "ios") return "http://127.0.0.1:3000";
-    if (Platform.OS === "android") return "http://10.0.2.2:3000";
-  }
-
-  const debuggerHost =
-    Constants.expoConfig?.hostUri || (Constants as any).manifest?.debuggerHost || "";
-  const host = debuggerHost.split(":")[0];
-  if (host) {
-    return `http://${host}:3000`;
-  }
-
-  return "http://127.0.0.1:3000";
-}
+export { checkYounifyAuthHealth, getYounifyAuthBackendBaseUrl } from "@/utils/younifyAuthUrl";
 
 /** SDK key must come from EXPO_PUBLIC_YOUNIFY_SDK_KEY (EAS env / .env). */
 function getYounifySdkKey(): string | undefined {
@@ -730,31 +694,75 @@ async function fetchHeroContentWithLinked(connect: YounifyConnectClient, linkedS
   return scoreAndTrimYounifyItemsBalanced(normalizedContent, 60);
 }
 
+export type YounifyStreamingLoadProgress = {
+  /** 0–1 */
+  progress: number;
+  label: string;
+};
+
+export type LoadYounifyStreamingBundleOptions = {
+  onProgress?: (update: YounifyStreamingLoadProgress) => void;
+  /** Fires as soon as linked providers are known — UI can show connection state while catalogs load. */
+  onLinkedServices?: (linkedServices: readonly any[]) => void;
+};
+
+/** Hero rail from browse rows — avoids a second SDK `fetchContent` + `fetchCategories` round trip. */
+function pickHeroFromBrowseSections(sections: readonly YounifyBrowseSection[]): any[] {
+  const priority = ["trending", "recommended", "acclaimed", "continue"] as const;
+  for (const id of priority) {
+    const items = sections.find((s) => s.id === id)?.items ?? [];
+    if (items.length > 0) {
+      return items.slice(0, 60);
+    }
+  }
+  return sections.flatMap((s) => s.items).slice(0, 60);
+}
 /**
- * One configure + one linked-services fetch, then hero rail and browse rows load **in parallel**.
- * Use this from Shows instead of calling `fetchYounifyContentForConnectedServices` and
- * `fetchYounifyBrowseSections` separately (which duplicated SDK work and doubled latency).
+ * One configure + one linked-services fetch + **one** catalog fetch for browse rows.
+ * Hero picks are derived from browse (Trending / Recommended) — no extra SDK round trip.
  */
-export async function loadYounifyStreamingBundle(): Promise<{
+export async function loadYounifyStreamingBundle(
+  opts?: LoadYounifyStreamingBundleOptions,
+): Promise<{
   linkedServices: any[];
   heroContent: any[];
   browseSections: YounifyBrowseSection[];
 }> {
+  const report = (progress: number, label: string) => {
+    opts?.onProgress?.({
+      progress: Math.min(1, Math.max(0, progress)),
+      label,
+    });
+  };
+
+  report(0.05, "Connecting…");
   const connect = await configureYounify();
+  report(0.2, "Checking linked services…");
   const linkedServices = normalizeLinkedServices(await connect.fetchLinkedServices(null));
+  opts?.onLinkedServices?.(linkedServices);
+
+  const emptyBrowse = YOUNIFY_BROWSE_ROWS.map((row) => ({
+    id: row.id,
+    title: row.title,
+    items: [] as any[],
+  }));
 
   if (!linkedServices.length) {
+    report(1, "Ready");
     return {
       linkedServices: [],
       heroContent: [],
-      browseSections: YOUNIFY_BROWSE_ROWS.map((row) => ({ id: row.id, title: row.title, items: [] })),
+      browseSections: emptyBrowse,
     };
   }
 
-  const [heroContent, browseSections] = await Promise.all([
-    fetchHeroContentWithLinked(connect, linkedServices),
-    fetchBrowseSectionsWithLinked(connect, linkedServices),
-  ]);
+  const serviceLabel =
+    linkedServices.length === 1 ? "1 service" : `${linkedServices.length} services`;
+  report(0.35, `Loading catalogs from ${serviceLabel}…`);
+  const browseSections = await fetchBrowseSectionsWithLinked(connect, linkedServices);
+  report(0.85, "Building your feed…");
+  const heroContent = pickHeroFromBrowseSections(browseSections);
+  report(1, "Ready");
 
   return {
     linkedServices,

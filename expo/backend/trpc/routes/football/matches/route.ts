@@ -634,6 +634,55 @@ export const getMatchesBundleRoute = publicProcedure
     return { live, upcoming, results };
   });
 
+/** Mirrors TestFlight For You: World Cup league, no club teamIds (see sports.tsx footballBundleInput). */
+export const FOOTBALL_FOR_YOU_SMOKE_BUNDLE_INPUT = {
+  days: 14,
+  teamIds: [] as number[],
+  leagueIds: [FIFA_WORLD_CUP_LEAGUE_ID],
+  includeResults: false,
+} as const;
+
+export type FootballSmokeCheckResult = {
+  ok: boolean;
+  upcomingCount: number;
+  liveCount: number;
+  minRequired: number;
+  errors: { config?: string; rateLimit?: string };
+};
+
+/** Used by /health/football and CI — catches stale deploys that return empty WC feeds. */
+export async function runFootballForYouSmokeCheck(options?: {
+  minTotalFixtures?: number;
+}): Promise<FootballSmokeCheckResult> {
+  const minRequired = options?.minTotalFixtures ?? Number(process.env.FOOTBALL_SMOKE_MIN_TOTAL ?? 1);
+  const { includeResults, ...shared } = FOOTBALL_FOR_YOU_SMOKE_BUNDLE_INPUT;
+
+  const [live, upcoming] = await Promise.all([
+    fetchMatchesByType({ ...shared, type: 'live' }),
+    fetchMatchesByType({ ...shared, type: 'upcoming' }),
+  ]);
+
+  const configError =
+    (live.errors?.config as string | undefined) || (upcoming.errors?.config as string | undefined);
+  const rateLimit =
+    (live.errors?.rateLimit as string | undefined) ||
+    (upcoming.errors?.rateLimit as string | undefined);
+
+  const upcomingCount = upcoming.results ?? upcoming.response?.length ?? 0;
+  const liveCount = live.results ?? live.response?.length ?? 0;
+  const total = upcomingCount + liveCount;
+
+  const ok = !configError && !rateLimit && total >= minRequired;
+
+  return {
+    ok,
+    upcomingCount,
+    liveCount,
+    minRequired,
+    errors: { config: configError, rateLimit },
+  };
+}
+
 export const getTeamLogosRoute = publicProcedure
   .input(z.object({
     teamIds: z.array(z.number().int().positive().max(99999)).min(1).max(30),
