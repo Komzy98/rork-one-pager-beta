@@ -52,6 +52,7 @@ import {
 import {
   buildPriorityTaskHighlights,
   buildTodayCalendarHighlights,
+  buildUpcomingEventsForSummary,
   buildContinueWatchingHighlights,
   buildSportsEmotionalBeats,
   buildSavedEventsHighlights,
@@ -1049,9 +1050,11 @@ export default function ActivitiesScreen() {
 
   const recoveryHopeInput = useMemo(() => {
     const calendarEvents = getUpcomingCalendarEvents(14);
+    const savedEvents = profile?.savedEvents ?? [];
     const todayCalendar = buildTodayCalendarHighlights(
       [...getTodayCalendarEvents(), ...calendarEvents],
-      todayYmd
+      todayYmd,
+      savedEvents
     ).map((c) => ({ title: c.title, timeLabel: c.timeLabel }));
 
     const recentWins = completedTodayMatches
@@ -1358,18 +1361,18 @@ export default function ActivitiesScreen() {
         });
       
       const calendarEvents = getUpcomingCalendarEvents(14);
-      const upcomingEventsForSummary = calendarEvents.slice(0, 8).map((event) => ({
-        title: event.title,
-        startDate: event.startDate,
-        endDate: event.endDate,
-        location: event.location,
-        isAllDay: event.isAllDay,
-      }));
+      const savedEvents = profile?.savedEvents ?? [];
+      const upcomingEventsForSummary = buildUpcomingEventsForSummary(
+        calendarEvents,
+        today,
+        savedEvents
+      );
       const todayCalendar = buildTodayCalendarHighlights(
         [...getTodayCalendarEvents(), ...calendarEvents],
-        today
+        today,
+        savedEvents
       );
-      const savedDiscoveryEvents = buildSavedEventsHighlights(profile?.savedEvents ?? [], today);
+      const savedDiscoveryEvents = buildSavedEventsHighlights(savedEvents, today);
       const continueWatching = buildContinueWatchingHighlights(continueWatchingItems);
       const sportsBeats = buildSportsEmotionalBeats({
         todayYmd: today,

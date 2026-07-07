@@ -642,6 +642,7 @@ function transformApiFootballData(fixtures: any[]): Match[] {
         fixture.league?.name || 'League',
         fixture.league?.country,
         fixture.league?.id,
+        fixture.league?.round,
       ),
       leagueId:
         fixture.league?.id ||

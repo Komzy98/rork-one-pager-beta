@@ -134,8 +134,24 @@ export async function summarizeDailyProgress(input: {
   sportsBeats?: DailySummarySportsBeat[];
   upcomingMatches?: { homeTeam: string; awayTeam: string; date: string; time: string; competition: string }[];
   recentWins?: { team: string; opponent: string; score: string; date: string }[];
-  upcomingEvents?: { title: string; startDate: string; endDate: string; location?: string; isAllDay?: boolean }[];
-  savedDiscoveryEvents?: { title: string; dateLabel: string; timeLabel?: string; venue: string; daysUntil: number | null }[];
+  upcomingEvents?: {
+    title: string;
+    dateLabel: string;
+    timeLabel: string;
+    timing: 'past' | 'today' | 'upcoming';
+    intent: 'scheduled' | 'saved';
+    location?: string;
+    isAllDay?: boolean;
+  }[];
+  savedDiscoveryEvents?: {
+    title: string;
+    dateLabel: string;
+    timeLabel?: string;
+    venue: string;
+    daysUntil: number | null;
+    timing: 'past' | 'today' | 'upcoming';
+    intent: 'saved';
+  }[];
   todayCalendar?: DailySummaryCalendarEvent[];
   weather?: { condition: string; temp: number; description: string; city: string; humidity?: number; windSpeed?: number };
   notes?: string;
@@ -169,7 +185,10 @@ Rules:
 - Include upcoming matches for favourite teams if available (mention next 1-2 important matches) when sportsBeats is empty.
 - CRITICAL: When mentioning match timing, compare the match date to TODAY'S DATE (${input.date}). If the match date equals today's date, say "today". If it's the next day, say "tomorrow". Be accurate!
 - SAVED DISCOVERY EVENTS: If savedDiscoveryEvents has entries the user saved from the Events tab, mention at most one by exact title when planning the week (e.g. comedy night Friday — weave with habits/tasks if relevant). Do not invent events.
-- CRITICAL: For upcomingEvents (broader calendar), compare each event's startDate to TODAY'S DATE (${input.date}). Only say "today" if the date EXACTLY matches ${input.date}.
+- EVENT TIMING (critical): Always use each event's timeLabel for times — NEVER infer time from ISO timestamps or guess.
+- EVENT INTENT (critical): savedDiscoveryEvents and upcomingEvents with intent "saved" or "scheduled" mean the user bookmarked or planned something — say "saved", "planned", or "coming up". NEVER say they "attended", "went to", or "enjoyed" an event unless timing is "past".
+- EVENT TIMING LABELS: Use timing field — "today" only when timing is "today"; "tomorrow" only when daysUntil is 1; otherwise use dateLabel. For timing "upcoming", frame as looking forward, not something that already happened.
+- UPCOMING CALENDAR: upcomingEvents lists scheduled calendar entries with dateLabel + timeLabel. Compare dateLabel to TODAY'S DATE (${input.date}) for today/tomorrow wording.
 - "wins" must include 2–4 specific bullets from real data (habits done, priority tasks, sports beats, calendar survived, weather grit). At least one bullet uses an exact habit/task title.
 - "streaks": include every habit in habits[] with streak ≥ 2 and done true today; use exact habit name and day count.
 - If yesterdayContext is provided, you may reference momentum vs yesterday in summary (one short clause) — do not invent numbers beyond yesterdayContext.

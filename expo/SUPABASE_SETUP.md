@@ -60,7 +60,33 @@ Then confirm `public.user_data` has one row for your user with JSON data payload
 
 Guest/default users now hydrate from local `*_default` keys, so local persistence works even without a Supabase session.
 
-## 6) Verify secure account deletion
+## 6) Google sign-in branding (avoid `*.supabase.co` in OAuth prompts)
+
+When `EXPO_PUBLIC_GOOGLE_CLIENT_ID` is set, the app signs in with **Google directly** and exchanges the id token with Supabase (`signInWithIdToken`). Users then see **accounts.google.com** and your **One Pager** app name on Google’s consent screen—not `luhkqxfhrkugdcwldtle.supabase.co`.
+
+### Required setup
+
+1. **Google Cloud Console** → APIs & Services → OAuth consent screen:
+   - App name: **One Pager**
+   - Logo, support email, privacy policy (`https://onepagerapp.co.uk/...`), terms
+   - Authorized domain: `onepagerapp.co.uk` (verify in Search Console)
+   - Publishing status: **Production** (submit for brand verification if prompted)
+
+2. **OAuth credentials** (Web client):
+   - Authorized redirect URI: `onepager://auth`
+   - Copy the client id into `EXPO_PUBLIC_GOOGLE_CLIENT_ID` (and EAS production env)
+
+3. **Supabase** → Authentication → Providers → Google:
+   - Same client id + secret from step 2
+   - Enable the provider
+
+4. Rebuild the app after env changes (EAS production).
+
+### Optional: Supabase custom auth domain
+
+If you omit `EXPO_PUBLIC_GOOGLE_CLIENT_ID`, sign-in falls back to Supabase-hosted OAuth and will show your project subdomain. To brand that path, add a custom domain in Supabase (e.g. `auth.onepagerapp.co.uk`) and set `EXPO_PUBLIC_SUPABASE_URL` to it.
+
+## 7) Verify secure account deletion
 
 - Start backend API with service role key configured.
 - Sign in with a Supabase account.

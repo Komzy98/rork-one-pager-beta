@@ -109,9 +109,11 @@ export function mapTicketmasterEvent(raw: TmEvent): LocalEvent | null {
 
   const localDate = raw.dates?.start?.localDate;
   const localTime = raw.dates?.start?.localTime;
-  const startIso =
-    raw.dates?.start?.dateTime ??
-    (localDate ? `${localDate}T${localTime || '19:00:00'}` : undefined);
+  // Prefer venue-local date/time — Ticketmaster UTC dateTime is often midnight UTC
+  // (e.g. Sea Life 10:00 local → 00:00Z → 1am BST if parsed as local instant).
+  const startIso = localDate
+    ? `${localDate}T${localTime || '19:00:00'}`
+    : raw.dates?.start?.dateTime;
 
   const category = mapCategory(raw.classifications);
   const city = venue?.city?.name || 'Nearby';

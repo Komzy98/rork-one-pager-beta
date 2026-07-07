@@ -44,6 +44,7 @@ export function apiFixtureToLiveFootballMatch(fixture: any): LiveFootballMatch |
       fixture.league?.name || 'League',
       fixture.league?.country,
       fixture.league?.id,
+      fixture.league?.round,
     ),
     leagueId: typeof fixture.league?.id === 'number' ? fixture.league.id : undefined,
     date: fixture.fixture?.date || new Date().toISOString(),

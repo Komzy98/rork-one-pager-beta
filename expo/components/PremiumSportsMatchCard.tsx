@@ -15,7 +15,7 @@ import {
   CheckCircle2,
   Star,
   MapPin,
-  Pin,
+  Heart,
   Bell,
   BellOff,
 } from 'lucide-react-native';
@@ -233,7 +233,7 @@ export const PremiumSportsMatchCard = React.memo(
                 shadowColor: mc!.shadow,
               },
               isLive && cardStyles.liveCardBorder,
-              isPinned && !isLive && { borderColor: `${sf.warning}55` },
+              isPinned && !isLive && { borderColor: `${sf.primary}55` },
             ]}
           >
             {isLive ? (
@@ -246,7 +246,7 @@ export const PremiumSportsMatchCard = React.memo(
               />
             ) : isPinned ? (
               <LinearGradient
-                colors={[`${sf.warning}12`, 'transparent']}
+                colors={[`${sf.primary}12`, 'transparent']}
                 start={{ x: 0, y: 0 }}
                 end={{ x: 0, y: 1 }}
                 style={cardStyles.cardGlow}
@@ -449,9 +449,9 @@ export const PremiumSportsMatchCard = React.memo(
             <View style={[cardStyles.matchFooter, { borderTopColor: sf.border }]}>
               <View style={cardStyles.footerLeft}>
                 {isPinned && (
-                  <View style={cardStyles.pinnedBadge}>
-                    <Pin size={10} color={sf.warning} />
-                    <Text style={[cardStyles.pinnedText, { color: sf.warning }]}>Pinned</Text>
+                  <View style={cardStyles.onePagerBadge}>
+                    <Heart size={10} color={sf.primary} fill={sf.primary} />
+                    <Text style={[cardStyles.onePagerBadgeText, { color: sf.primary }]}>On One Pager</Text>
                   </View>
                 )}
                 {match.venue ? (
@@ -468,25 +468,38 @@ export const PremiumSportsMatchCard = React.memo(
                 {onTogglePin && (
                   <TouchableOpacity
                     style={[
-                      cardStyles.actionBtn,
+                      cardStyles.onePagerBtn,
                       {
-                        backgroundColor: isPinned ? `${sf.warning}22` : sf.surfaceSecondary,
+                        backgroundColor: isPinned ? `${sf.primary}18` : sf.surfaceSecondary,
+                        borderColor: isPinned ? `${sf.primary}44` : sf.border,
                       },
                     ]}
-                    onPress={(e) => {
+                    onPress={async (e) => {
                       e.stopPropagation?.();
+                      if (Platform.OS !== 'web') {
+                        await Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+                      }
                       onTogglePin(match.id);
                     }}
                     activeOpacity={0.7}
                     hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
                     accessibilityRole="button"
-                    accessibilityLabel={isPinned ? 'Unpin match' : 'Pin match'}
+                    accessibilityLabel={isPinned ? 'Remove from One Pager' : 'Add to One Pager'}
                   >
-                    <Pin
-                      size={14}
-                      color={isPinned ? sf.warning : sf.textMuted}
-                      fill={isPinned ? sf.warning : 'transparent'}
+                    <Heart
+                      size={13}
+                      color={isPinned ? sf.primary : sf.textMuted}
+                      fill={isPinned ? sf.primary : 'transparent'}
                     />
+                    <Text
+                      style={[
+                        cardStyles.onePagerBtnText,
+                        { color: isPinned ? sf.primary : sf.textMuted },
+                      ]}
+                      numberOfLines={1}
+                    >
+                      {isPinned ? 'In One Pager' : 'Add to One Pager'}
+                    </Text>
                   </TouchableOpacity>
                 )}
                 {match.status !== 'Completed' && onToggleNotification && (
@@ -768,15 +781,14 @@ const cardStyles = StyleSheet.create({
     flex: 1,
     gap: 6,
   },
-  pinnedBadge: {
+  onePagerBadge: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: 4,
   },
-  pinnedText: {
+  onePagerBadgeText: {
     fontSize: 10,
     fontWeight: '700',
-    color: '#F59E0B',
     textTransform: 'uppercase',
     letterSpacing: 0.5,
   },
@@ -795,6 +807,22 @@ const cardStyles = StyleSheet.create({
     alignItems: 'center',
     gap: 6,
     marginLeft: 8,
+    flexShrink: 0,
+  },
+  onePagerBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 5,
+    paddingHorizontal: 10,
+    paddingVertical: 7,
+    borderRadius: 11,
+    borderWidth: StyleSheet.hairlineWidth,
+    maxWidth: 148,
+  },
+  onePagerBtnText: {
+    fontSize: 11,
+    fontWeight: '700',
+    flexShrink: 1,
   },
   actionBtn: {
     width: 34,

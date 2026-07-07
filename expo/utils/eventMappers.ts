@@ -4,6 +4,7 @@ import type {
   OnePagerEventSource,
   SavedEventSnapshot,
 } from '@/types/events';
+import { parseEventStartDateTime } from '@/utils/eventDiscovery';
 
 function inferSource(id: string): OnePagerEventSource {
   if (id.startsWith('tm-')) return 'ticketmaster';
@@ -78,13 +79,14 @@ export function onePagerToLocalEvent(event: OnePagerEvent): LocalEvent {
 }
 
 export function localEventToSavedSnapshot(event: LocalEvent): SavedEventSnapshot {
+  const resolvedStart = parseEventStartDateTime(event);
   return {
     id: event.id,
     title: event.title,
     description: event.description,
     imageUrl: event.image,
     category: event.category,
-    startAt: event.startIso ?? new Date().toISOString(),
+    startAt: resolvedStart ? resolvedStart.toISOString() : event.startIso ?? new Date().toISOString(),
     venueName: event.venue,
     city: event.location,
     latitude: event.latitude,
