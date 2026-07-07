@@ -6,6 +6,6 @@ builder = "NIXPACKS"
 
 [deploy]
 startCommand = "npx tsx backend/serve.ts"
-healthcheckPath = "/health/football"
+healthcheckPath = "/health"
 healthcheckTimeout = 120
 restartPolicyType = "ON_FAILURE"
