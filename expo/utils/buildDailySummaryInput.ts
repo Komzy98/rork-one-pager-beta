@@ -160,10 +160,11 @@ export function buildUpcomingEventsForSummary(
 
   return events.slice(0, 8).map((event) => {
     const startMs = Date.parse(event.startDate);
-    const dateLabel = Number.isFinite(startMs) ? ymdFromMs(startMs) : todayYmd;
-    const timing = Number.isFinite(startMs)
+    const hasValidStart = Number.isFinite(startMs);
+    const dateLabel = hasValidStart ? ymdFromMs(startMs) : todayYmd;
+    const timing = hasValidStart
       ? eventTimingForSummary(startMs, todayYmd)
-      : 'upcoming';
+      : 'today';
     const savedMatch = savedSnapshots.find((s) => titlesLikelyMatch(event.title, s.title));
     const timeLabel = event.isAllDay
       ? 'all day'
