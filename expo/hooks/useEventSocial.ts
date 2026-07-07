@@ -7,10 +7,12 @@ import {
   checkSharedPlansAvailable,
   getEventPlanBundle,
   getFriendsGoingToEvent,
+  getGuestRsvpsForEvent,
   getOrCreateEventPlan,
   setPlanRsvp,
   updatePlanMeetAt,
   type FriendEventSave,
+  type GuestRsvp,
   type PlanRsvp,
   type PlanRsvpStatus,
   type SharedPlan,
@@ -61,9 +63,17 @@ export function useEventSocial(event: LocalEvent | null) {
     staleTime: 30_000,
   });
 
+  const guestRsvpQuery = useQuery({
+    queryKey: ['guest-rsvps', eventId],
+    queryFn: () => getGuestRsvpsForEvent(eventId),
+    enabled: queriesEnabled,
+    staleTime: 20_000,
+  });
+
   const invalidate = useCallback(() => {
     queryClient.invalidateQueries({ queryKey: ['event-plan', eventId] });
     queryClient.invalidateQueries({ queryKey: ['friends-going', eventId] });
+    queryClient.invalidateQueries({ queryKey: ['guest-rsvps', eventId] });
   }, [queryClient, eventId]);
 
   const ensurePlan = useCallback(async (): Promise<SharedPlan | null> => {
@@ -145,6 +155,9 @@ export function useEventSocial(event: LocalEvent | null) {
 
   const goingRsvps = (planQuery.data?.rsvps ?? []).filter((r) => r.status === 'in');
   const maybeRsvps = (planQuery.data?.rsvps ?? []).filter((r) => r.status === 'maybe');
+  const guestRsvps = (guestRsvpQuery.data ?? []) as GuestRsvp[];
+  const guestGoing = guestRsvps.filter((g) => g.status === 'in');
+  const guestMaybe = guestRsvps.filter((g) => g.status === 'maybe');
 
   return {
     available,
@@ -154,8 +167,13 @@ export function useEventSocial(event: LocalEvent | null) {
     myRsvpStatus: planQuery.data?.myStatus ?? null,
     goingRsvps,
     maybeRsvps,
+    guestRsvps,
+    guestGoing,
+    guestMaybe,
+    goingCount: goingRsvps.length + guestGoing.length,
+    maybeCount: maybeRsvps.length + guestMaybe.length,
     friendsSaved: (goingQuery.data ?? []) as FriendEventSave[],
-    isLoading: planQuery.isLoading || goingQuery.isLoading,
+    isLoading: planQuery.isLoading || goingQuery.isLoading || guestRsvpQuery.isLoading,
     ensurePlan,
     setRsvp,
     setGroupMeetAt,
@@ -163,4 +181,4 @@ export function useEventSocial(event: LocalEvent | null) {
   };
 }
 
-export type { PlanRsvp, PlanRsvpStatus, FriendEventSave };
+export type { PlanRsvp, PlanRsvpStatus, FriendEventSave, GuestRsvp };

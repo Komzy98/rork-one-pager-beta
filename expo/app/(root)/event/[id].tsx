@@ -449,14 +449,15 @@ export default function EventDetailScreen() {
             <WhoIsGoing
               palette={palette}
               rsvpsGoing={eventSocial.goingRsvps}
+              guestRsvps={[...eventSocial.guestGoing, ...eventSocial.guestMaybe]}
               friendsSaved={eventSocial.friendsSaved}
             />
           ) : null}
           <EventPlanRsvp
             palette={palette}
             myStatus={eventSocial.myRsvpStatus}
-            goingCount={eventSocial.goingRsvps.length}
-            maybeCount={eventSocial.maybeRsvps.length}
+            goingCount={eventSocial.goingCount}
+            maybeCount={eventSocial.maybeCount}
             loading={rsvpBusy}
             pendingStatus={rsvpPending}
             onSelect={handleRsvp}

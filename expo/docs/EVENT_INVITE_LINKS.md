@@ -33,8 +33,13 @@ Without `APPLE_TEAM_ID`, the web invite page still works; iOS may not auto-open 
 ## Share behaviour in app
 
 - **Share / Invite** sends the HTTPS link (with `?from=username` when signed in).
+- **Web invite page** lets friends respond **I'm in / Maybe / Can't go** without the app (name + one tap).
 - **Open in One Pager** on the web page uses `onepager:///event/{id}`.
 - Installed app: universal links route to `/(root)/event/[id]`.
+
+## Database
+
+Run migration `006_guest_rsvps.sql` on Supabase so web RSVPs persist and appear in the app under **Who's going**.
 
 ## Marketing site
 

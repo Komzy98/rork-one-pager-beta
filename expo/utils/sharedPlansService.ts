@@ -35,6 +35,14 @@ export interface FriendEventSave {
   profile?: PlanRsvp['profile'];
 }
 
+export interface GuestRsvp {
+  id: string;
+  eventId: string;
+  displayName: string;
+  status: PlanRsvpStatus;
+  updatedAt: string;
+}
+
 interface PlanRow {
   id: string;
   owner_id: string;
@@ -230,6 +238,35 @@ export async function getEventPlanBundle(
   const mine = rsvps.find((r) => r.userId === myUserId);
 
   return { plan, rsvps, myStatus: mine?.status ?? null };
+}
+
+export async function getGuestRsvpsForEvent(eventId: string): Promise<GuestRsvp[]> {
+  if (!supabaseConfigured) return [];
+
+  const { data, error } = await supabase
+    .from('guest_rsvps')
+    .select('id, event_id, display_name, status, updated_at')
+    .eq('event_id', eventId)
+    .order('updated_at', { ascending: false });
+
+  if (error) {
+    if (isSocialUnavailableError(error)) return [];
+    throw error;
+  }
+
+  return ((data ?? []) as {
+    id: string;
+    event_id: string;
+    display_name: string;
+    status: string;
+    updated_at: string;
+  }[]).map((row) => ({
+    id: row.id,
+    eventId: row.event_id,
+    displayName: row.display_name,
+    status: row.status as PlanRsvpStatus,
+    updatedAt: row.updated_at,
+  }));
 }
 
 export async function publishEventSave(
