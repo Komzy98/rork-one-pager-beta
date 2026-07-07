@@ -1,3 +1,5 @@
+import fs from 'fs';
+import path from 'path';
 import type { Hono } from 'hono';
 import type { LocalEvent } from '@/types/events';
 import { fetchEventById } from '@/utils/fetchEventById';
@@ -10,6 +12,7 @@ import {
   IOS_APP_STORE_ID,
   MARKETING_SITE_URL,
   androidPlayStoreUrl,
+  INVITE_LOGO_URL,
   iosAppStoreUrl,
 } from '@/utils/appStoreLinks';
 import {
@@ -22,6 +25,36 @@ import {
 
 const PRIMARY = '#e84393';
 const PRIMARY_LIGHT = '#fce4ef';
+
+let cachedLogoBytes: Buffer | null | undefined;
+
+function resolveInviteLogoPath(): string | null {
+  const candidates = [
+    path.join(process.cwd(), 'assets/images/icon.png'),
+    path.join(process.cwd(), 'expo/assets/images/icon.png'),
+    path.resolve(__dirname, '../../assets/images/icon.png'),
+  ];
+  for (const candidate of candidates) {
+    if (fs.existsSync(candidate)) return candidate;
+  }
+  return null;
+}
+
+function getInviteLogoBytes(): Buffer | null {
+  if (cachedLogoBytes !== undefined) return cachedLogoBytes;
+  const logoPath = resolveInviteLogoPath();
+  if (!logoPath) {
+    cachedLogoBytes = null;
+    return null;
+  }
+  try {
+    cachedLogoBytes = fs.readFileSync(logoPath);
+    return cachedLogoBytes;
+  } catch {
+    cachedLogoBytes = null;
+    return null;
+  }
+}
 
 function escapeHtml(value: string): string {
   return value
@@ -85,6 +118,8 @@ export function renderEventInvitePage(options: {
   ${image ? `<meta property="og:image" content="${image}" />` : ''}
   <meta name="twitter:card" content="summary_large_image" />
   <meta name="apple-itunes-app" content="app-id=${IOS_APP_STORE_ID}, app-argument=${escapeHtml(appLink)}" />
+  <link rel="icon" type="image/png" href="${escapeHtml(INVITE_LOGO_URL)}" />
+  <link rel="apple-touch-icon" href="${escapeHtml(INVITE_LOGO_URL)}" />
   <style>
     * { box-sizing: border-box; margin: 0; padding: 0; }
     body {
@@ -96,12 +131,16 @@ export function renderEventInvitePage(options: {
     }
     .wrap { max-width: 480px; margin: 0 auto; padding: 24px 20px 40px; }
     .brand {
-      display: flex; align-items: center; gap: 8px;
-      font-size: 13px; font-weight: 700; color: ${PRIMARY};
-      margin-bottom: 20px; letter-spacing: -0.2px;
+      display: inline-flex; align-items: center; gap: 10px;
+      margin-bottom: 20px; text-decoration: none;
     }
-    .brand-dot {
-      width: 10px; height: 10px; border-radius: 3px; background: ${PRIMARY};
+    .brand-logo {
+      width: 40px; height: 40px; border-radius: 11px;
+      box-shadow: 0 6px 16px rgba(232, 67, 147, 0.18);
+      display: block;
+    }
+    .brand-name {
+      font-size: 16px; font-weight: 800; color: #1a1a2e; letter-spacing: -0.3px;
     }
     .hero {
       border-radius: 20px; overflow: hidden; background: #111;
@@ -179,7 +218,10 @@ export function renderEventInvitePage(options: {
 </head>
 <body>
   <div class="wrap">
-    <div class="brand"><span class="brand-dot"></span> One Pager</div>
+    <a class="brand" href="${escapeHtml(MARKETING_SITE_URL)}">
+      <img class="brand-logo" src="${escapeHtml(INVITE_LOGO_URL)}" alt="One Pager" width="40" height="40" />
+      <span class="brand-name">One Pager</span>
+    </a>
 
     <div class="hero">
       ${image ? `<img src="${image}" alt="${title}" />` : '<div class="hero-fallback"></div>'}
@@ -386,10 +428,13 @@ function renderNotFoundPage(eventId: string): string {
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>Event not found · One Pager</title>
+  <link rel="icon" type="image/png" href="${escapeHtml(INVITE_LOGO_URL)}" />
   <style>
     body { font-family: -apple-system, sans-serif; background: #fafcfe; color: #1a1a2e;
       display: flex; align-items: center; justify-content: center; min-height: 100vh; padding: 24px; }
     .box { max-width: 420px; text-align: center; }
+    .brand-logo { width: 48px; height: 48px; border-radius: 12px; margin: 0 auto 16px;
+      box-shadow: 0 6px 16px rgba(232, 67, 147, 0.18); }
     h1 { font-size: 22px; margin-bottom: 8px; }
     p { color: #718096; margin-bottom: 18px; }
     a { color: #e84393; font-weight: 700; text-decoration: none; }
@@ -397,6 +442,7 @@ function renderNotFoundPage(eventId: string): string {
 </head>
 <body>
   <div class="box">
+    <img class="brand-logo" src="${escapeHtml(INVITE_LOGO_URL)}" alt="One Pager" width="48" height="48" />
     <h1>Event not found</h1>
     <p>This event may have ended or the link is no longer valid.</p>
     <p><a href="${escapeHtml(iosAppStoreUrl())}">Get One Pager</a> · <a href="${escapeHtml(MARKETING_SITE_URL)}">onepagerapp.co.uk</a></p>
@@ -434,6 +480,17 @@ function buildAssetLinks(): object[] {
 }
 
 export function registerEventInviteRoutes(app: Hono): void {
+  app.get('/assets/onepager-icon.png', (c) => {
+    const bytes = getInviteLogoBytes();
+    if (!bytes) {
+      return c.text('Logo not found', 404);
+    }
+    return c.body(bytes, 200, {
+      'Content-Type': 'image/png',
+      'Cache-Control': 'public, max-age=86400, immutable',
+    });
+  });
+
   app.get('/.well-known/apple-app-site-association', (c) => {
     return c.json(buildAppleAppSiteAssociation(), 200, {
       'Content-Type': 'application/json',
