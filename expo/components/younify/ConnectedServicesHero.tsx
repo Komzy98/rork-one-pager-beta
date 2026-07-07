@@ -15,8 +15,9 @@ import { LinearGradient } from "expo-linear-gradient";
 import * as Haptics from "expo-haptics";
 import { useRouter } from "expo-router";
 import { Info, Sparkles, Star, Tv } from "lucide-react-native";
-import type { YounifySourceServiceSnapshot } from "@/services/younify";
+import type { YounifySourceServiceSnapshot, YounifyStreamingLoadProgress } from "@/services/younify";
 import StreamingHeroTmdbPoster from "@/components/younify/StreamingHeroTmdbPoster";
+import StreamingLoadProgressBar from "@/components/younify/StreamingLoadProgressBar";
 import YounifyServiceLogoMark from "@/components/younify/YounifyServiceLogoMark";
 import { openYounifyBrowseItemOnPlatform } from "@/utils/streamingLinks";
 import { formatRating } from "@/utils/tmdbApi";
@@ -41,6 +42,7 @@ type Props = {
   loading: boolean;
   hasLinkedServices: boolean;
   linkedStreamingCount: number;
+  loadProgress?: YounifyStreamingLoadProgress | null;
   /** When set, hero tap / More Info opens in-app details instead of a provider deep link. */
   onOpenDetails?: (item: YounifyContentItem) => void | Promise<void>;
 };
@@ -56,6 +58,7 @@ export default function ConnectedServicesHero({
   loading,
   hasLinkedServices,
   linkedStreamingCount,
+  loadProgress,
   onOpenDetails,
 }: Props) {
   const router = useRouter();
@@ -93,8 +96,16 @@ export default function ConnectedServicesHero({
       <View style={styles.section}>
         <View style={[styles.slideFrame, { width: HERO_CARD_WIDTH, height: HERO_HEIGHT, alignSelf: "center" }]}>
           <View style={styles.skeletonInner}>
-            <ActivityIndicator size="small" color="#8E8E9A" />
-            <Text style={styles.skeletonText}>Loading your streaming picks...</Text>
+            {loadProgress ? (
+              <View style={styles.progressWrap}>
+                <StreamingLoadProgressBar progress={loadProgress} />
+              </View>
+            ) : (
+              <>
+                <ActivityIndicator size="small" color="#8E8E9A" />
+                <Text style={styles.skeletonText}>Loading your streaming picks...</Text>
+              </>
+            )}
           </View>
         </View>
       </View>
@@ -410,6 +421,10 @@ const styles = StyleSheet.create({
     alignItems: "center",
     justifyContent: "center",
     gap: 12,
+  },
+  progressWrap: {
+    width: "72%",
+    maxWidth: 280,
   },
   skeletonText: {
     color: "#8E8E9A",

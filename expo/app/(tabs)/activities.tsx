@@ -13,6 +13,7 @@ import { useTasks } from '@/hooks/useTasksStore';
 import { useUserProfile } from '@/hooks/useUserProfile';
 import { useAuth } from '@/hooks/useAuth';
 import { useTodayHabits } from '@/hooks/useTodayHabits';
+import { useTodayYmd } from '@/hooks/useTodayYmd';
 import { router, Stack } from 'expo-router';
 import { useFocusEffect } from '@react-navigation/native';
 import SwipeableTabContainer from '@/components/SwipeableTabContainer';
@@ -33,10 +34,15 @@ import {
   apiFixturesToLiveFootballMatches,
 } from '@/utils/footballFixtureTransform';
 import { collectNationalTeamApiIds } from '@/utils/nationalTeamApiIds';
+import {
+  isFavoriteClubOrNationalMatch,
+  matchInvolvesNationalInterest,
+} from '@/utils/footballMatchPersonalization';
 import { usePinnedMatches } from '@/hooks/usePinnedMatches';
 import { getCurrentWeather, getHeroGradientColors } from '@/utils/weatherApi';
 import { LiveFootballMatch, Show } from '@/types/habit';
 import { useCalendar } from '@/hooks/useCalendar';
+import { useSavedEvents } from '@/hooks/useSavedEvents';
 import { tmdbApi, TMDBTVShowDetails, isTmdbFetchAbortError } from '@/utils/tmdbApi';
 import {
   summarizeDailyProgress,
@@ -48,6 +54,7 @@ import {
   buildTodayCalendarHighlights,
   buildContinueWatchingHighlights,
   buildSportsEmotionalBeats,
+  buildSavedEventsHighlights,
 } from '@/utils/buildDailySummaryInput';
 import {
   buildTodayHabitEntries,
@@ -56,6 +63,7 @@ import {
 import DailySummaryInsights from '@/components/DailySummaryInsights';
 import { ProgressShareSheet } from '@/components/ProgressShareSheet';
 import { useActivity } from '@/hooks/useActivity';
+import { PartnerActivityFeed } from '@/components/social/PartnerActivityFeed';
 import { buildSummaryPayload, type SharePayload } from '@/utils/shareProgress';
 import {
   getTodayYmd,
@@ -85,6 +93,11 @@ import TodaysRoutine from '@/components/TodaysRoutine';
 import AddInterestsLaterCard from '@/components/AddInterestsLaterCard';
 import PeakPerformanceScheduler from '@/components/PeakPerformanceScheduler';
 import HabitFormationCoach from '@/components/HabitFormationCoach';
+import RecoveryModePanel from '@/components/RecoveryModePanel';
+import JoySourcesNudgeCard from '@/components/JoySourcesNudgeCard';
+import { useRecoveryMode } from '@/hooks/useRecoveryMode';
+import { resolveEffectiveJoySources } from '@/utils/joySources';
+import { detectRecoveryPatternInsight } from '@/utils/recoveryPatterns';
 import { getChronotypeInfo, getChronotypeGreetingTip } from '@/constants/chronotypes';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import NBAUpcomingSection from '@/components/NBAUpcomingSection';
@@ -203,6 +216,8 @@ export default function ActivitiesScreen() {
   const tasksContext = useTasks();
   const userProfileData = useUserProfile();
   const profile = userProfileData?.profile;
+  const { upcomingSaved } = useSavedEvents();
+  const savedEventsCount = profile?.savedEvents?.length ?? 0;
   const [summarySharePayload, setSummarySharePayload] = useState<SharePayload | null>(null);
   const defaultFavoriteTeam = useCallback(() => false, []);
   const isFavoriteTeam = userProfileData?.isFavoriteTeam ?? defaultFavoriteTeam;
@@ -578,6 +593,18 @@ export default function ActivitiesScreen() {
     return nationalIds;
   }, [profile?.nationalities]);
 
+  const favoriteClubApiIds = useMemo(
+    () => new Set(favoriteTeamIds),
+    [favoriteTeamIds],
+  );
+
+  const countryInterestNamesLower = useMemo(() => {
+    if (!profile?.nationalities?.length) return [];
+    return profile.nationalities
+      .map((n) => n.name.toLowerCase().trim())
+      .filter(Boolean);
+  }, [profile?.nationalities]);
+
   // Check if we should include AFCON matches
   const includeAfcon = useMemo(() => {
     return nationalTeamIds.length > 0;
@@ -628,52 +655,6 @@ export default function ActivitiesScreen() {
     [],
   );
 
-  // Helper to check if a team is one of user's national teams
-  const isFavoriteNationalTeam = useCallback((teamName: string): boolean => {
-    if (!profile?.nationalities || profile.nationalities.length === 0) return false;
-    
-    const normalizedTeamName = teamName.toLowerCase().trim();
-    
-    // Common variations for African national teams
-    const nationalTeamVariations: Record<string, string[]> = {
-      'nigeria': ['nigeria', 'super eagles', 'nigerian'],
-      'algeria': ['algeria', 'les fennecs', 'algerian', 'algérie'],
-      'cameroon': ['cameroon', 'indomitable lions', 'cameroonian', 'cameroun'],
-      'egypt': ['egypt', 'pharaohs', 'egyptian'],
-      'ghana': ['ghana', 'black stars', 'ghanaian'],
-      'ivory coast': ['ivory coast', "côte d'ivoire", 'cote d ivoire', 'elephants', 'ivorian'],
-      'morocco': ['morocco', 'atlas lions', 'moroccan', 'maroc'],
-      'senegal': ['senegal', 'lions of teranga', 'senegalese', 'sénégal'],
-      'tunisia': ['tunisia', 'eagles of carthage', 'tunisian', 'tunisie'],
-      'south africa': ['south africa', 'bafana bafana', 'south african'],
-      'mali': ['mali', 'eagles', 'malian'],
-      'dr congo': ['dr congo', 'democratic republic of congo', 'congo dr', 'leopards', 'drc'],
-      'burkina faso': ['burkina faso', 'stallions', 'burkinabé'],
-    };
-    
-    return profile.nationalities.some(nation => {
-      const nationName = nation.name.toLowerCase().trim();
-      
-      // Direct match
-      if (normalizedTeamName === nationName) return true;
-      
-      // Partial match (team name contains nation name or vice versa)
-      if (normalizedTeamName.includes(nationName) || nationName.includes(normalizedTeamName)) return true;
-      
-      // Check variations
-      const variations = nationalTeamVariations[nationName];
-      if (variations) {
-        for (const variant of variations) {
-          if (normalizedTeamName === variant || normalizedTeamName.includes(variant) || variant.includes(normalizedTeamName)) {
-            return true;
-          }
-        }
-      }
-      
-      return false;
-    });
-  }, [profile?.nationalities]);
-
   const filterMatchesForFavoriteTeams = useCallback((matches: LiveFootballMatch[]) => {
     const hasFavoriteTeams = profile?.favoriteTeams && profile.favoriteTeams.length > 0;
     const hasNationalities = profile?.nationalities && profile.nationalities.length > 0;
@@ -687,31 +668,26 @@ export default function ActivitiesScreen() {
       (profile?.favoriteTeams?.length ?? 0), 'teams and', 
       (profile?.nationalities?.length ?? 0), 'nationalities');
     
-    const filtered = matches.filter(match => {
-      const homeTeamMatch = isFavoriteTeam(match.homeTeam);
-      const awayTeamMatch = isFavoriteTeam(match.awayTeam);
-      const homeNationalMatch = isFavoriteNationalTeam(match.homeTeam);
-      const awayNationalMatch = isFavoriteNationalTeam(match.awayTeam);
-      
-      if (homeTeamMatch || awayTeamMatch || homeNationalMatch || awayNationalMatch) {
+    const filtered = matches.filter((match) => {
+      if (isFavoriteClubOrNationalMatch(match, favoriteClubApiIds, nationalTeamIds)) {
         return true;
       }
-      
-      if (favoriteTeamIds.length > 0 || nationalTeamIds.length > 0) {
-        const matchHomeId = match.homeTeamId;
-        const matchAwayId = match.awayTeamId;
-        if (matchHomeId && favoriteTeamIds.includes(matchHomeId)) return true;
-        if (matchAwayId && favoriteTeamIds.includes(matchAwayId)) return true;
-        if (matchHomeId && nationalTeamIds.includes(matchHomeId)) return true;
-        if (matchAwayId && nationalTeamIds.includes(matchAwayId)) return true;
+      if (matchInvolvesNationalInterest(match, nationalTeamIds, countryInterestNamesLower)) {
+        return true;
       }
-      
-      return false;
+      return isFavoriteTeam(match.homeTeam) || isFavoriteTeam(match.awayTeam);
     });
     
     console.log('📊 [Activities] Filter result:', filtered.length, 'matches from', matches.length, 'total');
     return filtered;
-  }, [profile?.favoriteTeams, profile?.nationalities, isFavoriteTeam, isFavoriteNationalTeam, favoriteTeamIds, nationalTeamIds]);
+  }, [
+    profile?.favoriteTeams,
+    profile?.nationalities,
+    isFavoriteTeam,
+    favoriteClubApiIds,
+    nationalTeamIds,
+    countryInterestNamesLower,
+  ]);
 
   // Raw unfiltered matches - used by ModernSportsSection which does its own filtering
   const rawLiveMatches = useMemo(() => {
@@ -807,9 +783,17 @@ export default function ActivitiesScreen() {
     return result;
   }, [rawCompletedMatches, filterMatchesForFavoriteTeams]);
 
+  const hasAnyFootballBundleData = useMemo(
+    () =>
+      (footballBundleQuery.data?.live?.response?.length ?? 0) > 0
+      || (footballBundleQuery.data?.upcoming?.response?.length ?? 0) > 0
+      || (footballBundleQuery.data?.results?.response?.length ?? 0) > 0,
+    [footballBundleQuery.data?.live, footballBundleQuery.data?.upcoming, footballBundleQuery.data?.results],
+  );
+
   useEffect(() => {
-    setIsLoadingMatches(footballBundleQuery.isLoading);
-  }, [footballBundleQuery.isLoading]);
+    setIsLoadingMatches(footballBundleQuery.isLoading && !hasAnyFootballBundleData);
+  }, [footballBundleQuery.isLoading, hasAnyFootballBundleData]);
 
   // Debug logging
 
@@ -841,6 +825,7 @@ export default function ActivitiesScreen() {
   }, [profile?.favoriteNBATeams]);
 
   const { stats: todayHabitStats } = useTodayHabits();
+  const todayYmd = useTodayYmd();
   const stats = todayHabitStats;
   
   const trackedTVShows = useMemo(() => {
@@ -1062,7 +1047,165 @@ export default function ActivitiesScreen() {
     });
   }, [newEpisodesForMyShows.data, dismissedEpisodes]);
 
-  const upcomingEventsPreview = useMemo(() => getUpcomingCalendarEvents(90).slice(0, 4), [getUpcomingCalendarEvents, calendars.length, eventKit.hasPermission]);
+  const recoveryHopeInput = useMemo(() => {
+    const calendarEvents = getUpcomingCalendarEvents(14);
+    const todayCalendar = buildTodayCalendarHighlights(
+      [...getTodayCalendarEvents(), ...calendarEvents],
+      todayYmd
+    ).map((c) => ({ title: c.title, timeLabel: c.timeLabel }));
+
+    const recentWins = completedTodayMatches
+      .filter((m) => {
+        if (m.homeScore == null || m.awayScore == null) return false;
+        const homeTeamIsFavorite = isFavoriteTeam(m.homeTeam);
+        const awayTeamIsFavorite = isFavoriteTeam(m.awayTeam);
+        if (homeTeamIsFavorite && m.homeScore > m.awayScore) return true;
+        if (awayTeamIsFavorite && m.awayScore > m.homeScore) return true;
+        return false;
+      })
+      .slice(0, 2)
+      .map((m) => {
+        const homeScore = m.homeScore ?? 0;
+        const awayScore = m.awayScore ?? 0;
+        const homeWon = homeScore > awayScore;
+        return {
+          team: homeWon ? m.homeTeam : m.awayTeam,
+          opponent: homeWon ? m.awayTeam : m.homeTeam,
+          score: `${homeScore}-${awayScore}`,
+          date: m.date,
+        };
+      });
+
+    const sportsBeats = buildSportsEmotionalBeats({
+      todayYmd,
+      recentWins,
+      upcomingMatches: upcomingMatches.slice(0, 8).map((m) => ({
+        homeTeam: m.homeTeam,
+        awayTeam: m.awayTeam,
+        date: m.date,
+        time: m.time,
+      })),
+      liveMatches: liveMatches.map((m) => ({
+        homeTeam: m.homeTeam,
+        awayTeam: m.awayTeam,
+        date: m.date,
+        time: m.time,
+        homeScore: m.homeScore,
+        awayScore: m.awayScore,
+      })),
+    });
+
+    const newEpisodes = visibleNewEpisodes.slice(0, 3).map((item) => {
+      const ep = item.latestEpisode ?? item.nextEpisode;
+      const epLabel = ep
+        ? `S${ep.seasonNumber}E${ep.episodeNumber}`
+        : undefined;
+      return {
+        title: item.showTitle || 'Show',
+        episodeLabel: epLabel,
+      };
+    });
+
+    const habitTasks = (tasksContext?.allTasks ?? []).filter((t) => t.isHabit);
+    const joySources = resolveEffectiveJoySources({
+      profile,
+      shows,
+      habitTasks,
+    });
+
+    const timedHeadlines = upcomingMatches
+      .filter((m) => m.date === todayYmd)
+      .flatMap((m) => {
+        const homeFav = isFavoriteTeam(m.homeTeam);
+        const awayFav = isFavoriteTeam(m.awayTeam);
+        if (!homeFav && !awayFav) return [];
+        const team = homeFav ? m.homeTeam : m.awayTeam;
+        const opponent = homeFav ? m.awayTeam : m.homeTeam;
+        const time = m.time?.trim();
+        return [
+          {
+            headline: time
+              ? `${team} kick off at ${time} vs ${opponent}`
+              : `${team} play today vs ${opponent}`,
+            priority: 91,
+            kind: 'sport' as const,
+          },
+        ];
+      })
+      .slice(0, 2);
+
+    return {
+      todayYmd,
+      profile,
+      joySources,
+      sportsBeats,
+      newEpisodes,
+      todayCalendar,
+      timedHeadlines,
+      weather: weather
+        ? {
+            temp: weather.temp ?? 0,
+            condition: weather.condition || '',
+            description: weather.description || '',
+          }
+        : undefined,
+      showsWatching: shows,
+    };
+  }, [
+    todayYmd,
+    profile,
+    shows,
+    weather,
+    upcomingMatches,
+    liveMatches,
+    completedTodayMatches,
+    visibleNewEpisodes,
+    isFavoriteTeam,
+    getTodayCalendarEvents,
+    getUpcomingCalendarEvents,
+    tasksContext?.allTasks,
+  ]);
+
+  const recoveryPatternInsight = useMemo(
+    () =>
+      detectRecoveryPatternInsight(
+        (tasksContext?.allTasks ?? []).filter((t) => t.isHabit),
+        todayYmd
+      ),
+    [tasksContext?.allTasks, todayYmd]
+  );
+
+  const recovery = useRecoveryMode(recoveryHopeInput);
+
+  const upcomingEventsPreview = useMemo(() => {
+    type PreviewEvent = { id: string; title: string; startDate: string; kind: 'calendar' | 'onepager' };
+
+    const fromCalendar: PreviewEvent[] = getUpcomingCalendarEvents(90).map((event) => ({
+      id: event.id,
+      title: event.title,
+      startDate: event.startDate,
+      kind: 'calendar' as const,
+    }));
+
+    const fromOnePager: PreviewEvent[] = upcomingSaved
+      .filter((event) => event.startIso)
+      .map((event) => ({
+        id: event.id,
+        title: event.title,
+        startDate: event.startIso!,
+        kind: 'onepager' as const,
+      }));
+
+    const seen = new Set<string>();
+    return [...fromOnePager, ...fromCalendar]
+      .filter((event) => {
+        if (seen.has(event.id)) return false;
+        seen.add(event.id);
+        return true;
+      })
+      .sort((a, b) => new Date(a.startDate).getTime() - new Date(b.startDate).getTime())
+      .slice(0, 4);
+  }, [getUpcomingCalendarEvents, calendars.length, eventKit.hasPermission, upcomingSaved]);
 
   const handleStartWatching = useCallback(async (show: Show) => {
     if (Platform.OS !== 'web') {
@@ -1136,7 +1279,6 @@ export default function ActivitiesScreen() {
   }, [userId]);
 
   useEffect(() => {
-    const todayYmd = getTodayYmd();
     void (async () => {
       const dismissed = await isDailySummaryDismissed(userId, todayYmd);
       const cached = dismissed ? null : await loadDailySummaryCache(userId, todayYmd);
@@ -1156,7 +1298,7 @@ export default function ActivitiesScreen() {
       );
       await refreshYesterdayDelta(snap);
     })();
-  }, [userId, appContext?.todayHabits, tasksContext?.allTasks, buildTodayStatsSnapshot, refreshYesterdayDelta]);
+  }, [userId, todayYmd, appContext?.todayHabits, tasksContext?.allTasks, buildTodayStatsSnapshot, refreshYesterdayDelta]);
 
   const generateDailySummary = useCallback(async () => {
     setIsGeneratingSummary(true);
@@ -1227,6 +1369,7 @@ export default function ActivitiesScreen() {
         [...getTodayCalendarEvents(), ...calendarEvents],
         today
       );
+      const savedDiscoveryEvents = buildSavedEventsHighlights(profile?.savedEvents ?? [], today);
       const continueWatching = buildContinueWatchingHighlights(continueWatchingItems);
       const sportsBeats = buildSportsEmotionalBeats({
         todayYmd: today,
@@ -1279,6 +1422,7 @@ export default function ActivitiesScreen() {
 
       const summary = await summarizeDailyProgress({
         date: today,
+        recoveryMode: recovery.isActive,
         activities: activities.map((a) => ({ name: a.title, minutes: a.timeSpent, details: a.description })),
         habits: habitsForSummary,
         habitRollup,
@@ -1296,6 +1440,7 @@ export default function ActivitiesScreen() {
         upcomingMatches: upcomingMatchesForSummary,
         recentWins,
         upcomingEvents: upcomingEventsForSummary,
+        savedDiscoveryEvents,
         todayCalendar,
         weather: weatherForSummary,
         notes: `${rollupNote}; ${completedTasksCount}/${totalTasksCount} regular tasks completed`,
@@ -1332,11 +1477,13 @@ export default function ActivitiesScreen() {
     calendars,
     continueWatchingItems,
     liveMatches,
+    profile?.savedEvents,
     getTodayCalendarEvents,
     getUpcomingCalendarEvents,
     userId,
     buildTodayStatsSnapshot,
     refreshYesterdayDelta,
+    recovery.isActive,
   ]);
 
   useFocusEffect(
@@ -2165,6 +2312,26 @@ export default function ActivitiesScreen() {
         ) : (
           <View style={{ backgroundColor: colors.background }}>
             <AddInterestsLaterCard />
+            <JoySourcesNudgeCard />
+
+            {recovery.isActive ? (
+              <RecoveryModePanel
+                greeting={recovery.greeting}
+                timeTip={recovery.timeTip}
+                timeOfDay={recovery.timeOfDay}
+                dailyHope={recovery.dailyHope}
+                dailyWin={recovery.dailyWin}
+                identityReminder={recovery.identityReminder}
+                patternInsight={recoveryPatternInsight}
+                wellbeingLog={recovery.wellbeingLog}
+                onToggleWellbeing={(key) =>
+                  recovery.updateWellbeing({ [key]: !recovery.wellbeingLog?.[key] })
+                }
+                onSetMood={(mood) => recovery.updateWellbeing({ mood })}
+                onSetSleep={(sleep) => recovery.updateWellbeing({ sleep })}
+                onExit={() => recovery.exitManual(7)}
+              />
+            ) : null}
 
             {/* Daily Summary Card */}
             <View style={styles.summarySection}>
@@ -2225,12 +2392,24 @@ export default function ActivitiesScreen() {
                     </Text>
                   </TouchableOpacity>
                   <View style={styles.scoreBar}>
-                    <View style={styles.scoreTrack}>
-                      <View style={[styles.scoreFill, { width: `${dailySummary.score}%` }]} />
-                    </View>
-                    <Text style={[styles.scoreValue, { color: colors.text }]}>{dailySummary.score}/100</Text>
+                    {!recovery.isActive ? (
+                      <>
+                        <View style={styles.scoreTrack}>
+                          <View style={[styles.scoreFill, { width: `${dailySummary.score}%` }]} />
+                        </View>
+                        <Text style={[styles.scoreValue, { color: colors.text }]}>{dailySummary.score}/100</Text>
+                      </>
+                    ) : (
+                      <Text style={[styles.recoverySummaryNote, { color: colors.textSecondary }]}>
+                        Recovery mode — focus on wellbeing, not scores
+                      </Text>
+                    )}
                   </View>
-                  <DailySummaryInsights summary={dailySummary} yesterdayDelta={yesterdayDelta} />
+                  <DailySummaryInsights
+                    summary={dailySummary}
+                    yesterdayDelta={recovery.isActive ? null : yesterdayDelta}
+                  />
+                  {!recovery.isActive ? (
                   <TouchableOpacity
                     style={styles.shareSummaryButton}
                     onPress={() =>
@@ -2248,6 +2427,7 @@ export default function ActivitiesScreen() {
                     <Share2 size={16} color="#fff" />
                     <Text style={styles.shareSummaryText}>Share today’s score</Text>
                   </TouchableOpacity>
+                  ) : null}
                 </View>
               ) : (
                 <TouchableOpacity 
@@ -2286,6 +2466,24 @@ export default function ActivitiesScreen() {
               ) : null}
             </View>
 
+            {partnerActivity.available === true &&
+              (partnerActivity.feed.length > 0 || partnerActivity.activeTodayCount > 0) ? (
+              <PartnerActivityFeed
+                feed={partnerActivity.feed}
+                activeTodayCount={partnerActivity.activeTodayCount}
+                presenceLabel={partnerActivity.presenceLabel}
+                colors={{
+                  text: colors.text,
+                  textSecondary: colors.textSecondary,
+                  textMuted: colors.textMuted,
+                  card: colors.card,
+                  border: colors.border,
+                  primary: COLORS.primary,
+                }}
+                onCheer={(eventId, on) => void partnerActivity.cheer(eventId, on)}
+              />
+            ) : null}
+
             {/* Today's Routine Section - Combined with Progress */}
             <View style={styles.routineSection}>
               <TodaysRoutine 
@@ -2297,6 +2495,7 @@ export default function ActivitiesScreen() {
             {/* Habit Formation Coach */}
             <HabitFormationCoach 
               maxItems={3}
+              recoveryMode={recovery.isActive}
               onComplete={(habitId) => {
                 if (__DEV__) console.log('Quick completed habit:', habitId);
               }}
@@ -2321,13 +2520,16 @@ export default function ActivitiesScreen() {
               </View>
 
               {(() => {
-                if (calendars.length === 0 && (!eventKit.isEventKitAvailable || !eventKit.hasPermission)) {
+                const hasCalendarSource =
+                  calendars.length > 0 || (eventKit.isEventKitAvailable && eventKit.hasPermission);
+
+                if (!hasCalendarSource && savedEventsCount === 0) {
                   return (
                     <View style={[styles.emptyCalendarCard, { backgroundColor: colors.card, borderColor: colors.border }]}>
                       <Calendar size={40} color={colors.textMuted} />
                       <Text style={[styles.emptyCalendarTitle, { color: colors.text }]}>No Calendar</Text>
                       <Text style={[styles.emptyCalendarText, { color: colors.textSecondary }]}>
-                        Connect your calendar to see upcoming events
+                        Connect your calendar or add events from the Events tab
                       </Text>
                       <View style={styles.calendarActions}>
                         {eventKit.isEventKitAvailable && (
@@ -2354,12 +2556,28 @@ export default function ActivitiesScreen() {
                     {upcomingEventsPreview.length === 0 ? (
                       <View style={[styles.emptyCalendarCard, { backgroundColor: colors.card, borderColor: colors.border }]}>
                         <Calendar size={32} color={colors.textMuted} />
-                        <Text style={[styles.emptyCalendarText, { color: colors.textSecondary }]}>No events 2+ weeks out</Text>
+                        <Text style={[styles.emptyCalendarText, { color: colors.textSecondary }]}>
+                          No upcoming events — add some from the Events tab
+                        </Text>
                       </View>
-                    ) : upcomingEventsPreview.map((event, index) => (
-                      <View key={`${event.id}-${index}`} style={[styles.eventCard, { backgroundColor: colors.card, borderColor: colors.border }]}>
+                    ) : upcomingEventsPreview.map((event, index) => {
+                      const CardWrapper = event.kind === 'onepager' ? TouchableOpacity : View;
+                      const cardProps =
+                        event.kind === 'onepager'
+                          ? {
+                              activeOpacity: 0.85,
+                              onPress: () => router.push(`/(root)/event/${event.id}` as any),
+                            }
+                          : {};
+
+                      return (
+                      <CardWrapper
+                        key={`${event.id}-${index}`}
+                        {...cardProps}
+                        style={[styles.eventCard, { backgroundColor: colors.card, borderColor: colors.border }]}
+                      >
                         <View style={[styles.eventIndicator, { 
-                          backgroundColor: COLORS.primary 
+                          backgroundColor: event.kind === 'onepager' ? COLORS.primary : colors.textMuted 
                         }]} />
                         <View style={styles.eventInfo}>
                           <Text style={[styles.eventTitle, { color: colors.text }]}>{event.title}</Text>
@@ -2371,10 +2589,15 @@ export default function ActivitiesScreen() {
                               hour: 'numeric',
                               minute: '2-digit'
                             })}
+                            {event.kind === 'onepager' ? ' · One Pager' : ''}
                           </Text>
                         </View>
-                      </View>
-                    ))}
+                        {event.kind === 'onepager' ? (
+                          <ChevronRight size={16} color={colors.textMuted} />
+                        ) : null}
+                      </CardWrapper>
+                      );
+                    })}
                   </View>
                 );
               })()}
@@ -2636,75 +2859,6 @@ export default function ActivitiesScreen() {
               <NBAUpcomingSection favoriteNBATeams={favoriteNBATeams} />
             )}
 
-            {/* Partner Activity */}
-            {partnerActivity.available === true &&
-              (partnerActivity.feed.length > 0 || partnerActivity.activeTodayCount > 0) && (
-                <View style={styles.section}>
-                  <View style={styles.sectionHeaderRow}>
-                    <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
-                      <Users size={20} color={colors.text} strokeWidth={2} />
-                      <Text style={[styles.sectionTitle, { color: colors.text }]}>Partner Activity</Text>
-                    </View>
-                    <TouchableOpacity style={styles.viewAllBtn} onPress={() => router.push('/friends' as any)}>
-                      <Text style={styles.viewAllText}>See all</Text>
-                      <ChevronRight size={16} color={COLORS.primary} />
-                    </TouchableOpacity>
-                  </View>
-
-                  {!!partnerActivity.presenceLabel && (
-                    <View style={styles.partnerPresence}>
-                      <View style={styles.partnerLiveDot} />
-                      <Text style={styles.partnerPresenceText}>{partnerActivity.presenceLabel}</Text>
-                    </View>
-                  )}
-
-                  {partnerActivity.feed.slice(0, 3).map((event) => (
-                    <View
-                      key={event.id}
-                      style={[styles.partnerCard, { backgroundColor: colors.card, borderColor: colors.border }]}
-                    >
-                      <View style={styles.partnerCardBody}>
-                        <Text style={[styles.partnerCardTitle, { color: colors.text }]} numberOfLines={2}>
-                          {event.title}
-                        </Text>
-                        {!!event.body && (
-                          <Text style={[styles.partnerCardSub, { color: colors.textSecondary }]} numberOfLines={1}>
-                            {event.body}
-                          </Text>
-                        )}
-                      </View>
-                      <TouchableOpacity
-                        style={[
-                          styles.partnerCheer,
-                          {
-                            borderColor: event.cheeredByMe ? '#F59E0B' : colors.border,
-                            backgroundColor: event.cheeredByMe ? '#F59E0B18' : 'transparent',
-                          },
-                        ]}
-                        onPress={() => {
-                          if (Platform.OS !== 'web') {
-                            Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light).catch(() => {});
-                          }
-                          void partnerActivity.cheer(event.id, !event.cheeredByMe);
-                        }}
-                        activeOpacity={0.7}
-                      >
-                        <PartyPopper size={15} color={event.cheeredByMe ? '#F59E0B' : colors.textMuted} />
-                        {event.cheersCount > 0 && (
-                          <Text
-                            style={[
-                              styles.partnerCheerCount,
-                              { color: event.cheeredByMe ? '#F59E0B' : colors.textMuted },
-                            ]}
-                          >
-                            {event.cheersCount}
-                          </Text>
-                        )}
-                      </TouchableOpacity>
-                    </View>
-                  ))}
-                </View>
-              )}
           </View>
         )}
       </Animated.ScrollView>
@@ -3181,6 +3335,12 @@ const styles = StyleSheet.create({
     fontSize: 14,
     fontWeight: '700',
     color: COLORS.text,
+  },
+  recoverySummaryNote: {
+    flex: 1,
+    fontSize: 13,
+    fontWeight: '500',
+    fontStyle: 'italic',
   },
   shareSummaryButton: {
     flexDirection: 'row',

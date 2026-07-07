@@ -17,13 +17,24 @@ import OnboardingProgress from '@/components/OnboardingProgress';
 import { CHRONOTYPES, getChronotypePeakLabel } from '@/constants/chronotypes';
 import { COLORS } from '@/constants/colors';
 import { Chronotype, ChronotypeInfo } from '@/types/habit';
+import { getNextOnboardingRoute, HABIT_ONBOARDING_INTERESTS } from '@/utils/onboardingFlow';
 
 export default function ChronotypeScreen() {
   const router = useRouter();
   const insets = useSafeAreaInsets();
-  const { updateProfile } = useUserProfile();
-  const { totalSteps, stepChronotype } = useOnboardingStepMeta();
+  const { updateProfile, profile } = useUserProfile();
+  const { totalSteps, currentStep } = useOnboardingStepMeta('chronotype');
+  const interests = profile?.interests ?? [];
   const [selected, setSelected] = useState<Chronotype | null>(null);
+
+  useEffect(() => {
+    const wantsChronotype = interests.some((id) =>
+      (HABIT_ONBOARDING_INTERESTS as readonly string[]).includes(id),
+    );
+    if (profile && !wantsChronotype) {
+      router.replace(getNextOnboardingRoute('interests', interests) as any);
+    }
+  }, [profile, interests, router]);
   const [expandedId, setExpandedId] = useState<Chronotype | null>(null);
 
   const fadeAnim = useRef(new Animated.Value(0)).current;
@@ -84,8 +95,8 @@ export default function ChronotypeScreen() {
     if (!selected) return;
     void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
     updateProfile({ chronotype: selected });
-    router.push('/(onboarding)/nationality' as any);
-  }, [selected, updateProfile, router]);
+    router.push(getNextOnboardingRoute('chronotype', interests) as any);
+  }, [selected, updateProfile, router, interests]);
 
   const handleBack = useCallback(() => {
     router.back();
@@ -93,8 +104,8 @@ export default function ChronotypeScreen() {
 
   const handleSkip = useCallback(() => {
     void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-    router.push('/(onboarding)/nationality' as any);
-  }, [router]);
+    router.push(getNextOnboardingRoute('chronotype', interests) as any);
+  }, [router, interests]);
 
   const getIconForChronotype = (id: Chronotype) => {
     switch (id) {
@@ -195,7 +206,7 @@ export default function ChronotypeScreen() {
           <ArrowLeft size={20} color={COLORS.textMuted} />
         </TouchableOpacity>
         <View style={styles.progressWrap}>
-          <OnboardingProgress currentStep={stepChronotype} totalSteps={totalSteps} />
+          <OnboardingProgress currentStep={currentStep} totalSteps={totalSteps} />
         </View>
         <TouchableOpacity onPress={handleSkip} activeOpacity={0.7}>
           <Text style={styles.skipText}>Skip</Text>
@@ -203,7 +214,7 @@ export default function ChronotypeScreen() {
       </View>
 
       <Animated.View style={[styles.titleWrap, { opacity: fadeAnim, transform: [{ translateY: titleSlide }] }]}>
-        <Text style={styles.stepLabel}>STEP {stepChronotype} · ENERGY</Text>
+        <Text style={styles.stepLabel}>STEP {currentStep} · ENERGY</Text>
         <Text style={styles.title}>When are you{'\n'}most productive?</Text>
         <Text style={styles.subtitle}>
           Your chronotype helps us optimise your schedule

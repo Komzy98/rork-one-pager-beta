@@ -1,30 +1,69 @@
-import React, { useCallback, useMemo, useState } from 'react';
+import React, { useCallback, useMemo, useState, useEffect } from 'react';
 import {
   StyleSheet,
   Text,
   TouchableOpacity,
   View,
   ScrollView,
-  Modal,
-  TextInput,
 } from 'react-native';
 import { useRouter } from 'expo-router';
-import { ArrowLeft, ArrowRight, Globe, Plus, Sparkles, X } from 'lucide-react-native';
+import { ArrowLeft, ArrowRight, Globe, Sparkles, Trophy } from 'lucide-react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import * as Haptics from 'expo-haptics';
 import { useUserProfile } from '@/hooks/useUserProfile';
 import { useOnboardingStepMeta } from '@/hooks/useOnboardingStepMeta';
 import OnboardingProgress from '@/components/OnboardingProgress';
 import { COLORS } from '@/constants/colors';
-import { ALL_NATIONS } from '@/constants/nations';
-import { MAX_FOLLOWED_NATIONALITIES } from '@/constants/nationalTeams';
-import type { UserNationality } from '@/types/habit';
+import { getNextOnboardingRoute, hasFootballOnboarding } from '@/utils/onboardingFlow';
+import {
+  buildFeedTuningPreview,
+  type FeedTuningPreviewMatch,
+} from '@/utils/feedTuningPreview';
+
+function FeedPreviewRow({ match }: { match: FeedTuningPreviewMatch }) {
+  const isNational = match.kind === 'national-wc' || match.kind === 'national-qualifier';
+  return (
+    <View style={previewStyles.row}>
+      <View style={previewStyles.rowTop}>
+        {isNational ? (
+          <Globe size={11} color={COLORS.primary} />
+        ) : (
+          <Trophy size={11} color={COLORS.textMuted} />
+        )}
+        <Text style={previewStyles.competition}>{match.competition}</Text>
+        {match.isFollowed ? (
+          <View style={previewStyles.followedPill}>
+            <Text style={previewStyles.followedPillText}>Following</Text>
+          </View>
+        ) : null}
+      </View>
+      <View style={previewStyles.matchLine}>
+        <Text style={previewStyles.team} numberOfLines={1}>
+          {match.homeEmoji ? `${match.homeEmoji} ` : ''}
+          {match.homeTeam}
+        </Text>
+        <Text style={previewStyles.vs}>vs</Text>
+        <Text style={[previewStyles.team, previewStyles.teamRight]} numberOfLines={1}>
+          {match.awayTeam}
+          {match.awayEmoji ? ` ${match.awayEmoji}` : ''}
+        </Text>
+      </View>
+    </View>
+  );
+}
 
 export default function FeedTuningScreen() {
   const router = useRouter();
   const insets = useSafeAreaInsets();
-  const { profile, updateProfile, addNationality, removeNationality } = useUserProfile();
-  const { totalSteps, stepFeedTuning, hasFootballInterest } = useOnboardingStepMeta();
+  const { profile, updateProfile } = useUserProfile();
+  const { totalSteps, currentStep, hasFootballInterest } = useOnboardingStepMeta('feed-tuning');
+  const interests = profile?.interests ?? [];
+
+  useEffect(() => {
+    if (profile && !hasFootballOnboarding(interests)) {
+      router.replace(getNextOnboardingRoute('interests', interests) as any);
+    }
+  }, [profile, interests, router]);
 
   const nationalities = profile?.nationalities ?? [];
   const hasCountries = nationalities.length > 0;
@@ -38,44 +77,10 @@ export default function FeedTuningScreen() {
   const [bigMatchesDiscovery, setBigMatchesDiscovery] = useState(
     (profile?.sportsFeedPrefs?.discoveryLevel ?? 'med') !== 'low',
   );
-  const [showCountryModal, setShowCountryModal] = useState(false);
-  const [countrySearch, setCountrySearch] = useState('');
 
   const discoveryLevel = useMemo<'low' | 'med' | 'high'>(
     () => (bigMatchesDiscovery ? 'high' : 'low'),
     [bigMatchesDiscovery],
-  );
-
-  const filteredNations = useMemo(() => {
-    const q = countrySearch.trim().toLowerCase();
-    if (!q) return ALL_NATIONS;
-    return ALL_NATIONS.filter((n) => n.name.toLowerCase().includes(q));
-  }, [countrySearch]);
-
-  const handleAddCountry = useCallback(
-    (nation: (typeof ALL_NATIONS)[number]) => {
-      if (nationalities.some((n) => n.id === nation.id)) return;
-      if (nationalities.length >= MAX_FOLLOWED_NATIONALITIES) return;
-      const entry: UserNationality = {
-        id: nation.id,
-        name: nation.name,
-        code: nation.code,
-        flag: nation.flag,
-        apiId: nation.apiId,
-      };
-      addNationality(entry);
-      setPrioritizeNationalTeams(true);
-      void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-    },
-    [nationalities, addNationality],
-  );
-
-  const handleRemoveCountry = useCallback(
-    (id: string) => {
-      removeNationality(id);
-      void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-    },
-    [removeNationality],
   );
 
   const handleContinue = useCallback(() => {
@@ -89,7 +94,7 @@ export default function FeedTuningScreen() {
         prioritizeNationalTeams: hasCountries ? prioritizeNationalTeams : false,
       },
     });
-    router.push('/(onboarding)/complete' as any);
+    router.push(getNextOnboardingRoute('feed-tuning', interests) as any);
   }, [
     updateProfile,
     strictFollowing,
@@ -98,35 +103,44 @@ export default function FeedTuningScreen() {
     prioritizeNationalTeams,
     hasCountries,
     router,
+    interests,
   ]);
 
   const handleSkip = useCallback(() => {
-    router.push('/(onboarding)/complete' as any);
-  }, [router]);
+    router.push(getNextOnboardingRoute('feed-tuning', interests) as any);
+  }, [router, interests]);
 
-  const previewText = useMemo(() => {
-    const parts: string[] = [];
-    if (hasCountries && prioritizeNationalTeams) {
-      const names = nationalities.map((n) => n.name);
-      if (names.length <= 2) {
-        parts.push(names.join(' & '));
-      } else {
-        parts.push(`${names.slice(0, 2).join(', ')} +${names.length - 2} more`);
-      }
+  const previewMatches = useMemo(
+    () =>
+      buildFeedTuningPreview({
+        nationalities,
+        favoriteTeams: profile?.favoriteTeams ?? [],
+        prioritizeNationalTeams: hasCountries ? prioritizeNationalTeams : false,
+        strictFollowing,
+        bigMatchesDiscovery,
+      }),
+    [
+      nationalities,
+      profile?.favoriteTeams,
+      prioritizeNationalTeams,
+      hasCountries,
+      strictFollowing,
+      bigMatchesDiscovery,
+    ],
+  );
+
+  const previewCaption = useMemo(() => {
+    if (strictFollowing && !bigMatchesDiscovery) {
+      return 'Only matches you follow — no filler.';
     }
-    if (strictFollowing) {
-      parts.push('clubs you follow');
-    } else {
-      parts.push('your leagues');
+    if (prioritizeNationalTeams && hasCountries) {
+      return 'National teams rise to the top when toggled on.';
     }
     if (bigMatchesDiscovery) {
-      parts.push('big-match discovery');
+      return 'Marquee club fixtures appear when you browse Explore.';
     }
-    if (hasCountries && prioritizeNationalTeams) {
-      parts.push('World Cup fixtures');
-    }
-    return `Your For You feed will prioritize: ${parts.join(', ')}.`;
-  }, [hasCountries, prioritizeNationalTeams, nationalities, strictFollowing, bigMatchesDiscovery]);
+    return 'Updates live as you change settings below.';
+  }, [strictFollowing, bigMatchesDiscovery, prioritizeNationalTeams, hasCountries]);
 
   return (
     <View style={styles.container}>
@@ -135,7 +149,7 @@ export default function FeedTuningScreen() {
           <ArrowLeft size={20} color={COLORS.textMuted} />
         </TouchableOpacity>
         <View style={styles.progressWrap}>
-          <OnboardingProgress currentStep={stepFeedTuning} totalSteps={totalSteps} />
+          <OnboardingProgress currentStep={currentStep} totalSteps={totalSteps} />
         </View>
         <TouchableOpacity onPress={handleSkip} activeOpacity={0.7}>
           <Text style={styles.skipText}>Skip</Text>
@@ -144,29 +158,43 @@ export default function FeedTuningScreen() {
 
       <ScrollView
         style={styles.scroll}
-        contentContainerStyle={styles.scrollContent}
+        contentContainerStyle={[styles.scrollContent, { paddingBottom: insets.bottom + 88 }]}
         showsVerticalScrollIndicator={false}
       >
         <View style={styles.titleWrap}>
-          <Text style={styles.stepLabel}>STEP {stepFeedTuning} · FOR YOU</Text>
+          <Text style={styles.stepLabel}>STEP {currentStep} · FOR YOU</Text>
           <Text style={styles.title}>Tune your Sports feed</Text>
           <Text style={styles.subtitle}>
-            Mix club football with the national teams you care about — your country, family roots, or
-            rivals you want to track at the World Cup.
+            Choose how club and national-team matches rank in For You — teams and countries are set on
+            the previous step.
           </Text>
+        </View>
+
+        <View style={styles.feedPreviewSection}>
+          <View style={styles.feedPreviewHeader}>
+            <Sparkles size={15} color={COLORS.primary} />
+            <Text style={styles.feedPreviewTitle}>Your For You feed</Text>
+          </View>
+          <Text style={styles.feedPreviewCaption}>{previewCaption}</Text>
+          <View style={styles.feedPreviewStack}>
+            {previewMatches.map((match) => (
+              <FeedPreviewRow key={match.id} match={match} />
+            ))}
+          </View>
         </View>
 
         {hasFootballInterest ? (
           <View style={styles.card}>
             <View style={styles.cardHeaderRow}>
               <Globe size={16} color={COLORS.primary} />
-              <Text style={styles.cardTitle}>Countries you follow</Text>
+              <Text style={styles.cardTitle}>National teams</Text>
+              <TouchableOpacity
+                onPress={() => router.push('/(onboarding)/football-favorites' as any)}
+                activeOpacity={0.8}
+              >
+                <Text style={styles.editLink}>Edit</Text>
+              </TouchableOpacity>
             </View>
-            <Text style={styles.cardSub}>
-              Up to {MAX_FOLLOWED_NATIONALITIES} — we surface qualifiers, friendlies and World Cup
-              matches for each one.
-            </Text>
-
             {hasCountries ? (
               <View style={styles.chipRow}>
                 {nationalities.map((nation) => (
@@ -175,33 +203,15 @@ export default function FeedTuningScreen() {
                     <Text style={styles.chipText} numberOfLines={1}>
                       {nation.name}
                     </Text>
-                    <TouchableOpacity
-                      onPress={() => handleRemoveCountry(nation.id)}
-                      hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
-                    >
-                      <X size={12} color={COLORS.textMuted} />
-                    </TouchableOpacity>
                   </View>
                 ))}
-                {nationalities.length < MAX_FOLLOWED_NATIONALITIES ? (
-                  <TouchableOpacity
-                    style={styles.addChip}
-                    onPress={() => setShowCountryModal(true)}
-                    activeOpacity={0.8}
-                  >
-                    <Plus size={14} color={COLORS.primary} />
-                    <Text style={styles.addChipText}>Add</Text>
-                  </TouchableOpacity>
-                ) : null}
               </View>
             ) : (
               <TouchableOpacity
-                style={styles.addCountriesBtn}
-                onPress={() => setShowCountryModal(true)}
+                onPress={() => router.push('/(onboarding)/football-favorites' as any)}
                 activeOpacity={0.85}
               >
-                <Plus size={16} color={COLORS.primary} />
-                <Text style={styles.addCountriesText}>Add countries to follow</Text>
+                <Text style={styles.editLinkBlock}>Add national teams on the previous step</Text>
               </TouchableOpacity>
             )}
 
@@ -255,7 +265,9 @@ export default function FeedTuningScreen() {
 
         <View style={styles.card}>
           <Text style={styles.cardTitle}>Big matches discovery</Text>
-          <Text style={styles.cardSub}>Include marquee club fixtures to keep your feed lively.</Text>
+          <Text style={styles.cardSub}>
+            Include marquee club fixtures in Explore — top leagues and UEFA comps beyond your profile.
+          </Text>
           <TouchableOpacity
             style={[styles.toggle, bigMatchesDiscovery && styles.toggleOn]}
             onPress={() => setBigMatchesDiscovery((v) => !v)}
@@ -267,10 +279,6 @@ export default function FeedTuningScreen() {
           </TouchableOpacity>
         </View>
 
-        <View style={styles.previewCard}>
-          <Sparkles size={14} color={COLORS.primary} />
-          <Text style={styles.previewText}>{previewText}</Text>
-        </View>
       </ScrollView>
 
       <View style={[styles.footer, { paddingBottom: insets.bottom + 16 }]}>
@@ -281,58 +289,6 @@ export default function FeedTuningScreen() {
           </View>
         </TouchableOpacity>
       </View>
-
-      <Modal visible={showCountryModal} animationType="slide" presentationStyle="pageSheet">
-        <View style={styles.modalContainer}>
-          <View style={styles.modalHeader}>
-            <Text style={styles.modalTitle}>Follow a country</Text>
-            <TouchableOpacity
-              style={styles.modalClose}
-              onPress={() => {
-                setShowCountryModal(false);
-                setCountrySearch('');
-              }}
-            >
-              <X size={20} color={COLORS.text} />
-            </TouchableOpacity>
-          </View>
-          <Text style={styles.modalSub}>
-            {nationalities.length}/{MAX_FOLLOWED_NATIONALITIES} selected
-          </Text>
-          <View style={styles.searchWrap}>
-            <TextInput
-              style={styles.searchInput}
-              placeholder="Search country..."
-              placeholderTextColor={COLORS.textMuted}
-              value={countrySearch}
-              onChangeText={setCountrySearch}
-            />
-          </View>
-          <ScrollView style={styles.modalList} showsVerticalScrollIndicator={false}>
-            {filteredNations.map((nation) => {
-              const isAdded = nationalities.some((n) => n.id === nation.id);
-              const atMax = nationalities.length >= MAX_FOLLOWED_NATIONALITIES && !isAdded;
-              return (
-                <TouchableOpacity
-                  key={nation.id}
-                  style={[styles.modalRow, (isAdded || atMax) && styles.modalRowDisabled]}
-                  onPress={() => !isAdded && !atMax && handleAddCountry(nation)}
-                  disabled={isAdded || atMax}
-                  activeOpacity={0.8}
-                >
-                  <Text style={styles.modalFlag}>{nation.flag}</Text>
-                  <Text
-                    style={[styles.modalName, (isAdded || atMax) && styles.modalNameDisabled]}
-                  >
-                    {nation.name}
-                  </Text>
-                  {isAdded ? <Text style={styles.addedLabel}>Following</Text> : null}
-                </TouchableOpacity>
-              );
-            })}
-          </ScrollView>
-        </View>
-      </Modal>
     </View>
   );
 }
@@ -356,6 +312,21 @@ const styles = StyleSheet.create({
   stepLabel: { fontSize: 11, fontWeight: '700', color: COLORS.textMuted, letterSpacing: 1.2 },
   title: { marginTop: 6, fontSize: 28, fontWeight: '800', color: COLORS.text, letterSpacing: -0.5 },
   subtitle: { marginTop: 6, fontSize: 14, color: COLORS.textSecondary, lineHeight: 20 },
+  feedPreviewSection: {
+    marginHorizontal: 20,
+    marginTop: 14,
+    marginBottom: 4,
+    borderRadius: 16,
+    borderWidth: 1,
+    borderColor: `${COLORS.primary}33`,
+    backgroundColor: COLORS.surface,
+    padding: 14,
+    gap: 8,
+  },
+  feedPreviewHeader: { flexDirection: 'row', alignItems: 'center', gap: 8 },
+  feedPreviewTitle: { fontSize: 16, fontWeight: '800', color: COLORS.text },
+  feedPreviewCaption: { fontSize: 12, lineHeight: 17, color: COLORS.textMuted, fontWeight: '500' },
+  feedPreviewStack: { gap: 8, marginTop: 2 },
   card: {
     marginHorizontal: 20,
     marginTop: 10,
@@ -367,7 +338,9 @@ const styles = StyleSheet.create({
     gap: 6,
   },
   cardHeaderRow: { flexDirection: 'row', alignItems: 'center', gap: 8 },
-  cardTitle: { fontSize: 16, fontWeight: '700', color: COLORS.text },
+  cardTitle: { flex: 1, fontSize: 16, fontWeight: '700', color: COLORS.text },
+  editLink: { fontSize: 13, fontWeight: '700', color: COLORS.primary },
+  editLinkBlock: { fontSize: 13, fontWeight: '600', color: COLORS.primary, marginTop: 2 },
   cardSub: { fontSize: 13, lineHeight: 18, color: COLORS.textMuted },
   chipRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginTop: 4 },
   chip: {
@@ -435,19 +408,6 @@ const styles = StyleSheet.create({
   toggleDisabled: { opacity: 0.45 },
   toggleText: { fontSize: 12, fontWeight: '700', color: COLORS.textSecondary },
   toggleTextOn: { color: COLORS.primary },
-  previewCard: {
-    marginHorizontal: 20,
-    marginTop: 14,
-    borderRadius: 12,
-    borderWidth: 1,
-    borderColor: COLORS.border,
-    backgroundColor: `${COLORS.primary}0D`,
-    padding: 12,
-    flexDirection: 'row',
-    alignItems: 'flex-start',
-    gap: 8,
-  },
-  previewText: { flex: 1, fontSize: 12, lineHeight: 18, color: COLORS.textSecondary, fontWeight: '600' },
   footer: { paddingHorizontal: 20, paddingTop: 8 },
   continueBtn: { borderRadius: 14, backgroundColor: COLORS.primary },
   continueBtnInner: { height: 54, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8 },
@@ -495,4 +455,36 @@ const styles = StyleSheet.create({
   modalName: { flex: 1, fontSize: 15, fontWeight: '600', color: COLORS.text },
   modalNameDisabled: { color: COLORS.textMuted },
   addedLabel: { fontSize: 12, fontWeight: '700', color: COLORS.primary },
+});
+
+const previewStyles = StyleSheet.create({
+  row: {
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: COLORS.border,
+    backgroundColor: COLORS.surfaceSecondary,
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+    gap: 6,
+  },
+  rowTop: { flexDirection: 'row', alignItems: 'center', gap: 6 },
+  competition: {
+    flex: 1,
+    fontSize: 11,
+    fontWeight: '700',
+    color: COLORS.textMuted,
+    letterSpacing: 0.3,
+    textTransform: 'uppercase',
+  },
+  followedPill: {
+    borderRadius: 999,
+    backgroundColor: `${COLORS.primary}18`,
+    paddingHorizontal: 8,
+    paddingVertical: 2,
+  },
+  followedPillText: { fontSize: 10, fontWeight: '700', color: COLORS.primary },
+  matchLine: { flexDirection: 'row', alignItems: 'center', gap: 8 },
+  team: { flex: 1, fontSize: 15, fontWeight: '700', color: COLORS.text },
+  teamRight: { textAlign: 'right' },
+  vs: { fontSize: 12, fontWeight: '600', color: COLORS.textMuted },
 });

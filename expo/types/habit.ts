@@ -382,6 +382,55 @@ export interface ChronotypeInfo {
   traits: string[];
 }
 
+export type RecoverySignalKind =
+  | 'habit_drop'
+  | 'difficult_mood'
+  | 'task_backlog'
+  | 'missed_habits'
+  | 'manual';
+
+export interface RecoveryWellbeingLog {
+  date: string;
+  mood?: 'low' | 'okay' | 'good';
+  water?: boolean;
+  outside?: boolean;
+  movement?: boolean;
+  social?: boolean;
+  reading?: boolean;
+  reflection?: boolean;
+  sleep?: 'poor' | 'fair' | 'good';
+}
+
+export interface RecoveryModeState {
+  active: boolean;
+  enteredAt?: string;
+  lastEvaluatedAt?: string;
+  reason?: 'auto' | 'manual';
+  signals?: RecoverySignalKind[];
+  score?: number;
+  dailyWin?: string;
+  dailyWinDate?: string;
+  dailyHope?: string;
+  dailyHopeDate?: string;
+  /** Consecutive days with elevated recovery score (auto-enter threshold). */
+  consecutiveHighScoreDays?: number;
+  /** Consecutive days below exit threshold while active. */
+  consecutiveLowScoreDays?: number;
+  lastScore?: number;
+  lastScoreDate?: string;
+  snoozedUntil?: string;
+}
+
+export interface JoySources {
+  tvShows?: string[];
+  youtubers?: string[];
+  games?: string[];
+  music?: string[];
+  podcasts?: string[];
+  restaurants?: string[];
+  exerciseTypes?: string[];
+}
+
 export interface UserProfile {
   id: string;
   email: string;
@@ -423,7 +472,16 @@ export interface UserProfile {
   /** Drives Pro app themes in Profile; set by purchase / server sync. */
   subscriptionTier?: 'free' | 'pro';
   tabOrder?: string[];
+  /** Visit counts for scrollable tabs; drives left-side prioritization in the tab bar. */
+  tabVisitCounts?: Record<string, number>;
   onboardingCompleted: boolean;
+  /** Long-term identity reminders surfaced during Recovery Mode. */
+  identityGoals?: string[];
+  joySources?: JoySources;
+  recoveryMode?: RecoveryModeState;
+  wellbeingLogs?: RecoveryWellbeingLog[];
+  /** Events the user added to their One Pager from the Events tab. */
+  savedEvents?: import('@/types/events').SavedEventSnapshot[];
   createdAt: string;
   lastLoginAt: string;
 }

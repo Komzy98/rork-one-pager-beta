@@ -12,7 +12,7 @@ const PLATFORM_DEEP_LINKS = {
   'Prime': {
     ios: 'aiv://aiv/resume?asin=',
     android: 'https://app.primevideo.com/detail?gti=',
-    web: 'https://www.primevideo.com/detail/'
+    web: 'https://app.primevideo.com/'
   },
   'Disney+': {
     ios: 'disneyplus://content/movies/',

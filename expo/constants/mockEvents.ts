@@ -1,0 +1,173 @@
+import type { LocalEvent } from '@/types/events';
+
+export const DEFAULT_COORDS = { latitude: 51.5074, longitude: -0.1278 };
+
+function formatEventSchedule(start: Date): Pick<LocalEvent, 'date' | 'time' | 'startIso'> {
+  return {
+    startIso: start.toISOString(),
+    date: start.toLocaleDateString('en-GB', { weekday: 'short', day: 'numeric', month: 'short' }),
+    time: start.toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' }),
+  };
+}
+
+function atOffset(
+  now: Date,
+  daysFromNow: number,
+  hour: number,
+  minute: number,
+): Date {
+  const start = new Date(now);
+  start.setHours(hour, minute, 0, 0);
+  start.setDate(start.getDate() + daysFromNow);
+  return start;
+}
+
+/** Sample events when Ticketmaster is unavailable — dates are always relative to today. */
+export function getFallbackEvents(now: Date = new Date()): LocalEvent[] {
+  return [
+    {
+      id: 'sample-1',
+      title: 'Arctic Monkeys Live',
+      venue: 'The O2 Arena',
+      location: 'London',
+      ...formatEventSchedule(atOffset(now, 3, 19, 30)),
+      category: 'music',
+      price: '£65',
+      image: 'https://images.unsplash.com/photo-1459749411175-04bf5292ceea?w=600',
+      isSaved: false,
+      attendees: 18500,
+      rating: 4.9,
+      tags: ['rock', 'live', 'arena'],
+      description: 'The Sheffield legends return for a massive headline show.',
+      isFeatured: true,
+      latitude: 51.503,
+      longitude: 0.0032,
+    },
+    {
+      id: 'sample-2',
+      title: 'Borough Market Food Festival',
+      venue: 'Borough Market',
+      location: 'London',
+      ...formatEventSchedule(atOffset(now, 5, 10, 0)),
+      category: 'food',
+      price: 'Free',
+      image: 'https://images.unsplash.com/photo-1555939594-58d7cb561ad1?w=600',
+      isSaved: false,
+      attendees: 3200,
+      rating: 4.7,
+      tags: ['food', 'outdoor', 'family'],
+      description: 'A celebration of artisan food and drink from around the world.',
+      isHot: true,
+      latitude: 51.5055,
+      longitude: -0.091,
+    },
+    {
+      id: 'sample-3',
+      title: 'Michael McIntyre: Showtime',
+      venue: 'Royal Albert Hall',
+      location: 'London',
+      ...formatEventSchedule(atOffset(now, 9, 20, 0)),
+      category: 'comedy',
+      price: '£45',
+      image: 'https://images.unsplash.com/photo-1585699324551-f6c309eedeca?w=600',
+      isSaved: false,
+      attendees: 5200,
+      rating: 4.8,
+      tags: ['stand-up', 'comedy', 'live'],
+      description: "Britain's favourite comedian returns with his brand new tour.",
+      latitude: 51.5009,
+      longitude: -0.1774,
+    },
+    {
+      id: 'sample-4',
+      title: 'Immersive Van Gogh',
+      venue: 'Frameless Gallery',
+      location: 'London',
+      date: 'Ongoing',
+      time: '10:00 - 20:00',
+      category: 'arts',
+      price: '£25',
+      image: 'https://images.unsplash.com/photo-1579783902614-a3fb3927b6a5?w=600',
+      isSaved: false,
+      attendees: 1800,
+      rating: 4.6,
+      tags: ['art', 'immersive', 'exhibition'],
+      description: "Step inside Van Gogh's most iconic masterpieces.",
+      isFeatured: true,
+      latitude: 51.5178,
+      longitude: -0.1472,
+    },
+    {
+      id: 'sample-5',
+      title: 'Warehouse Project: Disclosure',
+      venue: 'Depot Mayfield',
+      location: 'Manchester',
+      ...formatEventSchedule(atOffset(now, 12, 22, 0)),
+      category: 'nightlife',
+      price: '£38',
+      image: 'https://images.unsplash.com/photo-1571266028243-e4733b0f0bb0?w=600',
+      isSaved: false,
+      attendees: 4500,
+      rating: 4.8,
+      tags: ['electronic', 'club', 'DJ'],
+      description: 'Disclosure bring their signature house sound to the warehouse.',
+      isHot: true,
+      latitude: 53.4737,
+      longitude: -2.2326,
+    },
+    {
+      id: 'sample-6',
+      title: 'Hamilton: The Musical',
+      venue: 'Victoria Palace Theatre',
+      location: 'London',
+      ...formatEventSchedule(atOffset(now, 14, 19, 30)),
+      category: 'theatre',
+      price: '£55',
+      image: 'https://images.unsplash.com/photo-1507676184212-d03ab07a01bf?w=600',
+      isSaved: false,
+      attendees: 1100,
+      rating: 4.9,
+      tags: ['musical', 'west-end', 'theatre'],
+      description: 'The revolutionary musical that changed theatre forever.',
+      latitude: 51.4965,
+      longitude: -0.1437,
+    },
+    {
+      id: 'sample-7',
+      title: 'Tech Connect Summit 2026',
+      venue: 'ExCeL London',
+      location: 'London',
+      ...formatEventSchedule(atOffset(now, 21, 9, 0)),
+      category: 'tech',
+      price: '£120',
+      image: 'https://images.unsplash.com/photo-1540575467063-178a50c2df87?w=600',
+      isSaved: false,
+      attendees: 8000,
+      rating: 4.5,
+      tags: ['conference', 'networking', 'AI'],
+      description: "The UK's biggest tech conference with 200+ speakers.",
+      latitude: 51.5085,
+      longitude: 0.0299,
+    },
+    {
+      id: 'sample-8',
+      title: 'Crystal Palace vs Arsenal',
+      venue: 'Selhurst Park',
+      location: 'London',
+      ...formatEventSchedule(atOffset(now, 2, 15, 0)),
+      category: 'sports',
+      price: '£42',
+      image: 'https://images.unsplash.com/photo-1522778119026-d647f0596c20?w=600',
+      isSaved: false,
+      attendees: 25000,
+      rating: 4.7,
+      tags: ['football', 'premier-league', 'live'],
+      description: 'Premier League action at Selhurst Park.',
+      latitude: 51.3983,
+      longitude: -0.0855,
+    },
+  ];
+}
+
+/** @deprecated Use getFallbackEvents() for dates relative to today. */
+export const FALLBACK_EVENTS: LocalEvent[] = getFallbackEvents();

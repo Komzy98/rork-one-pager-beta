@@ -1,4 +1,5 @@
 import React, { useState, useMemo, useCallback, useRef, useEffect } from 'react';
+import { useIsFocused } from '@react-navigation/native';
 import { 
   StyleSheet, 
   View, 
@@ -16,6 +17,7 @@ import {
   StatusBar,
   Modal,
   FlatList,
+  Switch,
 } from 'react-native';
 import { 
   Trophy, 
@@ -39,11 +41,11 @@ import {
   Zap,
   Sparkles,
   TrendingUp,
-  Users,
   Globe,
   ChevronDown,
   BarChart3,
   ArrowLeft,
+  SlidersHorizontal,
 } from 'lucide-react-native';
 import { Image as ExpoImage } from 'expo-image';
 import { router } from 'expo-router';
@@ -55,6 +57,29 @@ import { useUserProfile } from '@/hooks/useUserProfile';
 import { useAuth } from '@/hooks/useAuth';
 import { useTheme } from '@/hooks/useTheme';
 import { getNationalitySignals } from '@/utils/nationalityPersonalization';
+import {
+  isFavoriteClubOrNationalMatch,
+  matchInvolvesNationalInterest,
+  sortMatchesBySmartForYou,
+  sortMatchesForDisplay,
+  type FootballPersonalizationContext,
+} from '@/utils/footballMatchPersonalization';
+import { pickAiInsightMatch, pickFeaturedUpcomingMatch } from '@/utils/footballInsightPicker';
+import {
+  buildKnockoutInsightContextLine,
+  isKnockoutFixture,
+  type KnockoutFixtureLite,
+} from '@/utils/footballKnockout';
+import {
+  buildCompactInsightTableLine,
+  clampInsightCopy,
+  findHomeAwayInStandings,
+} from '@/utils/footballInsightCopy';
+import {
+  buildFootballAiInsightCard,
+  isTrustworthyInsightMatch,
+  type InsightTrustContext,
+} from '@/utils/footballInsightTrust';
 import { COLORS } from '@/constants/colors';
 import { trpc } from '@/lib/trpc';
 import { useFootballBundle, type FootballBundleInput } from '@/contexts/FootballBundleContext';
@@ -97,6 +122,7 @@ import {
   applyFootballVisibilityRules,
   buildFootballQueryContext,
   isWorldCupMatch,
+  normalizeFootballSmartFilter,
   withWorldCupLeagueIds,
 } from '@/utils/footballQueryContext';
 import { getTeamIdFromName } from '@/utils/footballApi';
@@ -138,16 +164,10 @@ const FOOTBALL_SMART_FILTER_OPTIONS: {
   Icon: typeof Sparkles;
 }[] = [
   { id: 'for-you', label: 'For You', Icon: Sparkles },
-  { id: 'following', label: 'Following', Icon: Users },
-  { id: 'top-leagues', label: 'Top Leagues', Icon: Trophy },
-  { id: 'worldwide', label: 'Worldwide', Icon: Globe },
+  { id: 'explore', label: 'Explore', Icon: Globe },
 ];
 
 type SportMode = 'football' | 'ufc' | 'f1' | 'nba';
-
-function escapeRegExp(value: string): string {
-  return value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-}
 
 /**
  * Live Now carousel cards: fixed forest→navy gradient + light text.
@@ -586,119 +606,8 @@ const TrendingLeaderAvatar = React.memo(function TrendingLeaderAvatar({
   );
 });
 
-function isMajorLeagueName(name: string): boolean {
-  return /premier league|la liga|bundesliga|serie a|ligue 1|champions league|europa league|conference league|uefa super/i.test(
-    name,
-  );
-}
-
-function hoursUntilMatchKickoff(m: Match): number {
-  return (new Date(m.date).getTime() - Date.now()) / 3600000;
-}
-
-type StandingRowLite = {
-  rank: number;
-  points: number;
-  team: { id: number; name: string };
-  description?: string | null;
-};
-
-function findHomeAwayInStandings(
-  response: unknown,
-  homeTeamId: number | undefined,
-  awayTeamId: number | undefined,
-): { home: StandingRowLite; away: StandingRowLite } | null {
-  if (!homeTeamId || !awayTeamId) return null;
-  const standings = (response as { league?: { standings?: unknown[] } }[])?.[0]?.league?.standings;
-  if (!Array.isArray(standings)) return null;
-  for (const group of standings) {
-    if (!Array.isArray(group)) continue;
-    const home = group.find((t: { team?: { id?: number } }) => t?.team?.id === homeTeamId);
-    const away = group.find((t: { team?: { id?: number } }) => t?.team?.id === awayTeamId);
-    if (home && away) {
-      return {
-        home: {
-          rank: home.rank,
-          points: home.points,
-          team: home.team,
-          description: home.description,
-        },
-        away: {
-          rank: away.rank,
-          points: away.points,
-          team: away.team,
-          description: away.description,
-        },
-      };
-    }
-  }
-  return null;
-}
-
-function ordinalRank(n: number): string {
-  if (n % 100 >= 11 && n % 100 <= 13) return `${n}th`;
-  switch (n % 10) {
-    case 1:
-      return `${n}st`;
-    case 2:
-      return `${n}nd`;
-    case 3:
-      return `${n}rd`;
-    default:
-      return `${n}th`;
-  }
-}
-
-function shortenInsightTeamLabel(name: string, maxLen = 18): string {
-  const t = name.trim();
-  if (t.length <= maxLen) return t;
-  return `${t.slice(0, maxLen - 1).trimEnd()}…`;
-}
-
-/** One short table line for the insight card (teams already appear in the headline). */
-function buildCompactInsightTableLine(
-  homeLabel: string,
-  awayLabel: string,
-  home: StandingRowLite,
-  away: StandingRowLite,
-): string {
-  const h = shortenInsightTeamLabel(homeLabel);
-  const a = shortenInsightTeamLabel(awayLabel);
-  const rankGap = Math.abs(home.rank - away.rank);
-  const ptsGap = Math.abs(home.points - away.points);
-  const tight = rankGap <= 2 || (rankGap <= 4 && ptsGap <= 6);
-
-  if (tight) {
-    return `${h} ${ordinalRank(home.rank)} (${home.points} pts) vs ${a} ${ordinalRank(away.rank)} (${away.points} pts)—big table swing.`;
-  }
-  if (home.rank < away.rank) {
-    return `${h} ${ordinalRank(home.rank)} (${home.points} pts) above ${a} ${ordinalRank(away.rank)} (${away.points} pts).`;
-  }
-  return `${a} ${ordinalRank(away.rank)} (${away.points} pts) above ${h} ${ordinalRank(home.rank)} (${home.points} pts).`;
-}
-
-function clampInsightCopy(text: string, maxLen = 132): string {
-  const normalized = text.replace(/\s+/g, ' ').trim();
-  if (normalized.length <= maxLen) return normalized;
-  const cut = normalized.slice(0, maxLen);
-  const lastSpace = cut.lastIndexOf(' ');
-  const trimmed = (lastSpace > 48 ? cut.slice(0, lastSpace) : cut).trimEnd();
-  return trimmed.endsWith('.') ? trimmed : `${trimmed}.`;
-}
-
 function migrateStoredFootballFocus(raw: string | null): FootballSmartFilter {
-  if (
-    raw === 'for-you' ||
-    raw === 'following' ||
-    raw === 'top-leagues' ||
-    raw === 'worldwide'
-  ) {
-    return raw;
-  }
-  if (raw === 'my-teams') return 'following';
-  if (raw === 'my-leagues') return 'top-leagues';
-  if (raw === 'my-countries' || raw === 'all') return 'worldwide';
-  return 'for-you';
+  return normalizeFootballSmartFilter(raw);
 }
 
 let footballIdCounter = 0;
@@ -1695,7 +1604,7 @@ function SportsScreenInner() {
       getSportsHeroImageStyle(windowWidth, bottomCropPx, sportsHeroMinHeight),
     [windowWidth, sportsHeroMinHeight],
   );
-  const { isFavoriteTeam, profile } = useUserProfile();
+  const { isFavoriteTeam, profile, updateProfile } = useUserProfile();
   const { user } = useAuth();
   const { isPinned: isMatchPinned, togglePin: toggleMatchPin } = usePinnedMatches();
   const { colors, isDark } = useTheme();
@@ -1712,7 +1621,6 @@ function SportsScreenInner() {
   const [ufcShowStatsRankings, setUfcShowStatsRankings] = useState(false);
   const [selectedLeagues, setSelectedLeagues] = useState<number[]>([]);
   const [footballSmartFilter, setFootballSmartFilter] = useState<FootballSmartFilter>('for-you');
-  const [contextFollowingTeamIds, setContextFollowingTeamIds] = useState<number[] | null>(null);
   const [contextTopLeagueIds, setContextTopLeagueIds] = useState<number[] | null>(null);
   const [showFootballContextSheet, setShowFootballContextSheet] = useState(false);
   const [footballSortMode, setFootballSortMode] = useState<'kickoff' | 'competition' | 'smart'>('smart');
@@ -1790,8 +1698,6 @@ function SportsScreenInner() {
         }
         if (savedFocusMode) {
           setFootballSmartFilter(migrateStoredFootballFocus(savedFocusMode));
-        } else if ((profile?.favoriteTeams?.length ?? 0) > 0) {
-          setFootballSmartFilter('following');
         } else {
           setFootballSmartFilter('for-you');
         }
@@ -1838,26 +1744,24 @@ function SportsScreenInner() {
   }, [profile?.favoriteLeagues]);
   const sportsFeedPrefs = profile?.sportsFeedPrefs;
 
-  // Self-heal: Following needs at least one followed club in the app.
   useEffect(() => {
-    if (!preferencesLoaded) return;
-    const hasFavoriteTeams = teamApiIds.length > 0;
-    if (footballSmartFilter === 'following' && !hasFavoriteTeams) {
-      setFootballSmartFilter('for-you');
-    }
-  }, [footballSmartFilter, preferencesLoaded, teamApiIds.length]);
-
-  useEffect(() => {
-    if (footballSmartFilter !== 'following' && footballSmartFilter !== 'top-leagues') {
+    if (footballSmartFilter !== 'explore') {
       setShowFootballContextSheet(false);
     }
   }, [footballSmartFilter]);
 
-
-
   const profileFavoriteLeagueIds = useMemo(
     () => (profile?.favoriteLeagues ?? []).filter((id): id is number => typeof id === 'number' && id > 0),
     [profile?.favoriteLeagues],
+  );
+
+  const followedTeamLeagues = useMemo(
+    () =>
+      (profile?.favoriteTeams ?? []).map((team) => ({
+        league: team.league,
+        country: team.country,
+      })),
+    [profile?.favoriteTeams],
   );
 
   const footballQueryContext = useMemo(
@@ -1866,10 +1770,11 @@ function SportsScreenInner() {
         smartFilter: footballSmartFilter,
         manualLeagueIds: selectedLeagues,
         contextTopLeagueIds,
-        contextFollowingTeamIds,
+        contextFollowingTeamIds: null,
         followedTeamApiIds: teamApiIds,
         strictFollowing: sportsFeedPrefs?.strictFollowing,
         favoriteLeagueIds: profileFavoriteLeagueIds,
+        followedTeams: followedTeamLeagues,
         countryInterestNamesLower,
         prioritizeDomesticLeagues: sportsFeedPrefs?.prioritizeDomesticLeagues,
         includeFollowedLeagues: sportsFeedPrefs?.includeFollowedLeagues,
@@ -1879,13 +1784,13 @@ function SportsScreenInner() {
       footballSmartFilter,
       selectedLeagues,
       contextTopLeagueIds,
-      contextFollowingTeamIds,
       teamApiIds,
       sportsFeedPrefs?.strictFollowing,
       sportsFeedPrefs?.prioritizeDomesticLeagues,
       sportsFeedPrefs?.includeFollowedLeagues,
       sportsFeedPrefs?.discoveryLevel,
       profileFavoriteLeagueIds,
+      followedTeamLeagues,
       countryInterestNamesLower,
     ],
   );
@@ -1911,12 +1816,9 @@ function SportsScreenInner() {
     /** Fetch national-team fixtures whenever the user follows countries (not only in Following mode). */
     const scopeNationalTeamsOnApi =
       hasNationalTeams &&
-      (footballSmartFilter === 'following' ||
-        footballSmartFilter === 'for-you' ||
-        footballSmartFilter === 'worldwide');
+      (footballSmartFilter === 'for-you' || footballSmartFilter === 'explore');
     const narrowApiByFollowedTeams =
-      footballSmartFilter === 'following' ||
-      (footballSmartFilter === 'for-you' && sportsFeedPrefs?.strictFollowing === true);
+      footballSmartFilter === 'for-you' && sportsFeedPrefs?.strictFollowing === true;
     const resolvedTeamIds =
       queryTeamIds && queryTeamIds.length > 0
         ? queryTeamIds
@@ -1924,9 +1826,9 @@ function SportsScreenInner() {
           ? teamApiIds
           : undefined;
     /**
-     * For You / Worldwide use a broad league + international feed (`teamIds: []` prevents
-     * mergeFollowedClubTeamIds from re-scoping to clubs only). Following / strict For You keep
-     * club-scoped team queries for production API compatibility.
+     * For You / Explore use a broad league + international feed on the Sports tab. Followed club
+     * and national team ids are still merged in FootballBundleContext so Overview My Teams keeps
+     * per-team fixture fetches.
      */
     const apiTeamIds: number[] | undefined = narrowApiByFollowedTeams
       ? resolvedTeamIds
@@ -1934,7 +1836,7 @@ function SportsScreenInner() {
     const apiLeagueIds =
       queryLeagueIds && queryLeagueIds.length > 0
         ? withWorldCupLeagueIds(queryLeagueIds)
-        : footballSmartFilter === 'for-you' || footballSmartFilter === 'worldwide'
+        : footballSmartFilter === 'for-you' || footballSmartFilter === 'explore'
           ? withWorldCupLeagueIds([FIFA_WORLD_CUP_LEAGUE_ID])
           : undefined;
     return {
@@ -1957,10 +1859,15 @@ function SportsScreenInner() {
     sportsFeedPrefs?.strictFollowing,
   ]);
 
+  const isSportsScreenFocused = useIsFocused();
+
   useEffect(() => {
+    if (!isSportsScreenFocused) {
+      publishBundleInput(null);
+      return;
+    }
     publishBundleInput(footballBundleInput);
-    return () => publishBundleInput(null);
-  }, [footballBundleInput, publishBundleInput]);
+  }, [isSportsScreenFocused, footballBundleInput, publishBundleInput]);
 
   useEffect(() => {
     setPollLive(sportMode === 'football' && activeTab === 'live');
@@ -1995,7 +1902,7 @@ function SportsScreenInner() {
     (matches: Match[]) =>
       applyFootballVisibilityRules(matches, {
         smartFilter: footballSmartFilter,
-        manualLeagueIds: footballSmartFilter === 'worldwide' ? selectedLeagues : [],
+        manualLeagueIds: footballSmartFilter === 'explore' ? selectedLeagues : [],
         favoriteTeamIds: favoriteTeamApiIdSet,
         nationalTeamIds: hasNationalTeams ? nationalTeamApiIdSet : undefined,
         nationalityNamesLower: nationalitySignals.countryNamesLower,
@@ -2132,6 +2039,29 @@ function SportsScreenInner() {
     setShowStandingsModal(true);
   }, []);
 
+  const leagueFixturesForStandings = useMemo((): KnockoutFixtureLite[] | undefined => {
+    if (!selectedLeagueForStandings) return undefined;
+    const lid = selectedLeagueForStandings.id;
+    return [...liveMatches, ...upcomingMatches, ...completedMatches]
+      .filter((m) => m.leagueId === lid)
+      .map((m) => ({
+        id: m.id,
+        homeTeam: m.homeTeam,
+        awayTeam: m.awayTeam,
+        homeTeamId: m.homeTeamId,
+        awayTeamId: m.awayTeamId,
+        homeScore: m.homeScore,
+        awayScore: m.awayScore,
+        status: m.status,
+        round: m.round,
+        date: m.date,
+        time: m.time,
+        homeTeamLogo: m.homeTeamLogo,
+        awayTeamLogo: m.awayTeamLogo,
+        leagueId: m.leagueId,
+      }));
+  }, [selectedLeagueForStandings, liveMatches, upcomingMatches, completedMatches]);
+
   const availableLeagueIds = useMemo(() => {
     const ids = new Set<number>();
     [...liveMatches, ...upcomingMatches, ...completedMatches].forEach(m => {
@@ -2156,130 +2086,54 @@ function SportsScreenInner() {
     }
   }, [availableLeagueIds, selectedLeagues, preferencesLoaded, scopedKey]);
 
-  const isFavoriteMatchByTeamId = useCallback((match: Match) => {
-    if (
-      (typeof match.homeTeamId === 'number' && favoriteTeamApiIdSet.has(match.homeTeamId)) ||
-      (typeof match.awayTeamId === 'number' && favoriteTeamApiIdSet.has(match.awayTeamId))
-    ) {
-      return true;
-    }
-    if (nationalTeamApiIdSet.size === 0) return false;
-    if (typeof match.homeTeamId === 'number' && nationalTeamApiIdSet.has(match.homeTeamId)) return true;
-    if (typeof match.awayTeamId === 'number' && nationalTeamApiIdSet.has(match.awayTeamId)) return true;
-    return false;
-  }, [favoriteTeamApiIdSet, nationalTeamApiIdSet]);
-
-  const nationalityCountryRegexes = useMemo(() => {
-    return countryInterestNamesLower.map((country) => new RegExp(`\\b${escapeRegExp(country)}\\b`, 'i'));
-  }, [countryInterestNamesLower]);
-
-  const matchesNationalityCountry = useCallback((match: Match) => {
-    if (nationalityCountryRegexes.length === 0 && nationalTeamApiIds.length === 0) return false;
-    if (
-      (typeof match.homeTeamId === 'number' && nationalTeamApiIds.includes(match.homeTeamId)) ||
-      (typeof match.awayTeamId === 'number' && nationalTeamApiIds.includes(match.awayTeamId))
-    ) {
-      return true;
-    }
-    const home = match.homeTeam?.toLowerCase().trim() ?? '';
-    const away = match.awayTeam?.toLowerCase().trim() ?? '';
-    if (home || away) {
-      for (const country of countryInterestNamesLower) {
-        if (!country) continue;
-        if (
-          home === country ||
-          away === country ||
-          home.includes(country) ||
-          away.includes(country) ||
-          country.includes(home) ||
-          country.includes(away)
-        ) {
-          return true;
-        }
-      }
-    }
-    const normalizedCountry = match.leagueCountry?.trim() || '';
-    if (!normalizedCountry) return false;
-    return nationalityCountryRegexes.some((regex) => regex.test(normalizedCountry));
-  }, [nationalityCountryRegexes, nationalTeamApiIds, countryInterestNamesLower]);
-
-  const pinFavorites = useCallback((matches: Match[]) => {
-    const pinned: Match[] = [];
-    const rest: Match[] = [];
-    matches.forEach((m) => {
-      if (isFavoriteMatchByTeamId(m)) {
-        pinned.push(m);
-      } else {
-        rest.push(m);
-      }
-    });
-    return [...pinned, ...rest];
-  }, [isFavoriteMatchByTeamId]);
-
-  const applyFootballFilters = applyFootballFiltersEarly;
-
-  const scoreMatchForYou = useCallback(
-    (m: Match) => {
-      let s = 0;
-      if (isFavoriteMatchByTeamId(m)) s += 100;
-      if (m.leagueId === FIFA_WORLD_CUP_LEAGUE_ID && matchesNationalityCountry(m)) s += 120;
-      else if (matchesNationalityCountry(m)) s += 60;
-      if (isMajorLeagueName(m.league)) s += 40;
-      if (m.status === 'Live') s += 80;
-      const h = hoursUntilMatchKickoff(m);
-      if (h >= 0 && h < 2) s += 45;
-      else if (h >= 0 && h < 6) s += 30;
-      else if (h >= 0 && h < 24) s += 15;
-      if (matchesNationalityCountry(m)) s += 20;
-      if (selectedProfileLeagueIds.has(m.leagueId)) s += 25;
-      if (selectedLeagues.includes(m.leagueId)) s += 20;
-      return s;
-    },
+  const footballPersonalizationCtx = useMemo<FootballPersonalizationContext>(
+    () => ({
+      favoriteClubApiIds: favoriteTeamApiIdSet,
+      nationalTeamApiIds,
+      countryInterestNamesLower,
+      selectedProfileLeagueIds,
+      manualFilterLeagueIds: selectedLeagues,
+    }),
     [
-      isFavoriteMatchByTeamId,
-      matchesNationalityCountry,
+      favoriteTeamApiIdSet,
+      nationalTeamApiIds,
+      countryInterestNamesLower,
       selectedProfileLeagueIds,
       selectedLeagues,
     ],
   );
 
-  /** Personalised order for hero + Insight AI (always smart, independent of list sort mode). */
-  const sortMatchesBySmartForYou = useCallback(
-    (matches: Match[]) => {
-      const arr = [...matches];
-      arr.sort((a, b) => scoreMatchForYou(b) - scoreMatchForYou(a));
-      return arr;
-    },
-    [scoreMatchForYou],
+  const isFavoriteMatchByTeamId = useCallback(
+    (match: Match) =>
+      isFavoriteClubOrNationalMatch(
+        match,
+        favoriteTeamApiIdSet,
+        nationalTeamApiIds,
+      ),
+    [favoriteTeamApiIdSet, nationalTeamApiIds],
   );
 
-  const sortMatchesForDisplay = useCallback(
-    (matches: Match[]) => {
-      const worldCup = matches
-        .filter(isWorldCupMatch)
-        .sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime());
-      const rest = matches.filter((m) => !isWorldCupMatch(m));
+  const matchesNationalityCountry = useCallback(
+    (match: Match) =>
+      matchInvolvesNationalInterest(
+        match,
+        nationalTeamApiIds,
+        countryInterestNamesLower,
+      ),
+    [nationalTeamApiIds, countryInterestNamesLower],
+  );
 
-      let sortedRest: Match[];
-      if (footballSortMode === 'smart') {
-        sortedRest = sortMatchesBySmartForYou(rest);
-      } else if (footballSortMode === 'competition') {
-        sortedRest = [...rest];
-        sortedRest.sort((a, b) => {
-          const c = a.league.localeCompare(b.league);
-          if (c !== 0) return c;
-          return new Date(a.date).getTime() - new Date(b.date).getTime();
-        });
-      } else {
-        sortedRest = [...rest].sort(
-          (a, b) => new Date(a.date).getTime() - new Date(b.date).getTime(),
-        );
-        sortedRest = pinFavorites(sortedRest);
-      }
+  const applyFootballFilters = applyFootballFiltersEarly;
 
-      return worldCup.length > 0 ? [...worldCup, ...sortedRest] : sortedRest;
-    },
-    [footballSortMode, sortMatchesBySmartForYou, pinFavorites],
+  const sortMatchesBySmartForYouLocal = useCallback(
+    (matches: Match[]) => sortMatchesBySmartForYou(matches, footballPersonalizationCtx),
+    [footballPersonalizationCtx],
+  );
+
+  const sortMatchesForDisplayLocal = useCallback(
+    (matches: Match[]) =>
+      sortMatchesForDisplay(matches, footballSortMode, footballPersonalizationCtx),
+    [footballSortMode, footballPersonalizationCtx],
   );
 
   const filteredLiveMatches = useMemo(() => applyFootballFilters(liveMatches), [liveMatches, applyFootballFilters]);
@@ -2287,48 +2141,39 @@ function SportsScreenInner() {
   const filteredCompletedMatches = useMemo(() => applyFootballFilters(completedMatches), [completedMatches, applyFootballFilters]);
 
   const smartSortedLiveMatches = useMemo(
-    () => sortMatchesBySmartForYou(filteredLiveMatches),
-    [filteredLiveMatches, sortMatchesBySmartForYou],
+    () => sortMatchesBySmartForYouLocal(filteredLiveMatches),
+    [filteredLiveMatches, sortMatchesBySmartForYouLocal],
   );
   const smartSortedUpcomingMatches = useMemo(
-    () => sortMatchesBySmartForYou(filteredUpcomingMatches),
-    [filteredUpcomingMatches, sortMatchesBySmartForYou],
+    () => sortMatchesBySmartForYouLocal(filteredUpcomingMatches),
+    [filteredUpcomingMatches, sortMatchesBySmartForYouLocal],
   );
 
-  const featuredUpcomingMatch = useMemo(() => {
-    const chronological = [...filteredUpcomingMatches].sort(
-      (a, b) => new Date(a.date).getTime() - new Date(b.date).getTime(),
-    );
-    const nextWorldCup = chronological.find(isWorldCupMatch);
-    if (
-      nextWorldCup &&
-      (footballSmartFilter === 'for-you' ||
-        footballSmartFilter === 'worldwide' ||
-        footballSmartFilter === 'top-leagues')
-    ) {
-      return nextWorldCup;
-    }
-    const nextNationalWorldCup = chronological.find(
-      (m) => isWorldCupMatch(m) && matchesNationalityCountry(m),
-    );
-    if (nextNationalWorldCup) return nextNationalWorldCup;
-    return smartSortedUpcomingMatches[0] ?? null;
-  }, [
-    filteredUpcomingMatches,
-    smartSortedUpcomingMatches,
-    matchesNationalityCountry,
-    footballSmartFilter,
-  ]);
-  /** Insight target follows the active football tab (smart-sorted). */
-  const aiInsightMatch = useMemo(() => {
-    if (activeTab === 'upcoming') {
-      return featuredUpcomingMatch;
-    }
-    if (activeTab === 'live') {
-      return smartSortedLiveMatches[0] ?? featuredUpcomingMatch;
-    }
-    return smartSortedLiveMatches[0] ?? featuredUpcomingMatch;
-  }, [activeTab, featuredUpcomingMatch, smartSortedLiveMatches]);
+  const featuredUpcomingMatch = useMemo((): Match | null =>
+      pickFeaturedUpcomingMatch({
+        filteredUpcomingMatches,
+        smartSortedUpcomingMatches,
+        footballSmartFilter,
+        ctx: footballPersonalizationCtx,
+      }),
+    [
+      filteredUpcomingMatches,
+      smartSortedUpcomingMatches,
+      footballSmartFilter,
+      footballPersonalizationCtx,
+    ],
+  );
+
+  /** Insight target: club live → World Cup live → smart-ranked (see footballInsightPicker). */
+  const aiInsightMatch = useMemo((): Match | null =>
+      pickAiInsightMatch({
+        activeTab,
+        filteredLiveMatches,
+        featuredUpcomingMatch,
+        ctx: footballPersonalizationCtx,
+      }),
+    [activeTab, filteredLiveMatches, featuredUpcomingMatch, footballPersonalizationCtx],
+  );
 
   const insightFixtureNumericId = useMemo(() => {
     const raw = aiInsightMatch?.id;
@@ -2419,70 +2264,85 @@ function SportsScreenInner() {
     },
   );
 
+  const insightTrustCtx = useMemo((): InsightTrustContext => {
+    const favoriteClubNamesByApiId = new Map<number, string>();
+    for (const team of profile?.favoriteTeams ?? []) {
+      if (typeof team.apiId === 'number' && team.apiId > 0) {
+        favoriteClubNamesByApiId.set(team.apiId, team.name);
+      }
+    }
+    return {
+      favoriteClubApiIds: favoriteTeamApiIdSet,
+      favoriteClubNamesByApiId,
+      nationalTeamApiIds,
+      nationalityNames: (profile?.nationalities ?? []).map((n) => n.name),
+      countryInterestNamesLower,
+      selectedProfileLeagueIds,
+      manualFilterLeagueIds: selectedLeagues,
+    };
+  }, [
+    favoriteTeamApiIdSet,
+    profile?.favoriteTeams,
+    nationalTeamApiIds,
+    profile?.nationalities,
+    countryInterestNamesLower,
+    selectedProfileLeagueIds,
+    selectedLeagues,
+  ]);
+
+  const showFootballInsight = useMemo(
+    () => isTrustworthyInsightMatch(aiInsightMatch, insightTrustCtx),
+    [aiInsightMatch, insightTrustCtx],
+  );
+
   const aiInsightData = useMemo(() => {
-    if (!aiInsightMatch) return null;
+    if (!aiInsightMatch || !showFootballInsight) return null;
 
-    const isFav = isFavoriteMatchByTeamId(aiInsightMatch);
-    const isCountryAligned = matchesNationalityCountry(aiInsightMatch);
-    const isLeagueSelected = selectedLeagues.includes(aiInsightMatch.leagueId);
-    const isLeagueProfileAligned = selectedProfileLeagueIds.has(aiInsightMatch.leagueId);
-    const isLive = aiInsightMatch.status === 'Live';
-    const hasScores = aiInsightMatch.homeScore !== null && aiInsightMatch.awayScore !== null;
-
-    let score = 52;
-    if (isLive) score += 12;
-    if (isFav) score += 14;
-    if (isCountryAligned) score += 8;
-    if (isLeagueSelected) score += 8;
-    if (isLeagueProfileAligned) score += 6;
-    if (hasScores) score += 4;
-    const confidence = Math.max(55, Math.min(95, score));
-
-    const signalTokens: string[] = [];
-    if (isFav) signalTokens.push('club');
-    if (isLeagueSelected || isLeagueProfileAligned) signalTokens.push('league');
-    if (isCountryAligned) signalTokens.push('country');
-    if (isLive) signalTokens.push('live');
-    if (hasScores) signalTokens.push('scoreline');
-    const signalHint =
-      signalTokens.length > 0 ? ` (${signalTokens.slice(0, 2).join(', ')})` : '';
-
-    let summary = isLive
-      ? `Best live pick for your feed${signalHint}.`
-      : `Top upcoming pick for your feed${signalHint}.`;
-
+    let standingsLine: string | null = null;
     if (sportMode === 'football') {
       const hid =
         insightMatchDetailsQuery.data?.fixture?.teams?.home?.id ?? aiInsightMatch.homeTeamId;
       const aid =
         insightMatchDetailsQuery.data?.fixture?.teams?.away?.id ?? aiInsightMatch.awayTeamId;
-      const rows = findHomeAwayInStandings(insightStandingsQuery.data?.response, hid, aid);
-      if (rows) {
-        summary = clampInsightCopy(
-          `${summary} ${buildCompactInsightTableLine(
-            aiInsightMatch.homeTeam,
-            aiInsightMatch.awayTeam,
-            rows.home,
-            rows.away,
-          )}`,
-        );
+
+      if (isKnockoutFixture(aiInsightMatch)) {
+        const knockoutLine = buildKnockoutInsightContextLine({
+          homeTeam: aiInsightMatch.homeTeam,
+          awayTeam: aiInsightMatch.awayTeam,
+          homeTeamId: hid,
+          awayTeamId: aid,
+          round: aiInsightMatch.round,
+          homeForm: insightMatchDetailsQuery.data?.homeForm,
+          awayForm: insightMatchDetailsQuery.data?.awayForm,
+        });
+        if (knockoutLine) {
+          standingsLine = clampInsightCopy(knockoutLine, 200);
+        }
+      } else {
+        const rows = findHomeAwayInStandings(insightStandingsQuery.data?.response, hid, aid);
+        if (rows) {
+          standingsLine = clampInsightCopy(
+            buildCompactInsightTableLine(
+              aiInsightMatch.homeTeam,
+              aiInsightMatch.awayTeam,
+              rows.home,
+              rows.away,
+            ),
+            200,
+          );
+        }
       }
     }
 
-    const confidenceLabel =
-      confidence >= 82 ? 'High confidence' : confidence >= 70 ? 'Medium confidence' : 'Early signal';
-
-    return {
-      summary,
-      confidence,
-      confidenceLabel,
-    };
+    return buildFootballAiInsightCard({
+      match: aiInsightMatch,
+      ctx: insightTrustCtx,
+      standingsLine,
+    });
   }, [
     aiInsightMatch,
-    isFavoriteMatchByTeamId,
-    matchesNationalityCountry,
-    selectedLeagues,
-    selectedProfileLeagueIds,
+    showFootballInsight,
+    insightTrustCtx,
     sportMode,
     insightMatchDetailsQuery.data,
     insightStandingsQuery.data?.response,
@@ -2594,7 +2454,10 @@ function SportsScreenInner() {
     setInsightCarouselIndex(0);
   }, [aiInsightMatch?.id]);
 
-  const insightCarouselWidth = SCREEN_WIDTH - 40;
+  const insightCarouselWidth = useMemo(
+    () => SCREEN_WIDTH - sportsEdgePad * 2,
+    [sportsEdgePad],
+  );
 
   const recommendedLeagueIds = useMemo(() => {
     const ranked = new Map<number, number>();
@@ -2640,13 +2503,13 @@ function SportsScreenInner() {
       default:
         base = [];
     }
-    return sortMatchesForDisplay(base);
+    return sortMatchesForDisplayLocal(base);
   }, [
     activeTab,
     filteredLiveMatches,
     filteredUpcomingMatches,
     filteredCompletedMatches,
-    sortMatchesForDisplay,
+    sortMatchesForDisplayLocal,
   ]);
 
   const groupedMatches = useMemo(() => {
@@ -3075,7 +2938,7 @@ function SportsScreenInner() {
 
   const footballHeroClubSlots = useMemo<FootballHeroFavoriteClub[]>(
     () =>
-      (profile?.favoriteTeams?.slice(0, 4) ?? []).map((t) => ({
+      (profile?.favoriteTeams ?? []).map((t) => ({
         apiId: t.apiId ?? getTeamIdFromName(t.name) ?? null,
         name: t.name,
         logoUri: getFootballTeamLogoUrl(t) ?? '',
@@ -3112,37 +2975,46 @@ function SportsScreenInner() {
     return found.sort((a, b) => a.rank - b.rank).slice(0, 5);
   }, [availableLeaguesForStandings]);
   const footballFilterSummary = useMemo(() => {
-    const modeLabel =
-      footballSmartFilter === 'for-you'
-        ? 'For You'
-        : footballSmartFilter === 'following'
-          ? 'Following'
-          : footballSmartFilter === 'top-leagues'
-            ? 'Top leagues'
-            : 'Worldwide';
-    const sortLabel =
-      footballSortMode === 'smart'
-        ? 'Smart order'
-        : footballSortMode === 'kickoff'
-          ? 'Kickoff time'
-          : 'Competition';
-    const leagueHint =
-      footballSmartFilter === 'worldwide' && selectedLeagues.length > 0
-        ? ` · ${selectedLeagues.length} competition(s)`
-        : '';
-    return `${modeLabel} · ${sortLabel}${leagueHint}`;
-  }, [footballSmartFilter, footballSortMode, selectedLeagues.length]);
+    switch (footballSmartFilter) {
+      case 'for-you':
+        return 'For You · your leagues & teams';
+      case 'explore':
+        return footballQueryContext.manualLeagueScopeActive
+          ? `Explore · ${selectedLeagues.length} competition${selectedLeagues.length === 1 ? '' : 's'}`
+          : 'Explore';
+      default:
+        return 'For You';
+    }
+  }, [footballSmartFilter, footballQueryContext.manualLeagueScopeActive, selectedLeagues.length]);
 
-  const followingContextLabel = useMemo(() => {
-    const teams = profile?.favoriteTeams?.filter((t) => t.apiId && t.apiId > 0) ?? [];
-    if (teams.length === 0) return 'Add clubs';
-    const activeIds = contextFollowingTeamIds ?? teams.map((t) => t.apiId!);
-    const ordered = teams.filter((t) => activeIds.includes(t.apiId!));
-    const primary = ordered[0] ?? teams[0];
-    const n = Math.max(0, ordered.length - 1);
-    const label = shortTeamLabel(primary.name ?? 'Club');
-    return n > 0 ? `${label} +${n}` : label;
-  }, [profile?.favoriteTeams, contextFollowingTeamIds]);
+  const liveEmptyHint = useMemo(() => {
+    if (activeTab !== 'live' || filteredLiveMatches.length > 0) return null;
+    if (liveMatches.length === 0) return null;
+    if (featuredUpcomingMatch) {
+      return `No live games for your teams or leagues right now. Next up: ${featuredUpcomingMatch.homeTeam} vs ${featuredUpcomingMatch.awayTeam}.`;
+    }
+    return 'No live games for your teams or leagues right now. Switch to Explore or add clubs in Profile.';
+  }, [activeTab, filteredLiveMatches.length, liveMatches.length, featuredUpcomingMatch]);
+
+  const strictFollowingEnabled = sportsFeedPrefs?.strictFollowing === true;
+
+  const handleToggleStrictFollowing = useCallback(
+    (value: boolean) => {
+      updateProfile({
+        sportsFeedPrefs: {
+          strictFollowing: value,
+          includeFollowedLeagues: sportsFeedPrefs?.includeFollowedLeagues ?? true,
+          discoveryLevel: sportsFeedPrefs?.discoveryLevel ?? 'med',
+          prioritizeDomesticLeagues: sportsFeedPrefs?.prioritizeDomesticLeagues ?? true,
+          prioritizeNationalTeams: sportsFeedPrefs?.prioritizeNationalTeams ?? true,
+        },
+      });
+      if (Platform.OS !== 'web') {
+        void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+      }
+    },
+    [updateProfile, sportsFeedPrefs],
+  );
 
   const topLeagueContextLabel = useMemo(() => {
     const ids = contextTopLeagueIds ?? TOP_LEAGUE_BUNDLE_IDS;
@@ -3153,24 +3025,6 @@ function SportsScreenInner() {
     const n = ids.length - 1;
     return n > 0 ? `${short} +${n}` : short;
   }, [contextTopLeagueIds]);
-
-  const toggleFollowingContextTeam = useCallback(
-    (id: number) => {
-      if (teamApiIds.length === 0) return;
-      const all = teamApiIds;
-      const effective = contextFollowingTeamIds ?? [...all];
-      const set = new Set(effective);
-      if (set.has(id)) set.delete(id);
-      else set.add(id);
-      const next = all.filter((tid) => set.has(tid));
-      if (next.length === 0 || next.length === all.length) {
-        setContextFollowingTeamIds(null);
-      } else {
-        setContextFollowingTeamIds(next);
-      }
-    },
-    [teamApiIds, contextFollowingTeamIds],
-  );
 
   const toggleTopLeagueContextId = useCallback(
     (id: number) => {
@@ -3228,79 +3082,78 @@ function SportsScreenInner() {
         />
       </View>
       <View style={[styles.filterArea, { paddingHorizontal: sportsEdgePad }]}>
-        <TouchableOpacity
-          onPress={() => setShowFootballFilterPicker(true)}
-          activeOpacity={0.75}
-          hitSlop={{ top: 8, bottom: 8, left: 0, right: 8 }}
-        >
-          <Text style={[styles.footballSmartSectionLabel, { color: sf.textMuted }]}>Smart filters</Text>
-        </TouchableOpacity>
-        <View style={styles.footballSmartPillsRow}>
-          {FOOTBALL_SMART_FILTER_OPTIONS.map((opt) => {
-            const Icon = opt.Icon;
-            const active = footballSmartFilter === opt.id;
-            const disabled = opt.id === 'following' && teamApiIds.length === 0;
-            return (
-              <TouchableOpacity
-                key={opt.id}
-                accessibilityRole="button"
-                accessibilityState={{ selected: active, disabled }}
-                disabled={disabled}
-                activeOpacity={0.85}
-                onPress={() => setFootballSmartFilter(opt.id)}
-                style={[
-                  styles.footballSmartPill,
-                  {
-                    backgroundColor: sf.surfaceSecondary,
-                    borderColor: active ? `${fc.accent}88` : sf.border,
-                    opacity: disabled ? 0.4 : 1,
-                  },
-                  active && { shadowColor: fc.accent, shadowOpacity: 0.35, shadowRadius: 10 },
-                ]}
-              >
-                <Icon size={13} color={active ? fc.accent : sf.textSecondary} />
-                <Text
-                  style={[styles.footballSmartPillText, { color: active ? fc.accent : sf.text }]}
-                  numberOfLines={1}
+        <View style={styles.footballFilterCompactRow}>
+          <View style={styles.footballSmartPillsRowCompact}>
+            {FOOTBALL_SMART_FILTER_OPTIONS.map((opt) => {
+              const Icon = opt.Icon;
+              const active = footballSmartFilter === opt.id;
+              return (
+                <TouchableOpacity
+                  key={opt.id}
+                  accessibilityRole="button"
+                  accessibilityState={{ selected: active }}
+                  activeOpacity={0.85}
+                  onPress={() => setFootballSmartFilter(opt.id)}
+                  style={[
+                    styles.footballSmartPill,
+                    {
+                      backgroundColor: sf.surfaceSecondary,
+                      borderColor: active ? `${fc.accent}88` : sf.border,
+                    },
+                    active && { shadowColor: fc.accent, shadowOpacity: 0.28, shadowRadius: 6 },
+                  ]}
                 >
-                  {opt.label}
-                </Text>
-              </TouchableOpacity>
-            );
-          })}
+                  <Icon size={12} color={active ? fc.accent : sf.textSecondary} />
+                  <Text
+                    style={[styles.footballSmartPillText, { color: active ? fc.accent : sf.text }]}
+                    numberOfLines={1}
+                  >
+                    {opt.label}
+                  </Text>
+                </TouchableOpacity>
+              );
+            })}
+          </View>
+          <TouchableOpacity
+            onPress={() => setShowFootballFilterPicker(true)}
+            activeOpacity={0.75}
+            accessibilityRole="button"
+            accessibilityLabel={`Feed options, ${footballFilterSummary}`}
+            style={[styles.footballOptionsIconBtn, { backgroundColor: sf.surfaceSecondary, borderColor: sf.border }]}
+          >
+            <SlidersHorizontal size={15} color={sf.textSecondary} strokeWidth={2.2} />
+          </TouchableOpacity>
+          <View style={[styles.strictFollowingRowCompact, { backgroundColor: sf.surfaceSecondary, borderColor: sf.border }]}>
+            <Switch
+              value={strictFollowingEnabled}
+              onValueChange={handleToggleStrictFollowing}
+              trackColor={{ false: sf.border, true: `${fc.accent}88` }}
+              thumbColor={strictFollowingEnabled ? fc.accent : sf.textMuted}
+              style={styles.strictSwitchCompact}
+            />
+          </View>
         </View>
-        {footballQueryContext.manualLeagueScopeActive ? (
-          <Text style={[styles.footballFilterHintText, { color: sf.textMuted }]}>
-            Manual league selection active
-          </Text>
+
+        {footballSmartFilter === 'explore' ? (
+          <TouchableOpacity
+            activeOpacity={0.85}
+            onPress={() => setShowFootballContextSheet(true)}
+            style={[styles.footballContextChipCompact, { backgroundColor: sf.surfaceSecondary, borderColor: sf.border }]}
+          >
+            <Text style={[styles.footballContextChipTitle, { color: sf.textMuted }]} numberOfLines={1}>
+              Scope
+            </Text>
+            <Text style={[styles.footballContextChipValue, { color: sf.text }]} numberOfLines={1}>
+              {topLeagueContextLabel}
+            </Text>
+            <ChevronDown size={14} color={sf.textSecondary} />
+          </TouchableOpacity>
         ) : null}
 
-        {(footballSmartFilter === 'following' || footballSmartFilter === 'top-leagues') ? (
-          <View style={styles.footballContextRow}>
-            {footballSmartFilter === 'following' ? (
-              <TouchableOpacity
-                activeOpacity={0.85}
-                onPress={() => setShowFootballContextSheet(true)}
-                style={[styles.footballContextChip, { backgroundColor: sf.surfaceSecondary, borderColor: sf.border }]}
-              >
-                <Text style={[styles.footballContextChipTitle, { color: sf.text }]} numberOfLines={1}>
-                  {followingContextLabel}
-                </Text>
-                <ChevronDown size={16} color={sf.textSecondary} />
-              </TouchableOpacity>
-            ) : (
-              <TouchableOpacity
-                activeOpacity={0.85}
-                onPress={() => setShowFootballContextSheet(true)}
-                style={[styles.footballContextChip, { backgroundColor: sf.surfaceSecondary, borderColor: sf.border }]}
-              >
-                <Text style={[styles.footballContextChipTitle, { color: sf.text }]} numberOfLines={1}>
-                  {topLeagueContextLabel}
-                </Text>
-                <ChevronDown size={16} color={sf.textSecondary} />
-              </TouchableOpacity>
-            )}
-          </View>
+        {footballQueryContext.manualLeagueScopeActive ? (
+          <Text style={[styles.footballFilterHintText, { color: sf.textMuted }]}>
+            Explore narrowed to selected competitions
+          </Text>
         ) : null}
 
         <TouchableOpacity
@@ -3340,30 +3193,25 @@ function SportsScreenInner() {
             ]}
           >
             <BarChart3
-              size={22}
+              size={18}
               color={availableLeaguesForStandings.length === 0 ? sf.textMuted : fc.accent}
               strokeWidth={2.4}
             />
           </View>
-          <View style={styles.footballLeagueTablesTextCol}>
-            <Text style={[styles.footballLeagueTablesTitle, { color: sf.text }]}>League tables & stats</Text>
-            <Text style={[styles.footballLeagueTablesSub, { color: sf.textMuted }]} numberOfLines={1}>
-              {availableLeaguesForStandings.length === 0
-                ? 'Follow clubs or pick leagues to unlock standings'
-                : `Table, scorers & assists · ${availableLeaguesForStandings.length} competition${
-                    availableLeaguesForStandings.length === 1 ? '' : 's'
-                  }`}
-            </Text>
-          </View>
+          <Text style={[styles.footballLeagueTablesTitle, { color: sf.text }]} numberOfLines={1}>
+            {availableLeaguesForStandings.length === 0
+              ? 'Tables & stats'
+              : `Tables & stats · ${availableLeaguesForStandings.length} leagues`}
+          </Text>
           <ChevronRight
-            size={20}
+            size={18}
             color={availableLeaguesForStandings.length === 0 ? sf.textMuted : fc.accent}
             strokeWidth={2.5}
           />
         </TouchableOpacity>
       </View>
-      {sportMode === 'football' && aiInsightMatch && footballTrendingPreview ? (
-        <View style={styles.insightCarouselShell}>
+      {sportMode === 'football' && showFootballInsight && aiInsightMatch && footballTrendingPreview ? (
+        <View style={[styles.insightCarouselShell, { marginHorizontal: sportsEdgePad }]}>
           <ScrollView
             horizontal
             pagingEnabled
@@ -3391,11 +3239,14 @@ function SportsScreenInner() {
                     end={{ x: 1, y: 1 }}
                     style={styles.aiInsightOrb}
                   >
-                    <Sparkles size={18} color="#FFFFFF" />
+                    <Sparkles size={15} color="#FFFFFF" />
                   </LinearGradient>
                   <View style={styles.aiInsightTitleBlock}>
-                    <Text style={[styles.aiLabel, { color: fc.accent }]}>ONE PAGER INSIGHT AI</Text>
-                    <Text style={[styles.aiHeadline, { color: isDark ? '#FFFFFF' : '#0F172A' }]}>
+                    <Text style={[styles.aiLabel, { color: fc.accent }]}>INSIGHT</Text>
+                    <Text
+                      style={[styles.aiHeadline, { color: isDark ? '#FFFFFF' : '#0F172A' }]}
+                      numberOfLines={1}
+                    >
                       {aiInsightMatch.homeTeam} vs {aiInsightMatch.awayTeam}
                     </Text>
                   </View>
@@ -3403,6 +3254,7 @@ function SportsScreenInner() {
                 <Text
                   style={[styles.aiSub, { color: isDark ? '#9AB0A0' : '#5B6475' }]}
                   textBreakStrategy="simple"
+                  numberOfLines={2}
                 >
                   {aiInsightData?.summary ??
                     (aiInsightMatch.status === 'Live'
@@ -3418,7 +3270,7 @@ function SportsScreenInner() {
                   >
                     <Zap size={12} color={fc.accent} />
                     <Text style={[styles.aiConfidenceText, { color: fc.accent }]}>
-                      {aiInsightData.confidenceLabel} {aiInsightData.confidence}%
+                      {aiInsightData.whyLabel}
                     </Text>
                   </View>
                 ) : null}
@@ -3890,8 +3742,8 @@ function SportsScreenInner() {
               }}
               onRefresh={onRefresh}
               onMyClubs={() => {
-                setFootballSmartFilter('following');
-                setActiveTab('upcoming');
+                setFootballClubProfilePreset(null);
+                setFootballTeamSearchOpen(true);
               }}
               onFeaturedPress={() => {
                 if (featuredUpcomingMatch) handleMatchCardPress(featuredUpcomingMatch);
@@ -4271,9 +4123,10 @@ function SportsScreenInner() {
           <EmptyState
             type={activeTab}
             hint={
-              footballRateLimitHint
+              liveEmptyHint ??
+              (footballRateLimitHint
                 ? 'Football data is temporarily unavailable — your API-Football daily request limit was reached. Wait for the quota to reset (usually midnight UTC) or upgrade at api-football.com.'
-                : null
+                : null)
             }
           />
         </ScrollView>
@@ -4335,6 +4188,7 @@ function SportsScreenInner() {
           leagueId={selectedLeagueForStandings.id}
           leagueName={selectedLeagueForStandings.name}
           season={selectedLeagueForStandings.season}
+          leagueFixtures={leagueFixturesForStandings}
         />
       )}
       
@@ -4357,17 +4211,14 @@ function SportsScreenInner() {
           <View style={[styles.pickerContainer, { backgroundColor: colors.surface }]}>
             <View style={styles.pickerHandle} />
             <View style={[styles.pickerHeader, { borderBottomColor: colors.border }]}>
-              <Text style={[styles.pickerTitle, { color: colors.text }]}>Football Filters</Text>
+              <Text style={[styles.pickerTitle, { color: colors.text }]}>Feed options</Text>
               <TouchableOpacity onPress={() => setShowFootballFilterPicker(false)} style={styles.pickerClose}>
                 <X size={20} color={colors.textSecondary} />
               </TouchableOpacity>
             </View>
 
             <ScrollView style={styles.pickerScroll} showsVerticalScrollIndicator={false}>
-              <Text style={[styles.unifiedFilterSectionTitle, { color: colors.textSecondary }]}>Sort</Text>
-              <Text style={[styles.refineModalHint, { color: colors.textMuted }]}>
-                {footballFilterSummary}
-              </Text>
+              <Text style={[styles.unifiedFilterSectionTitle, { color: colors.textSecondary }]}>Sort order</Text>
               <View style={styles.unifiedFilterModeGrid}>
                 {(
                   [
@@ -4401,12 +4252,18 @@ function SportsScreenInner() {
               </View>
 
               <Text style={[styles.unifiedFilterSectionTitle, { color: colors.textSecondary, marginTop: 14 }]}>
-                Saved competitions
+                Explore competitions
+              </Text>
+              <Text style={[styles.refineModalHint, { color: colors.textMuted }]}>
+                Narrow Explore to specific leagues. For You uses your saved leagues, countries, and followed clubs only.
               </Text>
               <View style={styles.competitionQuickFilterWrap}>
                 <TouchableOpacity
                   activeOpacity={0.8}
-                  onPress={() => setSelectedLeagues([])}
+                  onPress={() => {
+                    setSelectedLeagues([]);
+                    if (footballSmartFilter !== 'explore') setFootballSmartFilter('explore');
+                  }}
                   style={[
                     styles.competitionQuickChip,
                     {
@@ -4426,7 +4283,10 @@ function SportsScreenInner() {
                     <TouchableOpacity
                       key={competition.id}
                       activeOpacity={0.8}
-                      onPress={() => setSelectedLeagues([competition.id])}
+                      onPress={() => {
+                        setSelectedLeagues([competition.id]);
+                        if (footballSmartFilter !== 'explore') setFootballSmartFilter('explore');
+                      }}
                       style={[
                         styles.competitionQuickChip,
                         {
@@ -4475,72 +4335,36 @@ function SportsScreenInner() {
           <View style={[styles.pickerContainer, { backgroundColor: colors.surface }]}>
             <View style={styles.pickerHandle} />
             <View style={[styles.pickerHeader, { borderBottomColor: colors.border }]}>
-              <Text style={[styles.pickerTitle, { color: colors.text }]}>
-                {footballSmartFilter === 'following' ? 'Followed clubs' : 'Top competitions'}
-              </Text>
+              <Text style={[styles.pickerTitle, { color: colors.text }]}>Explore competitions</Text>
               <TouchableOpacity onPress={() => setShowFootballContextSheet(false)} style={styles.pickerClose}>
                 <X size={20} color={colors.textSecondary} />
               </TouchableOpacity>
             </View>
             <ScrollView style={styles.pickerScroll} showsVerticalScrollIndicator={false}>
-              {footballSmartFilter === 'following'
-                ? (profile?.favoriteTeams ?? [])
-                    .filter((t) => t.apiId && t.apiId > 0)
-                    .map((team) => {
-                      const effective = contextFollowingTeamIds ?? teamApiIds;
-                      const selected = effective.includes(team.apiId!);
-                      return (
-                        <TouchableOpacity
-                          key={String(team.id ?? team.apiId)}
-                          style={[styles.footballContextSheetRow, { borderBottomColor: colors.border }]}
-                          activeOpacity={0.75}
-                          onPress={() => toggleFollowingContextTeam(team.apiId!)}
-                        >
-                          {team.logo ? (
-                            <Image
-                              source={{ uri: team.logo }}
-                              style={styles.footballContextLogo}
-                              resizeMode="contain"
-                            />
-                          ) : (
-                            <View
-                              style={[styles.footballContextLogo, { backgroundColor: colors.surfaceSecondary }]}
-                            />
-                          )}
-                          <View style={{ flex: 1 }}>
-                            <Text style={{ color: colors.text, fontWeight: '700' }}>{team.name}</Text>
-                          </View>
-                          {selected ? <CheckCircle2 size={20} color={fc.accent} /> : null}
-                        </TouchableOpacity>
-                      );
-                    })
-                : TOP_LEAGUE_BUNDLE_IDS.map((leagueId) => {
-                    const effective = contextTopLeagueIds ?? TOP_LEAGUE_BUNDLE_IDS;
-                    const selected = effective.includes(leagueId);
-                    const name = getCompetitionById(leagueId)?.name ?? `League ${leagueId}`;
-                    const logoUri = `https://media.api-sports.io/football/leagues/${leagueId}.png`;
-                    return (
-                      <TouchableOpacity
-                        key={leagueId}
-                        style={[styles.footballContextSheetRow, { borderBottomColor: colors.border }]}
-                        activeOpacity={0.75}
-                        onPress={() => toggleTopLeagueContextId(leagueId)}
-                      >
-                        <Image source={{ uri: logoUri }} style={styles.footballContextLogo} resizeMode="contain" />
-                        <View style={{ flex: 1 }}>
-                          <Text style={{ color: colors.text, fontWeight: '700' }}>{name}</Text>
-                        </View>
-                        {selected ? <CheckCircle2 size={20} color={fc.accent} /> : null}
-                      </TouchableOpacity>
-                    );
-                  })}
+              {TOP_LEAGUE_BUNDLE_IDS.map((leagueId) => {
+                const effective = contextTopLeagueIds ?? TOP_LEAGUE_BUNDLE_IDS;
+                const selected = effective.includes(leagueId);
+                const name = getCompetitionById(leagueId)?.name ?? `League ${leagueId}`;
+                const logoUri = `https://media.api-sports.io/football/leagues/${leagueId}.png`;
+                return (
+                  <TouchableOpacity
+                    key={leagueId}
+                    style={[styles.footballContextSheetRow, { borderBottomColor: colors.border }]}
+                    activeOpacity={0.75}
+                    onPress={() => toggleTopLeagueContextId(leagueId)}
+                  >
+                    <Image source={{ uri: logoUri }} style={styles.footballContextLogo} resizeMode="contain" />
+                    <View style={{ flex: 1 }}>
+                      <Text style={{ color: colors.text, fontWeight: '700' }}>{name}</Text>
+                    </View>
+                    {selected ? <CheckCircle2 size={20} color={fc.accent} /> : null}
+                  </TouchableOpacity>
+                );
+              })}
               <View style={styles.footballContextSheetFooter}>
                 <TouchableOpacity
                   style={styles.footballContextResetBtn}
-                  onPress={() => {
-                    if (footballSmartFilter === 'following') setContextFollowingTeamIds(null);
-                    else setContextTopLeagueIds(null);
-                  }}
+                  onPress={() => setContextTopLeagueIds(null)}
                 >
                   <Text style={{ color: fc.accent, fontWeight: '700' }}>Use full selection</Text>
                 </TouchableOpacity>
@@ -4939,7 +4763,7 @@ const styles = StyleSheet.create({
     marginBottom: 12,
   },
   tabWrapperFootball: {
-    marginBottom: 8,
+    marginBottom: 4,
   },
   tabWrapperUfc: {
     marginBottom: 8,
@@ -4972,7 +4796,7 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
-    paddingVertical: 10,
+    paddingVertical: 8,
     gap: 4,
     zIndex: 1,
   },
@@ -5003,27 +4827,54 @@ const styles = StyleSheet.create({
     fontWeight: '800' as const,
   },
   filterArea: {
-    marginBottom: 12,
+    marginBottom: 6,
     paddingHorizontal: 20,
+  },
+  footballFilterCompactRow: {
+    flexDirection: 'row' as const,
+    alignItems: 'center' as const,
+    gap: 6,
+  },
+  footballSmartPillsRowCompact: {
+    flex: 1,
+    flexDirection: 'row' as const,
+    gap: 6,
+    minWidth: 0,
+  },
+  footballOptionsIconBtn: {
+    width: 36,
+    height: 36,
+    borderRadius: 11,
+    borderWidth: 1,
+    alignItems: 'center' as const,
+    justifyContent: 'center' as const,
+  },
+  strictFollowingRowCompact: {
+    width: 46,
+    height: 36,
+    borderRadius: 11,
+    borderWidth: 1,
+    alignItems: 'center' as const,
+    justifyContent: 'center' as const,
+  },
+  strictSwitchCompact: {
+    transform: [{ scaleX: 0.78 }, { scaleY: 0.78 }],
   },
   footballSmartSectionLabel: {
     fontSize: 11,
     fontWeight: '700' as const,
     letterSpacing: 0.8,
     textTransform: 'uppercase' as const,
-    marginBottom: 10,
   },
   footballSmartPillsRow: {
     flexDirection: 'row' as const,
     flexWrap: 'nowrap' as const,
     gap: 8,
-    marginBottom: 12,
   },
   footballFilterHintText: {
-    fontSize: 11,
+    fontSize: 10,
     fontWeight: '600' as const,
-    marginTop: -6,
-    marginBottom: 10,
+    marginTop: 4,
     letterSpacing: 0.1,
   },
   footballSmartPill: {
@@ -5032,10 +4883,10 @@ const styles = StyleSheet.create({
     flexDirection: 'row' as const,
     alignItems: 'center' as const,
     justifyContent: 'center' as const,
-    gap: 5,
-    paddingVertical: 10,
-    paddingHorizontal: 6,
-    borderRadius: 14,
+    gap: 4,
+    paddingVertical: 7,
+    paddingHorizontal: 5,
+    borderRadius: 11,
     borderWidth: 1,
   },
   footballSmartPillText: {
@@ -5043,57 +4894,51 @@ const styles = StyleSheet.create({
     fontWeight: '700' as const,
     letterSpacing: -0.2,
   },
-  footballContextRow: {
+  footballContextChipCompact: {
     flexDirection: 'row' as const,
     alignItems: 'center' as const,
-    gap: 10,
-  },
-  footballContextChip: {
-    flex: 1,
-    flexDirection: 'row' as const,
-    alignItems: 'center' as const,
-    gap: 8,
-    paddingHorizontal: 14,
-    paddingVertical: 11,
-    borderRadius: 14,
+    gap: 6,
+    marginTop: 6,
+    paddingHorizontal: 10,
+    paddingVertical: 7,
+    borderRadius: 11,
     borderWidth: 1,
   },
   footballContextChipTitle: {
+    fontSize: 10,
+    fontWeight: '700' as const,
+    letterSpacing: 0.5,
+    textTransform: 'uppercase' as const,
+    flexShrink: 0,
+  },
+  footballContextChipValue: {
     flex: 1,
-    fontSize: 15,
+    fontSize: 13,
     fontWeight: '700' as const,
     letterSpacing: -0.2,
   },
   footballLeagueTablesCta: {
     flexDirection: 'row' as const,
     alignItems: 'center' as const,
-    gap: 12,
-    marginTop: 12,
-    paddingVertical: 14,
-    paddingHorizontal: 14,
-    borderRadius: 16,
-    borderWidth: 2,
+    gap: 10,
+    marginTop: 6,
+    paddingVertical: 9,
+    paddingHorizontal: 11,
+    borderRadius: 12,
+    borderWidth: 1.5,
   },
   footballLeagueTablesIconWrap: {
-    width: 46,
-    height: 46,
-    borderRadius: 13,
+    width: 32,
+    height: 32,
+    borderRadius: 9,
     alignItems: 'center' as const,
     justifyContent: 'center' as const,
   },
-  footballLeagueTablesTextCol: {
-    flex: 1,
-    minWidth: 0,
-  },
   footballLeagueTablesTitle: {
-    fontSize: 16,
+    flex: 1,
+    fontSize: 14,
     fontWeight: '800' as const,
-    letterSpacing: -0.35,
-  },
-  footballLeagueTablesSub: {
-    fontSize: 12,
-    fontWeight: '600' as const,
-    marginTop: 3,
+    letterSpacing: -0.3,
   },
   refineModalHint: {
     fontSize: 12,
@@ -5194,26 +5039,25 @@ const styles = StyleSheet.create({
     paddingVertical: 14,
   },
   insightCarouselShell: {
-    marginHorizontal: 20,
-    marginBottom: 12,
+    marginBottom: 6,
   },
   insightCarouselPage: {
-    borderRadius: 20,
-    paddingHorizontal: 16,
-    paddingVertical: 14,
+    borderRadius: 14,
+    paddingHorizontal: 12,
+    paddingVertical: 10,
     overflow: 'hidden' as const,
-    minHeight: 148,
+    minHeight: 108,
     flexGrow: 0,
   },
   aiInsightTopRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 12,
+    gap: 10,
   },
   aiInsightOrb: {
-    width: 44,
-    height: 44,
-    borderRadius: 22,
+    width: 34,
+    height: 34,
+    borderRadius: 17,
     alignItems: 'center',
     justifyContent: 'center',
   },
@@ -5221,19 +5065,19 @@ const styles = StyleSheet.create({
     flex: 1,
   },
   trendingCardInner: {
-    borderRadius: 20,
-    paddingHorizontal: 14,
-    paddingVertical: 12,
+    borderRadius: 14,
+    paddingHorizontal: 12,
+    paddingVertical: 10,
     overflow: 'hidden' as const,
-    minHeight: 148,
+    minHeight: 108,
     borderWidth: 1,
     borderColor: 'rgba(255,255,255,0.08)',
   },
   trendingCardHeader: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 6,
-    marginBottom: 6,
+    gap: 5,
+    marginBottom: 4,
   },
   trendingNowLabel: {
     fontSize: 10,
@@ -5242,10 +5086,10 @@ const styles = StyleSheet.create({
     textTransform: 'uppercase' as const,
   },
   trendingMatchContext: {
-    fontSize: 11,
+    fontSize: 10,
     fontWeight: '600' as const,
     color: 'rgba(226,232,240,0.72)',
-    marginBottom: 10,
+    marginBottom: 6,
   },
   trendingThreeCol: {
     flexDirection: 'row',
@@ -5308,14 +5152,14 @@ const styles = StyleSheet.create({
     textAlign: 'center' as const,
   },
   trendingLeagueFoot: {
-    marginTop: 10,
+    marginTop: 6,
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-    paddingTop: 8,
+    paddingTop: 6,
     borderTopWidth: 1,
     borderTopColor: 'rgba(255,255,255,0.1)',
-    gap: 8,
+    gap: 6,
   },
   trendingLeagueFootText: {
     flex: 1,
@@ -5327,46 +5171,46 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     justifyContent: 'center',
     alignItems: 'center',
-    gap: 6,
-    marginTop: 8,
+    gap: 5,
+    marginTop: 4,
   },
   insightDot: {
-    width: 6,
-    height: 6,
-    borderRadius: 3,
+    width: 5,
+    height: 5,
+    borderRadius: 2.5,
     backgroundColor: 'rgba(100,116,139,0.45)',
   },
   aiLabel: {
-    fontSize: 10,
+    fontSize: 9,
     fontWeight: '800' as const,
-    letterSpacing: 1,
+    letterSpacing: 0.8,
     textTransform: 'uppercase' as const,
   },
   aiHeadline: {
-    marginTop: 6,
-    fontSize: 16,
+    marginTop: 2,
+    fontSize: 14,
     fontWeight: '700' as const,
     letterSpacing: -0.2,
   },
   aiSub: {
-    marginTop: 6,
-    fontSize: 13,
+    marginTop: 4,
+    fontSize: 12,
     fontWeight: '500' as const,
-    lineHeight: 19,
+    lineHeight: 17,
     flexShrink: 1,
   },
   aiConfidencePill: {
-    marginTop: 8,
+    marginTop: 5,
     alignSelf: 'flex-start',
-    borderRadius: 12,
-    paddingHorizontal: 10,
-    paddingVertical: 5,
+    borderRadius: 10,
+    paddingHorizontal: 8,
+    paddingVertical: 3,
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 5,
+    gap: 4,
   },
   aiConfidenceText: {
-    fontSize: 11,
+    fontSize: 10,
     fontWeight: '800' as const,
     letterSpacing: 0.1,
   },
@@ -5460,13 +5304,13 @@ const styles = StyleSheet.create({
     paddingHorizontal: 0,
   },
   matchesList: {
-    gap: 10,
+    gap: 8,
   },
   dateHeader: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 12,
-    paddingVertical: 16,
+    gap: 10,
+    paddingVertical: 10,
     paddingHorizontal: 20,
   },
   dateLine: {
@@ -5481,7 +5325,7 @@ const styles = StyleSheet.create({
   },
   cardWrapper: {
     width: '100%',
-    marginBottom: 8,
+    marginBottom: 6,
     paddingHorizontal: 12,
   },
   matchCard: {

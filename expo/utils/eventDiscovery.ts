@@ -21,10 +21,19 @@ export function haversineDistanceKm(
   return R * c;
 }
 
+const KM_TO_MI = 0.621371;
+
+export function kmToMiles(km: number): number {
+  return km * KM_TO_MI;
+}
+
+/** Formats a distance stored in km for display (miles). */
 export function formatDistanceKm(km: number): string {
   if (!Number.isFinite(km)) return '';
-  if (km < 1) return `${Math.round(km * 1000)} m`;
-  return `${km.toFixed(1)} km`;
+  const mi = kmToMiles(km);
+  if (mi < 0.1) return 'Nearby';
+  if (mi < 10) return `${mi.toFixed(1)} mi`;
+  return `${Math.round(mi)} mi`;
 }
 
 const EVENT_END_GRACE_MS = 6 * 60 * 60 * 1000;
@@ -73,6 +82,43 @@ export function getDaysUntilEvent(event: LocalEvent): number | null {
   if (!start) return null;
   const diffMs = start.getTime() - Date.now();
   return Math.ceil(diffMs / (1000 * 60 * 60 * 24));
+}
+
+export function getEventCountdownLabel(event: LocalEvent): string {
+  const days = getDaysUntilEvent(event);
+  if (days === null) return 'Soon';
+  if (days < 0) return 'Past';
+  if (days === 0) return 'Tonight';
+  if (days === 1) return 'Tomorrow';
+  if (days === 2) return '2 days';
+  return `${days} days`;
+}
+
+export function getEventCountdownShort(event: LocalEvent): string {
+  const days = getDaysUntilEvent(event);
+  if (days === null) return 'Soon';
+  if (days < 0) return 'Past';
+  if (days === 0) return 'Tonight';
+  if (days === 1) return 'Tomorrow';
+  return `${days} days to go`;
+}
+
+function shortenTeamName(name: string): string {
+  const parts = name.trim().split(/\s+/);
+  if (parts.length <= 2) return name.trim();
+  return parts[parts.length - 1] ?? name.trim();
+}
+
+/** Short hero headline — full title stays on the detail screen. */
+export function shortenEventTitleForHero(title: string): string {
+  const trimmed = title.trim();
+  const vsMatch = trimmed.match(/^(.+?)\s+vs\.?\s+(.+)$/i);
+  if (vsMatch) {
+    const home = shortenTeamName(vsMatch[1] ?? trimmed);
+    const away = shortenTeamName(vsMatch[2] ?? trimmed);
+    return `${home} vs. ${away}`;
+  }
+  return trimmed;
 }
 
 export function isEventLiveNow(event: LocalEvent, now = Date.now()): boolean {
@@ -131,6 +177,21 @@ export function filterUpcomingEvents(events: LocalEvent[], referenceMs = Date.no
   return events.filter((event) => isUpcomingEvent(event, referenceMs));
 }
 
+export function filterThisWeekEvents(events: LocalEvent[]): LocalEvent[] {
+  return events.filter((event) => {
+    const days = getDaysUntilEvent(event);
+    return days !== null && days >= 0 && days <= 7;
+  });
+}
+
+export function regionsDifferSignificantly(
+  a: { latitude: number; longitude: number },
+  b: { latitude: number; longitude: number },
+  thresholdKm = 2
+): boolean {
+  return haversineDistanceKm(a.latitude, a.longitude, b.latitude, b.longitude) > thresholdKm;
+}
+
 export function compareEventsByStart(a: LocalEvent, b: LocalEvent): number {
   const ta = parseEventStartDateTime(a)?.getTime() ?? Number.POSITIVE_INFINITY;
   const tb = parseEventStartDateTime(b)?.getTime() ?? Number.POSITIVE_INFINITY;
@@ -139,4 +200,25 @@ export function compareEventsByStart(a: LocalEvent, b: LocalEvent): number {
 
 export function sortEventsByStartDate(events: LocalEvent[]): LocalEvent[] {
   return [...events].sort(compareEventsByStart);
+}
+
+export function getEventCalendarRange(event: LocalEvent): { start: Date; end: Date } | null {
+  const start = parseEventStartDateTime(event);
+  if (!start) return null;
+  const end = new Date(start);
+  if (event.time.includes('-')) {
+    const endPart = event.time.split('-')[1]?.trim();
+    if (endPart) {
+      const [h, m] = endPart.split(':');
+      const hours = Number(h);
+      const minutes = Number(m);
+      if (!Number.isNaN(hours)) {
+        end.setHours(hours, minutes || 0, 0, 0);
+        if (end <= start) end.setHours(start.getHours() + 2);
+        return { start, end };
+      }
+    }
+  }
+  end.setHours(end.getHours() + 2);
+  return { start, end };
 }

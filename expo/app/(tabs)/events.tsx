@@ -1,5 +1,6 @@
 import React, { useState, useRef, useCallback, useEffect, useMemo } from 'react';
 import {
+  ActivityIndicator,
   Alert,
   StyleSheet,
   View,
@@ -9,7 +10,6 @@ import {
   TextInput,
   Animated,
   RefreshControl,
-  Image,
   Dimensions,
   Platform,
 } from 'react-native';
@@ -17,384 +17,185 @@ import {
   Search,
   MapPin,
   Calendar,
-  Clock,
   Heart,
-  Ticket,
   X,
-  ChevronRight,
-  Users,
-  Star,
-  TrendingUp,
   Map,
   List,
   Navigation,
-  Music,
-  Trophy,
-  Smile,
-  Wine,
-  Palette,
-  Monitor,
-  Moon,
   Sparkles,
+  Flame,
+  Target,
+  Star,
+  CalendarDays,
+  Users,
+  ChevronLeft,
 } from 'lucide-react-native';
-import { LinearGradient } from 'expo-linear-gradient';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { useTheme } from '@/hooks/useTheme';
 import { useUserProfile } from '@/hooks/useUserProfile';
-import { getNationalitySignals } from '@/utils/nationalityPersonalization';
+import { useNearbyEvents } from '@/hooks/useNearbyEvents';
+import { useEventKit } from '@/hooks/useEventKit';
+import { useEventReminders } from '@/hooks/useEventReminders';
+import { useSocialActivity } from '@/hooks/useSocialActivity';
+import { useFriendsEventPicks } from '@/hooks/useFriendsEventPicks';
+import {
+  filterHappeningNow,
+  filterThisWeekEvents,
+  formatDistanceKm,
+  regionsDifferSignificantly,
+  sortEventsByDistance,
+} from '@/utils/eventDiscovery';
+import { eventsFixedPalette } from '@/utils/eventsPalette';
+import { PremiumEventHeroCard } from '@/components/events/PremiumEventHeroCard';
+import { PremiumEventPosterCard } from '@/components/events/PremiumEventPosterCard';
+import { PremiumEventListRow } from '@/components/events/PremiumEventListRow';
+import { EventsDiscoveryPills, type DiscoveryTabKey } from '@/components/events/EventsDiscoveryPills';
+import { EventsCategoryBento } from '@/components/events/EventsCategoryBento';
+import { EventsMapBottomSheet } from '@/components/events/EventsMapBottomSheet';
+import { EventsMapMarker } from '@/components/events/EventsMapMarker';
+import { EventsSaveToast } from '@/components/events/EventsSaveToast';
+import { EventsStatsRow } from '@/components/events/EventsStatsRow';
+import { PremiumSavedEventCard } from '@/components/events/PremiumSavedEventCard';
+import {
+  buildEditorialEventRows,
+  getCompactRecommendationLabel,
+  getFeedCardChipLabel,
+  getPrimaryEventRecommendationReason,
+} from '@/utils/eventPersonalization';
+import { useEventRecommendationInput } from '@/hooks/useEventRecommendationInput';
+import { useEventConcierge } from '@/hooks/useEventConcierge';
+import { boostEventsForConciergeContext } from '@/utils/eventConcierge';
+import { countSavedEventsThisWeek } from '@/utils/eventNightOutPlanner';
+import { getEventStatsSummary } from '@/utils/eventStats';
+import {
+  getEventCalendarRange,
+  openEventDirections,
+  openEventTickets,
+} from '@/utils/openEventActions';
+import type { LocalEvent } from '@/types/events';
 import * as Haptics from 'expo-haptics';
-import { Stack } from 'expo-router';
+import { Stack, useRouter } from 'expo-router';
 import MapView, { Marker } from 'react-native-maps';
+import { useSavedEvents } from '@/hooks/useSavedEvents';
+import { rankEventsForYou } from '@/utils/eventPersonalization';
+import { registerDiscoveryEvents, registerSavedEvents } from '@/utils/eventCatalog';
+import { getEventCategoryMeta } from '@/utils/eventCategoryMeta';
+import { ErrorBoundary } from '@/components/ErrorBoundary';
 
 const { width: SCREEN_WIDTH } = Dimensions.get('window');
 
 type ViewMode = 'list' | 'map';
-type DiscoveryTab = 'now' | 'near' | 'forYou';
+type EventsMainTab = 'discover' | 'myEvents';
+type Event = LocalEvent;
 
-interface Event {
-  id: string;
-  title: string;
-  venue: string;
-  location: string;
-  date: string;
-  time: string;
-  category: string;
-  price: string;
-  image: string;
-  isSaved: boolean;
-  attendees: number;
-  rating: number;
-  tags: string[];
-  description: string;
-  isFeatured?: boolean;
-  isHot?: boolean;
-  latitude: number;
-  longitude: number;
-}
-
-interface UpcomingEvent {
-  id: string;
-  title: string;
-  date: string;
-  time: string;
-  venue: string;
-  category: string;
-  daysUntil: number;
-  ticketType: string;
-}
-
-const CATEGORY_ICON_MAP: Record<string, { icon: React.ComponentType<{ size?: number; color?: string }>; color: string }> = {
-  'all': { icon: Sparkles, color: '#E84393' },
-  'music': { icon: Music, color: '#6C5CE7' },
-  'sports': { icon: Trophy, color: '#00B894' },
-  'comedy': { icon: Smile, color: '#FDCB6E' },
-  'theatre': { icon: Star, color: '#E17055' },
-  'food': { icon: Wine, color: '#D63031' },
-  'arts': { icon: Palette, color: '#A29BFE' },
-  'tech': { icon: Monitor, color: '#0984E3' },
-  'nightlife': { icon: Moon, color: '#636E72' },
-};
-
-
-const EVENT_CATEGORIES = [
-  { id: 'all', label: 'All', emoji: '🎉' },
-  { id: 'music', label: 'Music', emoji: '🎵' },
-  { id: 'sports', label: 'Sports', emoji: '⚽' },
-  { id: 'comedy', label: 'Comedy', category: 'comedy' },
-  { id: 'theatre', label: 'Theatre', category: 'theatre' },
-  { id: 'food', label: 'Food & Drink', emoji: '🍷' },
-  { id: 'arts', label: 'Arts', emoji: '🎨' },
-  { id: 'tech', label: 'Tech', emoji: '💻' },
-  { id: 'nightlife', label: 'Nightlife', emoji: '🌙' },
+const DISCOVERY_PILL_TABS = [
+  { key: 'now' as const, label: 'Now', icon: Flame, color: '#FF6B6B' },
+  { key: 'near' as const, label: 'Near You', icon: MapPin, color: '#6C5CE7' },
+  { key: 'forYou' as const, label: 'For You', icon: Target, color: '#E84393' },
+  { key: 'friendsPicks' as const, label: 'Friends', icon: Users, color: '#60A5FA' },
+  { key: 'thisWeek' as const, label: 'This Week', icon: CalendarDays, color: '#4ADE80' },
 ];
 
-const MOCK_EVENTS: Event[] = [
-  {
-    id: '1',
-    title: 'Arctic Monkeys Live',
-    venue: 'The O2 Arena',
-    location: 'London',
-    date: 'Sat, 12 Apr',
-    time: '19:30',
-    category: 'music',
-    price: '£65',
-    image: 'https://images.unsplash.com/photo-1459749411175-04bf5292ceea?w=600',
-    isSaved: true,
-    attendees: 18500,
-    rating: 4.9,
-    tags: ['rock', 'live', 'arena'],
-    description: 'The Sheffield legends return for a massive headline show.',
-    isFeatured: true,
-    latitude: 51.5030,
-    longitude: 0.0032,
-  },
-  {
-    id: '2',
-    title: 'Borough Market Food Festival',
-    venue: 'Borough Market',
-    location: 'London',
-    date: 'Sun, 13 Apr',
-    time: '10:00',
-    category: 'food',
-    price: 'Free',
-    image: 'https://images.unsplash.com/photo-1555939594-58d7cb561ad1?w=600',
-    isSaved: false,
-    attendees: 3200,
-    rating: 4.7,
-    tags: ['food', 'outdoor', 'family'],
-    description: 'A celebration of artisan food and drink from around the world.',
-    isHot: true,
-    latitude: 51.5055,
-    longitude: -0.0910,
-  },
-  {
-    id: '3',
-    title: 'Michael McIntyre: Showtime',
-    venue: 'Royal Albert Hall',
-    location: 'London',
-    date: 'Fri, 18 Apr',
-    time: '20:00',
-    category: 'comedy',
-    price: '£45',
-    image: 'https://images.unsplash.com/photo-1585699324551-f6c309eedeca?w=600',
-    isSaved: true,
-    attendees: 5200,
-    rating: 4.8,
-    tags: ['stand-up', 'comedy', 'live'],
-    description: 'Britain\'s favourite comedian returns with his brand new tour.',
-    latitude: 51.5009,
-    longitude: -0.1774,
-  },
-  {
-    id: '4',
-    title: 'Immersive Van Gogh',
-    venue: 'Frameless Gallery',
-    location: 'London',
-    date: 'Ongoing',
-    time: '10:00 - 20:00',
-    category: 'arts',
-    price: '£25',
-    image: 'https://images.unsplash.com/photo-1579783902614-a3fb3927b6a5?w=600',
-    isSaved: false,
-    attendees: 1800,
-    rating: 4.6,
-    tags: ['art', 'immersive', 'exhibition'],
-    description: 'Step inside Van Gogh\'s most iconic masterpieces.',
-    isFeatured: true,
-    latitude: 51.5178,
-    longitude: -0.1472,
-  },
-  {
-    id: '5',
-    title: 'Warehouse Project: Disclosure',
-    venue: 'Depot Mayfield',
-    location: 'Manchester',
-    date: 'Sat, 26 Apr',
-    time: '22:00',
-    category: 'nightlife',
-    price: '£38',
-    image: 'https://images.unsplash.com/photo-1571266028243-e4733b0f0bb0?w=600',
-    isSaved: false,
-    attendees: 4500,
-    rating: 4.8,
-    tags: ['electronic', 'club', 'DJ'],
-    description: 'Disclosure bring their signature house sound to the warehouse.',
-    isHot: true,
-    latitude: 53.4737,
-    longitude: -2.2326,
-  },
-  {
-    id: '6',
-    title: 'Hamilton: The Musical',
-    venue: 'Victoria Palace Theatre',
-    location: 'London',
-    date: 'Wed, 23 Apr',
-    time: '19:30',
-    category: 'theatre',
-    price: '£55',
-    image: 'https://images.unsplash.com/photo-1507676184212-d03ab07a01bf?w=600',
-    isSaved: true,
-    attendees: 1100,
-    rating: 4.9,
-    tags: ['musical', 'west-end', 'theatre'],
-    description: 'The revolutionary musical that changed theatre forever.',
-    latitude: 51.4965,
-    longitude: -0.1437,
-  },
-  {
-    id: '7',
-    title: 'Tech Connect Summit 2026',
-    venue: 'ExCeL London',
-    location: 'London',
-    date: 'Thu, 1 May',
-    time: '09:00',
-    category: 'tech',
-    price: '£120',
-    image: 'https://images.unsplash.com/photo-1540575467063-178a50c2df87?w=600',
-    isSaved: false,
-    attendees: 8000,
-    rating: 4.5,
-    tags: ['conference', 'networking', 'AI'],
-    description: 'The UK\'s biggest tech conference with 200+ speakers.',
-    latitude: 51.5085,
-    longitude: 0.0299,
-  },
-  {
-    id: '8',
-    title: 'Crystal Palace vs Arsenal',
-    venue: 'Selhurst Park',
-    location: 'London',
-    date: 'Sat, 19 Apr',
-    time: '15:00',
-    category: 'sports',
-    price: '£42',
-    image: 'https://images.unsplash.com/photo-1522778119026-d647f0596c20?w=600',
-    isSaved: false,
-    attendees: 25000,
-    rating: 4.7,
-    tags: ['football', 'premier-league', 'live'],
-    description: 'Premier League action at Selhurst Park.',
-    latitude: 51.3983,
-    longitude: -0.0855,
-  },
-  {
-    id: '9',
-    title: 'Nigerian Independence Concert',
-    venue: 'Tafawa Balewa Square',
-    location: 'Lagos',
-    date: 'Wed, 01 Oct',
-    time: '18:00',
-    category: 'music',
-    price: '₦8,000',
-    image: 'https://images.unsplash.com/photo-1511379938547-c1f69419868d?w=600',
-    isSaved: false,
-    attendees: 4200,
-    rating: 4.7,
-    tags: ['nigeria', 'nigerian', 'afrobeats', 'live'],
-    description: 'A national day celebration featuring top Afrobeats artists.',
-    isFeatured: true,
-    latitude: 6.4500,
-    longitude: 3.3947,
-  },
-  {
-    id: '10',
-    title: 'Nollywood Film Night',
-    venue: 'Silverbird Galleria',
-    location: 'Abuja',
-    date: 'Fri, 10 Oct',
-    time: '19:30',
-    category: 'arts',
-    price: '₦5,500',
-    image: 'https://images.unsplash.com/photo-1489599849927-2ee91cede3ba?w=600',
-    isSaved: false,
-    attendees: 900,
-    rating: 4.6,
-    tags: ['nigeria', 'nigerian', 'nollywood', 'film'],
-    description: 'Red carpet screening and panel with Nollywood creators.',
-    isHot: true,
-    latitude: 9.0600,
-    longitude: 7.4900,
-  },
-];
+const HERO_ROTATE_MS = 5500;
 
-const MY_UPCOMING: UpcomingEvent[] = [
-  { id: '1', title: 'Arctic Monkeys Live', date: '12 Apr', time: '19:30', venue: 'The O2 Arena', category: 'music', daysUntil: 3, ticketType: 'Standing' },
-  { id: '2', title: 'Michael McIntyre', date: '18 Apr', time: '20:00', venue: 'Royal Albert Hall', category: 'comedy', daysUntil: 9, ticketType: 'Stalls Row F' },
-  { id: '3', title: 'Hamilton', date: '23 Apr', time: '19:30', venue: 'Victoria Palace', category: 'theatre', daysUntil: 14, ticketType: 'Circle Seat' },
-];
-
-const QUICK_STATS = [
-  { label: 'Events Saved', value: '12', emoji: '🎟️' },
-  { label: 'Attended', value: '8', emoji: '✅' },
-  { label: 'This Month', value: '3', emoji: '📅' },
-];
-
-const USER_LOCATION = { latitude: 51.5074, longitude: -0.1278 }; // Mock "near you" (London) for MVP UI
-const toRadians = (deg: number) => (deg * Math.PI) / 180;
-const haversineDistanceKm = (lat1: number, lon1: number, lat2: number, lon2: number) => {
-  const R = 6371; // km
-  const dLat = toRadians(lat2 - lat1);
-  const dLon = toRadians(lon2 - lon1);
-  const a =
-    Math.sin(dLat / 2) * Math.sin(dLat / 2) +
-    Math.cos(toRadians(lat1)) * Math.cos(toRadians(lat2)) * Math.sin(dLon / 2) * Math.sin(dLon / 2);
-  const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
-  return R * c;
-};
-
-const parseEventStartDateTime = (event: Event): Date | null => {
-  if (!event.date || !event.time) return null;
-  const dateStr = event.date.trim();
-  if (dateStr.toLowerCase().includes('ongoing')) return null;
-
-  // e.g. "Sat, 12 Apr" / "Fri, 18 Apr" + add current year
-  const year = new Date().getFullYear();
-  const base = new Date(`${dateStr} ${year}`);
-  if (Number.isNaN(base.getTime())) return null;
-
-  const timeStart = event.time.split('-')[0]?.trim();
-  if (!timeStart) return base;
-  const parts = timeStart.split(':');
-  if (parts.length >= 2) {
-    const hours = Number(parts[0]);
-    const minutes = Number(parts[1]);
-    if (!Number.isNaN(hours) && !Number.isNaN(minutes)) {
-      base.setHours(hours, minutes, 0, 0);
-    }
-  }
-
-  return base;
-};
-
-const getDaysUntilEvent = (event: Event): number | null => {
-  const start = parseEventStartDateTime(event);
-  if (!start) return null;
-  const diffMs = start.getTime() - Date.now();
-  return Math.ceil(diffMs / (1000 * 60 * 60 * 24));
-};
-
-const getCountdownLabel = (event: Event): string => {
-  const days = getDaysUntilEvent(event);
-  if (days === null) return 'Soon';
-  if (days <= 0) return 'Starting soon';
-  if (days === 1) return 'Tomorrow';
-  if (days === 2) return '2 days to go';
-  return `${days} days to go`;
-};
-
-const formatDistanceKm = (km: number): string => {
-  if (!Number.isFinite(km)) return '';
-  if (km < 1) return `${Math.round(km * 1000)} m`;
-  return `${km.toFixed(1)} km`;
-};
-
-export default function EventsScreen() {
-  const { colors } = useTheme();
+function EventsScreenInner() {
   const { profile } = useUserProfile();
+  const router = useRouter();
+  const { createEvent, hasPermission, requestPermissions } = useEventKit();
+  const { scheduleEventReminder } = useEventReminders();
+  const { logEventPlanned } = useSocialActivity();
+  const {
+    savedAsLocalEvents,
+    upcomingSaved,
+    savedCount,
+    isSaved,
+    toggleSaved,
+    addToOnePager,
+    savedSnapshots,
+  } = useSavedEvents();
   const insets = useSafeAreaInsets();
   const [selectedCategory, setSelectedCategory] = useState<string>('all');
   const [searchQuery, setSearchQuery] = useState<string>('');
   const [refreshing, setRefreshing] = useState<boolean>(false);
-  const [events, setEvents] = useState<Event[]>(MOCK_EVENTS);
-  const [expandedEvent, setExpandedEvent] = useState<string | null>(null);
+  const [mainTab, setMainTab] = useState<EventsMainTab>('discover');
   const [viewMode, setViewMode] = useState<ViewMode>('list');
   const [selectedMapEvent, setSelectedMapEvent] = useState<string | null>(null);
-  const [discoveryTab, setDiscoveryTab] = useState<DiscoveryTab>('now');
+  const [discoveryTab, setDiscoveryTab] = useState<DiscoveryTabKey>('now');
+  const [heroIndex, setHeroIndex] = useState(0);
+  const [toastMessage, setToastMessage] = useState<string | null>(null);
+  const [mapSearchCenter, setMapSearchCenter] = useState<{ latitude: number; longitude: number } | null>(null);
+  const [showSearchAreaBtn, setShowSearchAreaBtn] = useState(false);
+  const [mapSheetExpanded, setMapSheetExpanded] = useState(false);
+  const [liveMapRegion, setLiveMapRegion] = useState<{
+    latitude: number;
+    longitude: number;
+    latitudeDelta: number;
+    longitudeDelta: number;
+  } | null>(null);
   const mapRef = useRef<MapView>(null);
   const viewToggleAnim = useRef(new Animated.Value(0)).current;
-
   const scrollY = useRef(new Animated.Value(0)).current;
-  const headerScale = useRef(new Animated.Value(0)).current;
-  const featuredScrollX = useRef(new Animated.Value(0)).current;
+
+  const palette = useMemo(() => eventsFixedPalette('discover'), []);
+
+  const {
+    events: nearbyEvents,
+    source: eventsSource,
+    userCoords,
+    areaLabel,
+    isLoading: eventsLoading,
+    permissionDenied,
+    refetch: refetchEvents,
+    refreshLocation,
+  } = useNearbyEvents({ category: selectedCategory, searchCenter: mapSearchCenter });
+
+  const events = useMemo(
+    () => nearbyEvents.map((e) => ({ ...e, isSaved: isSaved(e.id) })),
+    [nearbyEvents, isSaved]
+  );
 
   useEffect(() => {
-    Animated.spring(headerScale, {
-      toValue: 1,
-      tension: 60,
-      friction: 8,
-      useNativeDriver: true,
-    }).start();
-  }, [headerScale]);
+    registerDiscoveryEvents(nearbyEvents);
+    registerSavedEvents(savedSnapshots);
+  }, [nearbyEvents, savedSnapshots]);
+
+  const openEventDetail = useCallback(
+    (eventId: string) => {
+      void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+      router.push(`/(root)/event/${eventId}`);
+    },
+    [router]
+  );
+
+  const handleAddToOnePager = useCallback(
+    async (event: Event) => {
+      if (isSaved(event.id)) {
+        await toggleSaved(event);
+        return;
+      }
+      await addToOnePager(event);
+      setToastMessage('Added to One Pager');
+    },
+    [addToOnePager, isSaved, toggleSaved]
+  );
+
+  const handleToggleSavedWithToast = useCallback(
+    async (event: Event) => {
+      const wasSaved = isSaved(event.id);
+      await toggleSaved(event);
+      if (!wasSaved) {
+        setToastMessage('Added to One Pager');
+      }
+    },
+    [isSaved, toggleSaved]
+  );
+
+  const showSaveToast = useCallback(() => {
+    setToastMessage('Added to One Pager');
+  }, []);
+
+  const dismissToast = useCallback(() => {
+    setToastMessage(null);
+  }, []);
 
   const toggleViewMode = useCallback(() => {
     void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
@@ -411,6 +212,33 @@ export default function EventsScreen() {
   const handleMapMarkerPress = useCallback((eventId: string) => {
     void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
     setSelectedMapEvent(eventId);
+    setMapSheetExpanded(false);
+  }, []);
+
+  const handleMapRegionChangeComplete = useCallback(
+    (region: { latitude: number; longitude: number; latitudeDelta: number; longitudeDelta: number }) => {
+      setLiveMapRegion(region);
+      const anchor = mapSearchCenter ?? userCoords;
+      setShowSearchAreaBtn(regionsDifferSignificantly(anchor, region, 2));
+    },
+    [mapSearchCenter, userCoords]
+  );
+
+  const handleSearchThisArea = useCallback(() => {
+    if (!liveMapRegion) return;
+    void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+    setMapSearchCenter({
+      latitude: liveMapRegion.latitude,
+      longitude: liveMapRegion.longitude,
+    });
+    setShowSearchAreaBtn(false);
+    setSelectedMapEvent(null);
+    setMapSheetExpanded(false);
+  }, [liveMapRegion]);
+
+  const closeMapSheet = useCallback(() => {
+    setSelectedMapEvent(null);
+    setMapSheetExpanded(false);
   }, []);
 
   const filteredEvents = useMemo(() => {
@@ -424,7 +252,7 @@ export default function EventsScreen() {
         e.title.toLowerCase().includes(q) ||
         e.venue.toLowerCase().includes(q) ||
         e.location.toLowerCase().includes(q) ||
-        e.tags.some(t => t.includes(q))
+        (e.tags ?? []).some(t => t.includes(q))
       );
     }
     return filtered;
@@ -432,9 +260,16 @@ export default function EventsScreen() {
 
   const mapRegion = useMemo(() => {
     const evts = filteredEvents.length > 0 ? filteredEvents : events;
-    if (evts.length === 0) return { latitude: 51.5074, longitude: -0.1278, latitudeDelta: 0.3, longitudeDelta: 0.3 };
-    const lats = evts.map(e => e.latitude);
-    const lngs = evts.map(e => e.longitude);
+    if (evts.length === 0) {
+      return {
+        latitude: userCoords.latitude,
+        longitude: userCoords.longitude,
+        latitudeDelta: 0.12,
+        longitudeDelta: 0.12,
+      };
+    }
+    const lats = [...evts.map((e) => e.latitude), userCoords.latitude];
+    const lngs = [...evts.map((e) => e.longitude), userCoords.longitude];
     const minLat = Math.min(...lats);
     const maxLat = Math.max(...lats);
     const minLng = Math.min(...lngs);
@@ -445,7 +280,7 @@ export default function EventsScreen() {
       latitudeDelta: Math.max((maxLat - minLat) * 1.5, 0.05),
       longitudeDelta: Math.max((maxLng - minLng) * 1.5, 0.05),
     };
-  }, [filteredEvents, events]);
+  }, [filteredEvents, events, userCoords]);
 
   const selectedMapEventData = useMemo(() => {
     if (!selectedMapEvent) return null;
@@ -454,180 +289,338 @@ export default function EventsScreen() {
 
   const featuredEvents = useMemo(() => events.filter(e => e.isFeatured), [events]);
 
-  const handleRefresh = useCallback(() => {
+  const handleRefresh = useCallback(async () => {
     setRefreshing(true);
-    setTimeout(() => setRefreshing(false), 1000);
+    try {
+      await Promise.all([refetchEvents(), refreshLocation()]);
+    } finally {
+      setRefreshing(false);
+    }
+  }, [refetchEvents, refreshLocation]);
+
+  const handleOpenTickets = useCallback((event: Event) => {
+    void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+    void openEventTickets(event);
   }, []);
 
-  const toggleSaved = useCallback((eventId: string) => {
+  const handleOpenDirections = useCallback((event: Event) => {
     void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-    setEvents(prev => prev.map(e =>
-      e.id === eventId ? { ...e, isSaved: !e.isSaved } : e
-    ));
+    void openEventDirections(event);
   }, []);
 
-  const accentColor = colors.primary;
-  const accentLight = colors.primaryLight;
-  const secondaryAccent = colors.secondary;
+  const handleAddToCalendar = useCallback(
+    async (event: Event) => {
+      void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+      const range = getEventCalendarRange(event);
+      if (!range) {
+        Alert.alert('Calendar', 'Could not parse this event’s date.');
+        return;
+      }
+      if (!hasPermission) {
+        const granted = await requestPermissions();
+        if (!granted) {
+          Alert.alert('Calendar', 'Allow calendar access in Settings to save events.');
+          return;
+        }
+      }
+      const eventId = await createEvent({
+        title: event.title,
+        startDate: range.start,
+        endDate: range.end,
+        location: `${event.venue}, ${event.location}`,
+        notes: event.ticketUrl ? `Tickets: ${event.ticketUrl}\n\n${event.description}` : event.description,
+      });
+      if (eventId) {
+        Alert.alert('Added to calendar', event.title);
+        void logEventPlanned(event);
+      } else {
+        Alert.alert('Calendar', 'Could not add this event. Check calendar permissions.');
+      }
+    },
+    [createEvent, hasPermission, requestPermissions, logEventPlanned]
+  );
 
-  const warmBg = colors.background;
-  const cardBg = colors.card;
-  const cardBorder = colors.border;
-  const subtleText = colors.textSecondary;
-  const mainText = colors.text;
-  const secondaryBg = colors.surfaceSecondary;
+  const handleRemind = useCallback(
+    async (event: Event) => {
+      void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+      await scheduleEventReminder(event);
+    },
+    [scheduleEventReminder]
+  );
 
-  const formatAttendees = (count: number): string => {
-    if (count >= 1000) return `${(count / 1000).toFixed(1)}k`;
-    return count.toString();
-  };
+  const accentColor = palette.primary;
+  const accentLight = palette.primaryLight;
+  const secondaryAccent = palette.secondary;
+
+  const warmBg = palette.background;
+  const cardBg = palette.card;
+  const cardBorder = palette.border;
+  const subtleText = palette.textSecondary;
+  const mainText = palette.text;
+  const secondaryBg = palette.surfaceLight;
 
   const baseEvents = filteredEvents.length > 0 ? filteredEvents : events;
-  const nationalitySignals = useMemo(() => getNationalitySignals(profile), [profile]);
-  const nationalityEventKeywords = nationalitySignals.eventKeywords;
-  const savedEvents = useMemo(() => {
-    const list = events.filter(e => e.isSaved);
-    return list.sort((a, b) => {
-      const da = getDaysUntilEvent(a);
-      const db = getDaysUntilEvent(b);
-      if (da === null && db === null) return 0;
-      if (da === null) return 1;
-      if (db === null) return -1;
-      return da - db;
-    });
-  }, [events]);
+  const savedEvents = savedAsLocalEvents;
+  const { friendsPickEvents, available: friendsPicksAvailable, friendCountByEventId } =
+    useFriendsEventPicks(baseEvents);
 
-  const forYouCategorySet = useMemo(() => {
-    const set = new Set<string>();
-    const interests = (profile?.interests || []).map(i => i.toLowerCase());
-    const hasSports = (profile?.favoriteTeams?.length || 0) > 0;
-    if (hasSports) set.add('sports');
+  const recommendationInput = useEventRecommendationInput(friendCountByEventId);
 
-    if (interests.some(i => i.includes('music') || i.includes('concert') || i.includes('rock') || i.includes('live'))) {
-      set.add('music');
-    }
-    if (interests.some(i => i.includes('sport') || i.includes('football') || i.includes('gym') || i.includes('fitness'))) {
-      set.add('sports');
-    }
-    if (interests.some(i => i.includes('theatre') || i.includes('theater') || i.includes('acting'))) {
-      set.add('theatre');
-    }
-    if (interests.some(i => i.includes('food') || i.includes('drink') || i.includes('cooking') || i.includes('restaurant'))) {
-      set.add('food');
-    }
-    if (interests.some(i => i.includes('art') || i.includes('design') || i.includes('painting') || i.includes('creative'))) {
-      set.add('arts');
-    }
-    if (interests.some(i => i.includes('tech') || i.includes('ai') || i.includes('coding') || i.includes('startup') || i.includes('network'))) {
-      set.add('tech');
-    }
-    if (interests.some(i => i.includes('night') || i.includes('party') || i.includes('club'))) {
-      set.add('nightlife');
-    }
+  const eventConcierge = useEventConcierge({
+    recommendationInput,
+    userCoords,
+    mapSearchCenter,
+    areaLabel,
+  });
 
-    return set;
-  }, [profile?.favoriteTeams, profile?.interests]);
+  const getRecommendationReason = useCallback(
+    (event: LocalEvent) =>
+      getPrimaryEventRecommendationReason(event, {
+        ...recommendationInput,
+        discoveryTab,
+      }),
+    [recommendationInput, discoveryTab],
+  );
+
+  const eventStats = useMemo(
+    () => getEventStatsSummary(profile, savedSnapshots),
+    [profile, savedSnapshots]
+  );
+
+  const onePagerThisWeekCount = useMemo(
+    () => countSavedEventsThisWeek(upcomingSaved),
+    [upcomingSaved]
+  );
+
+  const onePagerThisWeekLabel = useMemo(() => {
+    if (onePagerThisWeekCount <= 0) return undefined;
+    const noun = onePagerThisWeekCount === 1 ? 'event' : 'events';
+    return `${onePagerThisWeekCount} ${noun} this week on your One Pager`;
+  }, [onePagerThisWeekCount]);
 
   const happeningNowEvents = useMemo(() => {
     if (baseEvents.length === 0) return [];
-    return baseEvents.filter(e => e.isHot || e.isFeatured).slice(0, 4);
+    const live = filterHappeningNow(baseEvents);
+    if (live.length > 0) return live.slice(0, 4);
+    return baseEvents.filter((e) => e.isHot || e.isFeatured || e.isLiveNow).slice(0, 4);
   }, [baseEvents]);
 
   const nearYouEvents = useMemo(() => {
     if (baseEvents.length === 0) return [];
-    return [...baseEvents]
-      .sort((a, b) => {
-        const da = haversineDistanceKm(USER_LOCATION.latitude, USER_LOCATION.longitude, a.latitude, a.longitude);
-        const db = haversineDistanceKm(USER_LOCATION.latitude, USER_LOCATION.longitude, b.latitude, b.longitude);
-        return da - db;
-      })
-      .slice(0, 4);
-  }, [baseEvents]);
+    return sortEventsByDistance(baseEvents, userCoords).slice(0, 4);
+  }, [baseEvents, userCoords]);
 
   const forYouEvents = useMemo(() => {
     if (baseEvents.length === 0) return [];
-    const countryMatches =
-      nationalityEventKeywords.length > 0
-        ? baseEvents.filter((e) => {
-            const haystack = `${e.location} ${e.venue} ${e.title} ${e.tags.join(' ')}`.toLowerCase();
-            return nationalityEventKeywords.some((k) => haystack.includes(k));
-          })
-        : [];
-    if (countryMatches.length > 0) return countryMatches.slice(0, 4);
-    const matches = baseEvents.filter(e => forYouCategorySet.has(e.category)).slice(0, 4);
-    if (matches.length > 0) return matches;
-    return baseEvents.filter(e => e.isFeatured || e.isHot).slice(0, 4);
-  }, [baseEvents, forYouCategorySet, nationalityEventKeywords]);
+    return rankEventsForYou(baseEvents, recommendationInput).slice(0, 4);
+  }, [baseEvents, recommendationInput]);
+
+  const thisWeekEvents = useMemo(() => {
+    if (baseEvents.length === 0) return [];
+    return filterThisWeekEvents(baseEvents).slice(0, 4);
+  }, [baseEvents]);
 
   const smartDiscoveryEvents =
-    discoveryTab === 'now' ? happeningNowEvents : discoveryTab === 'near' ? nearYouEvents : forYouEvents;
+    discoveryTab === 'now'
+      ? happeningNowEvents
+      : discoveryTab === 'near'
+        ? nearYouEvents
+        : discoveryTab === 'thisWeek'
+          ? thisWeekEvents
+          : discoveryTab === 'friendsPicks'
+            ? friendsPickEvents.slice(0, 4)
+            : forYouEvents;
+
+  const editorialRows = useMemo(
+    () => buildEditorialEventRows(filteredEvents, recommendationInput, 2),
+    [filteredEvents, recommendationInput],
+  );
+
+  const editorialEventIds = useMemo(
+    () => new Set(editorialRows.flatMap((row) => row.events.map((e) => e.id))),
+    [editorialRows]
+  );
 
   const smartDiscoveryEventIds = useMemo(
     () => new Set(smartDiscoveryEvents.map((e) => e.id)),
     [smartDiscoveryEvents]
   );
-  const moreEventsForFeed = useMemo(
-    () => filteredEvents.filter((e) => !smartDiscoveryEventIds.has(e.id)),
-    [filteredEvents, smartDiscoveryEventIds]
-  );
 
-  const discoveryFeedTitle =
+  const heroEvents = useMemo(() => {
+    const pool =
+      forYouEvents.length > 0
+        ? forYouEvents
+        : featuredEvents.length > 0
+          ? featuredEvents
+          : nearYouEvents.length > 0
+            ? nearYouEvents
+            : events.slice(0, 3);
+    const context = eventConcierge?.context ?? 'default';
+    return boostEventsForConciergeContext(pool, context).slice(0, 3);
+  }, [forYouEvents, featuredEvents, nearYouEvents, events, eventConcierge?.context]);
+
+  const heroEventIdSet = useMemo(() => new Set(heroEvents.map((e) => e.id)), [heroEvents]);
+
+  const verticalFeedEvents = useMemo(() => {
+    const excludeHeroAndRail = (event: LocalEvent) =>
+      !smartDiscoveryEventIds.has(event.id) && !heroEventIdSet.has(event.id);
+
+    if (selectedCategory !== 'all') {
+      return filteredEvents.filter(excludeHeroAndRail);
+    }
+
+    return filteredEvents.filter(
+      (e) => excludeHeroAndRail(e) && !editorialEventIds.has(e.id),
+    );
+  }, [
+    filteredEvents,
+    selectedCategory,
+    smartDiscoveryEventIds,
+    editorialEventIds,
+    heroEventIdSet,
+  ]);
+
+  const heroEventIds = useMemo(() => heroEvents.map((e) => e.id).join(','), [heroEvents]);
+
+  useEffect(() => {
+    setHeroIndex(0);
+  }, [heroEventIds]);
+
+  useEffect(() => {
+    if (heroEvents.length <= 1 || mainTab !== 'discover') return;
+    const timer = setInterval(() => {
+      setHeroIndex((prev) => (prev + 1) % heroEvents.length);
+    }, HERO_ROTATE_MS);
+    return () => clearInterval(timer);
+  }, [heroEvents.length, mainTab]);
+
+  const showCinematicHero = mainTab === 'discover' && viewMode === 'list';
+
+  const discoveryRailTitle =
     discoveryTab === 'now'
       ? 'Happening Now'
       : discoveryTab === 'near'
         ? 'Near You'
-        : 'For You';
+        : discoveryTab === 'thisWeek'
+          ? 'This Week'
+          : discoveryTab === 'friendsPicks'
+            ? "Friends' Picks"
+            : 'Picked For You';
+
+  const filteredCategoryLabel =
+    selectedCategory !== 'all'
+      ? getEventCategoryMeta(selectedCategory).label
+      : null;
 
   return (
     <View style={[styles.container, { backgroundColor: warmBg }]}>
       <Stack.Screen options={{ headerShown: false }} />
 
-      <View style={[styles.header, { paddingTop: insets.top + 8 }]}>
-        <Animated.View style={[styles.headerContent, { transform: [{ scale: headerScale }] }]}>
-          <View style={styles.headerLeft}>
-            <Text style={styles.headerEmoji}>🎪</Text>
-            <View>
-              <Text style={[styles.headerTitle, { color: mainText }]}>Events</Text>
-              <Text style={[styles.headerSubtitle, { color: subtleText }]}>Discover what's on near you</Text>
+      <ScrollView
+        showsVerticalScrollIndicator={false}
+        contentContainerStyle={[
+          styles.scrollContent,
+          {
+            paddingTop: showCinematicHero ? 0 : insets.top + 8,
+            paddingBottom: 120 + insets.bottom,
+          },
+        ]}
+        refreshControl={
+          mainTab === 'discover' ? (
+            <RefreshControl refreshing={refreshing} onRefresh={handleRefresh} tintColor={accentColor} />
+          ) : undefined
+        }
+        onScroll={Animated.event([{ nativeEvent: { contentOffset: { y: scrollY } } }], { useNativeDriver: false })}
+        scrollEventThrottle={16}
+        keyboardShouldPersistTaps="handled"
+        nestedScrollEnabled
+      >
+      {showCinematicHero ? (
+        <PremiumEventHeroCard
+          events={heroEvents}
+          activeIndex={heroIndex}
+          onIndexChange={setHeroIndex}
+          scrollY={scrollY}
+          palette={palette}
+          areaLabel={areaLabel ?? undefined}
+          safeAreaTop={insets.top}
+          onePagerThisWeekLabel={onePagerThisWeekLabel}
+          concierge={eventConcierge}
+          recommendationChipLabel={
+            heroEvents.length > 0
+              ? getCompactRecommendationLabel(
+                  getRecommendationReason(heroEvents[heroIndex] ?? heroEvents[0]),
+                  heroEvents[heroIndex] ?? heroEvents[0],
+                )
+              : undefined
+          }
+          onPressEvent={openEventDetail}
+          onAddToOnePager={handleAddToOnePager}
+          onInterested={handleToggleSavedWithToast}
+          onOpenTickets={handleOpenTickets}
+        />
+      ) : null}
+
+      <View style={[styles.header, showCinematicHero && styles.headerCompact]}>
+        {!showCinematicHero ? (
+          <View style={styles.headerContent}>
+            <View style={styles.headerLeft}>
+              {mainTab === 'myEvents' ? (
+                <TouchableOpacity
+                  style={[styles.headerBackBtn, { backgroundColor: cardBg, borderColor: cardBorder }]}
+                  onPress={() => setMainTab('discover')}
+                  activeOpacity={0.75}
+                  accessibilityRole="button"
+                  accessibilityLabel="Back to Discover"
+                >
+                  <ChevronLeft size={22} color={mainText} />
+                </TouchableOpacity>
+              ) : (
+                <View style={[styles.headerIconWrap, { backgroundColor: palette.primaryLight }]}>
+                  <Sparkles size={20} color={palette.primary} />
+                </View>
+              )}
+              <View style={styles.headerTitleWrap}>
+                <Text style={[styles.headerTitle, { color: mainText }]}>
+                  {mainTab === 'myEvents' ? 'My Events' : 'Events'}
+                </Text>
+                <Text style={[styles.headerSubtitle, { color: subtleText }]}>
+                  {mainTab === 'myEvents'
+                    ? 'Your saved plans and One Pager picks'
+                    : areaLabel
+                      ? `Around ${areaLabel}`
+                      : 'Discover events picked for you'}
+                </Text>
+              </View>
+            </View>
+            <View style={styles.headerActions}>
+              {mainTab === 'discover' ? (
+                <TouchableOpacity
+                  style={[styles.viewToggle, {
+                    backgroundColor: viewMode === 'map' ? accentColor : cardBg,
+                  }]}
+                  onPress={toggleViewMode}
+                  activeOpacity={0.7}
+                >
+                  <Animated.View style={{
+                    transform: [{
+                      rotate: viewToggleAnim.interpolate({
+                        inputRange: [0, 1],
+                        outputRange: ['0deg', '180deg'],
+                      }),
+                    }],
+                  }}>
+                    {viewMode === 'list' ? (
+                      <Map size={18} color={accentColor} />
+                    ) : (
+                      <List size={18} color="#FFF" />
+                    )}
+                  </Animated.View>
+                </TouchableOpacity>
+              ) : null}
             </View>
           </View>
-          <View style={styles.headerActions}>
-            <TouchableOpacity
-              style={[styles.viewToggle, {
-                backgroundColor: viewMode === 'map' ? accentColor : cardBg,
-              }]}
-              onPress={toggleViewMode}
-              activeOpacity={0.7}
-            >
-              <Animated.View style={{
-                transform: [{
-                  rotate: viewToggleAnim.interpolate({
-                    inputRange: [0, 1],
-                    outputRange: ['0deg', '180deg'],
-                  }),
-                }],
-              }}>
-                {viewMode === 'list' ? (
-                  <Map size={18} color={accentColor} />
-                ) : (
-                  <List size={18} color="#FFFFFF" />
-                )}
-              </Animated.View>
-              <Text style={[
-                styles.viewToggleLabel,
-                { color: viewMode === 'map' ? '#FFFFFF' : accentColor },
-              ]}>
-                {viewMode === 'list' ? 'Map' : 'List'}
-              </Text>
-            </TouchableOpacity>
-            <TouchableOpacity
-              style={[styles.headerAction, { backgroundColor: cardBg }]}
-              onPress={() => void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light)}
-            >
-              <Ticket size={20} color={accentColor} />
-            </TouchableOpacity>
-          </View>
-        </Animated.View>
+        ) : null}
 
         <View style={[styles.searchBar, { backgroundColor: cardBg, borderColor: cardBorder }]}>
           <Search size={18} color={subtleText} />
@@ -644,747 +637,380 @@ export default function EventsScreen() {
             </TouchableOpacity>
           )}
         </View>
+
+        <View style={styles.mainTabRow}>
+          <TouchableOpacity
+            style={[
+              styles.mainTabPill,
+              { backgroundColor: mainTab === 'discover' ? accentColor : cardBg, borderColor: mainTab === 'discover' ? accentColor : cardBorder },
+            ]}
+            onPress={() => setMainTab('discover')}
+            activeOpacity={0.85}
+          >
+            <Sparkles size={14} color={mainTab === 'discover' ? '#FFF' : accentColor} />
+            <Text style={[styles.mainTabText, { color: mainTab === 'discover' ? '#FFF' : mainText }]}>Discover</Text>
+          </TouchableOpacity>
+          <TouchableOpacity
+            style={[
+              styles.mainTabPill,
+              { backgroundColor: mainTab === 'myEvents' ? accentColor : cardBg, borderColor: mainTab === 'myEvents' ? accentColor : cardBorder },
+            ]}
+            onPress={() => setMainTab('myEvents')}
+            activeOpacity={0.85}
+          >
+            <Heart size={14} color={mainTab === 'myEvents' ? '#FFF' : accentColor} fill={mainTab === 'myEvents' ? '#FFF' : 'transparent'} />
+            <Text style={[styles.mainTabText, { color: mainTab === 'myEvents' ? '#FFF' : mainText }]}>
+              My Events{savedCount > 0 ? ` (${savedCount})` : ''}
+            </Text>
+          </TouchableOpacity>
+          {mainTab === 'discover' ? (
+            <TouchableOpacity
+              style={[styles.mapFab, { backgroundColor: viewMode === 'map' ? accentColor : cardBg, borderColor: cardBorder }]}
+              onPress={toggleViewMode}
+              activeOpacity={0.85}
+            >
+              {viewMode === 'list' ? (
+                <Map size={18} color={accentColor} />
+              ) : (
+                <List size={18} color="#FFF" />
+              )}
+            </TouchableOpacity>
+          ) : null}
+        </View>
       </View>
 
-      <View style={[styles.smartDiscoveryWrap, { paddingTop: 4 }]}>
-        <View style={styles.smartDiscoveryTabs}>
-          <TouchableOpacity
-            style={[
-              styles.smartDiscoveryTab,
-              {
-                backgroundColor: discoveryTab === 'now' ? accentColor : cardBg,
-                borderColor: discoveryTab === 'now' ? accentColor : cardBorder,
-              },
-            ]}
-            activeOpacity={0.85}
-            onPress={() => setDiscoveryTab('now')}
-          >
-            <Text
-              style={[styles.smartDiscoveryTabText, { color: discoveryTab === 'now' ? '#FFFFFF' : mainText }]}
-              numberOfLines={1}
-              ellipsizeMode="tail"
-            >
-              🔥 Happening Now
-            </Text>
-          </TouchableOpacity>
-          <TouchableOpacity
-            style={[
-              styles.smartDiscoveryTab,
-              {
-                backgroundColor: discoveryTab === 'near' ? accentColor : cardBg,
-                borderColor: discoveryTab === 'near' ? accentColor : cardBorder,
-              },
-            ]}
-            activeOpacity={0.85}
-            onPress={() => setDiscoveryTab('near')}
-          >
-            <Text
-              style={[styles.smartDiscoveryTabText, { color: discoveryTab === 'near' ? '#FFFFFF' : mainText }]}
-              numberOfLines={1}
-              ellipsizeMode="tail"
-            >
-              📍 Near You
-            </Text>
-          </TouchableOpacity>
-          <TouchableOpacity
-            style={[
-              styles.smartDiscoveryTab,
-              {
-                backgroundColor: discoveryTab === 'forYou' ? accentColor : cardBg,
-                borderColor: discoveryTab === 'forYou' ? accentColor : cardBorder,
-              },
-            ]}
-            activeOpacity={0.85}
-            onPress={() => setDiscoveryTab('forYou')}
-          >
-            <Text
-              style={[styles.smartDiscoveryTabText, { color: discoveryTab === 'forYou' ? '#FFFFFF' : mainText }]}
-              numberOfLines={1}
-              ellipsizeMode="tail"
-            >
-              🎯 For You
-            </Text>
-          </TouchableOpacity>
+      {mainTab === 'discover' && eventsSource === 'fallback' && (
+        <View style={[styles.liveBanner, { backgroundColor: secondaryBg, borderColor: cardBorder }]}>
+          <Text style={[styles.liveBannerText, { color: subtleText }]}>
+            {process.env.EXPO_PUBLIC_RORK_API_BASE_URL?.trim()
+              ? 'Showing sample events — add TICKETMASTER_API_KEY and/or SKIDDLE_API_KEY to your Railway API service, redeploy, then pull to refresh.'
+              : 'Showing sample events — add TICKETMASTER_API_KEY and/or SKIDDLE_API_KEY to expo/.env and restart Metro for live listings.'}
+          </Text>
+        </View>
+      )}
+
+      {mainTab === 'discover' && permissionDenied && eventsSource !== 'fallback' && (
+        <View style={[styles.liveBanner, { backgroundColor: secondaryBg, borderColor: cardBorder }]}>
+          <Text style={[styles.liveBannerText, { color: subtleText }]}>
+            Location off — enable location for events closest to you.
+          </Text>
+        </View>
+      )}
+
+      {mainTab === 'discover' && eventsLoading && events.length === 0 && (
+        <View style={styles.loadingRow}>
+          <ActivityIndicator color={accentColor} />
+          <Text style={[styles.loadingText, { color: subtleText }]}>Finding events near you…</Text>
+        </View>
+      )}
+
+      {mainTab === 'discover' && viewMode === 'list' && !searchQuery ? (
+        <EventsStatsRow stats={eventStats} palette={palette} />
+      ) : null}
+
+      {mainTab === 'myEvents' && savedEvents.length > 0 ? (
+        <EventsStatsRow stats={eventStats} palette={palette} />
+      ) : null}
+
+      {mainTab === 'discover' && viewMode === 'list' && (
+      <View style={styles.smartDiscoveryWrap}>
+        <EventsDiscoveryPills
+          tabs={DISCOVERY_PILL_TABS}
+          activeTab={discoveryTab}
+          onTabChange={setDiscoveryTab}
+          palette={palette}
+        />
+
+        <View style={styles.railHeader}>
+          <Text style={[styles.railTitle, { color: mainText }]}>{discoveryRailTitle}</Text>
+          <Text style={[styles.railCount, { color: subtleText }]}>{smartDiscoveryEvents.length} events</Text>
         </View>
 
         <ScrollView
           horizontal
           showsHorizontalScrollIndicator={false}
-          contentContainerStyle={styles.smartDiscoveryScroll}
+          contentContainerStyle={styles.discoveryRailScroll}
         >
           {smartDiscoveryEvents.length === 0 ? (
             <View style={styles.smartDiscoveryEmpty}>
               <Text style={{ color: subtleText, fontWeight: '600' as const }}>No events match yet</Text>
             </View>
           ) : (
-            smartDiscoveryEvents.map((event) => {
-              const distanceKm = haversineDistanceKm(USER_LOCATION.latitude, USER_LOCATION.longitude, event.latitude, event.longitude);
-              const distanceText = formatDistanceKm(distanceKm);
-              const isFree = event.price === 'Free';
-              const priceBg = isFree ? colors.successLight : accentLight;
-              const priceTextColor = isFree ? colors.success : accentColor;
-
-              const isActive = selectedMapEvent === event.id;
-              return (
-                <TouchableOpacity
-                  key={event.id}
-                  style={[
-                    styles.discoveryCard,
-                    { backgroundColor: cardBg, borderColor: cardBorder },
-                    isActive && { borderColor: accentColor },
-                  ]}
-                  activeOpacity={0.9}
-                  onPress={() => {
-                    void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-                    setSelectedMapEvent(event.id);
-                    setExpandedEvent(event.id);
-                    if (viewMode === 'map') {
-                      mapRef.current?.animateToRegion(
-                        {
-                          latitude: event.latitude,
-                          longitude: event.longitude,
-                          latitudeDelta: 0.06,
-                          longitudeDelta: 0.06,
-                        },
-                        900
-                      );
-                    }
-                  }}
-                >
-                  <Image source={{ uri: event.image }} style={styles.discoveryCardImage} />
-
-                  <View style={styles.discoveryCardInfo}>
-                    <View style={styles.discoveryCardTop}>
-                      <Text style={styles.discoveryCardTitle} numberOfLines={1}>
-                        {event.title}
-                      </Text>
-                      <TouchableOpacity
-                        hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
-                        onPress={(e) => {
-                          e.stopPropagation();
-                          toggleSaved(event.id);
-                        }}
-                      >
-                        <Heart
-                          size={18}
-                          color={event.isSaved ? accentColor : subtleText}
-                          fill={event.isSaved ? accentColor : 'transparent'}
-                        />
-                      </TouchableOpacity>
-                    </View>
-
-                    <Text style={styles.discoveryMeta} numberOfLines={1}>
-                      {event.date} · {event.time}
-                    </Text>
-
-                    <View style={styles.discoveryBottomRow}>
-                      <View style={styles.discoveryDistance}>
-                        <MapPin size={12} color={subtleText} />
-                        <Text style={styles.discoveryDistanceText} numberOfLines={1}>
-                          {distanceText}
-                        </Text>
-                      </View>
-                      <View style={[styles.discoveryPriceBadge, { backgroundColor: priceBg }]}>
-                        <Text style={[styles.discoveryPriceText, { color: priceTextColor }]}>
-                          {event.price}
-                        </Text>
-                      </View>
-                    </View>
-                  </View>
-                </TouchableOpacity>
-              );
-            })
+            smartDiscoveryEvents.map((event, index) => (
+              <PremiumEventPosterCard
+                key={event.id}
+                event={event}
+                palette={palette}
+                variant="horizontal"
+                recommendationChipLabel={
+                  index === 0
+                    ? getCompactRecommendationLabel(getRecommendationReason(event), event)
+                    : getFeedCardChipLabel(event)
+                }
+                recommendationChipVariant={index === 0 ? 'featured-chip' : 'feed-chip'}
+                onPress={openEventDetail}
+                onToggleSaved={handleToggleSavedWithToast}
+                onSaved={showSaveToast}
+              />
+            ))
           )}
         </ScrollView>
       </View>
+      )}
 
-      {viewMode === 'map' ? (
-        <View style={styles.mapContainer}>
-          <View style={styles.mapCategoryBar}>
-            <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.mapCategoriesScroll}>
-              {EVENT_CATEGORIES.map((cat) => {
-                const isActive = selectedCategory === cat.id;
-                return (
-                  <TouchableOpacity
-                    key={cat.id}
-                    style={[
-                      styles.mapCategoryChip,
-                      {
-                        backgroundColor: isActive ? accentColor : cardBg,
-                        borderColor: isActive ? accentColor : cardBorder,
-                      },
-                    ]}
-                    onPress={() => {
-                      void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-                      setSelectedCategory(cat.id);
-                    }}
-                    activeOpacity={0.7}
-                  >
-                    <Text style={styles.mapCategoryEmoji}>{cat.emoji}</Text>
-                    <Text style={[styles.mapCategoryLabel, { color: isActive ? '#FFFFFF' : mainText }]}>
-                      {cat.label}
-                    </Text>
-                  </TouchableOpacity>
-                );
-              })}
-            </ScrollView>
-          </View>
-
+      {mainTab === 'discover' && viewMode === 'map' ? (
+        <View style={[styles.mapContainer, styles.mapContainerInScroll]}>
           <MapView
             ref={mapRef}
             style={styles.map}
             initialRegion={mapRegion}
+            region={liveMapRegion ?? undefined}
+            onRegionChangeComplete={handleMapRegionChangeComplete}
             showsUserLocation
             showsMyLocationButton={false}
             showsCompass={false}
-            mapPadding={{ top: 60, right: 20, bottom: 200, left: 20 }}
+            mapPadding={{ top: 20, right: 16, bottom: 240, left: 16 }}
           >
             {filteredEvents.map((event) => (
               <Marker
                 key={event.id}
                 coordinate={{ latitude: event.latitude, longitude: event.longitude }}
                 onPress={() => handleMapMarkerPress(event.id)}
-                title={event.title}
-                description={`${event.venue} · ${event.price}`}
-              />
+                tracksViewChanges={false}
+              >
+                <EventsMapMarker
+                  category={event.category}
+                  selected={selectedMapEvent === event.id}
+                />
+              </Marker>
             ))}
           </MapView>
+
+          {showSearchAreaBtn ? (
+            <TouchableOpacity
+              style={[styles.searchAreaBtn, { backgroundColor: palette.primary }]}
+              onPress={handleSearchThisArea}
+              activeOpacity={0.9}
+            >
+              <Search size={14} color="#FFF" />
+              <Text style={styles.searchAreaText}>Search this area</Text>
+            </TouchableOpacity>
+          ) : null}
 
           <View style={styles.mapEventCount}>
             <View style={[styles.mapCountPill, { backgroundColor: cardBg, borderColor: cardBorder }]}>
               <Navigation size={12} color={accentColor} />
               <Text style={[styles.mapCountText, { color: mainText }]}>
-                {filteredEvents.length} events nearby
+                {filteredEvents.length} events {mapSearchCenter ? 'in this area' : 'nearby'}
               </Text>
             </View>
           </View>
 
-          {selectedMapEventData && (
-            <View style={[styles.mapBottomCard, { backgroundColor: cardBg }]}>
-              <TouchableOpacity
-                style={styles.mapCardInner}
-                activeOpacity={0.85}
-                onPress={() => {
-                  void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-                  setExpandedEvent(expandedEvent === selectedMapEventData.id ? null : selectedMapEventData.id);
-                }}
-              >
-                <Image source={{ uri: selectedMapEventData.image }} style={styles.mapCardImage} />
-                <View style={styles.mapCardInfo}>
-                  <View style={styles.mapCardHeader}>
-                    <Text style={[styles.mapCardTitle, { color: mainText }]} numberOfLines={1}>
-                      {selectedMapEventData.title}
-                    </Text>
-                    <TouchableOpacity onPress={() => toggleSaved(selectedMapEventData.id)}>
-                      <Heart
-                        size={18}
-                        color={selectedMapEventData.isSaved ? accentColor : subtleText}
-                        fill={selectedMapEventData.isSaved ? accentColor : 'transparent'}
-                      />
-                    </TouchableOpacity>
-                  </View>
-                  <View style={styles.mapCardVenueRow}>
-                    <MapPin size={12} color={subtleText} />
-                    <Text style={[styles.mapCardVenue, { color: subtleText }]} numberOfLines={1}>
-                      {selectedMapEventData.venue}
-                    </Text>
-                  </View>
-                  <View style={styles.mapCardMeta}>
-                    <View style={styles.mapCardMetaItem}>
-                      <Calendar size={12} color={subtleText} />
-                      <Text style={[styles.mapCardMetaText, { color: subtleText }]}>
-                        {selectedMapEventData.date}
-                      </Text>
-                    </View>
-                    <View style={styles.mapCardMetaItem}>
-                      <Clock size={12} color={subtleText} />
-                      <Text style={[styles.mapCardMetaText, { color: subtleText }]}>
-                        {selectedMapEventData.time}
-                      </Text>
-                    </View>
-                    <View style={[
-                      styles.mapCardPriceBadge,
-                      {
-                        backgroundColor: selectedMapEventData.price === 'Free'
-                          ? colors.successLight
-                          : accentLight,
-                      },
-                    ]}>
-                      <Text style={[
-                        styles.mapCardPriceText,
-                        { color: selectedMapEventData.price === 'Free' ? colors.success : accentColor },
-                      ]}>
-                        {selectedMapEventData.price}
-                      </Text>
-                    </View>
-                  </View>
-                </View>
-              </TouchableOpacity>
-              <TouchableOpacity
-                style={[styles.mapCardAction, { backgroundColor: accentColor }]}
-                onPress={() => void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium)}
-                activeOpacity={0.8}
-              >
-                <Ticket size={14} color="#FFF" />
-                <Text style={styles.mapCardActionText}>
-                  {selectedMapEventData.price === 'Free' ? 'Register' : 'Tickets'}
-                </Text>
-              </TouchableOpacity>
-            </View>
-          )}
-
-          {!selectedMapEventData && (
-            <View style={[styles.mapBottomHint, { backgroundColor: cardBg }]}>
-              <MapPin size={16} color={accentColor} />
-              <Text style={[styles.mapHintText, { color: mainText }]}>Tap a pin to view event details</Text>
-            </View>
-          )}
+          <View style={styles.mapSheetWrap}>
+            <EventsMapBottomSheet
+              event={selectedMapEventData}
+              palette={palette}
+              expanded={mapSheetExpanded}
+              onExpandChange={setMapSheetExpanded}
+              onClose={closeMapSheet}
+              onOpenDetail={openEventDetail}
+              onAddToOnePager={handleAddToOnePager}
+              onOpenTickets={handleOpenTickets}
+              bottomInset={0}
+            />
+          </View>
         </View>
-      ) : (
-      <ScrollView
-        showsVerticalScrollIndicator={false}
-        contentContainerStyle={[styles.scrollContent, { paddingBottom: 120 }]}
-        refreshControl={
-          <RefreshControl refreshing={refreshing} onRefresh={handleRefresh} tintColor={accentColor} />
-        }
-        onScroll={Animated.event([{ nativeEvent: { contentOffset: { y: scrollY } } }], { useNativeDriver: false })}
-        scrollEventThrottle={16}
-      >
-        <View style={[styles.statsRow, { display: 'none' }]}>
-          {QUICK_STATS.map((stat, index) => (
-            <View key={index} style={[styles.statCard, { backgroundColor: cardBg, borderColor: cardBorder }]}>
-              <Text style={styles.statEmoji}>{stat.emoji}</Text>
-              <Text style={[styles.statValue, { color: mainText }]}>{stat.value}</Text>
-              <Text style={[styles.statLabel, { color: subtleText }]}>{stat.label}</Text>
-            </View>
-          ))}
-        </View>
-
-        {MY_UPCOMING.length > 0 && !searchQuery && selectedCategory === 'all' && false && (
+      ) : mainTab === 'discover' && viewMode === 'list' ? (
+      <>
+        {upcomingSaved.length > 0 && !searchQuery && selectedCategory === 'all' && (
           <View style={styles.section}>
             <View style={styles.sectionHeader}>
               <View style={styles.sectionTitleRow}>
-                <Text style={styles.sectionEmoji}>📋</Text>
-                <Text style={[styles.sectionTitle, { color: mainText }]}>My Upcoming</Text>
+                <View style={[styles.sectionIconWrap, { backgroundColor: palette.primaryLight }]}>
+                  <Calendar size={14} color={palette.primary} />
+                </View>
+                <Text style={[styles.sectionTitle, { color: mainText }]}>Your Upcoming</Text>
               </View>
               <View style={[styles.countBadge, { backgroundColor: secondaryBg }]}>
-                <Text style={[styles.countText, { color: accentColor }]}>{MY_UPCOMING.length}</Text>
+                <Text style={[styles.countText, { color: accentColor }]}>{upcomingSaved.length}</Text>
               </View>
             </View>
-
-            {MY_UPCOMING.map((item) => (
-              <TouchableOpacity
-                key={item.id}
-                style={[styles.upcomingItem, { backgroundColor: cardBg, borderColor: cardBorder }]}
-                activeOpacity={0.7}
-              >
-                <View style={[styles.upcomingEmoji, { backgroundColor: secondaryBg }]}>
-                  {(() => { const ci = CATEGORY_ICON_MAP[item.category]; const CatIcon = ci?.icon || Ticket; return <CatIcon size={20} color={ci?.color || accentColor} />; })()}
-                </View>
-                <View style={styles.upcomingInfo}>
-                  <Text style={[styles.upcomingTitle, { color: mainText }]} numberOfLines={1}>{item.title}</Text>
-                  <View style={styles.upcomingMeta}>
-                    <MapPin size={12} color={subtleText} />
-                    <Text style={[styles.upcomingVenue, { color: subtleText }]}>{item.venue}</Text>
-                  </View>
-                </View>
-                <View style={styles.upcomingRight}>
-                  <View style={[styles.daysBadge, {
-                    backgroundColor: item.daysUntil <= 3 ? colors.errorLight : secondaryBg,
-                  }]}>
-                    <Text style={[styles.daysText, {
-                      color: item.daysUntil <= 3 ? colors.error : secondaryAccent,
-                    }]}>
-                      {item.daysUntil === 0 ? 'Today' : item.daysUntil === 1 ? 'Tomorrow' : `${item.daysUntil}d`}
-                    </Text>
-                  </View>
-                  <Text style={[styles.upcomingTime, { color: subtleText }]}>{item.time}</Text>
-                </View>
-              </TouchableOpacity>
+            {upcomingSaved.slice(0, 3).map((event) => (
+              <PremiumEventListRow
+                key={event.id}
+                event={event}
+                palette={palette}
+                onPress={openEventDetail}
+                onRemind={handleRemind}
+                onAddToCalendar={handleAddToCalendar}
+              />
             ))}
           </View>
         )}
 
-        {featuredEvents.length > 0 && !searchQuery && selectedCategory === 'all' && false && (
-          <View style={styles.section}>
+        {editorialRows.length > 0 && selectedCategory === 'all' && !searchQuery
+          ? editorialRows.map((row) => (
+          <View key={row.id} style={styles.section}>
             <View style={styles.sectionHeader}>
               <View style={styles.sectionTitleRow}>
-                <Text style={styles.sectionEmoji}>⭐</Text>
-                <Text style={[styles.sectionTitle, { color: mainText }]}>Featured</Text>
+                <View style={[styles.sectionIconWrap, { backgroundColor: palette.primaryLight }]}>
+                  <Target size={14} color={palette.primary} />
+                </View>
+                <Text style={[styles.sectionTitle, { color: mainText }]}>{row.title}</Text>
               </View>
-              <TouchableOpacity>
-                <Text style={[styles.seeAll, { color: accentColor }]}>See all</Text>
-              </TouchableOpacity>
             </View>
             <ScrollView
               horizontal
               showsHorizontalScrollIndicator={false}
-              contentContainerStyle={styles.featuredScroll}
-              onScroll={Animated.event([{ nativeEvent: { contentOffset: { x: featuredScrollX } } }], { useNativeDriver: false })}
-              scrollEventThrottle={16}
-              decelerationRate="fast"
-              snapToInterval={SCREEN_WIDTH * 0.75 + 12}
+              contentContainerStyle={styles.sectionRailScroll}
             >
-              {featuredEvents.map((event) => (
-                <TouchableOpacity
+              {row.events.map((event, index) => (
+                <PremiumEventPosterCard
                   key={event.id}
-                  style={[styles.featuredCard]}
-                  activeOpacity={0.9}
-                  onPress={() => {
-                    void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-                    setExpandedEvent(expandedEvent === event.id ? null : event.id);
-                  }}
-                >
-                  <Image source={{ uri: event.image }} style={styles.featuredImage} />
-                  <LinearGradient
-                    colors={['transparent', 'rgba(0,0,0,0.85)']}
-                    style={styles.featuredGradient}
-                  />
-                  <View style={styles.featuredBadgeRow}>
-                    {event.isHot && (
-                      <View style={[styles.hotBadge, { backgroundColor: '#FF3B30' }]}>
-                        <TrendingUp size={10} color="#FFF" />
-                        <Text style={styles.hotText}>Hot</Text>
-                      </View>
-                    )}
-                  </View>
-                  <TouchableOpacity
-                    style={styles.featuredHeart}
-                    onPress={() => toggleSaved(event.id)}
-                  >
-                    <Heart size={18} color={event.isSaved ? accentColor : '#FFF'} fill={event.isSaved ? accentColor : 'transparent'} />
-                  </TouchableOpacity>
-                  <View style={styles.featuredOverlay}>
-                    <Text style={styles.featuredTitle} numberOfLines={2}>{event.title}</Text>
-                    <View style={styles.featuredMeta}>
-                      <MapPin size={12} color="rgba(255,255,255,0.8)" />
-                      <Text style={styles.featuredVenue}>{event.venue}</Text>
-                    </View>
-                    <View style={styles.featuredFooter}>
-                      <View style={styles.featuredDateRow}>
-                        <Calendar size={12} color="rgba(255,255,255,0.8)" />
-                        <Text style={styles.featuredDate}>{event.date}</Text>
-                      </View>
-                      <View style={styles.featuredPriceBadge}>
-                        <Text style={styles.featuredPrice}>{event.price}</Text>
-                      </View>
-                    </View>
-                  </View>
-                </TouchableOpacity>
+                  event={event}
+                  palette={palette}
+                  variant="horizontal"
+                  recommendationChipLabel={
+                    index === 0
+                      ? getCompactRecommendationLabel(getRecommendationReason(event), event)
+                      : getFeedCardChipLabel(event)
+                  }
+                  recommendationChipVariant={index === 0 ? 'featured-chip' : 'feed-chip'}
+                  onPress={openEventDetail}
+                  onToggleSaved={handleToggleSavedWithToast}
+                  onSaved={showSaveToast}
+                />
               ))}
             </ScrollView>
+          </View>
+        ))
+          : null}
+
+        {!searchQuery && (
+          <View style={styles.section}>
+            <View style={styles.sectionHeader}>
+              <View style={styles.sectionTitleRow}>
+                <View style={[styles.sectionIconWrap, { backgroundColor: palette.primaryLight }]}>
+                  <Sparkles size={14} color={palette.primary} />
+                </View>
+                <Text style={[styles.sectionTitle, { color: mainText }]}>Browse by mood</Text>
+              </View>
+            </View>
+            <EventsCategoryBento
+              events={events}
+              selectedCategory={selectedCategory}
+              palette={palette}
+              onSelectCategory={setSelectedCategory}
+            />
           </View>
         )}
 
         <View style={styles.section}>
           <View style={styles.sectionHeader}>
             <View style={styles.sectionTitleRow}>
-              <Text style={styles.sectionEmoji}>🏷️</Text>
-              <Text style={[styles.sectionTitle, { color: mainText }]}>Categories</Text>
-            </View>
-          </View>
-          <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.categoriesScroll}>
-            {EVENT_CATEGORIES.map((cat) => {
-              const isActive = selectedCategory === cat.id;
-              return (
-                <TouchableOpacity
-                  key={cat.id}
-                  style={[
-                    styles.categoryChip,
-                    {
-                      backgroundColor: isActive ? accentColor : cardBg,
-                      borderColor: isActive ? accentColor : cardBorder,
-                    },
-                  ]}
-                  onPress={() => {
-                    void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-                    setSelectedCategory(cat.id);
-                  }}
-                  activeOpacity={0.7}
-                >
-                  <Text style={styles.categoryEmoji}>{cat.emoji}</Text>
-                  <Text style={[styles.categoryLabel, { color: isActive ? '#FFFFFF' : mainText }]}>
-                    {cat.label}
-                  </Text>
-                </TouchableOpacity>
-              );
-            })}
-          </ScrollView>
-        </View>
-
-        <View style={styles.section}>
-          <View style={styles.sectionHeader}>
-            <View style={styles.sectionTitleRow}>
-              <Text style={styles.sectionEmoji}>
-                {discoveryTab === 'now' ? '🔥' : discoveryTab === 'near' ? '📍' : '🎯'}
+              <View style={[styles.sectionIconWrap, { backgroundColor: palette.primaryLight }]}>
+                <Star size={14} color={palette.primary} />
+              </View>
+              <Text style={[styles.sectionTitle, { color: mainText }]}>
+                {filteredCategoryLabel ?? 'All events'}
               </Text>
-              <Text style={[styles.sectionTitle, { color: mainText }]}>More from {discoveryFeedTitle}</Text>
             </View>
-            <Text style={[styles.resultCount, { color: subtleText }]}>{moreEventsForFeed.length} events</Text>
+            <Text style={[styles.resultCount, { color: subtleText }]}>
+              {verticalFeedEvents.length} {verticalFeedEvents.length === 1 ? 'event' : 'events'}
+            </Text>
           </View>
 
-          {moreEventsForFeed.length === 0 ? (
+          {verticalFeedEvents.length === 0 ? (
             <View style={[styles.emptyState, { backgroundColor: cardBg, borderColor: cardBorder }]}>
-              <Text style={styles.emptyEmoji}>✨</Text>
+              <Sparkles size={28} color={palette.primary} />
               <Text style={[styles.emptyTitle, { color: mainText }]}>You’re all caught up</Text>
-              <Text style={[styles.emptyText, { color: subtleText }]}>No more events for this view</Text>
+              <Text style={[styles.emptyText, { color: subtleText }]}>
+                {selectedCategory !== 'all'
+                  ? `No ${filteredCategoryLabel?.toLowerCase() ?? 'matching'} events right now`
+                  : 'Try another category or pill above'}
+              </Text>
             </View>
           ) : (
-            moreEventsForFeed.map((event) => {
-              const isExpanded = expandedEvent === event.id;
-              const distanceKm = haversineDistanceKm(
-                USER_LOCATION.latitude,
-                USER_LOCATION.longitude,
-                event.latitude,
-                event.longitude
-              );
-              const distanceText = formatDistanceKm(distanceKm);
-              const isFree = event.price === 'Free';
-              const priceBg = isFree ? colors.successLight : accentLight;
-              const priceTextColor = isFree ? colors.success : accentColor;
-              return (
-                <TouchableOpacity
-                  key={event.id}
-                  style={[styles.eventCard, { backgroundColor: cardBg, borderColor: cardBorder }]}
-                  onPress={() => {
-                    void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-                    setExpandedEvent(isExpanded ? null : event.id);
-                    Alert.alert(
-                      event.title,
-                      `${event.venue}\n${event.location}\n\n${event.description}`
-                    );
-                  }}
-                  activeOpacity={0.85}
-                >
-                  <View style={styles.eventRow}>
-                    <View style={styles.eventImageWrapper}>
-                      <Image source={{ uri: event.image }} style={styles.eventImage} />
-                      {event.isHot && (
-                        <View style={styles.eventHotDot}>
-                          <View style={styles.hotDotInner} />
-                        </View>
-                      )}
-                    </View>
-                    <View style={styles.eventInfo}>
-                      <View style={styles.eventTop}>
-                        <Text style={[styles.eventTitle, { color: mainText }]} numberOfLines={1}>{event.title}</Text>
-                      <TouchableOpacity
-                        style={[
-                          styles.saveInterestedPill,
-                          { borderColor: cardBorder, backgroundColor: event.isSaved ? 'rgba(232, 67, 147, 0.12)' : 'transparent' },
-                        ]}
-                        onPress={(e) => {
-                          e.stopPropagation();
-                          toggleSaved(event.id);
-                        }}
-                        hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
-                        activeOpacity={0.85}
-                      >
-                        <Heart size={18} color={event.isSaved ? accentColor : subtleText} fill={event.isSaved ? accentColor : 'transparent'} />
-                        <Text style={[styles.saveInterestedText, { color: event.isSaved ? accentColor : subtleText }]}>
-                          {event.isSaved ? 'Saved' : 'Interested'}
-                        </Text>
-                        </TouchableOpacity>
-                      </View>
-                      <View style={styles.eventVenueRow}>
-                        <MapPin size={12} color={subtleText} />
-                        <Text style={[styles.eventVenue, { color: subtleText }]} numberOfLines={1}>{event.venue}, {event.location}</Text>
-                      </View>
-                      <View style={styles.eventMeta}>
-                        <View style={styles.eventMetaItem}>
-                          <Calendar size={12} color={subtleText} />
-                        <Text style={[styles.eventMetaText, { color: subtleText }]} numberOfLines={1}>
-                          {event.date} · {event.time}
-                        </Text>
-                        </View>
-                      <View style={[styles.eventPriceBadge, { backgroundColor: priceBg }]}>
-                        <Text style={[styles.eventPriceText, { color: priceTextColor }]}>{event.price}</Text>
-                        </View>
-                        <View style={styles.eventMetaItem}>
-                        <MapPin size={12} color={subtleText} />
-                        <Text style={[styles.eventMetaText, { color: subtleText }]} numberOfLines={1}>
-                          {distanceText}
-                        </Text>
-                        </View>
-                      </View>
-                    </View>
-                  </View>
-
-                  {false && (
-                    <View style={[styles.expandedContent, { borderTopColor: cardBorder }]}>
-                      <Text style={[styles.eventDescription, { color: mainText }]}>{event.description}</Text>
-
-                      <View style={styles.expandedDetails}>
-                        <View style={[styles.detailChip, { backgroundColor: secondaryBg }]}>
-                          <Clock size={14} color={subtleText} />
-                          <Text style={[styles.detailText, { color: mainText }]}>{event.time}</Text>
-                        </View>
-                        <View style={[styles.detailChip, { backgroundColor: secondaryBg }]}>
-                          <Star size={14} color="#FFD700" />
-                          <Text style={[styles.detailText, { color: mainText }]}>{event.rating}</Text>
-                        </View>
-                        <View style={[styles.detailChip, { backgroundColor: secondaryBg }]}>
-                          <MapPin size={14} color={subtleText} />
-                          <Text style={[styles.detailText, { color: mainText }]}>{event.location}</Text>
-                        </View>
-                      </View>
-
-                      <View style={styles.tagsList}>
-                        {event.tags.map((tag, i) => (
-                          <View key={i} style={[styles.tagChip, { backgroundColor: secondaryBg }]}>
-                            <Text style={[styles.tagText, { color: secondaryAccent }]}>#{tag}</Text>
-                          </View>
-                        ))}
-                      </View>
-
-                      <View style={styles.expandedQuickActionsGrid}>
-                        <TouchableOpacity
-                          style={[styles.quickActionBtn, { borderColor: cardBorder }]}
-                          onPress={(e) => {
-                            e.stopPropagation();
-                            Alert.alert('Remind me', 'Reminders UI coming soon.');
-                          }}
-                          activeOpacity={0.85}
-                        >
-                          <Clock size={14} color={subtleText} />
-                          <Text style={styles.quickActionText}>Remind</Text>
-                        </TouchableOpacity>
-                        <TouchableOpacity
-                          style={[styles.quickActionBtn, { borderColor: cardBorder }]}
-                          onPress={(e) => {
-                            e.stopPropagation();
-                            Alert.alert('Add to calendar', 'Calendar sync UI coming soon.');
-                          }}
-                          activeOpacity={0.85}
-                        >
-                          <Calendar size={14} color={subtleText} />
-                          <Text style={styles.quickActionText}>Calendar</Text>
-                        </TouchableOpacity>
-                        <TouchableOpacity
-                          style={[styles.quickActionBtn, { borderColor: cardBorder }]}
-                          onPress={(e) => {
-                            e.stopPropagation();
-                            Alert.alert('Share', 'Share UI coming soon.');
-                          }}
-                          activeOpacity={0.85}
-                        >
-                          <Text style={styles.quickActionText}>Share</Text>
-                        </TouchableOpacity>
-                        <TouchableOpacity
-                          style={[styles.quickActionBtn, { borderColor: cardBorder }]}
-                          onPress={(e) => {
-                            e.stopPropagation();
-                            Alert.alert('Directions', 'Directions UI coming soon.');
-                          }}
-                          activeOpacity={0.85}
-                        >
-                          <Text style={styles.quickActionText}>Directions</Text>
-                        </TouchableOpacity>
-                      </View>
-
-                      <TouchableOpacity
-                        style={[styles.getTicketsBtn, { backgroundColor: accentColor }]}
-                        onPress={() => void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium)}
-                        activeOpacity={0.8}
-                      >
-                        <Ticket size={16} color="#FFF" />
-                        <Text style={styles.getTicketsText}>
-                          {event.price === 'Free' ? 'Register Now' : 'Get Tickets'}
-                        </Text>
-                        <ChevronRight size={16} color="#FFF" />
-                      </TouchableOpacity>
-                    </View>
-                  )}
-                </TouchableOpacity>
-              );
-            })
+            <View style={styles.feedList}>
+            {verticalFeedEvents.map((event, index) => (
+              <PremiumEventPosterCard
+                key={event.id}
+                event={event}
+                palette={palette}
+                variant="feed"
+                recommendationChipLabel={
+                  index === 0 && selectedCategory !== 'all'
+                    ? getCompactRecommendationLabel(getRecommendationReason(event), event)
+                    : getFeedCardChipLabel(event)
+                }
+                recommendationChipVariant={index === 0 && selectedCategory !== 'all' ? 'featured-chip' : 'feed-chip'}
+                onPress={openEventDetail}
+                onToggleSaved={handleToggleSavedWithToast}
+                onSaved={showSaveToast}
+                onAddToOnePager={handleAddToOnePager}
+              />
+            ))}
+            </View>
           )}
         </View>
+      </>
+      ) : null}
 
-        <View style={styles.section}>
-          <View style={styles.sectionHeader}>
-            <View style={styles.sectionTitleRow}>
-              <Text style={styles.sectionEmoji}>🎟️</Text>
-              <Text style={[styles.sectionTitle, { color: mainText }]}>My Events</Text>
-            </View>
-            <View style={[styles.countBadge, { backgroundColor: secondaryBg }]}>
-              <Text style={[styles.countText, { color: accentColor }]}>{savedEvents.length}</Text>
-            </View>
+      {mainTab === 'myEvents' && (
+        <>
+          <View style={styles.section}>
+            <Text style={[styles.myEventsIntro, { color: subtleText }]}>
+              Events you added to One Pager — your plans, reminders, and calendar live here.
+            </Text>
           </View>
-
           {savedEvents.length === 0 ? (
             <View style={[styles.emptyState, { backgroundColor: cardBg, borderColor: cardBorder }]}>
-              <Text style={styles.emptyEmoji}>🔖</Text>
-              <Text style={[styles.emptyTitle, { color: mainText }]}>Save events to stay on top</Text>
-              <Text style={[styles.emptyText, { color: subtleText }]}>Tap the heart on any event</Text>
+              <Heart size={32} color={palette.primary} />
+              <Text style={[styles.emptyTitle, { color: mainText }]}>No saved events yet</Text>
+              <Text style={[styles.emptyText, { color: subtleText }]}>
+                Discover something you like and tap Add to One Pager to build your week.
+              </Text>
+              <TouchableOpacity
+                style={[styles.discoverCta, { backgroundColor: accentColor }]}
+                onPress={() => setMainTab('discover')}
+              >
+                <Text style={styles.discoverCtaText}>Discover events</Text>
+              </TouchableOpacity>
             </View>
           ) : (
-            savedEvents.slice(0, 4).map((event) => (
-              <TouchableOpacity
+            savedEvents.map((event) => (
+              <PremiumSavedEventCard
                 key={event.id}
-                style={[styles.savedEventRow, { backgroundColor: cardBg, borderColor: cardBorder }]}
-                activeOpacity={0.85}
-                onPress={() => {
-                  setSelectedMapEvent(event.id);
-                  setExpandedEvent(event.id);
-                }}
-              >
-                <Image source={{ uri: event.image }} style={styles.savedEventThumb} />
-                <View style={styles.savedEventInfo}>
-                  <Text style={styles.savedEventTitle} numberOfLines={1}>
-                    {event.title}
-                  </Text>
-                  <Text style={[styles.savedEventMeta, { color: subtleText }]} numberOfLines={1}>
-                    {event.date} · {event.time}
-                  </Text>
-                  <Text style={[styles.savedEventCountdown, { color: accentColor }]} numberOfLines={1}>
-                    {getCountdownLabel(event)}
-                  </Text>
-                </View>
-
-                <View style={styles.savedEventActions}>
-                  <TouchableOpacity
-                    style={[styles.savedQuickBtn, { borderColor: cardBorder }]}
-                    onPress={(e) => {
-                      e.stopPropagation();
-                      Alert.alert('Remind me', 'Reminders UI coming soon.');
-                    }}
-                    activeOpacity={0.8}
-                  >
-                    <Clock size={14} color={subtleText} />
-                    <Text style={styles.savedQuickBtnText}>Remind</Text>
-                  </TouchableOpacity>
-                  <TouchableOpacity
-                    style={[styles.savedQuickBtn, { borderColor: cardBorder }]}
-                    onPress={(e) => {
-                      e.stopPropagation();
-                      Alert.alert('Add to calendar', 'Calendar sync UI coming soon.');
-                    }}
-                    activeOpacity={0.8}
-                  >
-                    <Calendar size={14} color={subtleText} />
-                    <Text style={styles.savedQuickBtnText}>Calendar</Text>
-                  </TouchableOpacity>
-                </View>
-              </TouchableOpacity>
+                event={event}
+                palette={palette}
+                areaLabel={areaLabel ?? undefined}
+                onPress={openEventDetail}
+                onAddToOnePager={handleAddToOnePager}
+                onRemind={handleRemind}
+                onAddToCalendar={handleAddToCalendar}
+                onDirections={handleOpenDirections}
+              />
             ))
           )}
-        </View>
-
-        <View style={styles.section}>
-          <View style={[styles.tipCard, { backgroundColor: secondaryBg }]}>
-            <Text style={styles.tipEmoji}>💡</Text>
-            <View style={styles.tipContent}>
-              <Text style={[styles.tipTitle, { color: mainText }]}>Event Tip</Text>
-              <Text style={[styles.tipText, { color: subtleText }]}>
-                Save events you're interested in to get notified when prices drop or tickets are about to sell out.
-              </Text>
-            </View>
-          </View>
-        </View>
-      </ScrollView>
+        </>
       )}
+      </ScrollView>
+
+      <EventsSaveToast
+        message={toastMessage}
+        palette={palette}
+        bottomInset={110 + insets.bottom}
+        onDismiss={dismissToast}
+      />
     </View>
+  );
+}
+
+export default function EventsScreen() {
+  return (
+    <ErrorBoundary>
+      <EventsScreenInner />
+    </ErrorBoundary>
   );
 }
 
@@ -1392,9 +1018,146 @@ const styles = StyleSheet.create({
   container: {
     flex: 1,
   },
+  mapContainerInScroll: {
+    height: 520,
+    marginBottom: 16,
+    position: 'relative',
+  },
+  mapSheetWrap: {
+    position: 'absolute',
+    left: 0,
+    right: 0,
+    bottom: 0,
+  },
+  searchAreaBtn: {
+    position: 'absolute',
+    top: 14,
+    alignSelf: 'center',
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    paddingHorizontal: 16,
+    paddingVertical: 10,
+    borderRadius: 20,
+    zIndex: 5,
+    shadowColor: '#000',
+    shadowOpacity: 0.2,
+    shadowRadius: 8,
+    shadowOffset: { width: 0, height: 3 },
+    elevation: 6,
+  },
+  searchAreaText: {
+    color: '#FFF',
+    fontSize: 13,
+    fontWeight: '700',
+  },
+  railHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    marginTop: 14,
+    marginBottom: 10,
+  },
+  railTitle: {
+    fontSize: 16,
+    fontWeight: '800',
+    letterSpacing: -0.3,
+  },
+  railCount: {
+    fontSize: 13,
+    fontWeight: '600',
+  },
+  liveBanner: {
+    marginHorizontal: 20,
+    marginBottom: 8,
+    paddingHorizontal: 14,
+    paddingVertical: 10,
+    borderRadius: 12,
+    borderWidth: 1,
+  },
+  liveBannerText: {
+    fontSize: 13,
+    lineHeight: 18,
+  },
+  loadingRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 10,
+    paddingVertical: 12,
+  },
+  loadingText: {
+    fontSize: 14,
+  },
+  mainTabRow: {
+    flexDirection: 'row',
+    gap: 10,
+    marginTop: 12,
+    alignItems: 'center',
+  },
+  mainTabPill: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 6,
+    paddingVertical: 10,
+    borderRadius: 12,
+    borderWidth: 1,
+  },
+  mainTabText: {
+    fontSize: 14,
+    fontWeight: '700',
+  },
+  myEventsIntro: {
+    fontSize: 14,
+    lineHeight: 20,
+    paddingHorizontal: 20,
+  },
+  discoverCta: {
+    marginTop: 16,
+    paddingHorizontal: 20,
+    paddingVertical: 12,
+    borderRadius: 12,
+  },
+  discoverCtaText: {
+    color: '#FFF',
+    fontWeight: '700',
+    fontSize: 15,
+  },
   header: {
     paddingHorizontal: 20,
     paddingBottom: 12,
+  },
+  headerCompact: {
+    paddingTop: 12,
+  },
+  headerIconWrap: {
+    width: 40,
+    height: 40,
+    borderRadius: 12,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  sectionIconWrap: {
+    width: 28,
+    height: 28,
+    borderRadius: 8,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  mapFab: {
+    width: 44,
+    height: 44,
+    borderRadius: 12,
+    borderWidth: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+    flexShrink: 0,
+  },
+  posterFeedScroll: {
+    paddingHorizontal: 20,
+    gap: 12,
   },
   headerContent: {
     flexDirection: 'row',
@@ -1406,6 +1169,18 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     gap: 12,
+    flex: 1,
+  },
+  headerBackBtn: {
+    width: 40,
+    height: 40,
+    borderRadius: 12,
+    borderWidth: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  headerTitleWrap: {
+    flex: 1,
   },
   headerEmoji: {
     fontSize: 36,
@@ -1861,9 +1636,11 @@ const styles = StyleSheet.create({
   },
   tipCard: {
     flexDirection: 'row',
+    alignItems: 'flex-start',
     marginHorizontal: 20,
     padding: 16,
-    borderRadius: 18,
+    borderRadius: 16,
+    borderWidth: 1,
     gap: 12,
   },
   tipEmoji: {
@@ -2108,7 +1885,9 @@ const styles = StyleSheet.create({
   // Smart discovery (Events tab)
   smartDiscoveryWrap: {
     paddingHorizontal: 20,
-    marginBottom: 6,
+    marginTop: 4,
+    marginBottom: 8,
+    gap: 4,
   },
   smartDiscoveryTabs: {
     flexDirection: 'row',
@@ -2129,10 +1908,17 @@ const styles = StyleSheet.create({
     fontWeight: '700' as const,
     textAlign: 'center',
   },
-  smartDiscoveryScroll: {
+  discoveryRailScroll: {
     gap: 12,
-    paddingRight: 20,
-    paddingLeft: 0,
+    paddingRight: 4,
+  },
+  sectionRailScroll: {
+    gap: 12,
+    paddingHorizontal: 20,
+  },
+  feedList: {
+    paddingHorizontal: 20,
+    gap: 12,
   },
   smartDiscoveryEmpty: {
     paddingVertical: 20,

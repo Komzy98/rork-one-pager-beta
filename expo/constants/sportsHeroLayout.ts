@@ -46,7 +46,7 @@ export function getHeroSecondaryRowStyle(
 
   return {
     marginTop,
-    marginBottom: 12,
+    marginBottom: sport === 'football' ? 6 : 12,
     paddingHorizontal: horizontalPad,
     zIndex: 12,
     elevation: 6,
@@ -68,6 +68,9 @@ export const HERO_SPORT_STRIP_GAP_BELOW_FEATURED_PX = 4;
 /** Lifts My Clubs + featured match block slightly above the hero bottom (Football). */
 export const FOOTBALL_HERO_BOTTOM_STACK_LIFT_PX = 14;
 
+/** Shorter hero when user has favourite clubs — more room for fixtures. */
+export const COMPACT_FOOTBALL_HERO_MIN_HEIGHT_PX = 320;
+
 /** Tall sports heroes (Football / UFC / F1 / NBA) on Plus / Pro Max widths. */
 export const SPORTS_TALL_HERO_MIN_HEIGHT_PX = 470;
 
@@ -78,8 +81,8 @@ export const SPORTS_TALL_HERO_MIN_HEIGHT_FLOOR_PX = 360;
  * Hero slot height for ~1:1 PNG art. On phones narrower than `SPORTS_TALL_HERO_MIN_HEIGHT_PX`,
  * cap height to viewport width so `resizeMode: 'cover'` does not clip baked-in left/right titles.
  */
-export function getSportsTallHeroMinHeight(windowWidth: number): number {
-  const cap = SPORTS_TALL_HERO_MIN_HEIGHT_PX;
+export function getSportsTallHeroMinHeight(windowWidth: number, compact = false): number {
+  const cap = compact ? COMPACT_FOOTBALL_HERO_MIN_HEIGHT_PX : SPORTS_TALL_HERO_MIN_HEIGHT_PX;
   if (windowWidth >= cap) return cap;
   return Math.max(SPORTS_TALL_HERO_MIN_HEIGHT_FLOOR_PX, Math.round(windowWidth));
 }

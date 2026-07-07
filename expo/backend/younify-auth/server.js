@@ -57,6 +57,15 @@ app.post("/create-younify-user", async (req, res) => {
           "x-mmt-api-secret": YOUNIFY_MANAGEMENT_API_KEY,
         },
       });
+      if (!usersResponse.ok) {
+        console.error("Younify list users failed during 422 recovery:", {
+          status: usersResponse.status,
+        });
+        return res.status(usersResponse.status).json({
+          error: "Failed to list Younify users while recovering duplicate external_id",
+          details: { httpStatus: usersResponse.status },
+        });
+      }
       const usersData = await usersResponse.json().catch(() => ({}));
       const existingUser = Array.isArray(usersData.data)
         ? usersData.data.find((user) => user.external_id === resolvedExternalId)
@@ -64,6 +73,14 @@ app.post("/create-younify-user", async (req, res) => {
 
       if (existingUser?.id) {
         userId = existingUser.id;
+      } else {
+        console.error("Younify 422 recovery: user not found in list:", {
+          externalId: resolvedExternalId,
+        });
+        return res.status(502).json({
+          error: "Younify rejected user creation (HTTP 422) but no existing user was found",
+          details: { externalId: resolvedExternalId },
+        });
       }
     } else if (!response.ok) {
       console.error("Younify create user failed:", {

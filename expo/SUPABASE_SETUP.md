@@ -14,6 +14,10 @@ EXPO_PUBLIC_SUPABASE_ANON_KEY=<your-anon-key>
 EXPO_PUBLIC_RORK_API_BASE_URL=https://<your-api-host>
 ```
 
+Football API deploy paths (Simulator vs TestFlight, Railway health checks, CI smoke): see [docs/FOOTBALL_DEPLOY.md](./docs/FOOTBALL_DEPLOY.md).
+
+Events discovery (Ticketmaster + Skiddle keys, merge behaviour): see [docs/EVENTS_DEPLOY.md](./docs/EVENTS_DEPLOY.md).
+
 Notes:
 - Use the **Project API URL**, not the dashboard URL.
 - Restart Metro after changing env vars.

@@ -37,6 +37,7 @@ export function createDefaultUserProfile(userId: string, email: string, name: st
     },
     subscriptionTier: 'free',
     onboardingCompleted: false,
+    savedEvents: [],
     createdAt: now,
     lastLoginAt: now,
   };

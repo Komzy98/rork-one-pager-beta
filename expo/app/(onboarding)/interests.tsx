@@ -13,8 +13,10 @@ import { ArrowRight, ArrowLeft, Check } from 'lucide-react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import * as Haptics from 'expo-haptics';
 import { useUserProfile } from '@/hooks/useUserProfile';
+import { useOnboardingStepMeta } from '@/hooks/useOnboardingStepMeta';
 import OnboardingProgress from '@/components/OnboardingProgress';
 import { COLORS } from '@/constants/colors';
+import { getNextOnboardingRoute } from '@/utils/onboardingFlow';
 
 const { width } = Dimensions.get('window');
 const CARD_WIDTH = (width - 32 * 2 - 12) / 2;
@@ -36,8 +38,15 @@ export default function InterestsScreen() {
   const router = useRouter();
   const { returnTo } = useLocalSearchParams<{ returnTo?: string }>();
   const insets = useSafeAreaInsets();
-  const { updateInterests } = useUserProfile();
+  const { updateInterests, profile } = useUserProfile();
+  const { currentStep, totalSteps } = useOnboardingStepMeta('interests');
   const [selectedInterests, setSelectedInterests] = useState<string[]>([]);
+
+  useEffect(() => {
+    if (profile?.interests?.length) {
+      setSelectedInterests(profile.interests);
+    }
+  }, [profile?.interests]);
 
   const fadeAnim = useRef(new Animated.Value(0)).current;
   const titleSlide = useRef(new Animated.Value(24)).current;
@@ -84,7 +93,7 @@ export default function InterestsScreen() {
   const handleContinue = useCallback(() => {
     void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
     updateInterests(selectedInterests);
-    router.push('/(onboarding)/leagues' as any);
+    router.push(getNextOnboardingRoute('interests', selectedInterests) as any);
   }, [selectedInterests, updateInterests, router]);
 
   const handleBack = useCallback(() => {
@@ -102,10 +111,7 @@ export default function InterestsScreen() {
           <ArrowLeft size={20} color={COLORS.textMuted} />
         </TouchableOpacity>
         <View style={styles.progressWrap}>
-          <OnboardingProgress
-            currentStep={1}
-            totalSteps={selectedInterests.includes('movies') ? 7 : 6}
-          />
+          <OnboardingProgress currentStep={currentStep} totalSteps={totalSteps} />
         </View>
         <View style={styles.headerSpacer} />
       </View>

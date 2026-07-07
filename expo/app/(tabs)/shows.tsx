@@ -27,6 +27,7 @@ import {
   getYounifyRuntimeIssue,
   loadYounifyStreamingBundle,
   type YounifyBrowseSection,
+  type YounifyStreamingLoadProgress,
 } from '@/services/younify';
 import { 
   Plus, 
@@ -59,7 +60,7 @@ import {
   Flame,
 } from 'lucide-react-native';
 import * as Linking from 'expo-linking';
-import { useQuery, useMutation } from '@tanstack/react-query';
+import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { useApp } from '@/hooks/useHabitsStore';
 import { useAuth } from '@/hooks/useAuth';
 import { Show, NewShowFormData } from '@/types/habit';
@@ -71,6 +72,15 @@ import { WatchProvider } from '@/utils/tmdbApi';
 import { buildYounifyProviderIndex, pickBestYounifyRowForEpisode, readSeasonEpisodeFromYounifyRow, type YounifyProviderIndex } from '@/utils/younifyProviderIndex';
 import { formatShowEpisodeLabel } from '@/utils/showEpisodeLabel';
 import { extractTmdbIdFromYounifyRow } from '@/utils/aroundYouImages';
+import {
+  buildForYouHeroCandidates,
+  buildForYouPersonalizationContext,
+  collectYounifyLinkedTmdbIds,
+  pickForYouHeroItems,
+  sortForYouRailItems,
+  toForYouMediaItem,
+  type ForYouCandidateSource,
+} from '@/utils/showsForYouPersonalization';
 import { extractTmdbMediaTypeFromYounifyRow } from '@/utils/younifyTmdbPoster';
 
 import { episodeNotificationService, TrackedShow } from '@/utils/episodeNotificationService';
@@ -910,6 +920,9 @@ export default function ShowsScreen() {
   const [streamingLoading, setStreamingLoading] = useState(false);
   const [streamingInitialized, setStreamingInitialized] = useState(false);
   const [streamingRefreshing, setStreamingRefreshing] = useState(false);
+  const [streamingLoadProgress, setStreamingLoadProgress] = useState<YounifyStreamingLoadProgress | null>(
+    null,
+  );
   const [younifyRuntimeBanner, setYounifyRuntimeBanner] = useState<string | null>(null);
   const younifyFetchInFlightRef = useRef<Promise<void> | null>(null);
   const lastYounifyFetchAtRef = useRef(0);
@@ -944,7 +957,25 @@ export default function ShowsScreen() {
     streamingInitializedRef.current = streamingInitialized;
   }, [streamingInitialized]);
 
-  /** Single SDK round-trip: one linked fetch + hero & browse `fetchContent` in parallel (see `loadYounifyStreamingBundle`). */
+  /** Single SDK round-trip: configure + linked services + one catalog fetch (see `loadYounifyStreamingBundle`). */
+  const applyLinkedStreamingServices = useCallback((linkedList: readonly any[]) => {
+    setLinkedStreamingCount(linkedList.length);
+    setHasLinkedServices(linkedList.length > 0);
+    const ids = Array.from(
+      new Set(
+        linkedList
+          .map((service: any) =>
+            younifySourceToTmdbProviderId({
+              id: String(service?.id ?? ''),
+              name: String(service?.name ?? ''),
+            }),
+          )
+          .filter((id: number | null): id is number => id != null),
+      ),
+    );
+    setLinkedProviderIds(ids);
+  }, []);
+
   const refetchYounifyStreamingUnified = useCallback(async (opts?: { force?: boolean; silent?: boolean }) => {
     const force = opts?.force === true;
     const silent = opts?.silent === true;
@@ -970,28 +1001,24 @@ export default function ShowsScreen() {
 
     const task = (async () => {
       const shouldShowBlockingLoader = !silent && !hasLocalContent;
+      const shouldTrackProgress = !hasLocalContent;
       try {
         if (shouldShowBlockingLoader) {
           setYounifyLoading(true);
           setStreamingLoading(true);
         }
-        const bundle = await loadYounifyStreamingBundle();
-        const linkedList = bundle.linkedServices;
-        setLinkedStreamingCount(linkedList.length);
-        setHasLinkedServices(linkedList.length > 0);
-        const ids = Array.from(
-          new Set(
-            linkedList
-              .map((service: any) =>
-                younifySourceToTmdbProviderId({
-                  id: String(service?.id ?? ''),
-                  name: String(service?.name ?? ''),
-                }),
-              )
-              .filter((id: number | null): id is number => id != null),
-          ),
-        );
-        setLinkedProviderIds(ids);
+        if (shouldTrackProgress) {
+          setStreamingLoadProgress({ progress: 0.05, label: 'Starting…' });
+        }
+        const bundle = await loadYounifyStreamingBundle({
+          onProgress: shouldTrackProgress
+            ? (update) => setStreamingLoadProgress(update)
+            : undefined,
+          onLinkedServices: (linkedList) => {
+            applyLinkedStreamingServices(linkedList);
+          },
+        });
+        applyLinkedStreamingServices(bundle.linkedServices);
         setYounifyContent(Array.isArray(bundle.heroContent) ? bundle.heroContent : []);
         setStreamingSections(Array.isArray(bundle.browseSections) ? bundle.browseSections : []);
         lastYounifyFetchAtRef.current = Date.now();
@@ -1003,13 +1030,14 @@ export default function ShowsScreen() {
         setYounifyLoading(false);
         setStreamingLoading(false);
         setStreamingInitialized(true);
+        setStreamingLoadProgress(null);
         younifyFetchInFlightRef.current = null;
       }
     })();
 
     younifyFetchInFlightRef.current = task;
     return task;
-  }, []);
+  }, [applyLinkedStreamingServices]);
 
   const onStreamingPullRefresh = useCallback(async () => {
     setStreamingRefreshing(true);
@@ -1044,6 +1072,15 @@ export default function ShowsScreen() {
     if (!authInitialized) return;
     void refetchYounifyStreamingUnified({ force: true, silent: true });
   }, [authInitialized, user?.id, refetchYounifyStreamingUnified]);
+
+  /** When the Streaming subtab is opened, ensure load runs with visible progress if rows are not cached yet. */
+  useEffect(() => {
+    if (selectedTab !== 'streaming') return;
+    const hasLocalContent =
+      younifyContentRef.current.length > 0 ||
+      streamingSectionsRef.current.some((s) => Array.isArray(s.items) && s.items.length > 0);
+    void refetchYounifyStreamingUnified({ silent: hasLocalContent });
+  }, [selectedTab, refetchYounifyStreamingUnified]);
 
   useEffect(() => {
     setYounifyRuntimeBanner(getYounifyRuntimeIssue());
@@ -1084,6 +1121,31 @@ export default function ShowsScreen() {
     extrapolate: 'clamp',
   });
   const searchInputRef = useRef<TextInput>(null);
+  const queryClient = useQueryClient();
+
+  /** TMDB discovery queries run only on For You, or after a deferred prefetch on other subtabs. */
+  const [forYouQueriesEnabled, setForYouQueriesEnabled] = useState(() => selectedTab === 'for-you');
+
+  useEffect(() => {
+    if (selectedTab === 'for-you') {
+      setForYouQueriesEnabled(true);
+    }
+  }, [selectedTab]);
+
+  useFocusEffect(
+    useCallback(() => {
+      let timer: ReturnType<typeof setTimeout> | null = null;
+      const interactionTask = InteractionManager.runAfterInteractions(() => {
+        timer = setTimeout(() => setForYouQueriesEnabled(true), 2500);
+      });
+      return () => {
+        interactionTask.cancel?.();
+        if (timer) clearTimeout(timer);
+      };
+    }, []),
+  );
+
+  const forYouQueryOptions = { enabled: forYouQueriesEnabled, staleTime: 1000 * 60 * 30 };
 
   const trendingQuery = useQuery({
     queryKey: ['trending-all'],
@@ -1094,7 +1156,7 @@ export default function ShowsScreen() {
       ]);
       return { movies: movies.results, tvShows: tvShows.results };
     },
-    staleTime: 1000 * 60 * 30,
+    ...forYouQueryOptions,
   });
 
   const popularQuery = useQuery({
@@ -1106,7 +1168,7 @@ export default function ShowsScreen() {
       ]);
       return { movies: movies.results, tvShows: tvShows.results };
     },
-    staleTime: 1000 * 60 * 30,
+    ...forYouQueryOptions,
   });
 
   const topRatedQuery = useQuery({
@@ -1118,7 +1180,7 @@ export default function ShowsScreen() {
       ]);
       return { movies: movies.results, tvShows: tvShows.results };
     },
-    staleTime: 1000 * 60 * 30,
+    ...forYouQueryOptions,
   });
 
   const { profile } = useUserProfile();
@@ -1147,10 +1209,9 @@ export default function ShowsScreen() {
         tmdbApi.getTrendingMoviesByRegion(userCountryCode, 'week'),
         tmdbApi.getTrendingTVShowsByRegion(userCountryCode, 'week'),
       ]);
-      console.log(`🌍 Loaded trending for ${userCountryCode}: ${movies.results.length} movies, ${tvShows.results.length} TV shows`);
       return { movies: movies.results, tvShows: tvShows.results };
     },
-    enabled: !!userCountryCode,
+    enabled: forYouQueriesEnabled && !!userCountryCode,
     staleTime: 1000 * 60 * 30,
   });
 
@@ -1160,7 +1221,7 @@ export default function ShowsScreen() {
       const movies = await tmdbApi.getNowPlayingMovies();
       return movies.results;
     },
-    staleTime: 1000 * 60 * 30,
+    ...forYouQueryOptions,
   });
 
   const airingTodayQuery = useQuery({
@@ -1169,7 +1230,7 @@ export default function ShowsScreen() {
       const tvShows = await tmdbApi.getAiringTodayTVShows();
       return tvShows.results;
     },
-    staleTime: 1000 * 60 * 30,
+    ...forYouQueryOptions,
   });
 
   interface TVShowWithEpisode {
@@ -1181,10 +1242,18 @@ export default function ShowsScreen() {
 
   const newEpisodesQuery = useQuery({
     queryKey: ['new-episodes-enriched', userCountryCode],
+    enabled: forYouQueriesEnabled,
     queryFn: async () => {
       const airingToday = await tmdbApi.getAiringTodayTVShows();
-      const onTheAir = await tmdbApi.getOnTheAirTVShows();
-      const combined = [...airingToday.results.slice(0, 10), ...onTheAir.results.slice(0, 10)];
+      const onTheAirResults = await queryClient.fetchQuery({
+        queryKey: ['on-the-air-tv'],
+        queryFn: async () => {
+          const tvShows = await tmdbApi.getOnTheAirTVShows();
+          return tvShows.results;
+        },
+        staleTime: 1000 * 60 * 30,
+      });
+      const combined = [...airingToday.results.slice(0, 10), ...onTheAirResults.slice(0, 10)];
       const uniqueShows = combined.filter((show, idx, arr) => arr.findIndex(s => s.id === show.id) === idx).slice(0, 15);
 
       const enriched: TVShowWithEpisode[] = [];
@@ -1232,7 +1301,7 @@ export default function ShowsScreen() {
       const tvShows = await tmdbApi.getOnTheAirTVShows();
       return tvShows.results;
     },
-    staleTime: 1000 * 60 * 30,
+    ...forYouQueryOptions,
   });
 
   const upcomingMoviesQuery = useQuery({
@@ -1241,7 +1310,7 @@ export default function ShowsScreen() {
       const movies = await tmdbApi.getUpcomingMovies();
       return movies.results;
     },
-    staleTime: 1000 * 60 * 30,
+    ...forYouQueryOptions,
   });
 
   const searchResultsQuery = useQuery({
@@ -1336,23 +1405,27 @@ export default function ShowsScreen() {
 
   const onRefresh = useCallback(async () => {
     setRefreshing(true);
-    const tasks: Promise<unknown>[] = [
-      refetchTrending(),
-      refetchPopular(),
-      refetchTopRated(),
-      refetchNowPlaying(),
-      refetchAiringToday(),
-      refetchOnTheAir(),
-      refetchUpcoming(),
-      refetchNewEpisodes(),
-      refetchRegionTrending(),
-    ];
+    const tasks: Promise<unknown>[] = [];
+    if (forYouQueriesEnabled || selectedTab === 'for-you') {
+      tasks.push(
+        refetchTrending(),
+        refetchPopular(),
+        refetchTopRated(),
+        refetchNowPlaying(),
+        refetchAiringToday(),
+        refetchOnTheAir(),
+        refetchUpcoming(),
+        refetchNewEpisodes(),
+        refetchRegionTrending(),
+      );
+    }
     if (selectedTab === 'streaming' || selectedTab === 'watchlist') {
       tasks.push(refetchYounifyStreamingUnified());
     }
     await Promise.all(tasks);
     setRefreshing(false);
   }, [
+    forYouQueriesEnabled,
     selectedTab,
     refetchTrending,
     refetchPopular,
@@ -1366,14 +1439,91 @@ export default function ShowsScreen() {
     refetchYounifyStreamingUnified,
   ]);
 
-  const heroItems = useMemo(() => {
-    if (!trendingQuery.data) return [];
-    const combined = [
-      ...trendingQuery.data.movies.slice(0, 5).map(m => ({ ...m, media_type: 'movie' as const })),
-      ...trendingQuery.data.tvShows.slice(0, 5).map(s => ({ ...s, media_type: 'tv' as const })),
+  const continueWatchingRows = useMemo(
+    () => streamingSections.find((s) => s.id === 'continue')?.items ?? [],
+    [streamingSections],
+  );
+
+  const younifyLinkedTmdbIds = useMemo(
+    () => collectYounifyLinkedTmdbIds(younifyContent, continueWatchingRows),
+    [younifyContent, continueWatchingRows],
+  );
+
+  const forYouPersonalization = useMemo(() => {
+    const regionMovies =
+      regionTrendingQuery.data?.movies?.slice(0, 8).map((m) => toForYouMediaItem(m, 'movie', 'region')) ?? [];
+    const regionTv =
+      regionTrendingQuery.data?.tvShows?.slice(0, 8).map((s) => toForYouMediaItem(s, 'tv', 'region')) ?? [];
+    const trendingMovies =
+      trendingQuery.data?.movies?.slice(0, 8).map((m) => toForYouMediaItem(m, 'movie', 'trending')) ?? [];
+    const trendingTv =
+      trendingQuery.data?.tvShows?.slice(0, 8).map((s) => toForYouMediaItem(s, 'tv', 'trending')) ?? [];
+    const heroCandidates = buildForYouHeroCandidates({
+      regionMovies,
+      regionTv,
+      trendingMovies,
+      trendingTv,
+    });
+    const regionalTmdbIds = [
+      ...(regionTrendingQuery.data?.movies?.map((m) => m.id) ?? []),
+      ...(regionTrendingQuery.data?.tvShows?.map((s) => s.id) ?? []),
     ];
-    return combined.sort(() => Math.random() - 0.5).slice(0, 6);
-  }, [trendingQuery.data]);
+    return buildForYouPersonalizationContext({
+      savedTmdbIds: shows.filter((s) => s.tmdbId != null).map((s) => s.tmdbId!),
+      continueWatchingTmdbIds: [...younifyContinueByTmdbId.keys()],
+      younifyLinkedTmdbIds: [...younifyLinkedTmdbIds],
+      regionalTmdbIds,
+      heroCandidates,
+    });
+  }, [
+    regionTrendingQuery.data,
+    trendingQuery.data,
+    shows,
+    younifyContinueByTmdbId,
+    younifyLinkedTmdbIds,
+  ]);
+
+  const sortForYouRail = useCallback(
+    <T extends { id: number }>(
+      items: readonly T[],
+      mediaType: 'movie' | 'tv',
+      source: ForYouCandidateSource,
+    ): T[] => {
+      if (!items.length) return [];
+      const ranked = sortForYouRailItems(
+        items.map((item) => toForYouMediaItem(item, mediaType, source)),
+        forYouPersonalization,
+      );
+      return ranked as unknown as T[];
+    },
+    [forYouPersonalization],
+  );
+
+  const heroItems = useMemo(() => {
+    const regionMovies =
+      regionTrendingQuery.data?.movies?.slice(0, 8).map((m) => toForYouMediaItem(m, 'movie', 'region')) ?? [];
+    const regionTv =
+      regionTrendingQuery.data?.tvShows?.slice(0, 8).map((s) => toForYouMediaItem(s, 'tv', 'region')) ?? [];
+    const trendingMovies =
+      trendingQuery.data?.movies?.slice(0, 8).map((m) => toForYouMediaItem(m, 'movie', 'trending')) ?? [];
+    const trendingTv =
+      trendingQuery.data?.tvShows?.slice(0, 8).map((s) => toForYouMediaItem(s, 'tv', 'trending')) ?? [];
+
+    const candidates = buildForYouHeroCandidates({
+      regionMovies,
+      regionTv,
+      trendingMovies,
+      trendingTv,
+    });
+    if (!candidates.length) return [];
+
+    return pickForYouHeroItems(candidates, forYouPersonalization, 6);
+  }, [regionTrendingQuery.data, trendingQuery.data, forYouPersonalization]);
+
+  const forYouHeroLoading =
+    forYouQueriesEnabled &&
+    heroItems.length === 0 &&
+    (trendingQuery.isLoading || (!!userCountryCode && regionTrendingQuery.isLoading));
   
   const filteredShows = useMemo(() => {
     let filtered = shows;
@@ -1653,7 +1803,7 @@ export default function ShowsScreen() {
           <View style={styles.heroContent}>
             <View style={styles.heroTopBadge}>
               <Sparkles size={12} color={THEME.accent} />
-              <Text style={styles.heroTopBadgeText}>TRENDING</Text>
+              <Text style={styles.heroTopBadgeText}>FOR YOU</Text>
             </View>
             <Text style={styles.heroTitle} numberOfLines={2}>{title}</Text>
             <View style={styles.heroMeta}>
@@ -2350,7 +2500,7 @@ export default function ShowsScreen() {
             />
           }
         >
-          {trendingQuery.isLoading ? (
+          {forYouHeroLoading ? (
             <View style={styles.loadingSection}>
               <ActivityIndicator size="large" color={THEME.primary} />
             </View>
@@ -2418,14 +2568,14 @@ export default function ShowsScreen() {
                   {renderSection(
                     `${userCountryName} Movie Releases`,
                     <Globe size={18} color={'#00D1FF'} />,
-                    regionTrendingQuery.data.movies.slice(0, 10) || [],
+                    sortForYouRail(regionTrendingQuery.data.movies.slice(0, 10) || [], 'movie', 'region'),
                     'movie',
                     true
                   )}
                   {renderSection(
                     `Popular TV in ${userCountryName}`,
                     <Tv size={18} color={'#00D1FF'} />,
-                    regionTrendingQuery.data.tvShows.slice(0, 10) || [],
+                    sortForYouRail(regionTrendingQuery.data.tvShows.slice(0, 10) || [], 'tv', 'region'),
                     'tv'
                   )}
                 </>
@@ -2434,7 +2584,7 @@ export default function ShowsScreen() {
               {renderSection(
                 'In Cinemas Now', 
                 <Film size={18} color={THEME.primary} />, 
-                nowPlayingQuery.data || [], 
+                sortForYouRail(nowPlayingQuery.data || [], 'movie', 'now-playing'),
                 'movie',
                 true
               )}
@@ -2442,7 +2592,7 @@ export default function ShowsScreen() {
               {renderSection(
                 'Streaming Now', 
                 <Tv size={18} color={THEME.success} />, 
-                onTheAirQuery.data || [], 
+                sortForYouRail(onTheAirQuery.data || [], 'tv', 'on-the-air'),
                 'tv',
                 true
               )}
@@ -2452,35 +2602,35 @@ export default function ShowsScreen() {
               {renderSection(
                 'Coming Soon to Cinemas', 
                 <Play size={18} color={THEME.warning} />, 
-                upcomingMoviesQuery.data || [], 
+                sortForYouRail(upcomingMoviesQuery.data || [], 'movie', 'upcoming'),
                 'movie'
               )}
               
               {renderSection(
                 'Popular Movies', 
                 <TrendingUp size={18} color={THEME.warning} />, 
-                popularQuery.data?.movies || [], 
+                sortForYouRail(popularQuery.data?.movies || [], 'movie', 'popular'),
                 'movie'
               )}
               
               {renderSection(
                 'Popular TV Shows', 
                 <TrendingUp size={18} color={THEME.accent} />, 
-                popularQuery.data?.tvShows || [], 
+                sortForYouRail(popularQuery.data?.tvShows || [], 'tv', 'popular'),
                 'tv'
               )}
               
               {renderSection(
                 'Top Rated Movies', 
                 <Star size={18} color={'#FFD700'} />, 
-                topRatedQuery.data?.movies || [], 
+                sortForYouRail(topRatedQuery.data?.movies || [], 'movie', 'top-rated'),
                 'movie'
               )}
               
               {renderSection(
                 'Top Rated TV Shows', 
                 <Star size={18} color={'#FFD700'} />, 
-                topRatedQuery.data?.tvShows || [], 
+                sortForYouRail(topRatedQuery.data?.tvShows || [], 'tv', 'top-rated'),
                 'tv'
               )}
               
@@ -2499,6 +2649,7 @@ export default function ShowsScreen() {
               }
               hasLinkedServices={hasLinkedServices}
               linkedStreamingCount={linkedStreamingCount}
+              loadProgress={streamingLoadProgress}
               refreshing={streamingRefreshing}
               onRefresh={onStreamingPullRefresh}
               onBrowseItemOpenDetails={handleYounifyRowOpenDetails}
@@ -2510,6 +2661,7 @@ export default function ShowsScreen() {
                       loading={younifyLoading && heroStreamingContent.length === 0}
                       hasLinkedServices={hasLinkedServices}
                       linkedStreamingCount={linkedStreamingCount}
+                      loadProgress={streamingLoadProgress}
                       onOpenDetails={handleYounifyRowOpenDetails}
                     />
                   </View>

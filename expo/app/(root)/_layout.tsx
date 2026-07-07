@@ -49,6 +49,13 @@ export default function RootLayout() {
         }} 
       />
       <Stack.Screen 
+        name="event/[id]" 
+        options={{ 
+          headerShown: false,
+          title: "Event Details",
+        }} 
+      />
+      <Stack.Screen 
         name="privacy-policy" 
         options={{ 
           headerShown: false,

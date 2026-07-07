@@ -40,6 +40,8 @@ import { generateText } from '@rork-ai/toolkit-sdk';
 interface HabitFormationCoachProps {
   onComplete?: (habitId: string) => void;
   maxItems?: number;
+  /** Compassionate coach tone — no streak guilt. */
+  recoveryMode?: boolean;
 }
 
 interface QuickWinItemProps {
@@ -55,9 +57,10 @@ interface QuickWinItemProps {
   onComplete: (id: string) => void;
   colors: ThemeColors;
   isDark: boolean;
+  recoveryMode?: boolean;
 }
 
-const QuickWinItem = memo(function QuickWinItem({ item, onComplete, colors, isDark }: QuickWinItemProps) {
+const QuickWinItem = memo(function QuickWinItem({ item, onComplete, colors, isDark, recoveryMode = false }: QuickWinItemProps) {
   const [expanded, setExpanded] = useState(false);
   const rotateAnim = useRef(new Animated.Value(0)).current;
 
@@ -89,7 +92,7 @@ const QuickWinItem = memo(function QuickWinItem({ item, onComplete, colors, isDa
         <View style={styles.quickItemInfo}>
           <View style={styles.quickItemRow}>
             <Text style={[styles.quickItemName, { color: colors.text }]} numberOfLines={expanded ? undefined : 1}>{item.title}</Text>
-            {item.isAtRisk && (
+            {item.isAtRisk && !recoveryMode && (
               <View style={styles.riskBadge}>
                 <Shield size={9} color="#DC2626" strokeWidth={2.5} />
               </View>
@@ -121,7 +124,7 @@ const QuickWinItem = memo(function QuickWinItem({ item, onComplete, colors, isDa
   );
 });
 
-export default function HabitFormationCoach({ onComplete }: HabitFormationCoachProps) {
+export default function HabitFormationCoach({ onComplete, recoveryMode = false }: HabitFormationCoachProps) {
   const { colors, isDark } = useTheme();
   const tasksContext = useTasks();
   useApp();
@@ -222,6 +225,22 @@ export default function HabitFormationCoach({ onComplete }: HabitFormationCoachP
 
     const atRiskNames = habitStats.atRisk.map(h => `"${h.title}" (${h.habitStreak}d streak)`).join(', ');
 
+    if (recoveryMode) {
+      return `You are a compassionate recovery coach. The user is going through a difficult period. Give ONE short message (2-3 sentences max):
+
+Habits today: ${habitStats.completedToday}/${habitStats.total} completed
+${habitSummaries}
+Time of day: ${new Date().getHours() < 12 ? 'morning' : new Date().getHours() < 17 ? 'afternoon' : 'evening'}
+
+Rules:
+- Acknowledge that this week may have been hard — never guilt-trip
+- NEVER mention broken streaks, overdue tasks, or "at risk" streaks
+- If they completed anything today, celebrate it genuinely
+- If nothing yet, offer ONE tiny win (2 minutes, water, step outside)
+- Sound human, warm, like a trusted friend — not a drill sergeant
+- Do NOT use markdown — plain text only`;
+    }
+
     return `You are a concise, motivating habit coach. Give ONE short coaching message (2-3 sentences max) based on this data:
 
 Habits today: ${habitStats.completedToday}/${habitStats.total} completed
@@ -237,7 +256,7 @@ Rules:
 - Give one actionable tip
 - Sound human, warm, direct. No fluff.
 - Do NOT use any markdown formatting like ** or * or # — output plain text only`;
-  }, [allHabits, habitStats, today]);
+  }, [allHabits, habitStats, today, recoveryMode]);
 
   const getCoaching = useCallback(async () => {
     if (allHabits.length === 0) return;
@@ -271,6 +290,12 @@ Rules:
   }, [allHabits, buildCoachPrompt]);
 
   const getFallbackMessage = () => {
+    if (recoveryMode) {
+      if (habitStats.completedToday > 0) {
+        return "You showed up today — that matters more than a perfect streak. Be proud of what you did, and let the rest wait.";
+      }
+      return "This week has been heavy. Missing a habit doesn't erase your progress. Pick one tiny thing — water, fresh air, a text to someone you trust.";
+    }
     if (habitStats.completedToday === habitStats.total && habitStats.total > 0) {
       return "You crushed every habit today! Consistency like this is what separates builders from wishers. Enjoy the win.";
     }
@@ -394,7 +419,7 @@ Rules:
         </View>
       </View>
 
-      {habitStats.atRisk.length > 0 && !allDone && (
+      {habitStats.atRisk.length > 0 && !allDone && !recoveryMode && (
         <View style={styles.alertSection}>
           <View style={styles.alertHeader}>
             <AlertTriangle size={14} color="#DC2626" strokeWidth={2.5} />
@@ -426,7 +451,9 @@ Rules:
             </View>
             <View style={styles.quickHeaderText}>
               <Text style={styles.quickTitle}>Quick wins</Text>
-              <Text style={styles.quickSubtitle}>Simplified versions to keep your streak</Text>
+              <Text style={styles.quickSubtitle}>
+                {recoveryMode ? 'Tiny steps — no pressure' : 'Simplified versions to keep your streak'}
+              </Text>
             </View>
           </View>
           <View
@@ -446,6 +473,7 @@ Rules:
                   onComplete={handleQuickComplete}
                   colors={colors}
                   isDark={isDark}
+                  recoveryMode={recoveryMode}
                 />
                 {index < quickRoutine.length - 1 && <View style={[styles.quickDivider, { backgroundColor: colors.border }]} />}
               </React.Fragment>

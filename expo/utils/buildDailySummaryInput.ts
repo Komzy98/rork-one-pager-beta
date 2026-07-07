@@ -133,6 +133,41 @@ export function buildContinueWatchingHighlights(
   return out;
 }
 
+export function buildSavedEventsHighlights(
+  snapshots: import('@/types/events').SavedEventSnapshot[],
+  todayYmd: string,
+  withinDays = 14
+): { title: string; dateLabel: string; timeLabel?: string; venue: string; daysUntil: number | null }[] {
+  const now = Date.now();
+  const maxMs = withinDays * 24 * 60 * 60 * 1000;
+
+  return snapshots
+    .map((s) => {
+      const startMs = Date.parse(s.startAt);
+      const daysUntil = Number.isFinite(startMs)
+        ? Math.ceil((startMs - now) / (24 * 60 * 60 * 1000))
+        : null;
+      return {
+        title: s.title,
+        dateLabel: s.dateLabel ?? s.startAt.slice(0, 10),
+        timeLabel: s.timeLabel,
+        venue: s.venueName,
+        daysUntil,
+        startMs,
+      };
+    })
+    .filter((e) => Number.isFinite(e.startMs) && e.startMs >= now - 24 * 60 * 60 * 1000 && e.startMs <= now + maxMs)
+    .sort((a, b) => a.startMs - b.startMs)
+    .slice(0, 6)
+    .map(({ title, dateLabel, timeLabel, venue, daysUntil }) => ({
+      title,
+      dateLabel,
+      timeLabel,
+      venue,
+      daysUntil,
+    }));
+}
+
 export function buildSportsEmotionalBeats(params: {
   todayYmd: string;
   recentWins: RecentWinLike[];

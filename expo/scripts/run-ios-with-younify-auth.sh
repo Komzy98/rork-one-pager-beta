@@ -42,5 +42,5 @@ fi
 cd "$ROOT"
 open -a Simulator 2>/dev/null || true
 sleep 1
-# Pass-through: npm run ios:sim:full -- --clear
+# Pass-through: npm run dev -- --clear
 exec env REACT_NATIVE_PACKAGER_HOSTNAME=127.0.0.1 EXPO_USE_LOCALHOST=1 npx expo start --dev-client --localhost --port 8081 "$@" --ios

@@ -10,9 +10,11 @@ import {
   type PinnedMatchRecord,
   mergePinnedWithLiveData,
 } from '@/utils/pinnedMatches';
+import { useSocialActivity } from '@/hooks/useSocialActivity';
 
 export function usePinnedMatches() {
   const { user } = useAuth();
+  const { logMatchPinned } = useSocialActivity();
   const storageKey = `${PINNED_MATCHES_STORAGE_BASE}_${user?.id || 'guest'}`;
   const [records, setRecords] = useState<PinnedMatchRecord[]>([]);
   const [loaded, setLoaded] = useState(false);
@@ -64,6 +66,7 @@ export function usePinnedMatches() {
       if (Platform.OS !== 'web') {
         await Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
       }
+      const wasPinned = pinnedIdSet.has(match.id);
       setRecords((prev) => {
         const exists = prev.some((r) => r.id === match.id);
         const next = exists
@@ -74,8 +77,11 @@ export function usePinnedMatches() {
         );
         return next;
       });
+      if (!wasPinned) {
+        void logMatchPinned(match);
+      }
     },
-    [storageKey],
+    [storageKey, pinnedIdSet, logMatchPinned],
   );
 
   const resolvePinnedMatches = useCallback(

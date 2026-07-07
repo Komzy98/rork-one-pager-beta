@@ -1,0 +1,11 @@
+# Railway deploy for the Hono + tRPC football API (TestFlight / production clients).
+# In Railway: set root directory to `expo`, connect GitHub repo, branch `main`, auto-deploy on push.
+
+[build]
+builder = "NIXPACKS"
+
+[deploy]
+startCommand = "npx tsx backend/serve.ts"
+healthcheckPath = "/health/football"
+healthcheckTimeout = 120
+restartPolicyType = "ON_FAILURE"

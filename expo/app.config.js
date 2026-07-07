@@ -11,6 +11,7 @@ module.exports = {
     ...appJson.expo,
     extra: {
       ...appJson.expo.extra,
+      younifyAuthUrl: (process.env.EXPO_PUBLIC_YOUNIFY_AUTH_URL || "").trim(),
       publicSupabase: {
         url: (process.env.EXPO_PUBLIC_SUPABASE_URL || "").trim(),
         anonKey: (process.env.EXPO_PUBLIC_SUPABASE_ANON_KEY || "").trim(),

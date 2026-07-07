@@ -1,4 +1,4 @@
-import React, { useCallback, useState } from 'react';
+import React, { useCallback, useState, useEffect } from 'react';
 import {
   ActivityIndicator,
   ScrollView,
@@ -19,9 +19,11 @@ import {
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import * as Haptics from 'expo-haptics';
 import { useOnboardingStepMeta } from '@/hooks/useOnboardingStepMeta';
+import { useUserProfile } from '@/hooks/useUserProfile';
 import { useEventKit } from '@/hooks/useEventKit';
 import OnboardingProgress from '@/components/OnboardingProgress';
 import { COLORS } from '@/constants/colors';
+import { getNextOnboardingRoute, HABIT_ONBOARDING_INTERESTS } from '@/utils/onboardingFlow';
 
 const BENEFITS = [
   {
@@ -44,7 +46,9 @@ const BENEFITS = [
 export default function CalendarOnboardingScreen() {
   const router = useRouter();
   const insets = useSafeAreaInsets();
-  const { totalSteps, stepCalendar } = useOnboardingStepMeta();
+  const { profile } = useUserProfile();
+  const { totalSteps, currentStep } = useOnboardingStepMeta('calendar');
+  const interests = profile?.interests ?? [];
   const {
     isEventKitAvailable,
     hasPermission,
@@ -59,9 +63,18 @@ export default function CalendarOnboardingScreen() {
   } = useEventKit();
   const [connecting, setConnecting] = useState(false);
 
+  useEffect(() => {
+    const wantsCalendar = interests.some((id) =>
+      (HABIT_ONBOARDING_INTERESTS as readonly string[]).includes(id),
+    );
+    if (profile && !wantsCalendar) {
+      router.replace(getNextOnboardingRoute('interests', interests) as any);
+    }
+  }, [profile, interests, router]);
+
   const continueNext = useCallback(() => {
-    router.push('/(onboarding)/feed-tuning' as any);
-  }, [router]);
+    router.push(getNextOnboardingRoute('calendar', interests) as any);
+  }, [router, interests]);
 
   const handleConnect = useCallback(async () => {
     void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
@@ -112,7 +125,7 @@ export default function CalendarOnboardingScreen() {
           <ArrowLeft size={20} color={COLORS.textMuted} />
         </TouchableOpacity>
         <View style={styles.progressWrap}>
-          <OnboardingProgress currentStep={stepCalendar} totalSteps={totalSteps} />
+          <OnboardingProgress currentStep={currentStep} totalSteps={totalSteps} />
         </View>
         <TouchableOpacity onPress={handleSkip} activeOpacity={0.7}>
           <Text style={styles.skipText}>Skip</Text>
@@ -125,7 +138,7 @@ export default function CalendarOnboardingScreen() {
         showsVerticalScrollIndicator={false}
       >
         <View style={styles.titleWrap}>
-          <Text style={styles.stepLabel}>STEP {stepCalendar} · LIFE MANAGEMENT</Text>
+          <Text style={styles.stepLabel}>STEP {currentStep} · LIFE MANAGEMENT</Text>
           <Text style={styles.title}>Connect your calendar</Text>
           <Text style={styles.subtitle}>
             One Pager uses your real schedule to recommend when to complete habits — so planning

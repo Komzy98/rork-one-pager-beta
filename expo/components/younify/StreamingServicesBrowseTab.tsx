@@ -11,14 +11,16 @@ import {
 } from "react-native";
 import { Animated as RNAnimated } from "react-native";
 import { useRouter } from "expo-router";
-import { type YounifyBrowseSection } from "@/services/younify";
+import { type YounifyBrowseSection, type YounifyStreamingLoadProgress } from "@/services/younify";
 import YounifyBrowseSectionRow from "@/components/younify/YounifyBrowseSectionRow";
+import StreamingLoadProgressBar from "@/components/younify/StreamingLoadProgressBar";
 
 type Props = {
   sections: YounifyBrowseSection[];
   loading: boolean;
   hasLinkedServices: boolean;
   linkedStreamingCount: number;
+  loadProgress?: YounifyStreamingLoadProgress | null;
   refreshing?: boolean;
   onRefresh?: () => void | Promise<void>;
   header?: React.ReactNode;
@@ -30,6 +32,7 @@ export default function StreamingServicesBrowseTab({
   loading,
   hasLinkedServices,
   linkedStreamingCount,
+  loadProgress,
   refreshing = false,
   onRefresh,
   header,
@@ -107,6 +110,11 @@ export default function StreamingServicesBrowseTab({
           scrollEventThrottle={16}
         >
           {renderAnimatedHeader}
+          {loadProgress && loadProgress.progress < 1 ? (
+            <View style={styles.loadingWrap}>
+              <StreamingLoadProgressBar progress={loadProgress} />
+            </View>
+          ) : null}
         </RNAnimated.ScrollView>
       );
     }

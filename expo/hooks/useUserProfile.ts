@@ -12,10 +12,16 @@ import { unifiedStorage } from '@/utils/unifiedStorage';
 import { createDefaultUserProfile, seedDefaultUserProfile } from '@/utils/userProfileBootstrap';
 import { resolveNationalTeamApiId } from '@/utils/nationalTeamApiIds';
 import {
+  canAddOptionalLeagueId,
+  isWorldCupFamilyLeagueId,
+  normalizeFavoriteLeagueIds,
+} from '@/utils/footballLeagueFamily';
+import {
   mergeProfilesFromCloud,
   reconcileProfileWithSession,
   type CloudPullPayload,
 } from '@/utils/syncMerge';
+import { sortMiddleTabsByUsage } from '@/utils/tabUsage';
 
 const PROFILE_LOAD_TIMEOUT_MS = 12_000;
 
@@ -30,6 +36,12 @@ export const [UserProfileProvider, useUserProfile] = createContextHook(() => {
   const loadInFlightRef = useRef<string | null>(null);
   const loadPromiseRef = useRef<Promise<void> | null>(null);
   const loadedUserIdRef = useRef<string | null>(null);
+  /** Latest profile for synchronous merges — avoids back-to-back updateProfile clobbering fields. */
+  const profileRef = useRef<UserProfile | null>(null);
+
+  useEffect(() => {
+    profileRef.current = profile;
+  }, [profile]);
 
   const loadProfile = useCallback(async (userId: string, email: string, name: string) => {
     if (loadInFlightRef.current === userId && loadPromiseRef.current) {
@@ -106,7 +118,7 @@ export const [UserProfileProvider, useUserProfile] = createContextHook(() => {
           ...sessionReconciledProfile,
           interests: parsedProfile.interests || [],
           favoriteCountries: parsedProfile.favoriteCountries || [],
-          favoriteLeagues: parsedProfile.favoriteLeagues || [],
+          favoriteLeagues: normalizeFavoriteLeagueIds(parsedProfile.favoriteLeagues || []),
           sportsFeedPrefs: {
             strictFollowing: parsedProfile.sportsFeedPrefs?.strictFollowing ?? false,
             includeFollowedLeagues: parsedProfile.sportsFeedPrefs?.includeFollowedLeagues ?? true,
@@ -385,7 +397,8 @@ export const [UserProfileProvider, useUserProfile] = createContextHook(() => {
 
   const saveProfile = async (newProfile: UserProfile) => {
     if (!user) return;
-    
+
+    profileRef.current = newProfile;
     setProfile(newProfile);
     console.log('✅ [Profile] Profile state updated optimistically');
     
@@ -415,9 +428,10 @@ export const [UserProfileProvider, useUserProfile] = createContextHook(() => {
   };
 
   const updateProfile = (updates: Partial<UserProfile>) => {
-    if (!profile) return;
-    const updatedProfile = { ...profile, ...updates };
-    saveProfile(updatedProfile);
+    const current = profileRef.current ?? profile;
+    if (!current) return;
+    const updatedProfile = { ...current, ...updates };
+    void saveProfile(updatedProfile);
   };
 
   const addFavoriteTeam = (team: UserTeam) => {
@@ -448,15 +462,25 @@ export const [UserProfileProvider, useUserProfile] = createContextHook(() => {
   };
 
   const addFavoriteLeague = (leagueId: number) => {
-    if (!profile || profile.favoriteLeagues.includes(leagueId)) return;
-    const updatedLeagues = [...profile.favoriteLeagues, leagueId];
-    updateProfile({ favoriteLeagues: updatedLeagues });
+    if (!profile) return;
+    if (isWorldCupFamilyLeagueId(leagueId)) {
+      if (profile.favoriteLeagues.includes(leagueId)) return;
+      updateProfile({
+        favoriteLeagues: normalizeFavoriteLeagueIds([...profile.favoriteLeagues, leagueId]),
+      });
+      return;
+    }
+    if (!canAddOptionalLeagueId(profile.favoriteLeagues, leagueId)) return;
+    updateProfile({
+      favoriteLeagues: normalizeFavoriteLeagueIds([...profile.favoriteLeagues, leagueId]),
+    });
   };
 
   const removeFavoriteLeague = (leagueId: number) => {
     if (!profile) return;
-    const updatedLeagues = profile.favoriteLeagues.filter(id => id !== leagueId);
-    updateProfile({ favoriteLeagues: updatedLeagues });
+    if (isWorldCupFamilyLeagueId(leagueId)) return;
+    const updatedLeagues = profile.favoriteLeagues.filter((id) => id !== leagueId);
+    updateProfile({ favoriteLeagues: normalizeFavoriteLeagueIds(updatedLeagues) });
   };
 
   const addFavoriteCountry = (country: UserCountry) => {
@@ -628,12 +652,10 @@ export const [UserProfileProvider, useUserProfile] = createContextHook(() => {
 
   const getPersonalizedTabs = (): string[] => {
     const canonicalOrder = ['activities', 'shows', 'sports', 'cooking', 'learning', 'events', 'tasks', 'discover', 'profile'];
+    const visitCounts = profile?.tabVisitCounts;
 
-    const sortTabs = (tabs: string[]): string[] => {
-      const filtered = tabs.filter(t => t !== 'activities' && t !== 'profile');
-      filtered.sort((a, b) => canonicalOrder.indexOf(a) - canonicalOrder.indexOf(b));
-      return ['activities', ...filtered, 'profile'];
-    };
+    const sortTabs = (tabs: string[]): string[] =>
+      sortMiddleTabsByUsage(tabs, visitCounts, canonicalOrder);
 
     if (!profile || !profile.interests.length) {
       const defaultTabs = ['activities', 'tasks', 'discover', 'profile'];
@@ -682,11 +704,30 @@ export const [UserProfileProvider, useUserProfile] = createContextHook(() => {
     if (profile.tabOrder && profile.tabOrder.length > 0) {
       const orderedTabs = profile.tabOrder.filter(tab => enabledTabsArray.includes(tab));
       const newTabs = enabledTabsArray.filter(tab => !profile.tabOrder!.includes(tab));
-      return [...orderedTabs, ...newTabs];
+      return [...orderedTabs, ...sortTabs(newTabs).filter((tab) => newTabs.includes(tab))];
     }
 
     return sortTabs(enabledTabsArray);
   };
+
+  const recordTabVisit = useCallback((tabName: string) => {
+    if (tabName === 'activities' || tabName === 'profile') {
+      return;
+    }
+
+    const current = profileRef.current;
+    if (!current) {
+      return;
+    }
+
+    const previousCount = current.tabVisitCounts?.[tabName] ?? 0;
+    updateProfile({
+      tabVisitCounts: {
+        ...(current.tabVisitCounts ?? {}),
+        [tabName]: previousCount + 1,
+      },
+    });
+  }, [updateProfile]);
 
   const updateTabOrder = (newOrder: string[]) => {
     updateProfile({ tabOrder: newOrder });
@@ -742,6 +783,7 @@ export const [UserProfileProvider, useUserProfile] = createContextHook(() => {
     isFavoriteTeam,
     isFavoriteLeague,
     getPersonalizedTabs,
+    recordTabVisit,
     updateTabOrder,
     resetTabOrder,
     getTeamLogo,

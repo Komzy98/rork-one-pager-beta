@@ -64,15 +64,21 @@ import { router, useLocalSearchParams } from 'expo-router';
 import { useAuth } from '@/hooks/useAuth';
 import { useUserProfile } from '@/hooks/useUserProfile';
 import { useApp } from '@/hooks/useHabitsStore';
+import { useTasks } from '@/hooks/useTasksStore';
 import { useTodayHabits } from '@/hooks/useTodayHabits';
 import {
   getAutoSummarySchedule,
+  getTodayYmd,
   setAutoSummaryEnabled,
   setAutoSummaryTime,
   setDailySummaryNotifyEnabled,
   formatAutoSummaryTime,
   isAutoSummaryEnabled,
 } from '@/utils/dailySummaryStats';
+import { enterRecoveryModeManual, exitRecoveryMode } from '@/utils/recoveryMode';
+import JoySourcesEditor from '@/components/JoySourcesEditor';
+import { inferJoySources, isJoySourcesEmpty } from '@/utils/joySources';
+import type { JoySources } from '@/types/habit';
 import { syncDailySummaryNotification } from '@/utils/dailySummaryNotifications';
 import { useNotificationsSafe } from '@/hooks/useBackgroundServices';
 import { useGamification } from '@/hooks/useHabitsEnhancement';
@@ -172,7 +178,7 @@ const AVAILABLE_INTERESTS = [
   { id: 'work', name: 'Work', color: '#8E8E93', tabs: ['tasks'] },
 ];
 
-type ExpandedSection = 'favorites' | 'notifications' | 'security' | 'appearance' | 'achievements' | 'challenges' | null;
+type ExpandedSection = 'favorites' | 'notifications' | 'recovery' | 'security' | 'appearance' | 'achievements' | 'challenges' | null;
 
 export default function ProfileScreen() {
   const { colors, isDark, setThemeMode } = useTheme();
@@ -195,7 +201,8 @@ export default function ProfileScreen() {
     resetOnboarding,
   } = useUserProfile();
   const { resetAllWalkthroughs } = useWalkthrough();
-  const { dashboardSummary } = useApp();
+  const { dashboardSummary, shows } = useApp();
+  const { allTasks } = useTasks();
   const { stats: todayHabitStats } = useTodayHabits();
   const {
     badges,
@@ -1297,6 +1304,111 @@ export default function ProfileScreen() {
                 <TouchableOpacity style={[styles.testNotifBtn, { borderColor: colors.primary + '40' }]} onPress={sendTestNotification}>
                   <Text style={[styles.testNotifBtnText, { color: colors.primary }]}>Send Test Notification</Text>
                 </TouchableOpacity>
+              </View>
+            )}
+
+            {/* Recovery Mode */}
+            <TouchableOpacity
+              style={[styles.settingsItem, { backgroundColor: colors.card, borderColor: colors.border }]}
+              onPress={() => toggleSection('recovery')}
+              activeOpacity={0.7}
+            >
+              <View style={[styles.settingsIconBg, { backgroundColor: '#DB2777' + '15' }]}>
+                <Heart size={18} color="#DB2777" />
+              </View>
+              <View style={styles.settingsItemContent}>
+                <Text style={[styles.settingsItemTitle, { color: colors.text }]}>Recovery Mode</Text>
+                <Text style={[styles.settingsItemSubtitle, { color: profile?.recoveryMode?.active ? '#DB2777' : colors.textTertiary }]}>
+                  {profile?.recoveryMode?.active
+                    ? 'Active — gentle coaching on Overview'
+                    : 'Support during difficult periods'}
+                </Text>
+              </View>
+              {expandedSection === 'recovery' ? (
+                <ChevronUp size={20} color={colors.textTertiary} />
+              ) : (
+                <ChevronDown size={20} color={colors.textTertiary} />
+              )}
+            </TouchableOpacity>
+
+            {expandedSection === 'recovery' && (
+              <View style={[styles.expandedContent, { backgroundColor: colors.surfaceSecondary }]}>
+                <Text style={[styles.notifMetaText, { color: colors.textSecondary, marginBottom: 12 }]}>
+                  One Pager adapts when life is hard — fewer streak reminders, Daily Hope, and tiny wins instead of overdue guilt.
+                </Text>
+
+                {profile?.recoveryMode?.active ? (
+                  <TouchableOpacity
+                    style={[styles.enableBtn, { backgroundColor: colors.card, borderWidth: 1, borderColor: colors.border }]}
+                    onPress={() => {
+                      const today = getTodayYmd();
+                      updateProfile({
+                        recoveryMode: exitRecoveryMode(profile.recoveryMode, 7, today),
+                      });
+                    }}
+                  >
+                    <Text style={[styles.enableBtnText, { color: colors.text }]}>I&apos;m feeling a bit better</Text>
+                  </TouchableOpacity>
+                ) : (
+                  <TouchableOpacity
+                    style={[styles.enableBtn, { backgroundColor: '#DB2777' }]}
+                    onPress={() => {
+                      updateProfile({
+                        recoveryMode: enterRecoveryModeManual(profile?.recoveryMode, new Date().toISOString()),
+                      });
+                    }}
+                  >
+                    <Heart size={16} color="#fff" />
+                    <Text style={[styles.enableBtnText, { color: '#fff' }]}>I&apos;m going through a hard time</Text>
+                  </TouchableOpacity>
+                )}
+
+                <View style={[styles.notifRow, { borderBottomColor: colors.border, flexDirection: 'column', alignItems: 'stretch', gap: 8, paddingVertical: 14 }]}>
+                  <Text style={[styles.notifLabel, { color: colors.text }]}>Who you&apos;re becoming</Text>
+                  <Text style={[styles.notifMetaText, { color: colors.textSecondary }]}>
+                    Identity reminders shown in Recovery Mode (one per line)
+                  </Text>
+                  <TextInput
+                    style={[
+                      styles.recoveryGoalsInput,
+                      {
+                        color: colors.text,
+                        backgroundColor: colors.card,
+                        borderColor: colors.border,
+                      },
+                    ]}
+                    multiline
+                    placeholder={'Get below 100 kg\nGrow Home Visuals UK\nHelp people with One Pager'}
+                    placeholderTextColor={colors.textTertiary}
+                    value={(profile?.identityGoals ?? []).join('\n')}
+                    onChangeText={(text) => {
+                      const goals = text
+                        .split('\n')
+                        .map((g) => g.trim())
+                        .filter(Boolean);
+                      updateProfile({ identityGoals: goals });
+                    }}
+                  />
+                </View>
+
+                <View style={[styles.notifRow, { borderBottomWidth: 0, flexDirection: 'column', alignItems: 'stretch', gap: 8, paddingVertical: 14 }]}>
+                  <Text style={[styles.notifLabel, { color: colors.text }]}>What brings you joy</Text>
+                  <Text style={[styles.notifMetaText, { color: colors.textSecondary }]}>
+                    Used for Daily Hope — shows, sport, music, food, and more
+                  </Text>
+                  <JoySourcesEditor
+                    compact
+                    value={profile?.joySources}
+                    suggested={inferJoySources({
+                      profile,
+                      shows: shows ?? [],
+                      habitTasks: allTasks.filter((t) => t.isHabit),
+                    })}
+                    onChange={(next: JoySources) => {
+                      updateProfile({ joySources: isJoySourcesEmpty(next) ? undefined : next });
+                    }}
+                  />
+                </View>
               </View>
             )}
 
@@ -2753,6 +2865,16 @@ const styles = StyleSheet.create({
   enableBtnText: {
     fontSize: 14,
     fontWeight: '600',
+  },
+  recoveryGoalsInput: {
+    minHeight: 88,
+    borderWidth: 1,
+    borderRadius: 12,
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+    fontSize: 14,
+    lineHeight: 20,
+    textAlignVertical: 'top',
   },
   notifRow: {
     flexDirection: 'row',

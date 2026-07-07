@@ -6,6 +6,12 @@ import { createClient } from "@supabase/supabase-js";
 import { appRouter } from "./trpc/app-router";
 import { createContext } from "./trpc/create-context";
 import { getFootballApiKeyFromEnv } from "./utils/footballApiKey";
+import { runFootballForYouSmokeCheck } from "./trpc/routes/football/matches/route";
+import { runEventsDiscoverySmokeCheck } from "./trpc/routes/events/nearby/route";
+import { getSkiddleApiKeyFromEnv } from "./utils/skiddleApiKey";
+import { getTicketmasterApiKeyFromEnv } from "./utils/ticketmasterApiKey";
+import { registerYounifyAuthRoutes } from "./younify-auth/honoRoutes";
+import { registerSupabaseDevProxy } from "./supabaseProxy";
 import { generalRateLimiter, authRateLimiter } from "./middleware/rate-limiter";
 import { payloadSizeLimiter, inputSanitizer } from "./middleware/sanitizer";
 
@@ -28,10 +34,14 @@ app.use("*", payloadSizeLimiter(100 * 1024));
 
 app.use("*", inputSanitizer());
 
+registerYounifyAuthRoutes(app);
+registerSupabaseDevProxy(app);
+
 app.use("*", generalRateLimiter());
 
 app.use("/auth/*", authRateLimiter());
 app.use("/trpc/auth.*", authRateLimiter());
+app.use("/api/trpc/supabase-proxy/auth/*", authRateLimiter());
 
 app.post("/auth/delete-account", async (c) => {
   const supabaseUrl = (process.env.EXPO_PUBLIC_SUPABASE_URL || process.env.SUPABASE_URL || "").trim();
@@ -125,6 +135,80 @@ app.all("/trpc/*", (c) => handleTrpcRequest(c));
 
 app.get("/", (c) => {
   return c.json({ status: "ok", message: "API is running" });
+});
+
+app.get("/health", (c) => {
+  const footballKey = getFootballApiKeyFromEnv();
+  return c.json({
+    ok: true,
+    service: "one-pager-api",
+    footballApiKeyConfigured: Boolean(footballKey),
+    ticketmasterKeyConfigured: Boolean(getTicketmasterApiKeyFromEnv()),
+    skiddleKeyConfigured: Boolean(getSkiddleApiKeyFromEnv()),
+    timestamp: new Date().toISOString(),
+  });
+});
+
+/** Railway / post-deploy smoke: Ticketmaster + Skiddle merge for London coords. */
+app.get("/health/events", async (c) => {
+  try {
+    const result = await runEventsDiscoverySmokeCheck();
+    const body = {
+      ok: result.ok,
+      check: "events-discovery-london",
+      ticketmasterKeyConfigured: result.ticketmasterKeyConfigured,
+      skiddleKeyConfigured: result.skiddleKeyConfigured,
+      source: result.source,
+      total: result.total,
+      ticketmaster: result.ticketmaster,
+      skiddle: result.skiddle,
+      minRequired: result.minRequired,
+      errors: result.errors,
+      timestamp: new Date().toISOString(),
+    };
+    return c.json(body, result.ok ? 200 : 503);
+  } catch (error: unknown) {
+    const message = error instanceof Error ? error.message : String(error);
+    return c.json(
+      {
+        ok: false,
+        check: "events-discovery-london",
+        error: message,
+        timestamp: new Date().toISOString(),
+      },
+      503,
+    );
+  }
+});
+
+/** Railway / post-deploy smoke: World Cup bundle with teamIds [] (For You default). */
+app.get("/health/football", async (c) => {
+  try {
+    const result = await runFootballForYouSmokeCheck();
+    const body = {
+      ok: result.ok,
+      check: "for-you-world-cup-bundle",
+      teamIds: [],
+      leagueIds: [1],
+      upcoming: result.upcomingCount,
+      live: result.liveCount,
+      minRequired: result.minRequired,
+      errors: result.errors,
+      timestamp: new Date().toISOString(),
+    };
+    return c.json(body, result.ok ? 200 : 503);
+  } catch (error: unknown) {
+    const message = error instanceof Error ? error.message : String(error);
+    return c.json(
+      {
+        ok: false,
+        check: "for-you-world-cup-bundle",
+        error: message,
+        timestamp: new Date().toISOString(),
+      },
+      503,
+    );
+  }
 });
 
 

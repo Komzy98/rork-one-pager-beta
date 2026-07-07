@@ -5,6 +5,7 @@ export const APP_SCHEME = 'onepager';
 export type ParsedDeepLink =
   | { kind: 'challenge'; id: string }
   | { kind: 'user'; username: string }
+  | { kind: 'event'; id: string }
   | { kind: 'tab'; name: string }
   | { kind: 'unknown'; path: string };
 
@@ -15,6 +16,11 @@ function clean(value: string): string {
 /** Build a shareable link to a challenge, e.g. onepager://challenge/abc123 */
 export function buildChallengeLink(challengeId: string): string {
   return `${APP_SCHEME}://challenge/${encodeURIComponent(clean(challengeId))}`;
+}
+
+/** Build a shareable link to an event detail + night-out plan. */
+export function buildEventLink(eventId: string): string {
+  return `${APP_SCHEME}://event/${encodeURIComponent(clean(eventId))}`;
 }
 
 /** Build a shareable link to a user profile, e.g. onepager://u/komzy */
@@ -60,6 +66,9 @@ export function parseDeepLink(url: string): ParsedDeepLink | null {
 
   if (head === 'challenge' && rest[0]) {
     return { kind: 'challenge', id: rest[0] };
+  }
+  if (head === 'event' && rest[0]) {
+    return { kind: 'event', id: rest[0] };
   }
   if ((head === 'u' || head === 'user') && rest[0]) {
     return { kind: 'user', username: rest[0].replace(/^@/, '') };

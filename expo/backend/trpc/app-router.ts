@@ -12,10 +12,14 @@ import {
 } from "./routes/f1/apiSports";
 import { generateVoiceRoute } from "./routes/ai/voice/route";
 import { getNearbyEventsRoute } from "./routes/events/nearby/route";
+import { signInWithPasswordRoute } from "./routes/auth/signIn/route";
 
 export const appRouter = createTRPCRouter({
   example: createTRPCRouter({
     hi: hiRoute,
+  }),
+  auth: createTRPCRouter({
+    signInWithPassword: signInWithPasswordRoute,
   }),
   football: createTRPCRouter({
     getMatches: getMatchesRoute,

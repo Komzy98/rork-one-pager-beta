@@ -14,6 +14,7 @@ import { Shield, ChevronRight, Trophy } from 'lucide-react-native';
 import * as Haptics from 'expo-haptics';
 import { LiveFootballMatch } from '@/types/habit';
 import { useTheme } from '@/hooks/useTheme';
+import { formatFootballMatchBadgeTime } from '@/utils/footballKickoffLabel';
 
 const { width: SCREEN_WIDTH } = Dimensions.get('window');
 const COMPACT_WIDGET_WIDTH = (SCREEN_WIDTH - 44) / 2;
@@ -101,16 +102,7 @@ const WidgetMatchCard = React.memo(({
     if (isLive && match.elapsed) return `${match.elapsed}'`;
     if (isLive) return 'LIVE';
     if (isCompleted) return 'FT';
-    const d = new Date(match.date);
-    const now = new Date();
-    now.setHours(0, 0, 0, 0);
-    const tomorrow = new Date(now);
-    tomorrow.setDate(tomorrow.getDate() + 1);
-    const matchDay = new Date(d);
-    matchDay.setHours(0, 0, 0, 0);
-    if (matchDay.getTime() === now.getTime()) return match.time;
-    if (matchDay.getTime() === tomorrow.getTime()) return 'TMR';
-    return d.toLocaleDateString('en-GB', { day: 'numeric', month: 'short' });
+    return formatFootballMatchBadgeTime(match.date, match.time);
   };
 
   const isDark = colors.background !== '#F8F9FA' && colors.background !== '#FFFFFF';

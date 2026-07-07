@@ -22,6 +22,7 @@ import { StreakFreeze } from '@/types/habit';
 import { generateDailyTasks, generateMilestones, shouldLevelUp } from '@/utils/goalBreakdown';
 import { useAuth } from '@/hooks/useAuth';
 import { useSupabaseSync } from '@/utils/supabaseUserSync';
+import { useSocialActivity } from '@/hooks/useSocialActivity';
 import {
   resolveHabitsAfterCloudSync,
   resolveGenericRecordsAfterCloudSync,
@@ -160,6 +161,7 @@ export const [AppProvider, useApp] = createContextHook(() => {
   const { user } = useAuth();
   const userId = user?.id;
   const supabaseSync = useSupabaseSync(userId);
+  const { logHabitCompleted, logShowSaved } = useSocialActivity();
   
   // Get user-specific storage keys - use stable values
   const HABITS_STORAGE_KEY = React.useMemo(() => getUserStorageKey('habits', userId), [userId]);
@@ -524,6 +526,7 @@ export const [AppProvider, useApp] = createContextHook(() => {
   const toggleHabitCompletion = (habitId: string) => {
     const habits = habitsQuery.data || [];
     const today = getTodayFormatted();
+    let completedHabitName: string | null = null;
     
     console.log('🔄 Toggling habit completion:', {
       habitId,
@@ -546,6 +549,7 @@ export const [AppProvider, useApp] = createContextHook(() => {
             completionLogs: updatedLogs,
           };
         } else {
+          completedHabitName = habit.name;
           updatedCompletions[today] = true;
           console.log('✅ Adding completion for habit:', habit.name, 'on', today);
           const quickLog: GoalCompletion = {
@@ -592,6 +596,9 @@ export const [AppProvider, useApp] = createContextHook(() => {
     
     console.log('💾 Saving updated habits to storage');
     saveHabitsMutation.mutate(updatedHabits);
+    if (completedHabitName) {
+      void logHabitCompleted(habitId, completedHabitName);
+    }
   };
 
   // Log detailed habit completion
@@ -808,6 +815,7 @@ export const [AppProvider, useApp] = createContextHook(() => {
     
     const updatedShows = [...shows, newShow];
     saveShowsMutation.mutate(updatedShows);
+    void logShowSaved(newShow.id, showData.title, showData.tmdbId, showData.mediaType);
   };
 
   const updateShow = (updatedShow: Show) => {
