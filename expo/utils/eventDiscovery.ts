@@ -60,11 +60,10 @@ function rollForwardIfPast(candidate: Date, referenceMs = Date.now()): Date {
   return next;
 }
 
-export function parseEventStartDateTime(event: LocalEvent, referenceMs = Date.now()): Date | null {
-  if (event.startIso) {
-    const d = new Date(event.startIso);
-    if (!Number.isNaN(d.getTime())) return d;
-  }
+function parseEventStartFromLabels(
+  event: Pick<LocalEvent, 'date' | 'time'>,
+  referenceMs = Date.now()
+): Date | null {
   if (!event.date || !event.time) return null;
   const dateStr = event.date.trim();
   if (dateStr.toLowerCase().includes('ongoing')) return null;
@@ -75,6 +74,34 @@ export function parseEventStartDateTime(event: LocalEvent, referenceMs = Date.no
 
   base = applyTimeToDate(base, event.time);
   return rollForwardIfPast(base, referenceMs);
+}
+
+/** Parse a saved snapshot using display labels when startAt may be a stale UTC instant. */
+export function parseSavedEventStartMs(
+  snapshot: Pick<import('@/types/events').SavedEventSnapshot, 'startAt' | 'dateLabel' | 'timeLabel'>,
+  referenceMs = Date.now()
+): number | null {
+  if (snapshot.dateLabel && snapshot.timeLabel) {
+    const fromLabels = parseEventStartFromLabels(
+      { date: snapshot.dateLabel, time: snapshot.timeLabel },
+      referenceMs
+    );
+    if (fromLabels) return fromLabels.getTime();
+  }
+  const parsed = Date.parse(snapshot.startAt);
+  return Number.isFinite(parsed) ? parsed : null;
+}
+
+export function parseEventStartDateTime(event: LocalEvent, referenceMs = Date.now()): Date | null {
+  // Trust what the user sees in the UI (date + time labels) over raw ISO when both exist.
+  const fromLabels = parseEventStartFromLabels(event, referenceMs);
+  if (fromLabels) return fromLabels;
+
+  if (event.startIso) {
+    const d = new Date(event.startIso);
+    if (!Number.isNaN(d.getTime())) return d;
+  }
+  return null;
 }
 
 export function getDaysUntilEvent(event: LocalEvent): number | null {

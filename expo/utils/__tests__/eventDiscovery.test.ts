@@ -32,8 +32,8 @@ describe('eventDiscovery', () => {
       title: 'Test',
       venue: 'V',
       location: 'L',
-      date: 'Today',
-      time: '20:00',
+      date: 'Ongoing',
+      time: 'TBA',
       category: 'music',
       price: '£10',
       image: '',
@@ -72,6 +72,34 @@ describe('eventDiscovery', () => {
       },
     ];
     assert.equal(filterHappeningNow(events).length, 1);
+  });
+
+  it('prefers display labels over conflicting startIso', () => {
+    const reference = new Date('2026-07-07T08:00:00').getTime();
+    const parsed = parseEventStartDateTime(
+      {
+        id: '1',
+        title: 'SEA LIFE Manchester',
+        venue: 'SEA LIFE',
+        location: 'Manchester',
+        date: 'Tue, 7 Jul',
+        time: '10:00',
+        category: 'arts',
+        price: '£20',
+        image: '',
+        isSaved: true,
+        attendees: 0,
+        rating: 4,
+        tags: [],
+        description: '',
+        latitude: 0,
+        longitude: 0,
+        startIso: '2026-07-07T00:00:00.000Z',
+      },
+      reference
+    );
+    assert.ok(parsed);
+    assert.equal(parsed!.getHours(), 10);
   });
 
   it('rolls display-only dates forward to the next occurrence', () => {
@@ -159,6 +187,41 @@ describe('ticketmasterTransform', () => {
     assert.equal(event!.ticketUrl, 'https://ticketmaster.com/event/abc123');
     assert.equal(event!.price, '£25+');
     assert.equal(event!.latitude, 51.503);
+  });
+
+  it('prefers local venue time over midnight UTC dateTime (Sea Life-style tickets)', () => {
+    const raw = {
+      id: 'sealife1',
+      name: 'SEA LIFE Manchester - Standard Entry',
+      images: [{ url: 'https://example.com/img.jpg', width: 640 }],
+      dates: {
+        start: {
+          localDate: '2026-07-07',
+          localTime: '10:00:00',
+          dateTime: '2026-07-07T00:00:00Z',
+        },
+      },
+      _embedded: {
+        venues: [
+          {
+            name: 'SEA LIFE Manchester',
+            city: { name: 'Manchester' },
+            location: { latitude: '53.467', longitude: '-2.286' },
+          },
+        ],
+      },
+    };
+
+    const event = mapTicketmasterEvent(raw);
+    assert.ok(event);
+    assert.equal(event!.time, '10:00');
+    assert.equal(event!.startIso, '2026-07-07T10:00:00');
+
+    const reference = new Date('2026-07-07T08:00:00').getTime();
+    const parsed = parseEventStartDateTime(event!, reference);
+    assert.ok(parsed);
+    assert.equal(parsed!.getHours(), 10);
+    assert.equal(parsed!.getMinutes(), 0);
   });
 
   it('returns null when venue coordinates are missing', () => {

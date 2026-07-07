@@ -1,11 +1,12 @@
 import React from 'react';
 import { Image, StyleSheet, Text, View } from 'react-native';
-import type { FriendEventSave, PlanRsvp } from '@/utils/sharedPlansService';
+import type { FriendEventSave, GuestRsvp, PlanRsvp } from '@/utils/sharedPlansService';
 import type { EventsPalette } from '@/utils/eventsPalette';
 
 interface WhoIsGoingProps {
   palette: EventsPalette;
   rsvpsGoing: PlanRsvp[];
+  guestRsvps?: GuestRsvp[];
   friendsSaved: FriendEventSave[];
 }
 
@@ -17,6 +18,7 @@ function displayName(profile?: { displayName: string | null; username: string } 
 export const WhoIsGoing = React.memo(function WhoIsGoing({
   palette,
   rsvpsGoing,
+  guestRsvps = [],
   friendsSaved,
 }: WhoIsGoingProps) {
   const rsvpIds = new Set(rsvpsGoing.map((r) => r.userId));
@@ -29,6 +31,14 @@ export const WhoIsGoing = React.memo(function WhoIsGoing({
       avatarUrl: r.profile?.avatarUrl ?? null,
       tag: 'In',
     })),
+    ...guestRsvps
+      .filter((g) => g.status === 'in' || g.status === 'maybe')
+      .map((g) => ({
+        key: `guest-${g.id}`,
+        name: g.displayName,
+        avatarUrl: null as string | null,
+        tag: g.status === 'in' ? 'In' : 'Maybe',
+      })),
     ...savedOnly.map((f) => ({
       key: `save-${f.userId}`,
       name: displayName(f.profile),

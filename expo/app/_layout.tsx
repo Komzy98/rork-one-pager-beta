@@ -285,30 +285,30 @@ export default function RootLayout() {
                     <SafeProvider provider={AppProvider}>
                       <SafeProvider provider={TaskProvider}>
                         <SafeProvider provider={CloudSyncProvider}>
-                            <SafeProvider provider={HabitsEnhancementProvider}>
-                              <SafeProvider provider={FriendsProvider}>
-                              <PartnerEventSaveSync />
+                          <SafeProvider provider={HabitsEnhancementProvider}>
+                            <SafeProvider provider={FriendsProvider}>
                               <SafeProvider provider={CommunityProvider}>
-                              <SafeProvider provider={ActivityProvider}>
-                              <SafeProvider provider={BusyModeProvider}>
-                                <SafeProvider provider={BackgroundServicesProvider}>
-                                  <SafeProvider provider={WalkthroughProvider}>
-                                    <SafeProvider provider={EventKitProvider}>
-                                      <SafeProvider provider={CalendarProvider}>
-                                        <StatusBarManager />
-                                        {typeof __DEV__ !== "undefined" && __DEV__ ? (
-                                          <YounifyAuthDevBanner />
-                                        ) : null}
-                                        <RootLayoutNav />
+                                <SafeProvider provider={ActivityProvider}>
+                                  <SafeProvider provider={BusyModeProvider}>
+                                    <SafeProvider provider={BackgroundServicesProvider}>
+                                      <SafeProvider provider={WalkthroughProvider}>
+                                        <SafeProvider provider={EventKitProvider}>
+                                          <SafeProvider provider={CalendarProvider}>
+                                            <StatusBarManager />
+                                            {typeof __DEV__ !== "undefined" && __DEV__ ? (
+                                              <YounifyAuthDevBanner />
+                                            ) : null}
+                                            <PartnerEventSaveSync />
+                                            <RootLayoutNav />
+                                          </SafeProvider>
+                                        </SafeProvider>
                                       </SafeProvider>
                                     </SafeProvider>
                                   </SafeProvider>
                                 </SafeProvider>
                               </SafeProvider>
-                              </SafeProvider>
-                              </SafeProvider>
-                              </SafeProvider>
                             </SafeProvider>
+                          </SafeProvider>
                         </SafeProvider>
                       </SafeProvider>
                     </SafeProvider>

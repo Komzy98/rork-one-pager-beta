@@ -121,7 +121,7 @@ export default function LoginScreen() {
       Alert.alert(
         'Google sign-in unavailable',
         supabaseConfigured
-          ? 'Turn on the Google provider in Supabase (Authentication → Providers) and add this redirect URL to Google Cloud OAuth credentials and Supabase redirect URLs: use scheme onepager with path auth (e.g. onepager://auth). Or set EXPO_PUBLIC_GOOGLE_CLIENT_ID for standalone OAuth without Supabase.'
+          ? 'Turn on the Google provider in Supabase (Authentication → Providers) and add your Google client id there. Add redirect URI onepager://auth in Google Cloud. Or set EXPO_PUBLIC_GOOGLE_CLIENT_ID for branded Google sign-in (recommended).'
           : 'Add EXPO_PUBLIC_SUPABASE_URL and EXPO_PUBLIC_SUPABASE_ANON_KEY for Google via Supabase, or set EXPO_PUBLIC_GOOGLE_CLIENT_ID for direct Google OAuth.',
       );
       return;

@@ -3,7 +3,7 @@
  * Prefix with country when the name alone would be ambiguous.
  */
 import type { ImageSourcePropType } from 'react-native';
-import { WORLD_CUP_LOGO } from '@/constants/worldCupAssets';
+
 const GENERIC_LEAGUE_NAMES = new Set([
   'premier league',
   'first division',
@@ -56,6 +56,8 @@ const CANONICAL_LEAGUE_LABELS: Record<number, string> = {
   848: 'Conference League',
 };
 
+const UEFA_CLUB_COMPETITION_IDS = new Set([2, 3, 848]);
+
 function nameIncludesCountry(name: string, country: string): boolean {
   const n = name.toLowerCase();
   const c = country.toLowerCase().trim();
@@ -72,15 +74,43 @@ function isGenericLeagueName(name: string): boolean {
   return /^liga\s*\d+$/i.test(name) || /^division\s*\d+$/i.test(name);
 }
 
+function isQualifyingRound(round?: string | null): boolean {
+  return /qualif|preliminary/i.test(round ?? '');
+}
+
+/** Infer UEFA club competition from API name when id/label can disagree. */
+function resolveUefaClubCompetitionBase(name: string, leagueId?: number | null): string | null {
+  const lower = name.toLowerCase();
+  if (/europa conference|conference league/i.test(lower)) return 'Conference League';
+  if (/europa league/i.test(lower) && !/conference/i.test(lower)) return 'Europa League';
+  if (/champions league/i.test(lower) && !/caf|afc|concacaf/i.test(lower)) return 'Champions League';
+
+  if (typeof leagueId === 'number' && UEFA_CLUB_COMPETITION_IDS.has(leagueId)) {
+    return CANONICAL_LEAGUE_LABELS[leagueId] ?? null;
+  }
+  return null;
+}
+
+function withQualifyingSuffix(base: string, round?: string | null): string {
+  if (!isQualifyingRound(round)) return base;
+  if (base.endsWith('Qualifying')) return base;
+  return `${base} Qualifying`;
+}
+
 export function formatFootballLeagueLabel(
   name: string,
   country?: string | null,
   leagueId?: number | null,
+  round?: string | null,
 ): string {
   const trimmed = (name || '').trim() || 'League';
+  const uefaBase = resolveUefaClubCompetitionBase(trimmed, leagueId);
+  if (uefaBase) {
+    return withQualifyingSuffix(uefaBase, round);
+  }
 
   if (typeof leagueId === 'number' && CANONICAL_LEAGUE_LABELS[leagueId]) {
-    return CANONICAL_LEAGUE_LABELS[leagueId];
+    return withQualifyingSuffix(CANONICAL_LEAGUE_LABELS[leagueId], round);
   }
 
   const countryTrimmed = (country || '').trim();
@@ -102,7 +132,13 @@ export function formatFootballLeagueLabel(
 /** API-Football league/1.png is a generic shield — do not use for UI. */
 export const FIFA_WORLD_CUP_LOGO_URL = 'https://media.api-sports.io/football/leagues/1.png';
 
-export { WORLD_CUP_LOGO, WORLD_CUP_TROPHY_LOGO } from '@/constants/worldCupAssets';
+function getWorldCupLogo(): ImageSourcePropType {
+  // Lazy import keeps unit tests free of PNG asset loading.
+  const { WORLD_CUP_LOGO } = require('@/constants/worldCupAssets') as {
+    WORLD_CUP_LOGO: ImageSourcePropType;
+  };
+  return WORLD_CUP_LOGO;
+}
 
 export function isWorldCupLeague(
   leagueId?: number | null,
@@ -143,7 +179,7 @@ export function resolveLeagueLogoSource(input: {
   round?: string | null;
 }): ImageSourcePropType | null {
   if (isWorldCupLeague(input.leagueId, input.league, input.round)) {
-    return WORLD_CUP_LOGO;
+    return getWorldCupLogo();
   }
   const uri = input.leagueLogo?.trim();
   if (!uri || uri === FIFA_WORLD_CUP_LOGO_URL) return null;

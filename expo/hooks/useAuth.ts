@@ -1321,7 +1321,9 @@ export const [AuthProvider, useAuth] = createContextHook(() => {
     clientId: GOOGLE_CLIENT_ID,
     discovery: googleDiscovery,
     isConfigured: supabaseConfigured || !!GOOGLE_CLIENT_ID,
-    useSupabaseOAuth: supabaseConfigured,
+    // Prefer direct Google OAuth + signInWithIdToken when a client id is set so users see
+    // accounts.google.com / your GCP app name instead of <project>.supabase.co.
+    useSupabaseOAuth: supabaseConfigured && !GOOGLE_CLIENT_ID.trim(),
   }), []);
 
   const mfa = useMemo(() => ({
