@@ -1,0 +1,16 @@
+{
+  "extends": "./expo/tsconfig.json",
+  "compilerOptions": {
+    "baseUrl": "./expo",
+    "paths": {
+      "@/*": ["./*"]
+    }
+  },
+  "include": [
+    "expo/**/*.ts",
+    "expo/**/*.tsx",
+    "expo/.expo/types/**/*.ts",
+    "expo/expo-env.d.ts"
+  ],
+  "exclude": ["expo/node_modules", "expo/android", "expo/ios"]
+}

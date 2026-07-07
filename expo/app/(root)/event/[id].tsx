@@ -51,6 +51,7 @@ import {
   openEventDirections,
   openEventTickets,
 } from '@/utils/openEventActions';
+import { useTheme } from '@/hooks/useTheme';
 import { eventsFixedPalette } from '@/utils/eventsPalette';
 import { getEventCategoryMeta } from '@/utils/eventCategoryMeta';
 import { EventNightOutPlanner } from '@/components/events/EventNightOutPlanner';
@@ -66,7 +67,8 @@ export default function EventDetailScreen() {
   const router = useRouter();
   const insets = useSafeAreaInsets();
   const scrollY = useRef(new Animated.Value(0)).current;
-  const palette = useMemo(() => eventsFixedPalette('discover'), []);
+  const { isDark } = useTheme();
+  const palette = useMemo(() => eventsFixedPalette(isDark, 'discover'), [isDark]);
   const { profile } = useUserProfile();
   const { isSaved, addToOnePager, removeFromOnePager, getSnapshotById, toggleSaved } = useSavedEvents();
   const { createEvent, hasPermission, requestPermissions } = useEventKit();
@@ -288,16 +290,16 @@ export default function EventDetailScreen() {
         style={[styles.toolbar, { paddingTop: insets.top + 6, opacity: toolbarOpacity }]}
       >
         {Platform.OS !== 'web' ? (
-          <BlurView intensity={72} tint="dark" style={StyleSheet.absoluteFill} />
+          <BlurView intensity={72} tint={palette.blurTint} style={StyleSheet.absoluteFill} />
         ) : (
-          <View style={[StyleSheet.absoluteFill, { backgroundColor: 'rgba(7,6,11,0.88)' }]} />
+          <View style={[StyleSheet.absoluteFill, { backgroundColor: palette.chromeFallback }]} />
         )}
         <LinearGradient
-          colors={['rgba(7,6,11,0.92)', 'rgba(7,6,11,0.55)', 'transparent']}
+          colors={[...palette.toolbarGradient]}
           style={StyleSheet.absoluteFill}
           pointerEvents="none"
         />
-        <Text style={styles.toolbarTitle} numberOfLines={1}>
+        <Text style={[styles.toolbarTitle, { color: palette.toolbarTitle }]} numberOfLines={1}>
           {event.title}
         </Text>
       </Animated.View>
@@ -313,7 +315,7 @@ export default function EventDetailScreen() {
         ) : (
           <View style={[StyleSheet.absoluteFill, { backgroundColor: 'rgba(0,0,0,0.45)', borderRadius: 20 }]} />
         )}
-        <ArrowLeft size={20} color="#FFF" />
+        <ArrowLeft size={20} color={palette.textOnImage} />
       </TouchableOpacity>
 
       <Animated.ScrollView
@@ -450,8 +452,8 @@ export default function EventDetailScreen() {
                 onPress={handleDirections}
                 activeOpacity={0.85}
               >
-                <Navigation size={14} color="#FFF" />
-                <Text style={styles.mapsBtnText}>Open in Maps</Text>
+                <Navigation size={14} color={palette.textInverse} />
+                <Text style={[styles.mapsBtnText, { color: palette.textInverse }]}>Open in Maps</Text>
               </TouchableOpacity>
             </View>
 
@@ -533,7 +535,7 @@ export default function EventDetailScreen() {
         ]}
       >
         {Platform.OS !== 'web' ? (
-          <BlurView intensity={40} tint="dark" style={StyleSheet.absoluteFill} />
+          <BlurView intensity={40} tint={palette.blurTint} style={StyleSheet.absoluteFill} />
         ) : null}
         <View style={styles.actionRow}>
           <TouchableOpacity style={styles.actionItem} onPress={() => void handleAddToOnePager()} activeOpacity={0.85}>
@@ -547,7 +549,7 @@ export default function EventDetailScreen() {
                 },
               ]}
             >
-              <Sparkles size={18} color={saved ? palette.primary : '#FFF'} />
+              <Sparkles size={18} color={saved ? palette.primary : palette.textInverse} />
             </View>
             <Text style={[styles.actionLabel, { color: saved ? palette.primary : palette.text }]}>
               {saved ? 'Saved' : 'One Pager'}
@@ -570,7 +572,7 @@ export default function EventDetailScreen() {
 
           <TouchableOpacity style={styles.actionItem} onPress={handleTickets} activeOpacity={0.85}>
             <View style={[styles.actionIcon, { backgroundColor: palette.primary }]}>
-              <Ticket size={18} color="#FFF" />
+              <Ticket size={18} color={palette.textInverse} />
             </View>
             <Text style={[styles.actionLabel, { color: palette.text }]}>Tickets</Text>
           </TouchableOpacity>

@@ -68,7 +68,7 @@ export const EventsCategoryBento = React.memo(function EventsCategoryBento({
             {cover ? (
               <ImageBackground source={{ uri: cover }} style={styles.tileBg} imageStyle={styles.tileBgImage}>
                 <LinearGradient
-                  colors={[`${cat.color}55`, 'rgba(7,6,11,0.88)']}
+                  colors={[`${cat.color}55`, palette.categoryScrim]}
                   style={styles.tileGradient}
                 />
               </ImageBackground>

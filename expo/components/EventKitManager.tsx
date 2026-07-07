@@ -144,7 +144,7 @@ export default function EventKitManager({ visible, onClose }: EventKitManagerPro
                   Connect your device calendars so One Pager can find free windows for habits,
                   show events on Overview, and recommend the best times to complete your routine.
                 </Text>
-                
+
                 <TouchableOpacity 
                   style={styles.permissionButton}
                   onPress={handleRequestPermissions}

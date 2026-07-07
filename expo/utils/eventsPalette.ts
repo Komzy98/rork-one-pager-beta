@@ -1,5 +1,7 @@
-/** Events tab chrome — cinematic dark theme (same on Discover and My Events). */
-export const EVENTS_DISCOVER = {
+import { COLORS } from '@/constants/colors';
+
+/** Events tab — dark cinematic chrome. */
+const EVENTS_DARK = {
   background: '#07060B',
   surface: '#111018',
   surfaceLight: '#181622',
@@ -21,35 +23,92 @@ export const EVENTS_DISCOVER = {
   glow: 'rgba(232, 67, 147, 0.2)',
   pillTrack: 'rgba(255,255,255,0.06)',
   pillBorder: 'rgba(255,255,255,0.1)',
+  categoryScrim: 'rgba(7,6,11,0.88)',
+  blurTint: 'dark' as const,
+  toolbarGradient: ['rgba(7,6,11,0.92)', 'rgba(7,6,11,0.55)', 'transparent'] as const,
+  toolbarTitle: '#FFFFFF',
+  chromeFallback: 'rgba(7,6,11,0.88)',
+  textOnImage: '#FFFFFF',
+  textOnImageSecondary: 'rgba(255,255,255,0.82)',
+  textInverse: '#FFFFFF',
+} as const;
+
+/** Events tab — light mode aligned with app-wide light tokens. */
+const EVENTS_LIGHT = {
+  background: COLORS.background,
+  surface: COLORS.surface,
+  surfaceLight: COLORS.surfaceSecondary,
+  card: COLORS.card,
+  border: 'rgba(17, 24, 39, 0.08)',
+  text: COLORS.text,
+  textSecondary: COLORS.textSecondary,
+  textMuted: COLORS.textMuted,
+  accent: '#E84393',
+  accentLight: 'rgba(232, 67, 147, 0.10)',
+  accentSecondary: '#6C5CE7',
+  success: '#22C55E',
+  successLight: 'rgba(34, 197, 94, 0.12)',
+  warning: '#F59E0B',
+  error: '#EF4444',
+  errorLight: 'rgba(239, 68, 68, 0.10)',
+  heroScrim: ['transparent', 'rgba(7,6,11,0.22)', 'rgba(7,6,11,0.82)'] as const,
+  heroGradient: ['#FCE7F3', '#EDE9FE', '#F8F9FA'] as const,
+  glow: 'rgba(232, 67, 147, 0.12)',
+  pillTrack: 'rgba(17, 24, 39, 0.05)',
+  pillBorder: 'rgba(17, 24, 39, 0.08)',
+  categoryScrim: 'rgba(248, 249, 250, 0.9)',
+  blurTint: 'light' as const,
+  toolbarGradient: ['rgba(255,255,255,0.96)', 'rgba(255,255,255,0.78)', 'transparent'] as const,
+  toolbarTitle: COLORS.text,
+  chromeFallback: 'rgba(255,255,255,0.92)',
+  textOnImage: '#FFFFFF',
+  textOnImageSecondary: 'rgba(255,255,255,0.82)',
+  textInverse: '#FFFFFF',
 } as const;
 
 export type EventsTabMode = 'discover' | 'myEvents';
 
-export function eventsFixedPalette(_mode: EventsTabMode = 'discover') {
+function buildPalette(tokens: typeof EVENTS_DARK | typeof EVENTS_LIGHT, mode: EventsTabMode) {
   return {
-    mode: 'discover' as const,
-    background: EVENTS_DISCOVER.background,
-    surface: EVENTS_DISCOVER.surface,
-    surfaceLight: EVENTS_DISCOVER.surfaceLight,
-    card: EVENTS_DISCOVER.card,
-    border: EVENTS_DISCOVER.border,
-    text: EVENTS_DISCOVER.text,
-    textSecondary: EVENTS_DISCOVER.textSecondary,
-    textMuted: EVENTS_DISCOVER.textMuted,
-    primary: EVENTS_DISCOVER.accent,
-    primaryLight: EVENTS_DISCOVER.accentLight,
-    secondary: EVENTS_DISCOVER.accentSecondary,
-    success: EVENTS_DISCOVER.success,
-    successLight: EVENTS_DISCOVER.successLight,
-    warning: EVENTS_DISCOVER.warning,
-    error: EVENTS_DISCOVER.error,
-    errorLight: EVENTS_DISCOVER.errorLight,
-    heroScrim: EVENTS_DISCOVER.heroScrim,
-    heroGradient: EVENTS_DISCOVER.heroGradient,
-    glow: EVENTS_DISCOVER.glow,
-    pillTrack: EVENTS_DISCOVER.pillTrack,
-    pillBorder: EVENTS_DISCOVER.pillBorder,
+    mode,
+    background: tokens.background,
+    surface: tokens.surface,
+    surfaceLight: tokens.surfaceLight,
+    card: tokens.card,
+    border: tokens.border,
+    text: tokens.text,
+    textSecondary: tokens.textSecondary,
+    textMuted: tokens.textMuted,
+    primary: tokens.accent,
+    primaryLight: tokens.accentLight,
+    secondary: tokens.accentSecondary,
+    success: tokens.success,
+    successLight: tokens.successLight,
+    warning: tokens.warning,
+    error: tokens.error,
+    errorLight: tokens.errorLight,
+    heroScrim: tokens.heroScrim,
+    heroGradient: tokens.heroGradient,
+    glow: tokens.glow,
+    pillTrack: tokens.pillTrack,
+    pillBorder: tokens.pillBorder,
+    categoryScrim: tokens.categoryScrim,
+    blurTint: tokens.blurTint,
+    toolbarGradient: tokens.toolbarGradient,
+    toolbarTitle: tokens.toolbarTitle,
+    chromeFallback: tokens.chromeFallback,
+    textOnImage: tokens.textOnImage,
+    textOnImageSecondary: tokens.textOnImageSecondary,
+    textInverse: tokens.textInverse,
   };
 }
 
+/** Events tab palette — respects Profile → Appearance (light / dark / auto). */
+export function eventsFixedPalette(isDark: boolean, mode: EventsTabMode = 'discover') {
+  return buildPalette(isDark ? EVENTS_DARK : EVENTS_LIGHT, mode);
+}
+
 export type EventsPalette = ReturnType<typeof eventsFixedPalette>;
+
+/** @deprecated Use EVENTS_DARK values via eventsFixedPalette(true). */
+export const EVENTS_DISCOVER = EVENTS_DARK;
