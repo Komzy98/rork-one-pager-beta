@@ -28,6 +28,7 @@ interface EventsMapBottomSheetProps {
   onClose: () => void;
   onOpenDetail: (eventId: string) => void;
   onAddToOnePager: (event: LocalEvent) => void;
+  onToggleSaved: (event: LocalEvent) => void;
   onOpenTickets: (event: LocalEvent) => void;
   bottomInset?: number;
 }
@@ -40,6 +41,7 @@ export const EventsMapBottomSheet = React.memo(function EventsMapBottomSheet({
   onClose,
   onOpenDetail,
   onAddToOnePager,
+  onToggleSaved,
   onOpenTickets,
   bottomInset = 0,
 }: EventsMapBottomSheetProps) {
@@ -187,7 +189,12 @@ export const EventsMapBottomSheet = React.memo(function EventsMapBottomSheet({
             </TouchableOpacity>
             <TouchableOpacity
               style={[styles.iconBtn, { borderColor: palette.border }]}
-              onPress={() => void onAddToOnePager(event)}
+              onPress={() => {
+                void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+                void onToggleSaved(event);
+              }}
+              accessibilityRole="button"
+              accessibilityLabel={event.isSaved ? 'Remove from One Pager' : 'Save to One Pager'}
             >
               <Heart size={16} color={event.isSaved ? palette.primary : palette.textSecondary} fill={event.isSaved ? palette.primary : 'transparent'} />
             </TouchableOpacity>

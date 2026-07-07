@@ -821,6 +821,7 @@ function EventsScreenInner() {
               onClose={closeMapSheet}
               onOpenDetail={openEventDetail}
               onAddToOnePager={handleAddToOnePager}
+              onToggleSaved={handleToggleSavedWithToast}
               onOpenTickets={handleOpenTickets}
               bottomInset={0}
             />
