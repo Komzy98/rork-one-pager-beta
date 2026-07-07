@@ -12,6 +12,7 @@ import {
 } from "./routes/f1/apiSports";
 import { generateVoiceRoute } from "./routes/ai/voice/route";
 import { getNearbyEventsRoute } from "./routes/events/nearby/route";
+import { getEventByIdRoute } from "./routes/events/byId/route";
 import { signInWithPasswordRoute } from "./routes/auth/signIn/route";
 
 export const appRouter = createTRPCRouter({
@@ -47,6 +48,7 @@ export const appRouter = createTRPCRouter({
   }),
   events: createTRPCRouter({
     getNearby: getNearbyEventsRoute,
+    getById: getEventByIdRoute,
   }),
 });
 

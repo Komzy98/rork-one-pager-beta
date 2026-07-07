@@ -29,7 +29,7 @@ export const EventsStatsRow = React.memo(function EventsStatsRow({
             key={item.key}
             style={[styles.chip, { borderColor: palette.border, backgroundColor: `${palette.card}CC` }]}
           >
-            <BlurView intensity={28} tint="dark" style={styles.blur}>
+            <BlurView intensity={28} tint={palette.blurTint} style={styles.blur}>
               <View style={[styles.iconWrap, { backgroundColor: `${item.color}18` }]}>
                 <Icon size={14} color={item.color} />
               </View>

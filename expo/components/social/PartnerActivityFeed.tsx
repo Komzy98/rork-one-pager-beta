@@ -1,18 +1,38 @@
 import React, { useMemo } from 'react';
 import { StyleSheet, Text, TouchableOpacity, View } from 'react-native';
-import { ChevronRight, PartyPopper, Users } from 'lucide-react-native';
+import { Image } from 'expo-image';
+import { ChevronRight, CheckCircle2, Flame, PartyPopper, Sparkles, Ticket, Tv, Users } from 'lucide-react-native';
 import * as Haptics from 'expo-haptics';
 import { useRouter } from 'expo-router';
-import type { ActivityEvent } from '@/utils/activityService';
+import type { ActivityEvent, ActivityType } from '@/utils/activityService';
+import type { ActivityFeedCategory } from '@/utils/activityFeedMeta';
 import {
+  formatActivityTimeAgo,
+  formatPartnerActivityHeadline,
+  getActivityCategoryVisual,
   getActivityEventRoute,
-  groupActivityFeed,
+  getActivityFeedCategory,
+  partnerActivityInitials,
+  selectPartnerActivityPreview,
 } from '@/utils/activityFeedMeta';
+
+const CATEGORY_ICONS = {
+  going_out: Ticket,
+  watching: Tv,
+  streaks: Flame,
+  tasks_done: CheckCircle2,
+  other: Sparkles,
+} satisfies Record<ActivityFeedCategory, typeof Ticket>;
+
+function getActivityTypeIcon(type: ActivityType | string) {
+  return CATEGORY_ICONS[getActivityFeedCategory(type)];
+}
 
 interface PartnerActivityFeedProps {
   feed: ActivityEvent[];
   activeTodayCount: number;
   presenceLabel: string | null;
+  currentUserId?: string;
   colors: {
     text: string;
     textSecondary: string;
@@ -20,29 +40,29 @@ interface PartnerActivityFeedProps {
     card: string;
     border: string;
     primary: string;
+    surfaceSecondary?: string;
   };
   onCheer: (eventId: string, on: boolean) => void;
-  maxGroups?: number;
-  maxPerGroup?: number;
+  maxItems?: number;
 }
 
 export const PartnerActivityFeed = React.memo(function PartnerActivityFeed({
   feed,
   activeTodayCount,
   presenceLabel,
+  currentUserId,
   colors,
   onCheer,
-  maxGroups = 3,
-  maxPerGroup = 2,
+  maxItems = 4,
 }: PartnerActivityFeedProps) {
   const router = useRouter();
 
-  const groups = useMemo(
-    () => groupActivityFeed(feed, maxPerGroup).slice(0, maxGroups),
-    [feed, maxGroups, maxPerGroup]
+  const preview = useMemo(
+    () => selectPartnerActivityPreview(feed, { currentUserId, limit: maxItems }),
+    [feed, currentUserId, maxItems],
   );
 
-  if (groups.length === 0 && activeTodayCount <= 0) {
+  if (preview.length === 0 && activeTodayCount <= 0) {
     return null;
   }
 
@@ -53,11 +73,13 @@ export const PartnerActivityFeed = React.memo(function PartnerActivityFeed({
     router.push(route as any);
   };
 
+  const dividerColor = colors.surfaceSecondary ?? colors.border;
+
   return (
     <View style={styles.section}>
       <View style={styles.headerRow}>
         <View style={styles.titleRow}>
-          <Users size={20} color={colors.text} strokeWidth={2} />
+          <Users size={18} color={colors.text} strokeWidth={2.2} />
           <Text style={[styles.sectionTitle, { color: colors.text }]}>Partner Activity</Text>
         </View>
         <TouchableOpacity style={styles.viewAllBtn} onPress={() => router.push('/friends' as any)}>
@@ -67,82 +89,123 @@ export const PartnerActivityFeed = React.memo(function PartnerActivityFeed({
       </View>
 
       {presenceLabel ? (
-        <View style={styles.presence}>
+        <View style={[styles.presencePill, { backgroundColor: '#22C55E14', borderColor: '#22C55E33' }]}>
           <View style={styles.liveDot} />
           <Text style={[styles.presenceText, { color: colors.textSecondary }]}>{presenceLabel}</Text>
         </View>
       ) : null}
 
-      {groups.map((group) => (
-        <View key={group.category} style={styles.group}>
-          <Text style={[styles.groupLabel, { color: colors.textMuted }]}>{group.label}</Text>
-          {group.events.map((event) => (
-            <View
-              key={event.id}
-              style={[styles.card, { backgroundColor: colors.card, borderColor: colors.border }]}
-            >
-              <TouchableOpacity
-                style={styles.cardBody}
-                onPress={() => openEvent(event)}
-                activeOpacity={getActivityEventRoute(event) ? 0.75 : 1}
-              >
-                {event.author?.displayName || event.author?.username ? (
-                  <Text style={[styles.author, { color: colors.primary }]} numberOfLines={1}>
-                    {event.author.displayName ?? `@${event.author.username}`}
-                  </Text>
-                ) : null}
-                <Text style={[styles.cardTitle, { color: colors.text }]} numberOfLines={2}>
-                  {event.title}
-                </Text>
-                {event.body ? (
-                  <Text style={[styles.cardSub, { color: colors.textSecondary }]} numberOfLines={1}>
-                    {event.body}
-                  </Text>
-                ) : null}
-              </TouchableOpacity>
-              <TouchableOpacity
+      {preview.length > 0 ? (
+        <View style={[styles.digestCard, { backgroundColor: colors.card, borderColor: colors.border }]}>
+          {preview.map((event, index) => {
+            const visual = getActivityCategoryVisual(event.type);
+            const TypeIcon = getActivityTypeIcon(event.type);
+            const { line, detail } = formatPartnerActivityHeadline(event);
+            const route = getActivityEventRoute(event);
+            const isLast = index === preview.length - 1;
+
+            return (
+              <View
+                key={event.id}
                 style={[
-                  styles.cheerBtn,
-                  {
-                    borderColor: event.cheeredByMe ? '#F59E0B' : colors.border,
-                    backgroundColor: event.cheeredByMe ? '#F59E0B18' : 'transparent',
-                  },
+                  styles.row,
+                  !isLast && { borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: dividerColor },
                 ]}
-                onPress={() => {
-                  void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-                  void onCheer(event.id, !event.cheeredByMe);
-                }}
-                activeOpacity={0.7}
               >
-                <PartyPopper size={15} color={event.cheeredByMe ? '#F59E0B' : colors.textMuted} />
-                {event.cheersCount > 0 ? (
-                  <Text
-                    style={[
-                      styles.cheerCount,
-                      { color: event.cheeredByMe ? '#F59E0B' : colors.textMuted },
-                    ]}
-                  >
-                    {event.cheersCount}
+                <TouchableOpacity
+                  style={styles.rowMain}
+                  onPress={() => openEvent(event)}
+                  activeOpacity={route ? 0.72 : 1}
+                  disabled={!route}
+                >
+                  {event.author?.avatarUrl ? (
+                    <View style={styles.avatarWrap}>
+                      <Image source={{ uri: event.author.avatarUrl }} style={styles.avatar} />
+                      <View style={[styles.typeBadge, { backgroundColor: visual.background, borderColor: colors.card }]}>
+                        <TypeIcon size={11} color={visual.tint} strokeWidth={2.4} />
+                      </View>
+                    </View>
+                  ) : (
+                    <View style={styles.avatarWrap}>
+                      <View style={[styles.avatar, styles.avatarFallback, { backgroundColor: visual.background }]}>
+                        <Text style={[styles.avatarText, { color: visual.tint }]}>
+                          {partnerActivityInitials(event)}
+                        </Text>
+                      </View>
+                      <View style={[styles.typeBadge, { backgroundColor: visual.background, borderColor: colors.card }]}>
+                        <TypeIcon size={11} color={visual.tint} strokeWidth={2.4} />
+                      </View>
+                    </View>
+                  )}
+
+                  <View style={styles.copy}>
+                    <Text style={[styles.headline, { color: colors.text }]} numberOfLines={2}>
+                      {line}
+                    </Text>
+                    {detail ? (
+                      <Text style={[styles.detail, { color: colors.textMuted }]} numberOfLines={1}>
+                        {detail}
+                      </Text>
+                    ) : null}
+                  </View>
+
+                  <Text style={[styles.time, { color: colors.textMuted }]}>
+                    {formatActivityTimeAgo(event.createdAt)}
                   </Text>
-                ) : null}
-              </TouchableOpacity>
-            </View>
-          ))}
+                </TouchableOpacity>
+
+                <TouchableOpacity
+                  style={[
+                    styles.cheerBtn,
+                    {
+                      borderColor: event.cheeredByMe ? '#F59E0B' : colors.border,
+                      backgroundColor: event.cheeredByMe ? '#F59E0B14' : 'transparent',
+                    },
+                  ]}
+                  onPress={() => {
+                    void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+                    void onCheer(event.id, !event.cheeredByMe);
+                  }}
+                  activeOpacity={0.7}
+                  accessibilityLabel={event.cheeredByMe ? 'Remove cheer' : 'Cheer partner'}
+                >
+                  <PartyPopper size={14} color={event.cheeredByMe ? '#F59E0B' : colors.textMuted} />
+                  {event.cheersCount > 0 ? (
+                    <Text
+                      style={[
+                        styles.cheerCount,
+                        { color: event.cheeredByMe ? '#F59E0B' : colors.textMuted },
+                      ]}
+                    >
+                      {event.cheersCount}
+                    </Text>
+                  ) : null}
+                </TouchableOpacity>
+              </View>
+            );
+          })}
         </View>
-      ))}
+      ) : (
+        <View style={[styles.emptyCard, { backgroundColor: colors.card, borderColor: colors.border }]}>
+          <Text style={[styles.emptyTitle, { color: colors.text }]}>Partners are quiet right now</Text>
+          <Text style={[styles.emptyBody, { color: colors.textMuted }]}>
+            When friends save events, hit streaks, or pin matches, you&apos;ll see it here.
+          </Text>
+        </View>
+      )}
     </View>
   );
 });
 
 const styles = StyleSheet.create({
   section: {
-    marginBottom: 24,
+    marginBottom: 20,
   },
   headerRow: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    marginBottom: 10,
+    marginBottom: 8,
   },
   titleRow: {
     flexDirection: 'row',
@@ -150,79 +213,140 @@ const styles = StyleSheet.create({
     gap: 8,
   },
   sectionTitle: {
-    fontSize: 18,
+    fontSize: 17,
     fontWeight: '700',
+    letterSpacing: -0.2,
   },
   viewAllBtn: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: 2,
+    minHeight: 44,
+    justifyContent: 'center',
   },
   viewAllText: {
     fontSize: 14,
     fontWeight: '600',
   },
-  presence: {
+  presencePill: {
+    alignSelf: 'flex-start',
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 8,
-    marginBottom: 12,
+    gap: 6,
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    borderRadius: 999,
+    borderWidth: 1,
+    marginBottom: 10,
   },
   liveDot: {
-    width: 8,
-    height: 8,
+    width: 7,
+    height: 7,
     borderRadius: 4,
     backgroundColor: '#22C55E',
   },
   presenceText: {
-    fontSize: 13,
+    fontSize: 12,
     fontWeight: '600',
   },
-  group: {
-    gap: 8,
-    marginBottom: 12,
+  digestCard: {
+    borderRadius: 16,
+    borderWidth: 1,
+    overflow: 'hidden',
   },
-  groupLabel: {
-    fontSize: 11,
-    fontWeight: '800',
-    letterSpacing: 0.8,
-    textTransform: 'uppercase',
-  },
-  card: {
+  row: {
     flexDirection: 'row',
     alignItems: 'center',
-    borderRadius: 14,
-    borderWidth: 1,
-    padding: 12,
-    gap: 10,
+    paddingLeft: 12,
+    paddingRight: 10,
+    paddingVertical: 10,
+    gap: 8,
   },
-  cardBody: {
+  rowMain: {
     flex: 1,
-    gap: 2,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+    minHeight: 44,
   },
-  author: {
-    fontSize: 11,
-    fontWeight: '700',
+  avatarWrap: {
+    width: 36,
+    height: 36,
+    position: 'relative',
   },
-  cardTitle: {
-    fontSize: 14,
-    fontWeight: '700',
+  avatar: {
+    width: 36,
+    height: 36,
+    borderRadius: 18,
   },
-  cardSub: {
+  avatarFallback: {
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  avatarText: {
     fontSize: 12,
+    fontWeight: '800',
+  },
+  typeBadge: {
+    position: 'absolute',
+    right: -2,
+    bottom: -2,
+    width: 18,
+    height: 18,
+    borderRadius: 9,
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderWidth: 2,
+  },
+  copy: {
+    flex: 1,
+    gap: 1,
+    paddingRight: 4,
+  },
+  headline: {
+    fontSize: 13,
+    fontWeight: '600',
+    lineHeight: 17,
+    letterSpacing: -0.1,
+  },
+  detail: {
+    fontSize: 11,
     fontWeight: '500',
+  },
+  time: {
+    fontSize: 11,
+    fontWeight: '600',
+    minWidth: 24,
+    textAlign: 'right',
   },
   cheerBtn: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 4,
-    paddingHorizontal: 10,
-    paddingVertical: 8,
+    justifyContent: 'center',
+    gap: 3,
+    minWidth: 36,
+    minHeight: 36,
+    paddingHorizontal: 8,
     borderRadius: 10,
     borderWidth: 1,
   },
   cheerCount: {
-    fontSize: 12,
+    fontSize: 11,
     fontWeight: '700',
+  },
+  emptyCard: {
+    borderRadius: 16,
+    borderWidth: 1,
+    paddingHorizontal: 14,
+    paddingVertical: 14,
+    gap: 4,
+  },
+  emptyTitle: {
+    fontSize: 14,
+    fontWeight: '700',
+  },
+  emptyBody: {
+    fontSize: 13,
+    lineHeight: 18,
   },
 });

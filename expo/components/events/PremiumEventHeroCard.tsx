@@ -177,7 +177,7 @@ export const PremiumEventHeroCard = React.memo(function PremiumEventHeroCard({
           </View>
 
           <View style={styles.content}>
-            {hasConcierge ? <EventConciergeNarrative narrative={concierge} /> : null}
+            {hasConcierge ? <EventConciergeNarrative narrative={concierge} palette={palette} /> : null}
             {recommendationChipLabel ? (
               <EventRecommendationBadge
                 label={recommendationChipLabel}

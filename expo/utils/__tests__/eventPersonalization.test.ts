@@ -1,6 +1,17 @@
 import { describe, it } from 'node:test';
 import assert from 'node:assert/strict';
-import { rankEventsForYou, scoreEventForUser, buildEventPersonalizationContext, explainEventPersonalization, getPrimaryEventRecommendationReason } from '@/utils/eventPersonalization';
+import {
+  rankEventsForYou,
+  scoreEventForUser,
+  buildEventPersonalizationContext,
+  explainEventPersonalization,
+  getPrimaryEventRecommendationReason,
+  getPrimaryEventRecommendationReasonForCategory,
+  getCompactRecommendationLabel,
+  getEditorialRowChipLabel,
+  getEditorialRowSecondaryChipLabel,
+  isEditorialReasonRelevant,
+} from '@/utils/eventPersonalization';
 import type { LocalEvent } from '@/types/events';
 import type { UserProfile } from '@/types/habit';
 
@@ -183,5 +194,44 @@ describe('eventPersonalization', () => {
     const gentle = scoreEventForUser(baseEvent({ category: 'arts', title: 'Gallery walk', price: 'Free' }), ctx);
     const nightlife = scoreEventForUser(baseEvent({ category: 'nightlife', title: 'Club night' }), ctx);
     assert.ok(gentle > nightlife);
+  });
+
+  it('does not show sport chip on non-sports events', () => {
+    const profile = {
+      interests: ['football'],
+      favoriteTeams: [{ id: '1', name: 'United', sport: 'football' }],
+    } as unknown as UserProfile;
+    const reason = getPrimaryEventRecommendationReason(
+      baseEvent({ category: 'music', title: 'United Live in Concert' }),
+      { profile },
+    );
+    assert.ok(reason);
+    assert.equal(getCompactRecommendationLabel(reason, baseEvent({ category: 'music' })), 'Fits your interests');
+  });
+
+  it('filters sport reasons out of editorial music row chips', () => {
+    const profile = {
+      interests: ['football', 'music'],
+      favoriteTeams: [{ id: '1', name: 'United', sport: 'football' }],
+    } as unknown as UserProfile;
+    const event = baseEvent({ category: 'music', title: 'United Live in Concert' });
+    const input = { profile };
+    const globalReason = getPrimaryEventRecommendationReason(event, input);
+    assert.ok(globalReason);
+    assert.equal(globalReason!.kind, 'team');
+    assert.equal(isEditorialReasonRelevant(globalReason!, event, 'music'), false);
+
+    const rowReason = getPrimaryEventRecommendationReasonForCategory(event, input, 'music');
+    assert.ok(rowReason);
+    assert.notEqual(rowReason!.kind, 'team');
+
+    const chip = getEditorialRowChipLabel('music', event, rowReason);
+    assert.notEqual(chip, 'Because you follow sport');
+    assert.notEqual(rowReason!.kind, 'team');
+  });
+
+  it('uses category-aligned secondary chips in editorial rows', () => {
+    const chip = getEditorialRowSecondaryChipLabel('theatre', baseEvent({ category: 'theatre' }));
+    assert.equal(chip, 'Theatre');
   });
 });

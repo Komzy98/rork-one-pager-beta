@@ -44,6 +44,7 @@ import {
   regionsDifferSignificantly,
   sortEventsByDistance,
 } from '@/utils/eventDiscovery';
+import { useTheme } from '@/hooks/useTheme';
 import { eventsFixedPalette } from '@/utils/eventsPalette';
 import { PremiumEventHeroCard } from '@/components/events/PremiumEventHeroCard';
 import { PremiumEventPosterCard } from '@/components/events/PremiumEventPosterCard';
@@ -58,8 +59,11 @@ import { PremiumSavedEventCard } from '@/components/events/PremiumSavedEventCard
 import {
   buildEditorialEventRows,
   getCompactRecommendationLabel,
+  getEditorialRowChipLabel,
+  getEditorialRowSecondaryChipLabel,
   getFeedCardChipLabel,
   getPrimaryEventRecommendationReason,
+  getPrimaryEventRecommendationReasonForCategory,
 } from '@/utils/eventPersonalization';
 import { useEventRecommendationInput } from '@/hooks/useEventRecommendationInput';
 import { useEventConcierge } from '@/hooks/useEventConcierge';
@@ -98,6 +102,7 @@ const DISCOVERY_PILL_TABS = [
 const HERO_ROTATE_MS = 5500;
 
 function EventsScreenInner() {
+  const { isDark } = useTheme();
   const { profile } = useUserProfile();
   const router = useRouter();
   const { createEvent, hasPermission, requestPermissions } = useEventKit();
@@ -135,7 +140,7 @@ function EventsScreenInner() {
   const viewToggleAnim = useRef(new Animated.Value(0)).current;
   const scrollY = useRef(new Animated.Value(0)).current;
 
-  const palette = useMemo(() => eventsFixedPalette('discover'), []);
+  const palette = useMemo(() => eventsFixedPalette(isDark, mainTab), [isDark, mainTab]);
 
   const {
     events: nearbyEvents,
@@ -351,6 +356,7 @@ function EventsScreenInner() {
   const accentColor = palette.primary;
   const accentLight = palette.primaryLight;
   const secondaryAccent = palette.secondary;
+  const inverseText = palette.textInverse;
 
   const warmBg = palette.background;
   const cardBg = palette.card;
@@ -613,7 +619,7 @@ function EventsScreenInner() {
                     {viewMode === 'list' ? (
                       <Map size={18} color={accentColor} />
                     ) : (
-                      <List size={18} color="#FFF" />
+                      <List size={18} color={inverseText} />
                     )}
                   </Animated.View>
                 </TouchableOpacity>
@@ -647,8 +653,8 @@ function EventsScreenInner() {
             onPress={() => setMainTab('discover')}
             activeOpacity={0.85}
           >
-            <Sparkles size={14} color={mainTab === 'discover' ? '#FFF' : accentColor} />
-            <Text style={[styles.mainTabText, { color: mainTab === 'discover' ? '#FFF' : mainText }]}>Discover</Text>
+            <Sparkles size={14} color={mainTab === 'discover' ? inverseText : accentColor} />
+            <Text style={[styles.mainTabText, { color: mainTab === 'discover' ? inverseText : mainText }]}>Discover</Text>
           </TouchableOpacity>
           <TouchableOpacity
             style={[
@@ -658,8 +664,8 @@ function EventsScreenInner() {
             onPress={() => setMainTab('myEvents')}
             activeOpacity={0.85}
           >
-            <Heart size={14} color={mainTab === 'myEvents' ? '#FFF' : accentColor} fill={mainTab === 'myEvents' ? '#FFF' : 'transparent'} />
-            <Text style={[styles.mainTabText, { color: mainTab === 'myEvents' ? '#FFF' : mainText }]}>
+            <Heart size={14} color={mainTab === 'myEvents' ? inverseText : accentColor} fill={mainTab === 'myEvents' ? inverseText : 'transparent'} />
+            <Text style={[styles.mainTabText, { color: mainTab === 'myEvents' ? inverseText : mainText }]}>
               My Events{savedCount > 0 ? ` (${savedCount})` : ''}
             </Text>
           </TouchableOpacity>
@@ -672,7 +678,7 @@ function EventsScreenInner() {
               {viewMode === 'list' ? (
                 <Map size={18} color={accentColor} />
               ) : (
-                <List size={18} color="#FFF" />
+                <List size={18} color={inverseText} />
               )}
             </TouchableOpacity>
           ) : null}
@@ -792,8 +798,8 @@ function EventsScreenInner() {
               onPress={handleSearchThisArea}
               activeOpacity={0.9}
             >
-              <Search size={14} color="#FFF" />
-              <Text style={styles.searchAreaText}>Search this area</Text>
+              <Search size={14} color={inverseText} />
+              <Text style={[styles.searchAreaText, { color: inverseText }]}>Search this area</Text>
             </TouchableOpacity>
           ) : null}
 
@@ -872,8 +878,16 @@ function EventsScreenInner() {
                   variant="horizontal"
                   recommendationChipLabel={
                     index === 0
-                      ? getCompactRecommendationLabel(getRecommendationReason(event), event)
-                      : getFeedCardChipLabel(event)
+                      ? getEditorialRowChipLabel(
+                          row.categoryId,
+                          event,
+                          getPrimaryEventRecommendationReasonForCategory(
+                            event,
+                            { ...recommendationInput, discoveryTab },
+                            row.categoryId,
+                          ),
+                        )
+                      : getEditorialRowSecondaryChipLabel(row.categoryId, event)
                   }
                   recommendationChipVariant={index === 0 ? 'featured-chip' : 'feed-chip'}
                   onPress={openEventDetail}
@@ -974,7 +988,7 @@ function EventsScreenInner() {
                 style={[styles.discoverCta, { backgroundColor: accentColor }]}
                 onPress={() => setMainTab('discover')}
               >
-                <Text style={styles.discoverCtaText}>Discover events</Text>
+                <Text style={[styles.discoverCtaText, { color: inverseText }]}>Discover events</Text>
               </TouchableOpacity>
             </View>
           ) : (

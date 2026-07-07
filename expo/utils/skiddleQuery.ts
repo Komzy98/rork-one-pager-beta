@@ -55,6 +55,11 @@ export function buildSkiddleEventsSearchUrl(input: BuildSkiddleEventsSearchInput
   return `${SKIDDLE_SEARCH_BASE}?${params.toString()}`;
 }
 
+export function buildSkiddleEventDetailUrl(apiKey: string, eventId: string): string {
+  const params = new URLSearchParams({ api_key: apiKey });
+  return `https://www.skiddle.com/api/v1/events/${encodeURIComponent(eventId)}/?${params.toString()}`;
+}
+
 export function parseSkiddleError(body: unknown): string | null {
   if (!body || typeof body !== 'object') return null;
   const record = body as { error?: number | string; errormessage?: string; message?: string };

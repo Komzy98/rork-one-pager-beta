@@ -1,0 +1,12 @@
+{
+  "folders": [
+    {
+      "name": "One Pager (Expo)",
+      "path": "expo"
+    }
+  ],
+  "settings": {
+    "typescript.tsdk": "expo/node_modules/typescript/lib",
+    "typescript.enablePromptUseWorkspaceTsdk": true
+  }
+}
