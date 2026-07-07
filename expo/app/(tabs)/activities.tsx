@@ -2472,6 +2472,7 @@ export default function ActivitiesScreen() {
                 feed={partnerActivity.feed}
                 activeTodayCount={partnerActivity.activeTodayCount}
                 presenceLabel={partnerActivity.presenceLabel}
+                currentUserId={user?.id}
                 colors={{
                   text: colors.text,
                   textSecondary: colors.textSecondary,
@@ -2479,6 +2480,7 @@ export default function ActivitiesScreen() {
                   card: colors.card,
                   border: colors.border,
                   primary: COLORS.primary,
+                  surfaceSecondary: colors.surfaceSecondary,
                 }}
                 onCheer={(eventId, on) => void partnerActivity.cheer(eventId, on)}
               />

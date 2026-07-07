@@ -59,8 +59,11 @@ import { PremiumSavedEventCard } from '@/components/events/PremiumSavedEventCard
 import {
   buildEditorialEventRows,
   getCompactRecommendationLabel,
+  getEditorialRowChipLabel,
+  getEditorialRowSecondaryChipLabel,
   getFeedCardChipLabel,
   getPrimaryEventRecommendationReason,
+  getPrimaryEventRecommendationReasonForCategory,
 } from '@/utils/eventPersonalization';
 import { useEventRecommendationInput } from '@/hooks/useEventRecommendationInput';
 import { useEventConcierge } from '@/hooks/useEventConcierge';
@@ -875,8 +878,16 @@ function EventsScreenInner() {
                   variant="horizontal"
                   recommendationChipLabel={
                     index === 0
-                      ? getCompactRecommendationLabel(getRecommendationReason(event), event)
-                      : getFeedCardChipLabel(event)
+                      ? getEditorialRowChipLabel(
+                          row.categoryId,
+                          event,
+                          getPrimaryEventRecommendationReasonForCategory(
+                            event,
+                            { ...recommendationInput, discoveryTab },
+                            row.categoryId,
+                          ),
+                        )
+                      : getEditorialRowSecondaryChipLabel(row.categoryId, event)
                   }
                   recommendationChipVariant={index === 0 ? 'featured-chip' : 'feed-chip'}
                   onPress={openEventDetail}

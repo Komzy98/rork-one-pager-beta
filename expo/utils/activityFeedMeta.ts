@@ -87,3 +87,97 @@ export function getActivityEventRoute(event: ActivityEvent): string | null {
   }
   return null;
 }
+
+const ACTIVITY_VERBS: Partial<Record<ActivityType, string>> = {
+  event_saved: 'saved',
+  event_planned: 'planned',
+  event_attending: 'is going to',
+  match_pinned: 'pinned',
+  show_saved: 'saved',
+  streak_milestone: 'hit',
+  published_habit: 'published',
+  workout: 'logged',
+  custom: 'shared',
+  achievement: 'earned',
+  challenge_joined: 'joined',
+};
+
+export function formatActivityTimeAgo(iso: string): string {
+  const diff = Date.now() - new Date(iso).getTime();
+  const minutes = Math.floor(diff / 60_000);
+  if (minutes < 1) return 'now';
+  if (minutes < 60) return `${minutes}m`;
+  const hours = Math.floor(minutes / 60);
+  if (hours < 24) return `${hours}h`;
+  const days = Math.floor(hours / 24);
+  return `${days}d`;
+}
+
+function partnerFirstName(event: ActivityEvent): string {
+  const display = event.author?.displayName?.trim();
+  if (display) {
+    const first = display.split(/\s+/)[0];
+    if (first) return first;
+  }
+  const username = event.author?.username?.replace(/^@/, '').trim();
+  return username || 'Partner';
+}
+
+function stripActivityTitlePrefix(title: string): string {
+  return title
+    .replace(/^(Saved|Planned|Pinned|Published|Logged|Joined|Hit)\s+/i, '')
+    .replace(/\s*[-–|]\s*.+$/, '')
+    .trim();
+}
+
+/** One-line social headline for compact partner activity rows. */
+export function formatPartnerActivityHeadline(event: ActivityEvent): {
+  line: string;
+  detail: string | null;
+} {
+  const verb = ACTIVITY_VERBS[event.type] ?? 'updated';
+  const name = partnerFirstName(event);
+  const subject = stripActivityTitlePrefix(event.title);
+  const line = subject ? `${name} ${verb} ${subject}` : `${name} ${verb}`;
+  const detail = event.body?.trim() || null;
+  return { line, detail };
+}
+
+export function partnerActivityInitials(event: ActivityEvent): string {
+  const display = event.author?.displayName?.trim();
+  const username = event.author?.username?.trim() ?? '?';
+  if (display) {
+    const parts = display.split(/\s+/);
+    if (parts.length >= 2) return (parts[0][0] + parts[1][0]).toUpperCase();
+    return display.slice(0, 2).toUpperCase();
+  }
+  return username.slice(0, 2).toUpperCase();
+}
+
+export interface ActivityCategoryVisual {
+  tint: string;
+  background: string;
+}
+
+const CATEGORY_VISUALS: Record<ActivityFeedCategory, ActivityCategoryVisual> = {
+  going_out: { tint: '#E84393', background: '#E8439318' },
+  watching: { tint: '#6C5CE7', background: '#6C5CE718' },
+  streaks: { tint: '#F59E0B', background: '#F59E0B18' },
+  tasks_done: { tint: '#22C55E', background: '#22C55E18' },
+  other: { tint: '#0A84FF', background: '#0A84FF18' },
+};
+
+export function getActivityCategoryVisual(type: ActivityType | string): ActivityCategoryVisual {
+  return CATEGORY_VISUALS[getActivityFeedCategory(type)];
+}
+
+/** Dashboard preview: partners only, newest first, capped. */
+export function selectPartnerActivityPreview(
+  events: ActivityEvent[],
+  options: { currentUserId?: string; limit?: number } = {},
+): ActivityEvent[] {
+  const { currentUserId, limit = 4 } = options;
+  return events
+    .filter((event) => !currentUserId || event.userId !== currentUserId)
+    .slice(0, limit);
+}

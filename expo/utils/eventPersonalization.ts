@@ -775,6 +775,56 @@ export function getPrimaryEventRecommendationReason(
   return buildEventRecommendationReasons(event, input)[0] ?? null;
 }
 
+function isSportRecommendationReason(kind: EventRecommendationReasonKind): boolean {
+  return kind === 'team' || kind === 'nba' || kind === 'country' || kind === 'nationality';
+}
+
+/** Sport follow reasons only apply to sports events — avoids "Because you follow sport" on music/comedy cards. */
+export function isEditorialReasonRelevant(
+  reason: EventRecommendationReason,
+  event: LocalEvent,
+  categoryId: string,
+): boolean {
+  if (isSportRecommendationReason(reason.kind)) {
+    return event.category === 'sports' && categoryId === 'sports';
+  }
+  if (reason.kind === 'saved_category') {
+    return event.category === categoryId;
+  }
+  return true;
+}
+
+export function getPrimaryEventRecommendationReasonForCategory(
+  event: LocalEvent,
+  input: EventRecommendationInput,
+  categoryId: string,
+): EventRecommendationReason | null {
+  const reasons = buildEventRecommendationReasons(event, input, 8);
+  return reasons.find((reason) => isEditorialReasonRelevant(reason, event, categoryId)) ?? null;
+}
+
+export function getEditorialRowChipLabel(
+  categoryId: string,
+  event: LocalEvent,
+  reason: EventRecommendationReason | null | undefined,
+): string {
+  const phrase = EDITORIAL_CATEGORY_PHRASES[categoryId] ?? categoryId.replace(/_/g, ' ');
+
+  if (reason && isEditorialReasonRelevant(reason, event, categoryId)) {
+    return getCompactRecommendationLabel(reason, event);
+  }
+
+  if (categoryId === 'sports') return 'Sports pick';
+  return phrase.charAt(0).toUpperCase() + phrase.slice(1);
+}
+
+export function getEditorialRowSecondaryChipLabel(categoryId: string, event: LocalEvent): string {
+  if (event.isHot || event.isLiveNow) return 'Trending now';
+  if (categoryId === 'sports') return 'Sports pick';
+  const phrase = EDITORIAL_CATEGORY_PHRASES[categoryId] ?? categoryId.replace(/_/g, ' ');
+  return phrase.charAt(0).toUpperCase() + phrase.slice(1);
+}
+
 export function getCompactRecommendationLabel(
   reason: EventRecommendationReason | null | undefined,
   event?: LocalEvent,
@@ -788,7 +838,7 @@ export function getCompactRecommendationLabel(
     case 'nba':
     case 'country':
     case 'nationality':
-      return 'Because you follow sport';
+      return event?.category === 'sports' ? 'Because you follow sport' : 'Fits your interests';
     case 'interest':
     case 'saved_category':
     case 'joy':

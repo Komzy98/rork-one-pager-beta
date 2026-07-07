@@ -1,6 +1,11 @@
 import { describe, it } from 'node:test';
 import assert from 'node:assert/strict';
-import { getActivityFeedCategory, groupActivityFeed } from '@/utils/activityFeedMeta';
+import {
+  formatPartnerActivityHeadline,
+  getActivityFeedCategory,
+  groupActivityFeed,
+  selectPartnerActivityPreview,
+} from '@/utils/activityFeedMeta';
 import type { ActivityEvent } from '@/utils/activityService';
 
 const baseEvent = (overrides: Partial<ActivityEvent> = {}): ActivityEvent => ({
@@ -34,5 +39,35 @@ describe('activityFeedMeta', () => {
     assert.equal(groups[0]?.category, 'going_out');
     assert.equal(groups[1]?.category, 'watching');
     assert.equal(groups[2]?.category, 'tasks_done');
+  });
+
+  it('formats compact partner headlines', () => {
+    const headline = formatPartnerActivityHeadline(
+      baseEvent({
+        type: 'event_saved',
+        title: 'Saved Sea Life Manchester - Standard Entry',
+        body: 'SEA LIFE Manchester · Tue 7 Jul',
+        author: {
+          id: 'u1',
+          username: 'josh',
+          displayName: 'Joshua Komolafe',
+          avatarUrl: null,
+        },
+      }),
+    );
+    assert.equal(headline.line, 'Joshua saved Sea Life Manchester');
+    assert.equal(headline.detail, 'SEA LIFE Manchester · Tue 7 Jul');
+  });
+
+  it('excludes the current user from partner preview rows', () => {
+    const preview = selectPartnerActivityPreview(
+      [
+        baseEvent({ id: 'mine', userId: 'me', title: 'Saved My Event' }),
+        baseEvent({ id: 'friend', userId: 'friend-1', title: 'Saved Their Event' }),
+      ],
+      { currentUserId: 'me', limit: 4 },
+    );
+    assert.equal(preview.length, 1);
+    assert.equal(preview[0]?.id, 'friend');
   });
 });
