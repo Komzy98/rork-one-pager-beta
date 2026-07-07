@@ -4,7 +4,7 @@
     "slug": "onepager",
     "extra": {
       "router": {
-        "origin": "https://rork.com/"
+        "origin": "https://join.onepagerapp.co.uk"
       },
       "eas": {
         "projectId": "39ee08f1-7685-4270-a8b8-1240a24ac20c"
@@ -24,7 +24,10 @@
     "ios": {
       "supportsTablet": true,
       "bundleIdentifier": "app.rork.OPbeta",
-      "buildNumber": "53",
+      "buildNumber": "54",
+      "associatedDomains": [
+        "applinks:join.onepagerapp.co.uk"
+      ],
       "usesIcloudStorage": true,
       "infoPlist": {
         "UIBackgroundModes": [
@@ -71,6 +74,21 @@
             "BROWSABLE",
             "DEFAULT"
           ]
+        },
+        {
+          "action": "VIEW",
+          "autoVerify": true,
+          "data": [
+            {
+              "scheme": "https",
+              "host": "join.onepagerapp.co.uk",
+              "pathPrefix": "/event"
+            }
+          ],
+          "category": [
+            "BROWSABLE",
+            "DEFAULT"
+          ]
         }
       ],
       "adaptiveIcon": {
@@ -108,7 +126,7 @@
       [
         "expo-router",
         {
-          "origin": "https://rork.com/"
+          "origin": "https://join.onepagerapp.co.uk"
         }
       ],
       [

@@ -14,6 +14,7 @@ import { registerYounifyAuthRoutes } from "./younify-auth/honoRoutes";
 import { registerSupabaseDevProxy } from "./supabaseProxy";
 import { generalRateLimiter, authRateLimiter } from "./middleware/rate-limiter";
 import { payloadSizeLimiter, inputSanitizer } from "./middleware/sanitizer";
+import { registerEventInviteRoutes } from "./routes/eventInvite";
 
 const app = new Hono();
 
@@ -36,6 +37,7 @@ app.use("*", inputSanitizer());
 
 registerYounifyAuthRoutes(app);
 registerSupabaseDevProxy(app);
+registerEventInviteRoutes(app);
 
 app.use("*", generalRateLimiter());
 
