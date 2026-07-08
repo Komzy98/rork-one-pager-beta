@@ -171,9 +171,17 @@ export function mapSkiddleResponse(payload: unknown): LocalEvent[] {
 
 export function mapSkiddleSingleResponse(payload: unknown): LocalEvent | null {
   if (!payload || typeof payload !== 'object') return null;
-  const root = payload as { results?: SkiddleEvent[] } & SkiddleEvent;
-  if (Array.isArray(root.results) && root.results[0]) {
-    return mapSkiddleEvent(root.results[0]);
+  const root = payload as { results?: SkiddleEvent | SkiddleEvent[] } & SkiddleEvent;
+
+  const results = root.results;
+  if (Array.isArray(results) && results[0]) {
+    return mapSkiddleEvent(results[0]);
+  }
+  if (results && typeof results === 'object' && !Array.isArray(results)) {
+    const single = results as SkiddleEvent;
+    if (single.eventname || single.id) {
+      return mapSkiddleEvent(single);
+    }
   }
   if (root.eventname || root.id) {
     return mapSkiddleEvent(root);

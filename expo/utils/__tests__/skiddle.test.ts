@@ -2,7 +2,7 @@ import { describe, it } from 'node:test';
 import assert from 'node:assert/strict';
 import { mergeDiscoveryEvents } from '../mergeDiscoveryEvents.ts';
 import { buildSkiddleEventsSearchUrl, parseSkiddleError } from '../skiddleQuery.ts';
-import { mapSkiddleEvent, mapSkiddleResponse } from '../skiddleTransform.ts';
+import { mapSkiddleEvent, mapSkiddleResponse, mapSkiddleSingleResponse } from '../skiddleTransform.ts';
 
 describe('skiddleQuery', () => {
   it('builds a geo search URL with date window', () => {
@@ -73,6 +73,27 @@ describe('skiddleTransform', () => {
     });
     assert.equal(events.length, 1);
     assert.equal(events[0]?.category, 'comedy');
+  });
+
+  it('maps single-event detail payloads where results is an object', () => {
+    const event = mapSkiddleSingleResponse({
+      error: 0,
+      totalcount: 1,
+      results: {
+        id: '42074855',
+        eventname: 'One Pound Comedy || Creatures Comedy Club',
+        startdate: '2026-07-08T17:45:00+00:00',
+        venue: {
+          name: 'Creatures Comedy Club',
+          town: 'Manchester',
+          latitude: 53.4832089,
+          longitude: -2.2346888,
+        },
+      },
+    });
+    assert.ok(event);
+    assert.equal(event!.id, 'sk-42074855');
+    assert.equal(event!.title, 'One Pound Comedy || Creatures Comedy Club');
   });
 });
 

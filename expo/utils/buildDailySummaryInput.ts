@@ -164,7 +164,7 @@ export function buildUpcomingEventsForSummary(
     const dateLabel = hasValidStart ? ymdFromMs(startMs) : todayYmd;
     const timing = hasValidStart
       ? eventTimingForSummary(startMs, todayYmd)
-      : 'today';
+      : 'upcoming';
     const savedMatch = savedSnapshots.find((s) => titlesLikelyMatch(event.title, s.title));
     const timeLabel = event.isAllDay
       ? 'all day'

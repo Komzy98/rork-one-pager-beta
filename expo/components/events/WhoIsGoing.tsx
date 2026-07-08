@@ -11,8 +11,8 @@ interface WhoIsGoingProps {
 }
 
 function displayName(profile?: { displayName: string | null; username: string } | null): string {
-  if (!profile) return 'Partner';
-  return profile.displayName ?? `@${profile.username}`;
+  if (!profile) return 'Someone';
+  return profile.displayName?.trim() || `@${profile.username}`;
 }
 
 export const WhoIsGoing = React.memo(function WhoIsGoing({

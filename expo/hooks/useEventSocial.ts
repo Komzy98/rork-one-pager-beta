@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { useAuth } from '@/hooks/useAuth';
 import { useFriends } from '@/hooks/useFriends';
@@ -24,8 +24,10 @@ import { supabaseConfigured } from '@/utils/supabaseClient';
 
 type EventPlanCache = Awaited<ReturnType<typeof getEventPlanBundle>>;
 
+type RsvpProfile = NonNullable<PlanRsvp['profile']>;
+
 export function useEventSocial(event: LocalEvent | null) {
-  const { supabaseUser, isGuest } = useAuth();
+  const { supabaseUser, isGuest, user } = useAuth();
   const { friends, myProfile } = useFriends();
   const queryClient = useQueryClient();
   const myUserId = supabaseUser?.id;
@@ -85,9 +87,55 @@ export function useEventSocial(event: LocalEvent | null) {
     return plan;
   }, [queriesEnabled, event, myUserId, invalidate]);
 
+  const resolveRsvpProfile = useCallback(
+    (userId: string, existing?: PlanRsvp['profile']): RsvpProfile | undefined => {
+      if (existing?.displayName || existing?.username) return existing;
+      if (userId === myUserId) {
+        if (myProfile) {
+          return {
+            id: myProfile.id,
+            username: myProfile.username,
+            displayName: myProfile.displayName,
+            avatarUrl: myProfile.avatarUrl,
+          };
+        }
+        const name = user?.name?.trim();
+        if (name) {
+          return {
+            id: userId,
+            username: user?.email?.split('@')[0] ?? 'me',
+            displayName: name,
+            avatarUrl: user?.avatar ?? null,
+          };
+        }
+      }
+      const friend = friends.find((f) => f.id === userId);
+      if (friend) {
+        return {
+          id: friend.id,
+          username: friend.username,
+          displayName: friend.displayName,
+          avatarUrl: friend.avatarUrl,
+        };
+      }
+      return existing;
+    },
+    [myUserId, myProfile, friends, user?.name, user?.email, user?.avatar],
+  );
+
+  const withResolvedProfiles = useCallback(
+    (rsvps: PlanRsvp[]) =>
+      rsvps.map((rsvp) => {
+        const profile = resolveRsvpProfile(rsvp.userId, rsvp.profile);
+        return profile ? { ...rsvp, profile } : rsvp;
+      }),
+    [resolveRsvpProfile],
+  );
+
   const applyOptimisticRsvp = useCallback(
     (status: PlanRsvpStatus) => {
       if (!myUserId) return;
+      const profile = resolveRsvpProfile(myUserId);
       queryClient.setQueryData<EventPlanCache>(['event-plan', eventId, myUserId], (prev) => {
         const base = prev ?? { plan: null, rsvps: [], myStatus: null };
         const others = base.rsvps.filter((r) => r.userId !== myUserId);
@@ -101,12 +149,13 @@ export function useEventSocial(event: LocalEvent | null) {
               userId: myUserId,
               status,
               updatedAt: new Date().toISOString(),
+              ...(profile ? { profile } : {}),
             },
           ],
         };
       });
     },
-    [queryClient, eventId, myUserId],
+    [queryClient, eventId, myUserId, resolveRsvpProfile],
   );
 
   const setRsvp = useCallback(
@@ -188,8 +237,13 @@ export function useEventSocial(event: LocalEvent | null) {
     [planQuery.data?.plan, invalidate],
   );
 
-  const goingRsvps = (planQuery.data?.rsvps ?? []).filter((r) => r.status === 'in');
-  const maybeRsvps = (planQuery.data?.rsvps ?? []).filter((r) => r.status === 'maybe');
+  const resolvedRsvps = useMemo(
+    () => withResolvedProfiles(planQuery.data?.rsvps ?? []),
+    [planQuery.data?.rsvps, withResolvedProfiles],
+  );
+
+  const goingRsvps = resolvedRsvps.filter((r) => r.status === 'in');
+  const maybeRsvps = resolvedRsvps.filter((r) => r.status === 'maybe');
   const guestRsvps = (guestRsvpQuery.data ?? []) as GuestRsvp[];
   const guestGoing = guestRsvps.filter((g) => g.status === 'in');
   const guestMaybe = guestRsvps.filter((g) => g.status === 'maybe');
@@ -198,7 +252,7 @@ export function useEventSocial(event: LocalEvent | null) {
     available,
     canRsvp: queriesEnabled,
     plan: planQuery.data?.plan ?? null,
-    rsvps: planQuery.data?.rsvps ?? [],
+    rsvps: resolvedRsvps,
     myRsvpStatus: planQuery.data?.myStatus ?? null,
     goingRsvps,
     maybeRsvps,

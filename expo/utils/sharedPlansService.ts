@@ -233,10 +233,13 @@ export async function getEventPlanBundle(
 
   let profiles = new Map<string, PlanRsvp['profile']>();
   if (userIds.length > 0) {
-    const { data: profileRows } = await supabase
+    const { data: profileRows, error: profileError } = await supabase
       .from('profiles')
       .select('id, username, display_name, avatar_url')
       .in('id', userIds);
+    if (profileError && !isSocialUnavailableError(profileError)) {
+      throw toQueryError(profileError, 'Could not load RSVP profiles.');
+    }
     for (const p of (profileRows ?? []) as ProfileMini[]) {
       profiles.set(p.id, mapProfile(p));
     }
