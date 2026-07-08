@@ -1,10 +1,11 @@
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Platform } from 'react-native';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import createContextHook from '@nkzw/create-context-hook';
 import * as Notifications from 'expo-notifications';
 import { useAuth } from './useAuth';
 import { useGamification } from './useHabitsEnhancement';
+import { useUserProfile } from './useUserProfile';
 import { supabaseConfigured } from '@/utils/supabaseClient';
 import {
   acceptFriendRequest,
@@ -27,6 +28,10 @@ import {
   type SocialProfile,
 } from '@/utils/friendsService';
 import type { Leaderboard } from '@/types/gamification';
+import {
+  getInviteRsvpNotificationContent,
+  parseInviteRsvpNudgeMessage,
+} from '@/utils/inviteRsvpNotifications';
 
 async function notifyLocal(title: string, body: string) {
   if (Platform.OS === 'web') return;
@@ -43,10 +48,14 @@ async function notifyLocal(title: string, body: string) {
 export const [FriendsProvider, useFriends] = createContextHook(() => {
   const { supabaseUser, user, isGuest } = useAuth();
   const { stats } = useGamification();
+  const { profile } = useUserProfile();
   const queryClient = useQueryClient();
 
   const myUserId: string | undefined = supabaseUser?.id;
   const enabled = !!myUserId && supabaseConfigured && !isGuest;
+  const socialNotifsEnabled = profile?.notificationSettings?.socialNotifications !== false;
+  const socialNotifsRef = useRef(socialNotifsEnabled);
+  socialNotifsRef.current = socialNotifsEnabled;
 
   // null = unknown, true = tables present, false = not signed in OR migration not applied
   const [available, setAvailable] = useState<boolean | null>(enabled ? null : false);
@@ -137,6 +146,13 @@ export const [FriendsProvider, useFriends] = createContextHook(() => {
         void notifyLocal('New friend request', 'Someone wants to be your accountability partner on One Pager.');
       },
       onNudge: ({ message }) => {
+        if (!socialNotifsRef.current) return;
+        const inviteRsvp = parseInviteRsvpNudgeMessage(message);
+        if (inviteRsvp) {
+          const { title, body } = getInviteRsvpNotificationContent(inviteRsvp);
+          void notifyLocal(title, body);
+          return;
+        }
         void notifyLocal(
           'You got nudged 👋',
           message?.trim() ? message : 'A friend is cheering you on — keep your streak alive!',

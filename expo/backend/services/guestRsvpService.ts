@@ -1,5 +1,6 @@
 import { createClient, type SupabaseClient } from '@supabase/supabase-js';
 import type { LocalEvent } from '@/types/events';
+import { buildInviteRsvpNudgeMessage } from '@/utils/inviteRsvpNotifications';
 
 export type GuestRsvpStatus = 'in' | 'maybe' | 'cant';
 
@@ -92,6 +93,36 @@ async function resolveInviterUserId(
     .eq('username', inviterUsername)
     .maybeSingle();
   return data?.id ?? null;
+}
+
+async function notifyInviterOfGuestRsvp(
+  admin: SupabaseClient,
+  options: {
+    inviterUsername: string;
+    displayName: string;
+    status: GuestRsvpStatus;
+    event: LocalEvent;
+  }
+): Promise<void> {
+  const inviterUserId = await resolveInviterUserId(admin, options.inviterUsername);
+  if (!inviterUserId) return;
+
+  const message = buildInviteRsvpNudgeMessage({
+    responderName: options.displayName,
+    status: options.status,
+    eventTitle: options.event.title,
+    eventId: options.event.id,
+  });
+
+  const { error } = await admin.from('nudges').insert({
+    from_user: inviterUserId,
+    to_user: inviterUserId,
+    message,
+  });
+
+  if (error) {
+    console.error('[guestRsvp] invite response nudge failed:', error.message);
+  }
 }
 
 async function ensureEventPlanId(
@@ -226,17 +257,22 @@ export async function upsertGuestRsvp(options: {
   const invitedBy = normalizeInviter(options.invitedBy);
   const planId = await ensureEventPlanId(admin, options.event, invitedBy);
   const now = new Date().toISOString();
+  let previousStatus: GuestRsvpStatus | null = null;
+  let effectiveInvitedBy = invitedBy;
 
   if (options.guestToken) {
     const existing = await getGuestRsvpByToken(options.event.id, options.guestToken);
     if (existing && existing.event_id === options.event.id) {
+      previousStatus = existing.status;
+      effectiveInvitedBy = invitedBy ?? normalizeInviter(existing.invited_by);
+
       const { data, error } = await admin
         .from('guest_rsvps')
         .update({
           display_name: displayName,
           status,
           plan_id: planId,
-          invited_by: invitedBy ?? existing.invited_by,
+          invited_by: effectiveInvitedBy,
           updated_at: now,
         })
         .eq('id', existing.id)
@@ -244,11 +280,23 @@ export async function upsertGuestRsvp(options: {
         .single();
 
       if (error) throw error;
-      return {
+
+      const saved = {
         guestToken: data.guest_token,
         status: data.status as GuestRsvpStatus,
         displayName: data.display_name,
       };
+
+      if (effectiveInvitedBy && (previousStatus === null || previousStatus !== status)) {
+        await notifyInviterOfGuestRsvp(admin, {
+          inviterUsername: effectiveInvitedBy,
+          displayName: saved.displayName,
+          status: saved.status,
+          event: options.event,
+        });
+      }
+
+      return saved;
     }
   }
 
@@ -267,9 +315,20 @@ export async function upsertGuestRsvp(options: {
 
   if (error) throw error;
 
-  return {
+  const saved = {
     guestToken: data.guest_token,
     status: data.status as GuestRsvpStatus,
     displayName: data.display_name,
   };
+
+  if (effectiveInvitedBy) {
+    await notifyInviterOfGuestRsvp(admin, {
+      inviterUsername: effectiveInvitedBy,
+      displayName: saved.displayName,
+      status: saved.status,
+      event: options.event,
+    });
+  }
+
+  return saved;
 }

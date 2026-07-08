@@ -2,6 +2,12 @@ import { supabase, supabaseConfigured } from '@/utils/supabaseClient';
 import { isSocialUnavailableError } from '@/utils/friendsService';
 import type { LocalEvent, SavedEventSnapshot } from '@/types/events';
 
+function toQueryError(error: unknown, fallback: string): Error {
+  if (error instanceof Error) return error;
+  const message = (error as { message?: string } | null)?.message?.trim();
+  return new Error(message || fallback);
+}
+
 export type PlanRsvpStatus = 'in' | 'maybe' | 'cant';
 export type SharedPlanType = 'event' | 'match' | 'show';
 
@@ -128,7 +134,9 @@ export async function getOrCreateEventPlan(
     .eq('entity_id', event.id)
     .maybeSingle();
 
-  if (fetchError && !isSocialUnavailableError(fetchError)) throw fetchError;
+  if (fetchError && !isSocialUnavailableError(fetchError)) {
+    throw toQueryError(fetchError, 'Could not load the event plan.');
+  }
   if (existing) return mapPlan(existing as PlanRow);
 
   const { data: created, error: insertError } = await supabase
@@ -145,15 +153,18 @@ export async function getOrCreateEventPlan(
   if (insertError) {
     if (isSocialUnavailableError(insertError)) return null;
     if ((insertError as { code?: string }).code === '23505') {
-      const { data: retry } = await supabase
+      const { data: retry, error: retryError } = await supabase
         .from('shared_plans')
         .select('*')
         .eq('plan_type', 'event')
         .eq('entity_id', event.id)
         .maybeSingle();
+      if (retryError && !isSocialUnavailableError(retryError)) {
+        throw toQueryError(retryError, 'Could not join the event plan.');
+      }
       return retry ? mapPlan(retry as PlanRow) : null;
     }
-    throw insertError;
+    throw toQueryError(insertError, 'Could not create the event plan.');
   }
 
   return mapPlan(created as PlanRow);
@@ -174,7 +185,9 @@ export async function setPlanRsvp(
     },
     { onConflict: 'plan_id,user_id' }
   );
-  if (error && !isSocialUnavailableError(error)) throw error;
+  if (error && !isSocialUnavailableError(error)) {
+    throw toQueryError(error, 'Could not save your RSVP.');
+  }
 }
 
 export async function updatePlanMeetAt(planId: string, meetAt: Date | null): Promise<void> {
@@ -183,7 +196,9 @@ export async function updatePlanMeetAt(planId: string, meetAt: Date | null): Pro
     .from('shared_plans')
     .update({ meet_at: meetAt?.toISOString() ?? null, updated_at: new Date().toISOString() })
     .eq('id', planId);
-  if (error && !isSocialUnavailableError(error)) throw error;
+  if (error && !isSocialUnavailableError(error)) {
+    throw toQueryError(error, 'Could not update the meet time.');
+  }
 }
 
 export async function getEventPlanBundle(

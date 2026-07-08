@@ -17,6 +17,8 @@ import {
   type PlanRsvpStatus,
   type SharedPlan,
 } from '@/utils/sharedPlansService';
+import { sendNudge } from '@/utils/friendsService';
+import { buildInviteRsvpNudgeMessage } from '@/utils/inviteRsvpNotifications';
 import { defaultGroupMeetTime } from '@/utils/eventNightOutPlanner';
 import { supabaseConfigured } from '@/utils/supabaseClient';
 
@@ -24,7 +26,7 @@ type EventPlanCache = Awaited<ReturnType<typeof getEventPlanBundle>>;
 
 export function useEventSocial(event: LocalEvent | null) {
   const { supabaseUser, isGuest } = useAuth();
-  const { friends } = useFriends();
+  const { friends, myProfile } = useFriends();
   const queryClient = useQueryClient();
   const myUserId = supabaseUser?.id;
   const enabled = !!event && !!myUserId && supabaseConfigured && !isGuest;
@@ -116,6 +118,7 @@ export function useEventSocial(event: LocalEvent | null) {
       applyOptimisticRsvp(status);
 
       try {
+        const previousStatus = planQuery.data?.myStatus ?? null;
         const plan = planQuery.data?.plan ?? (await getOrCreateEventPlan(myUserId, event));
         if (!plan) {
           throw new Error('Could not start a plan for this event. Try again in a moment.');
@@ -123,13 +126,45 @@ export function useEventSocial(event: LocalEvent | null) {
 
         await setPlanRsvp(plan.id, myUserId, status);
 
+        if (plan.ownerId !== myUserId && previousStatus !== status) {
+          const responderName =
+            myProfile?.displayName?.trim() ||
+            myProfile?.username?.trim() ||
+            'Your friend';
+          try {
+            await sendNudge(
+              myUserId,
+              plan.ownerId,
+              buildInviteRsvpNudgeMessage({
+                responderName,
+                status,
+                eventTitle: event.title,
+                eventId: event.id,
+              }),
+            );
+          } catch {
+            // Non-partners cannot nudge — ignore.
+          }
+        }
+
         if (status === 'in') {
           const bundle = await getEventPlanBundle(event.id, myUserId);
           const goingCount = bundle.rsvps.filter((r) => r.status === 'in').length;
-          if (goingCount >= 2 && !bundle.plan?.meetAt) {
+          const guestGoingCount = (guestRsvpQuery.data ?? []).filter((g) => g.status === 'in').length;
+          const totalGoing = goingCount + guestGoingCount;
+          if (
+            totalGoing >= 2 &&
+            !bundle.plan?.meetAt &&
+            bundle.plan &&
+            bundle.plan.ownerId === myUserId
+          ) {
             const meetAt = defaultGroupMeetTime(event);
-            if (meetAt && bundle.plan) {
-              await updatePlanMeetAt(bundle.plan.id, meetAt);
+            if (meetAt) {
+              try {
+                await updatePlanMeetAt(bundle.plan.id, meetAt);
+              } catch {
+                // Meet-time suggestion is best-effort; RSVP already saved.
+              }
             }
           }
         }
@@ -140,7 +175,7 @@ export function useEventSocial(event: LocalEvent | null) {
         throw error;
       }
     },
-    [queriesEnabled, event, myUserId, planQuery.data?.plan, applyOptimisticRsvp, invalidate],
+    [queriesEnabled, event, myUserId, myProfile, planQuery.data, guestRsvpQuery.data, applyOptimisticRsvp, invalidate],
   );
 
   const setGroupMeetAt = useCallback(

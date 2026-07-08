@@ -222,7 +222,9 @@ export default function EventDetailScreen() {
       } catch (error) {
         Alert.alert(
           'Could not save RSVP',
-          error instanceof Error ? error.message : 'Please try again in a moment.',
+          error instanceof Error
+            ? error.message
+            : (error as { message?: string })?.message || 'Please try again in a moment.',
         );
       } finally {
         setRsvpBusy(false);
