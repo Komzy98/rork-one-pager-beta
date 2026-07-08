@@ -1,14 +1,28 @@
 import React from 'react';
 import { StyleSheet, Text, View } from 'react-native';
-import { Home, MapPin, TrainFront, Users } from 'lucide-react-native';
+import {
+  Clock3,
+  Flag,
+  Home,
+  MapPin,
+  Sparkles,
+  TrainFront,
+  Users,
+  UtensilsCrossed,
+} from 'lucide-react-native';
 import type { NightOutStep, NightOutStepKind } from '@/utils/eventNightOutPlanner';
 import type { EventsPalette } from '@/utils/eventsPalette';
 
 const STEP_ICON: Record<NightOutStepKind, React.ComponentType<{ size?: number; color?: string }>> = {
+  pre: UtensilsCrossed,
   leave: Home,
+  arrive: MapPin,
   meet: Users,
-  doors: MapPin,
-  return: TrainFront,
+  doors: Sparkles,
+  interval: Clock3,
+  wrap: Flag,
+  transit: TrainFront,
+  home: Home,
 };
 
 interface EventNightOutPlannerProps {

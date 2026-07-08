@@ -59,6 +59,7 @@ import { WalkthroughProvider } from "@/hooks/useWalkthrough";
 import { EventKitProvider } from "@/hooks/useEventKit";
 import { CalendarProvider } from "@/hooks/useCalendar";
 import { YounifyAuthDevBanner } from "@/components/younify/YounifyAuthUnavailablePanel";
+import { LaunchIntroGate } from "@/components/branding/LaunchIntroGate";
 
 import { trpc, trpcReactClient } from "@/lib/trpc";
 
@@ -182,15 +183,6 @@ export default function RootLayout() {
   }, []);
 
   useEffect(() => {
-    const hideSplash = async () => {
-      try {
-        await SplashScreen.hideAsync();
-      } catch {
-        if (__DEV__) console.log('Splash screen already hidden');
-      }
-    };
-    void hideSplash();
-
     if (Platform.OS === 'web' && typeof window !== 'undefined' && !window.localStorage) {
       const mockStorage = {
         getItem: () => null,
@@ -294,12 +286,14 @@ export default function RootLayout() {
                                       <SafeProvider provider={WalkthroughProvider}>
                                         <SafeProvider provider={EventKitProvider}>
                                           <SafeProvider provider={CalendarProvider}>
-                                            <StatusBarManager />
-                                            {typeof __DEV__ !== "undefined" && __DEV__ ? (
-                                              <YounifyAuthDevBanner />
-                                            ) : null}
-                                            <PartnerEventSaveSync />
-                                            <RootLayoutNav />
+                                            <LaunchIntroGate>
+                                              <StatusBarManager />
+                                              {typeof __DEV__ !== "undefined" && __DEV__ ? (
+                                                <YounifyAuthDevBanner />
+                                              ) : null}
+                                              <PartnerEventSaveSync />
+                                              <RootLayoutNav />
+                                            </LaunchIntroGate>
                                           </SafeProvider>
                                         </SafeProvider>
                                       </SafeProvider>

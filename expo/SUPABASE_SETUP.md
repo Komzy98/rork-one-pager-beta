@@ -60,21 +60,47 @@ Then confirm `public.user_data` has one row for your user with JSON data payload
 
 Guest/default users now hydrate from local `*_default` keys, so local persistence works even without a Supabase session.
 
-## 6) Google sign-in branding (avoid `*.supabase.co` in OAuth prompts)
+## 6) Google sign-in branding (show “One Pager” like Strava)
 
-When `EXPO_PUBLIC_GOOGLE_CLIENT_ID` is set, the app signs in with **Google directly** and exchanges the id token with Supabase (`signInWithIdToken`). Users then see **accounts.google.com** and your **One Pager** app name on Google’s consent screen—not `luhkqxfhrkugdcwldtle.supabase.co`.
+Supabase browser OAuth always shows `*.supabase.co` on Google’s screen. For **One Pager** branding on iPhone/Android, use the native Google Sign-In SDK (already wired in the app).
 
-### Required setup
+### Google Cloud Console
 
-1. **Google Cloud Console** → APIs & Services → OAuth consent screen:
+1. **OAuth consent screen**
    - App name: **One Pager**
-   - Logo, support email, privacy policy (`https://onepagerapp.co.uk/...`), terms
-   - Authorized domain: `onepagerapp.co.uk` (verify in Search Console)
-   - Publishing status: **Production** (submit for brand verification if prompted)
+   - Logo, support email, privacy policy, terms
+   - Publishing status: **Production** (or add test users while Testing)
 
-2. **OAuth credentials** (Web client):
-   - Authorized redirect URI: `onepager://auth`
-   - Copy the client id into `EXPO_PUBLIC_GOOGLE_CLIENT_ID` (and EAS production env)
+2. **Web client** (already used for Supabase + id-token verification)
+   - Redirect URI: `https://<project-ref>.supabase.co/auth/v1/callback`
+   - Do **not** add `onepager://auth` here
+   - Client id → `EXPO_PUBLIC_GOOGLE_CLIENT_ID` and Supabase Google provider
+
+3. **iOS client** (required for branded native sign-in)
+   - Create OAuth client → Application type: **iOS**
+   - Bundle ID: `app.rork.OPbeta`
+   - Copy client id → `EXPO_PUBLIC_GOOGLE_IOS_CLIENT_ID` in `.env` and EAS secrets
+
+4. **Supabase → Authentication → Providers → Google**
+   - Enable **Skip nonce check** (required for native iOS Google Sign-In — the mobile SDK does not send a matching nonce to Supabase)
+
+5. **Android client** (optional, for branded sign-in on Android)
+   - Application type: **Android**, package `app.rork.opbeta`, SHA-1 from your keystore
+   - Client id → `EXPO_PUBLIC_GOOGLE_ANDROID_CLIENT_ID`
+
+### After adding iOS client id
+
+1. Add to `.env`:
+   ```bash
+   EXPO_PUBLIC_GOOGLE_IOS_CLIENT_ID=<your-ios-client-id>.apps.googleusercontent.com
+   ```
+2. **Rebuild the native app** (Metro reload is not enough):
+   ```bash
+   npx expo run:ios
+   ```
+   or `eas build --profile preview --platform ios`
+
+The native flow shows **“One Pager” Wants to Use “accounts.google.com”** and **“to continue to One Pager”** on Google’s account picker — same as Strava.
 
 3. **Supabase** → Authentication → Providers → Google:
    - Same client id + secret from step 2

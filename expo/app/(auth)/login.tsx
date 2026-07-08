@@ -14,9 +14,6 @@ import {
   ActivityIndicator
 } from 'react-native';
 import { Link, useRouter } from 'expo-router';
-import * as AuthSession from 'expo-auth-session';
-import * as WebBrowser from 'expo-web-browser';
-import * as Crypto from 'expo-crypto';
 import { Mail, Lock, Eye, EyeOff, Settings, Trash2, UserPlus, AlertCircle, CheckCircle, Scan, Fingerprint, Shield } from 'lucide-react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import * as Haptics from 'expo-haptics';
@@ -26,6 +23,12 @@ import { COLORS } from '@/constants/colors';
 import { LoginCredentials } from '@/types/habit';
 import { checkAuthRateLimit, recordAuthAttempt, formatRetryMessage } from '@/utils/authRateLimiter';
 import { GOOGLE_G_LOGO } from '@/constants/googleBrandAssets';
+import {
+  getGoogleOAuthRedirectUri,
+  getGoogleSignInFailureMessage,
+  promptGoogleSignIn,
+  resolveGoogleUserFromTokens,
+} from '@/utils/googleSignIn';
 
 interface ValidationErrors {
   email?: string;
@@ -109,20 +112,15 @@ export default function LoginScreen() {
     ]).start();
   };
 
-  const redirectUri = AuthSession.makeRedirectUri({
-    scheme: 'onepager',
-    path: 'auth',
-  });
-
-  console.log('🔗 Google OAuth redirect URI:', redirectUri);
+  console.log('🔗 Google OAuth redirect URI:', getGoogleOAuthRedirectUri());
 
   const handleGoogleSignIn = async () => {
     if (!googleAuthConfig.isConfigured) {
       Alert.alert(
         'Google sign-in unavailable',
         supabaseConfigured
-          ? 'Turn on the Google provider in Supabase (Authentication → Providers) and add your Google client id there. Add redirect URI onepager://auth in Google Cloud. Or set EXPO_PUBLIC_GOOGLE_CLIENT_ID for branded Google sign-in (recommended).'
-          : 'Add EXPO_PUBLIC_SUPABASE_URL and EXPO_PUBLIC_SUPABASE_ANON_KEY for Google via Supabase, or set EXPO_PUBLIC_GOOGLE_CLIENT_ID for direct Google OAuth.',
+          ? 'Turn on the Google provider in Supabase and add your Web client id. For branded sign-in on iPhone (shows “One Pager” like Strava), create an iOS OAuth client, set EXPO_PUBLIC_GOOGLE_IOS_CLIENT_ID, and rebuild the app.'
+          : 'Add EXPO_PUBLIC_SUPABASE_URL and EXPO_PUBLIC_SUPABASE_ANON_KEY, or set EXPO_PUBLIC_GOOGLE_CLIENT_ID.',
       );
       return;
     }
@@ -159,89 +157,40 @@ export default function LoginScreen() {
         return;
       }
 
-      const rawNonce = Array.from(Crypto.getRandomValues(new Uint8Array(16)))
-        .map((b) => b.toString(16).padStart(2, '0'))
-        .join('');
-      const hashedNonce = await Crypto.digestStringAsync(
-        Crypto.CryptoDigestAlgorithm.SHA256,
-        rawNonce
-      );
+      const googleResult = await promptGoogleSignIn();
+      if (!googleResult.ok) {
+        if (!googleResult.cancelled) {
+          Alert.alert('Sign In Failed', getGoogleSignInFailureMessage(googleResult.error));
+        }
+        return;
+      }
 
-      const authUrl = `${googleAuthConfig.discovery.authorizationEndpoint}?client_id=${googleAuthConfig.clientId}&redirect_uri=${encodeURIComponent(redirectUri)}&response_type=${encodeURIComponent('id_token token')}&scope=${encodeURIComponent('openid email profile')}&nonce=${hashedNonce}`;
+      const userInfo = await resolveGoogleUserFromTokens({
+        idToken: googleResult.idToken,
+        accessToken: googleResult.accessToken,
+      });
 
-      console.log('🔑 Starting Google Sign-In...');
-      console.log('📎 Redirect URI:', redirectUri);
+      const loginResult = await loginWithGoogle({
+        id: userInfo.id,
+        email: userInfo.email,
+        name: userInfo.name || (userInfo.email ? userInfo.email.split('@')[0] : 'User'),
+        picture: userInfo.picture,
+        idToken: googleResult.idToken,
+      });
 
-      const result = await WebBrowser.openAuthSessionAsync(authUrl, redirectUri);
+      if (loginResult.success) {
+        setLoginSuccess(true);
+        triggerSuccessAnimation();
 
-      if (result.type === 'success' && result.url) {
-        const params = new URLSearchParams(result.url.split('#')[1] || '');
-        const accessToken = params.get('access_token');
-        const idToken = params.get('id_token');
-
-        if (!accessToken && !idToken) {
-          Alert.alert('Error', 'Failed to get token from Google.');
-          return;
+        if (Platform.OS !== 'web') {
+          Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
         }
 
-        let userInfo: { id: string; email: string; name?: string; picture?: string } = {
-          id: '', email: '',
-        };
-        if (accessToken) {
-          const userInfoResponse = await fetch('https://www.googleapis.com/oauth2/v2/userinfo', {
-            headers: { Authorization: `Bearer ${accessToken}` },
-          });
-          if (!userInfoResponse.ok) {
-            throw new Error('Failed to fetch Google user info');
-          }
-          userInfo = await userInfoResponse.json();
-          console.log('👤 Google user info received:', userInfo.email);
-        } else if (idToken) {
-          try {
-            const payload = JSON.parse(
-              decodeURIComponent(
-                atob(idToken.split('.')[1].replace(/-/g, '+').replace(/_/g, '/'))
-                  .split('')
-                  .map((c) => '%' + ('00' + c.charCodeAt(0).toString(16)).slice(-2))
-                  .join('')
-              )
-            );
-            userInfo = {
-              id: payload.sub,
-              email: payload.email,
-              name: payload.name,
-              picture: payload.picture,
-            };
-          } catch (e) {
-            console.warn('Failed to decode id_token payload', e);
-          }
-        }
-
-        const loginResult = await loginWithGoogle({
-          id: userInfo.id,
-          email: userInfo.email,
-          name: userInfo.name || (userInfo.email ? userInfo.email.split('@')[0] : 'User'),
-          picture: userInfo.picture,
-          idToken: idToken || undefined,
-          nonce: rawNonce,
-        });
-
-        if (loginResult.success) {
-          setLoginSuccess(true);
-          triggerSuccessAnimation();
-
-          if (Platform.OS !== 'web') {
-            Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
-          }
-
-          setTimeout(() => {
-            router.replace('/' as any);
-          }, 1200);
-        } else {
-          Alert.alert('Sign In Failed', loginResult.error || 'Please try again.');
-        }
-      } else if (result.type === 'cancel' || result.type === 'dismiss') {
-        console.log('🚫 Google Sign-In cancelled by user');
+        setTimeout(() => {
+          router.replace('/' as any);
+        }, 1200);
+      } else {
+        Alert.alert('Sign In Failed', loginResult.error || 'Please try again.');
       }
     } catch (error) {
       console.error('💥 Google Sign-In error:', error);

@@ -9,6 +9,7 @@ import { useTheme } from '@/hooks/useTheme';
 import { useAuth } from '@/hooks/useAuth';
 import { useUserProfile } from '@/hooks/useUserProfile';
 import { isJoySourcesEmpty } from '@/utils/joySources';
+import { COLORS } from '@/constants/colors';
 
 const dismissKey = (userId: string) => `@joy_sources_nudge_dismissed_${userId}`;
 
@@ -77,15 +78,15 @@ export default function JoySourcesNudgeCard() {
   return (
     <View style={styles.wrap}>
       <LinearGradient
-        colors={isDark ? ['#3B1F3A', '#1E1B2E'] : ['#FDF2F8', '#F5F3FF']}
+        colors={isDark ? ['#0F172A', '#1A2332'] : ['#E8F4FF', '#F8F9FA']}
         style={styles.card}
       >
         <TouchableOpacity style={styles.close} onPress={handleDismiss} hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}>
           <X size={16} color={colors.textTertiary} />
         </TouchableOpacity>
         <View style={styles.row}>
-          <View style={styles.iconWrap}>
-            <Sparkles size={18} color="#DB2777" />
+          <View style={[styles.iconWrap, { backgroundColor: isDark ? 'rgba(0, 122, 255, 0.15)' : 'rgba(0, 122, 255, 0.1)' }]}>
+            <Sparkles size={18} color={COLORS.primary} />
           </View>
           <View style={styles.textWrap}>
             <Text style={[styles.title, { color: colors.text }]}>What makes you happy?</Text>
@@ -128,7 +129,6 @@ const styles = StyleSheet.create({
     width: 40,
     height: 40,
     borderRadius: 12,
-    backgroundColor: 'rgba(255,255,255,0.65)',
     alignItems: 'center',
     justifyContent: 'center',
   },
@@ -149,7 +149,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
     gap: 4,
-    backgroundColor: '#DB2777',
+    backgroundColor: COLORS.primary,
     paddingVertical: 12,
     borderRadius: 12,
   },

@@ -14,10 +14,10 @@ import {
   signUpDirect,
   persistSupabaseSession,
 } from '@/utils/supabaseClient';
-import * as AuthSession from 'expo-auth-session';
 import * as Linking from 'expo-linking';
 import * as Crypto from 'expo-crypto';
 import Constants from 'expo-constants';
+import { getGoogleOAuthRedirectUri, isNativeBrandedGoogleSignInAvailable } from '@/utils/googleSignIn';
 
 import {
   migrateLocalDataToSupabaseUser,
@@ -1107,7 +1107,7 @@ export const [AuthProvider, useAuth] = createContextHook(() => {
       }
       setIsLoading(true);
 
-      const redirectTo = AuthSession.makeRedirectUri({ scheme: 'onepager', path: 'auth' });
+      const redirectTo = getGoogleOAuthRedirectUri();
       console.log('🔗 Supabase Google redirectTo:', redirectTo);
 
       const { data, error } = await supabase.auth.signInWithOAuth({
@@ -1197,11 +1197,18 @@ export const [AuthProvider, useAuth] = createContextHook(() => {
       setIsLoading(true);
 
       if (supabaseConfigured && googleUser.idToken) {
-        const { data, error } = await supabase.auth.signInWithIdToken({
+        const signInPayload: {
+          provider: 'google';
+          token: string;
+          nonce?: string;
+        } = {
           provider: 'google',
           token: googleUser.idToken,
-          nonce: googleUser.nonce,
-        });
+        };
+        if (googleUser.nonce?.trim()) {
+          signInPayload.nonce = googleUser.nonce.trim();
+        }
+        const { data, error } = await supabase.auth.signInWithIdToken(signInPayload);
         if (error || !data.user) {
           const msg = error?.message || 'Google sign-in failed';
           console.warn('Supabase signInWithIdToken failed:', msg);
@@ -1321,9 +1328,12 @@ export const [AuthProvider, useAuth] = createContextHook(() => {
     clientId: GOOGLE_CLIENT_ID,
     discovery: googleDiscovery,
     isConfigured: supabaseConfigured || !!GOOGLE_CLIENT_ID,
-    // Prefer direct Google OAuth + signInWithIdToken when a client id is set so users see
-    // accounts.google.com / your GCP app name instead of <project>.supabase.co.
-    useSupabaseOAuth: supabaseConfigured && !GOOGLE_CLIENT_ID.trim(),
+    nativeBrandedSignIn: isNativeBrandedGoogleSignInAvailable(),
+    // Supabase browser OAuth is the fallback when native branded sign-in is not configured.
+    useSupabaseOAuth:
+      supabaseConfigured &&
+      !isNativeBrandedGoogleSignInAvailable() &&
+      (Platform.OS !== 'web' || !GOOGLE_CLIENT_ID.trim()),
   }), []);
 
   const mfa = useMemo(() => ({
