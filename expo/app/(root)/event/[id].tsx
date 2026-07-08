@@ -257,18 +257,18 @@ export default function EventDetailScreen() {
     if (!event) return;
     void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
     const link = buildEventLink(event.id, { from: profile?.username });
-    const message = [
+    const text = [
       event.title,
       `${event.dateLabel ?? ''} ${event.timeLabel ?? ''}`.trim(),
       `${event.venueName}${event.city ? `, ${event.city}` : ''}`,
-      link,
     ]
       .filter(Boolean)
       .join('\n');
-    await Share.share({
-      message,
-      ...(Platform.OS === 'ios' ? { url: link } : {}),
-    });
+    await Share.share(
+      Platform.OS === 'ios'
+        ? { message: text, url: link }
+        : { message: `${text}\n${link}` },
+    );
   }, [event, profile?.username]);
 
   const handleTickets = useCallback(() => {

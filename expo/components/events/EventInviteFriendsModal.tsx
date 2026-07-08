@@ -83,6 +83,16 @@ export function EventInviteFriendsModal({
       .join('\n');
   }, [eventDateLabel, eventId, eventTimeLabel, eventTitle, inviterUsername, venueName]);
 
+  const buildShareText = useCallback(() => {
+    return [
+      `Join me for ${eventTitle}`,
+      `${eventDateLabel ?? ''} ${eventTimeLabel ?? ''}`.trim(),
+      venueName ?? '',
+    ]
+      .filter(Boolean)
+      .join('\n');
+  }, [eventDateLabel, eventTimeLabel, eventTitle, venueName]);
+
   const handleInvite = useCallback(
     async (friend: SocialProfile) => {
       setBusyId(friend.id);
@@ -100,12 +110,14 @@ export function EventInviteFriendsModal({
 
   const handleShareLink = useCallback(async () => {
     void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-    const message = buildMessage();
-    await Share.share({
-      message,
-      ...(Platform.OS === 'ios' ? { url: buildEventLink(eventId, { from: inviterUsername }) } : {}),
-    });
-  }, [buildMessage, eventId, inviterUsername]);
+    const link = buildEventLink(eventId, { from: inviterUsername });
+    const text = buildShareText();
+    await Share.share(
+      Platform.OS === 'ios'
+        ? { message: text, url: link }
+        : { message: `${text}\n${link}` },
+    );
+  }, [buildShareText, eventId, inviterUsername]);
 
   const handleClose = useCallback(() => {
     setQuery('');

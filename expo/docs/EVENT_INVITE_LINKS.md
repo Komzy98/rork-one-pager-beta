@@ -15,12 +15,26 @@ Share links use **`https://join.onepagerapp.co.uk/event/{id}`** so friends witho
    curl "https://join.onepagerapp.co.uk/.well-known/assetlinks.json"
    ```
 
-## Railway env (optional, for universal links)
+## Railway env (required for guest RSVP)
+
+| Variable | Purpose |
+|----------|---------|
+| `EXPO_PUBLIC_SUPABASE_URL` | Supabase project URL (same as app) |
+| `SUPABASE_SERVICE_ROLE_KEY` | **Required** — backend writes guest RSVPs (never in the mobile app) |
+
+Optional (universal links):
 
 | Variable | Purpose |
 |----------|---------|
 | `APPLE_TEAM_ID` | 10-char Apple Developer Team ID for iOS universal links |
 | `ANDROID_APP_LINK_SHA256` | SHA-256 cert fingerprint for Android App Links |
+
+After setting env vars, redeploy Railway and verify:
+
+```bash
+curl -s https://join.onepagerapp.co.uk/health/invite | jq
+# expect: "ok": true, "databaseReady": true
+```
 
 Find Team ID: [Apple Developer](https://developer.apple.com/account) → Membership.
 

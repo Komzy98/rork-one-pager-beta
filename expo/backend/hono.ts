@@ -15,6 +15,7 @@ import { registerSupabaseDevProxy } from "./supabaseProxy";
 import { generalRateLimiter, authRateLimiter } from "./middleware/rate-limiter";
 import { payloadSizeLimiter, inputSanitizer } from "./middleware/sanitizer";
 import { registerEventInviteRoutes } from "./routes/eventInvite";
+import { checkGuestRsvpHealth, isGuestRsvpConfigured } from "./services/guestRsvpService";
 
 const app = new Hono();
 
@@ -147,8 +148,37 @@ app.get("/health", (c) => {
     footballApiKeyConfigured: Boolean(footballKey),
     ticketmasterKeyConfigured: Boolean(getTicketmasterApiKeyFromEnv()),
     skiddleKeyConfigured: Boolean(getSkiddleApiKeyFromEnv()),
+    guestRsvpConfigured: isGuestRsvpConfigured(),
     timestamp: new Date().toISOString(),
   });
+});
+
+/** Railway smoke: guest web RSVP needs service role key + 006_guest_rsvps.sql. */
+app.get("/health/invite", async (c) => {
+  try {
+    const result = await checkGuestRsvpHealth();
+    const body = {
+      ok: result.configured && result.databaseReady,
+      check: "guest-rsvp",
+      configured: result.configured,
+      databaseReady: result.databaseReady,
+      missingEnv: result.missing,
+      error: result.error,
+      timestamp: new Date().toISOString(),
+    };
+    return c.json(body, body.ok ? 200 : 503);
+  } catch (error: unknown) {
+    const message = error instanceof Error ? error.message : String(error);
+    return c.json(
+      {
+        ok: false,
+        check: "guest-rsvp",
+        error: message,
+        timestamp: new Date().toISOString(),
+      },
+      503,
+    );
+  }
 });
 
 /** Railway / post-deploy smoke: Ticketmaster + Skiddle merge for London coords. */

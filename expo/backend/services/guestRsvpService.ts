@@ -33,6 +33,44 @@ function getAdminClient(): SupabaseClient | null {
   });
 }
 
+export function isGuestRsvpConfigured(): boolean {
+  return getAdminClient() !== null;
+}
+
+/** Post-deploy check: env vars present and guest_rsvps table exists. */
+export async function checkGuestRsvpHealth(): Promise<{
+  configured: boolean;
+  databaseReady: boolean;
+  missing: string[];
+  error?: string;
+}> {
+  const supabaseUrl = (process.env.EXPO_PUBLIC_SUPABASE_URL || process.env.SUPABASE_URL || '').trim();
+  const serviceRoleKey = (process.env.SUPABASE_SERVICE_ROLE_KEY || '').trim();
+  const missing: string[] = [];
+  if (!supabaseUrl) missing.push('EXPO_PUBLIC_SUPABASE_URL');
+  if (!serviceRoleKey) missing.push('SUPABASE_SERVICE_ROLE_KEY');
+  if (missing.length > 0) {
+    return { configured: false, databaseReady: false, missing };
+  }
+
+  const admin = getAdminClient();
+  if (!admin) {
+    return { configured: false, databaseReady: false, missing: ['SUPABASE_SERVICE_ROLE_KEY'] };
+  }
+
+  const { error } = await admin.from('guest_rsvps').select('id', { head: true, count: 'exact' }).limit(0);
+  if (error) {
+    return {
+      configured: true,
+      databaseReady: false,
+      missing: [],
+      error: error.message,
+    };
+  }
+
+  return { configured: true, databaseReady: true, missing: [] };
+}
+
 function normalizeName(name: string): string {
   return name.trim().slice(0, 80);
 }
