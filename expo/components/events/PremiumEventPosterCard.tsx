@@ -7,7 +7,7 @@ import {
   TouchableOpacity,
   View,
 } from 'react-native';
-import { Calendar, Heart, MapPin, Sparkles, TrendingUp } from 'lucide-react-native';
+import { Calendar, Heart, MapPin, Sparkles, TrendingUp, UserPlus } from 'lucide-react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import * as Haptics from 'expo-haptics';
 import type { LocalEvent } from '@/types/events';
@@ -15,6 +15,8 @@ import { formatDistanceKm } from '@/utils/eventDiscovery';
 import { getEventCategoryMeta } from '@/utils/eventCategoryMeta';
 import type { EventsPalette } from '@/utils/eventsPalette';
 import { EventRecommendationBadge } from '@/components/events/EventRecommendationBadge';
+import { EventSocialProofRow } from '@/components/events/EventSocialProofRow';
+import type { EventFriendProfile } from '@/utils/eventSocialProof';
 
 type PosterVariant = 'vertical' | 'horizontal' | 'feed';
 
@@ -29,6 +31,10 @@ interface PremiumEventPosterCardProps {
   /** Small chip above card — featured uses compact reason, feed uses category label */
   recommendationChipLabel?: string;
   recommendationChipVariant?: 'featured-chip' | 'feed-chip';
+  onWhyThis?: (event: LocalEvent) => void;
+  socialProofLabel?: string | null;
+  socialProofFriends?: EventFriendProfile[];
+  onInviteFriends?: (event: LocalEvent) => void;
 }
 
 export const PremiumEventPosterCard = React.memo(function PremiumEventPosterCard({
@@ -41,6 +47,10 @@ export const PremiumEventPosterCard = React.memo(function PremiumEventPosterCard
   onAddToOnePager,
   recommendationChipLabel,
   recommendationChipVariant = 'feed-chip',
+  onWhyThis,
+  socialProofLabel,
+  socialProofFriends = [],
+  onInviteFriends,
 }: PremiumEventPosterCardProps) {
   const scaleAnim = useRef(new Animated.Value(1)).current;
   const heartScale = useRef(new Animated.Value(1)).current;
@@ -135,11 +145,25 @@ export const PremiumEventPosterCard = React.memo(function PremiumEventPosterCard
 
         <View style={isFeed ? styles.feedBody : isHorizontal ? styles.horizontalBody : styles.verticalBody}>
           {recommendationChipLabel ? (
-            <EventRecommendationBadge
-              label={recommendationChipLabel}
-              palette={palette}
-              variant={recommendationChipVariant === 'featured-chip' ? 'featured-chip' : 'feed-chip'}
-            />
+            <View style={styles.chipRow}>
+              <EventRecommendationBadge
+                label={recommendationChipLabel}
+                palette={palette}
+                variant={recommendationChipVariant === 'featured-chip' ? 'featured-chip' : 'feed-chip'}
+              />
+              {onWhyThis ? (
+                <TouchableOpacity
+                  style={styles.whyThisBtn}
+                  onPress={(e) => {
+                    e.stopPropagation();
+                    onWhyThis(event);
+                  }}
+                  hitSlop={{ top: 6, bottom: 6, left: 4, right: 4 }}
+                >
+                  <Text style={[styles.whyThisText, { color: palette.primary }]}>Why this?</Text>
+                </TouchableOpacity>
+              ) : null}
+            </View>
           ) : null}
           <View style={styles.categoryRow}>
             <View style={[styles.categoryChip, { backgroundColor: `${categoryMeta.color}22` }]}>
@@ -159,6 +183,15 @@ export const PremiumEventPosterCard = React.memo(function PremiumEventPosterCard
           >
             {event.title}
           </Text>
+
+          {socialProofLabel && socialProofFriends.length > 0 ? (
+            <EventSocialProofRow
+              label={socialProofLabel}
+              friends={socialProofFriends}
+              palette={palette}
+              compact={isHorizontal}
+            />
+          ) : null}
 
           <View style={styles.metaRow}>
             <MapPin size={11} color={palette.textMuted} />
@@ -209,7 +242,30 @@ export const PremiumEventPosterCard = React.memo(function PremiumEventPosterCard
                   {event.isSaved ? 'Saved' : 'Interested'}
                 </Text>
               </TouchableOpacity>
+              {onInviteFriends ? (
+                <TouchableOpacity
+                  style={[styles.feedInviteBtn, { borderColor: palette.border }]}
+                  onPress={(e) => {
+                    e.stopPropagation();
+                    onInviteFriends(event);
+                  }}
+                >
+                  <UserPlus size={14} color={palette.primary} />
+                </TouchableOpacity>
+              ) : null}
             </View>
+          ) : null}
+          {!isFeed && onInviteFriends ? (
+            <TouchableOpacity
+              style={[styles.inviteLink, { borderColor: palette.border }]}
+              onPress={(e) => {
+                e.stopPropagation();
+                onInviteFriends(event);
+              }}
+            >
+              <UserPlus size={12} color={palette.primary} />
+              <Text style={[styles.inviteLinkText, { color: palette.primary }]}>Invite friends</Text>
+            </TouchableOpacity>
           ) : null}
         </View>
       </TouchableOpacity>
@@ -241,6 +297,20 @@ const styles = StyleSheet.create({
     padding: 14,
     gap: 7,
   },
+  chipRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    gap: 8,
+  },
+  whyThisBtn: {
+    paddingVertical: 2,
+    paddingHorizontal: 2,
+  },
+  whyThisText: {
+    fontSize: 11,
+    fontWeight: '700',
+  },
   feedActions: {
     flexDirection: 'row',
     gap: 8,
@@ -271,6 +341,29 @@ const styles = StyleSheet.create({
   },
   feedSecondaryText: {
     fontSize: 12,
+    fontWeight: '700',
+  },
+  feedInviteBtn: {
+    width: 40,
+    height: 40,
+    borderRadius: 12,
+    borderWidth: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  inviteLink: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 5,
+    alignSelf: 'flex-start',
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    borderRadius: 999,
+    borderWidth: 1,
+    marginTop: 2,
+  },
+  inviteLinkText: {
+    fontSize: 11,
     fontWeight: '700',
   },
   verticalWrap: {

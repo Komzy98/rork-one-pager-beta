@@ -23,12 +23,8 @@ import { COLORS } from '@/constants/colors';
 import { LoginCredentials } from '@/types/habit';
 import { checkAuthRateLimit, recordAuthAttempt, formatRetryMessage } from '@/utils/authRateLimiter';
 import { GOOGLE_G_LOGO } from '@/constants/googleBrandAssets';
-import {
-  getGoogleOAuthRedirectUri,
-  getGoogleSignInFailureMessage,
-  promptGoogleSignIn,
-  resolveGoogleUserFromTokens,
-} from '@/utils/googleSignIn';
+import { getGoogleOAuthRedirectUri, getGoogleSignInFailureMessage } from '@/utils/googleSignIn.shared';
+import { promptGoogleSignIn, resolveGoogleUserFromTokens } from '@/utils/googleSignIn';
 
 interface ValidationErrors {
   email?: string;

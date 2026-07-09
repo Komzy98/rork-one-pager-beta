@@ -441,3 +441,168 @@ export async function getFriendsSavedEvents(
     profile: profiles.get(r.user_id),
   }));
 }
+
+export interface SavedEventSocialSummary {
+  eventId: string;
+  plan: SharedPlan | null;
+  myStatus: PlanRsvpStatus | null;
+  goingCount: number;
+  maybeCount: number;
+  friendsSavedCount: number;
+  goingNames: string[];
+  hasGroupActivity: boolean;
+}
+
+function displayRsvpName(profile?: PlanRsvp['profile']): string | null {
+  if (!profile) return null;
+  return profile.displayName?.trim() || `@${profile.username}`;
+}
+
+export async function getSavedEventsSocialSummaries(
+  eventIds: string[],
+  myUserId: string,
+  friendIds: string[] = [],
+): Promise<Record<string, SavedEventSocialSummary>> {
+  const makeEmpty = (eventId: string): SavedEventSocialSummary => ({
+    eventId,
+    plan: null,
+    myStatus: null,
+    goingCount: 0,
+    maybeCount: 0,
+    friendsSavedCount: 0,
+    goingNames: [],
+    hasGroupActivity: false,
+  });
+
+  if (!supabaseConfigured || eventIds.length === 0) {
+    return Object.fromEntries(eventIds.map((id) => [id, makeEmpty(id)]));
+  }
+
+  const { data: planRows, error: planError } = await supabase
+    .from('shared_plans')
+    .select('*')
+    .eq('plan_type', 'event')
+    .in('entity_id', eventIds);
+
+  if (planError && !isSocialUnavailableError(planError)) {
+    throw toQueryError(planError, 'Could not load event plans.');
+  }
+
+  const plansByEventId = new Map<string, SharedPlan>();
+  for (const row of (planRows ?? []) as PlanRow[]) {
+    plansByEventId.set(row.entity_id, mapPlan(row));
+  }
+
+  const planIds = [...plansByEventId.values()].map((plan) => plan.id);
+  let rsvpRows: RsvpRow[] = [];
+  if (planIds.length > 0) {
+    const { data, error } = await supabase.from('plan_rsvps').select('*').in('plan_id', planIds);
+    if (error && !isSocialUnavailableError(error)) {
+      throw toQueryError(error, 'Could not load RSVPs.');
+    }
+    rsvpRows = (data ?? []) as RsvpRow[];
+  }
+
+  const { data: guestRows, error: guestError } = await supabase
+    .from('guest_rsvps')
+    .select('id, event_id, display_name, status, updated_at')
+    .in('event_id', eventIds);
+
+  if (guestError && !isSocialUnavailableError(guestError)) {
+    throw toQueryError(guestError, 'Could not load guest RSVPs.');
+  }
+
+  const guestByEvent = new Map<string, GuestRsvp[]>();
+  for (const row of (guestRows ?? []) as {
+    id: string;
+    event_id: string;
+    display_name: string;
+    status: string;
+    updated_at: string;
+  }[]) {
+    const list = guestByEvent.get(row.event_id) ?? [];
+    list.push({
+      id: row.id,
+      eventId: row.event_id,
+      displayName: row.display_name,
+      status: row.status as PlanRsvpStatus,
+      updatedAt: row.updated_at,
+    });
+    guestByEvent.set(row.event_id, list);
+  }
+
+  const userIds = Array.from(new Set(rsvpRows.map((row) => row.user_id)));
+  const profiles = new Map<string, PlanRsvp['profile']>();
+  if (userIds.length > 0) {
+    const { data: profileRows, error: profileError } = await supabase
+      .from('profiles')
+      .select('id, username, display_name, avatar_url')
+      .in('id', userIds);
+    if (profileError && !isSocialUnavailableError(profileError)) {
+      throw toQueryError(profileError, 'Could not load RSVP profiles.');
+    }
+    for (const profile of (profileRows ?? []) as ProfileMini[]) {
+      profiles.set(profile.id, mapProfile(profile));
+    }
+  }
+
+  const rsvpsByPlanId = new Map<string, PlanRsvp[]>();
+  for (const row of rsvpRows) {
+    const list = rsvpsByPlanId.get(row.plan_id) ?? [];
+    list.push({
+      planId: row.plan_id,
+      userId: row.user_id,
+      status: row.status as PlanRsvpStatus,
+      updatedAt: row.updated_at,
+      profile: profiles.get(row.user_id),
+    });
+    rsvpsByPlanId.set(row.plan_id, list);
+  }
+
+  const friendsSavedByEvent = new Map<string, number>();
+  if (friendIds.length > 0) {
+    const { data: saveRows, error: saveError } = await supabase
+      .from('user_event_saves')
+      .select('event_id')
+      .in('event_id', eventIds)
+      .in('user_id', friendIds);
+
+    if (saveError && !isSocialUnavailableError(saveError)) {
+      throw toQueryError(saveError, 'Could not load friends saves.');
+    }
+    for (const row of (saveRows ?? []) as { event_id: string }[]) {
+      friendsSavedByEvent.set(row.event_id, (friendsSavedByEvent.get(row.event_id) ?? 0) + 1);
+    }
+  }
+
+  const summaries: Record<string, SavedEventSocialSummary> = {};
+  for (const eventId of eventIds) {
+    const plan = plansByEventId.get(eventId) ?? null;
+    const rsvps = plan ? (rsvpsByPlanId.get(plan.id) ?? []) : [];
+    const guests = guestByEvent.get(eventId) ?? [];
+    const goingRsvps = rsvps.filter((rsvp) => rsvp.status === 'in');
+    const maybeRsvps = rsvps.filter((rsvp) => rsvp.status === 'maybe');
+    const guestGoing = guests.filter((guest) => guest.status === 'in');
+    const guestMaybe = guests.filter((guest) => guest.status === 'maybe');
+    const myStatus = rsvps.find((rsvp) => rsvp.userId === myUserId)?.status ?? null;
+    const goingNames = [
+      ...goingRsvps.map((rsvp) => displayRsvpName(rsvp.profile)).filter(Boolean),
+      ...guestGoing.map((guest) => guest.displayName),
+    ].slice(0, 3) as string[];
+
+    summaries[eventId] = {
+      eventId,
+      plan,
+      myStatus,
+      goingCount: goingRsvps.length + guestGoing.length,
+      maybeCount: maybeRsvps.length + guestMaybe.length,
+      friendsSavedCount: friendsSavedByEvent.get(eventId) ?? 0,
+      goingNames,
+      hasGroupActivity:
+        goingRsvps.length + guestGoing.length + maybeRsvps.length + guestMaybe.length > 0 ||
+        (friendsSavedByEvent.get(eventId) ?? 0) > 0,
+    };
+  }
+
+  return summaries;
+}

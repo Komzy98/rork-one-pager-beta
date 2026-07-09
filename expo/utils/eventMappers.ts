@@ -48,6 +48,7 @@ export function localEventToOnePager(event: LocalEvent, source?: OnePagerEventSo
     isLiveNow: event.isLiveNow,
     rating: event.rating,
     attendees: event.attendees,
+    subCategory: event.subCategory,
   };
 }
 
@@ -75,6 +76,7 @@ export function onePagerToLocalEvent(event: OnePagerEvent): LocalEvent {
     startIso: event.startAt,
     ticketUrl: event.ticketUrl,
     distanceKm: event.distanceKm,
+    subCategory: event.subCategory,
   };
 }
 
@@ -98,6 +100,7 @@ export function localEventToSavedSnapshot(event: LocalEvent): SavedEventSnapshot
     dateLabel: event.date,
     timeLabel: event.time,
     tags: event.tags,
+    subCategory: event.subCategory,
   };
 }
 
@@ -123,6 +126,7 @@ export function savedSnapshotToOnePager(snapshot: SavedEventSnapshot): OnePagerE
     dateLabel: snapshot.dateLabel,
     timeLabel: snapshot.timeLabel,
     tags: snapshot.tags,
+    subCategory: snapshot.subCategory,
   };
 }
 

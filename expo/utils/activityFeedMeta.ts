@@ -1,4 +1,5 @@
 import type { ActivityEvent, ActivityType } from '@/utils/activityService';
+import { BRAND } from '@/constants/brand';
 
 export type ActivityFeedCategory =
   | 'going_out'
@@ -160,11 +161,11 @@ export interface ActivityCategoryVisual {
 }
 
 const CATEGORY_VISUALS: Record<ActivityFeedCategory, ActivityCategoryVisual> = {
-  going_out: { tint: '#E84393', background: '#E8439318' },
-  watching: { tint: '#6C5CE7', background: '#6C5CE718' },
-  streaks: { tint: '#F59E0B', background: '#F59E0B18' },
-  tasks_done: { tint: '#22C55E', background: '#22C55E18' },
-  other: { tint: '#0A84FF', background: '#0A84FF18' },
+  going_out: { tint: BRAND.light.primary, background: `${BRAND.light.primary}18` },
+  watching: { tint: BRAND.light.accent, background: `${BRAND.light.accent}18` },
+  streaks: { tint: '#FF9500', background: '#FF950018' },
+  tasks_done: { tint: '#34C759', background: '#34C75918' },
+  other: { tint: BRAND.light.primary, background: `${BRAND.light.primary}18` },
 };
 
 export function getActivityCategoryVisual(type: ActivityType | string): ActivityCategoryVisual {

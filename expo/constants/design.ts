@@ -1,5 +1,6 @@
 import { Platform, TextStyle, ViewStyle, StyleSheet } from 'react-native';
 import { COLORS } from './colors';
+import { displayFont, interFont } from './fonts';
 
 // ============================================
 // SPACING SCALE
@@ -37,18 +38,18 @@ export const TYPOGRAPHY: Record<
   'largeTitle' | 'hero' | 'title' | 'title2' | 'title3' | 'heading' | 'subheading' | 'body' | 'bodySm' | 'caption' | 'caption2' | 'overline',
   TextStyle
 > = {
-  largeTitle: { fontSize: 34, fontWeight: '700' as const, lineHeight: 41, letterSpacing: -0.7 },
-  hero: { fontSize: 32, fontWeight: '800' as const, lineHeight: 40, letterSpacing: -0.5 },
-  title: { fontSize: 28, fontWeight: '700' as const, lineHeight: 34, letterSpacing: -0.4 },
-  title2: { fontSize: 22, fontWeight: '700' as const, lineHeight: 28, letterSpacing: -0.3 },
-  title3: { fontSize: 20, fontWeight: '600' as const, lineHeight: 25, letterSpacing: -0.2 },
-  heading: { fontSize: 17, fontWeight: '600' as const, lineHeight: 22 },
-  subheading: { fontSize: 15, fontWeight: '600' as const, lineHeight: 20 },
-  body: { fontSize: 17, fontWeight: '400' as const, lineHeight: 22 },
-  bodySm: { fontSize: 15, fontWeight: '400' as const, lineHeight: 20 },
-  caption: { fontSize: 12, fontWeight: '400' as const, lineHeight: 16 },
-  caption2: { fontSize: 11, fontWeight: '400' as const, lineHeight: 13 },
-  overline: { fontSize: 11, fontWeight: '600' as const, lineHeight: 16, letterSpacing: 0.6, textTransform: 'uppercase' as const },
+  largeTitle: { fontFamily: displayFont('700'), fontSize: 34, fontWeight: '700' as const, lineHeight: 41, letterSpacing: -0.7 },
+  hero: { fontFamily: displayFont('700'), fontSize: 32, fontWeight: '700' as const, lineHeight: 40, letterSpacing: -0.5 },
+  title: { fontFamily: displayFont('700'), fontSize: 28, fontWeight: '700' as const, lineHeight: 34, letterSpacing: -0.4 },
+  title2: { fontFamily: displayFont('700'), fontSize: 22, fontWeight: '700' as const, lineHeight: 28, letterSpacing: -0.3 },
+  title3: { fontFamily: displayFont('600'), fontSize: 20, fontWeight: '600' as const, lineHeight: 25, letterSpacing: -0.2 },
+  heading: { fontFamily: interFont('600'), fontSize: 17, fontWeight: '600' as const, lineHeight: 22 },
+  subheading: { fontFamily: interFont('600'), fontSize: 15, fontWeight: '600' as const, lineHeight: 20 },
+  body: { fontFamily: interFont('400'), fontSize: 17, fontWeight: '400' as const, lineHeight: 22 },
+  bodySm: { fontFamily: interFont('400'), fontSize: 15, fontWeight: '400' as const, lineHeight: 20 },
+  caption: { fontFamily: interFont('400'), fontSize: 12, fontWeight: '400' as const, lineHeight: 16 },
+  caption2: { fontFamily: interFont('400'), fontSize: 11, fontWeight: '400' as const, lineHeight: 13 },
+  overline: { fontFamily: interFont('600'), fontSize: 11, fontWeight: '600' as const, lineHeight: 16, letterSpacing: 0.6, textTransform: 'uppercase' as const },
 };
 
 // ============================================
@@ -229,26 +230,31 @@ export const buttonStyles = {
 
 export const buttonTextStyles = {
   primary: {
+    fontFamily: interFont('600'),
     color: COLORS.textInverse,
     fontSize: 17,
     fontWeight: '600' as const,
   } as TextStyle,
   secondary: {
+    fontFamily: interFont('600'),
     color: COLORS.text,
     fontSize: 17,
     fontWeight: '600' as const,
   } as TextStyle,
   outline: {
+    fontFamily: interFont('600'),
     color: COLORS.primary,
     fontSize: 17,
     fontWeight: '600' as const,
   } as TextStyle,
   ghost: {
+    fontFamily: interFont('500'),
     color: COLORS.primary,
     fontSize: 17,
     fontWeight: '500' as const,
   } as TextStyle,
   danger: {
+    fontFamily: interFont('600'),
     color: COLORS.textInverse,
     fontSize: 17,
     fontWeight: '600' as const,
@@ -429,11 +435,13 @@ export const tabStyles = {
     ...cardShadow(1),
   } as ViewStyle,
   tabText: {
+    fontFamily: interFont('500'),
     fontSize: 14,
     fontWeight: '500' as const,
     color: COLORS.textTertiary,
   } as TextStyle,
   tabTextActive: {
+    fontFamily: interFont('600'),
     color: COLORS.text,
     fontWeight: '600' as const,
   } as TextStyle,

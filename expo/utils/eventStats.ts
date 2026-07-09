@@ -40,7 +40,9 @@ export function getEventStatsSummary(
 
   return {
     saved: savedSnapshots.length,
-    attended: 0,
+    attended: savedSnapshots.filter(
+      (snapshot) => snapshot.feedbackRating != null && snapshot.feedbackRating >= 4,
+    ).length,
     thisMonth,
   };
 }

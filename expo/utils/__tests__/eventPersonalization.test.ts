@@ -206,7 +206,23 @@ describe('eventPersonalization', () => {
       { profile },
     );
     assert.ok(reason);
-    assert.equal(getCompactRecommendationLabel(reason, baseEvent({ category: 'music' })), 'Fits your interests');
+    assert.equal(getCompactRecommendationLabel(reason, baseEvent({ category: 'music' })), 'Picked for you');
+  });
+
+  it('shows specific team chip labels on sports events', () => {
+    const profile = {
+      interests: ['football'],
+      favoriteTeams: [{ id: '1', name: 'Arsenal', sport: 'football' }],
+    } as unknown as UserProfile;
+    const reason = getPrimaryEventRecommendationReason(
+      baseEvent({ category: 'sports', title: 'Arsenal vs Chelsea' }),
+      { profile },
+    );
+    assert.ok(reason);
+    assert.equal(
+      getCompactRecommendationLabel(reason, baseEvent({ category: 'sports', title: 'Arsenal vs Chelsea' })),
+      'Because you follow Arsenal',
+    );
   });
 
   it('filters sport reasons out of editorial music row chips', () => {

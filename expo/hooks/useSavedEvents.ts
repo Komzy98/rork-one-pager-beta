@@ -4,6 +4,12 @@ import { useUserProfile } from '@/hooks/useUserProfile';
 import type { LocalEvent, SavedEventSnapshot } from '@/types/events';
 import { localEventToSavedSnapshot, savedSnapshotToLocalEvent } from '@/utils/eventMappers';
 import { getDaysUntilEvent } from '@/utils/eventDiscovery';
+import {
+  applyJoyPatches,
+  getEventsNeedingFeedback,
+  inferJoyPatchesFromSavedEvent,
+  type EventFeedbackRating,
+} from '@/utils/eventJoyFeedback';
 import { useSocialActivity } from '@/hooks/useSocialActivity';
 import { useAuth } from '@/hooks/useAuth';
 import { useFriends } from '@/hooks/useFriends';
@@ -100,15 +106,61 @@ export function useSavedEvents() {
     });
   }, [savedAsLocalEvents]);
 
+  const eventsNeedingFeedback = useMemo(
+    () => getEventsNeedingFeedback(savedSnapshots),
+    [savedSnapshots],
+  );
+
+  const recordEventFeedback = useCallback(
+    async (eventId: string, rating: EventFeedbackRating) => {
+      const snapshot = savedSnapshots.find((entry) => entry.id === eventId);
+      if (!snapshot) return;
+
+      const patches = inferJoyPatchesFromSavedEvent(snapshot, rating);
+      const nextSaved = savedSnapshots.map((entry) =>
+        entry.id === eventId
+          ? {
+              ...entry,
+              feedbackRating: rating,
+              attendedAt: entry.attendedAt ?? new Date().toISOString(),
+            }
+          : entry,
+      );
+
+      await updateProfile({
+        savedEvents: nextSaved,
+        ...(patches ? { joySources: applyJoyPatches(profile?.joySources, patches) } : {}),
+      });
+      void Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+    },
+    [savedSnapshots, profile?.joySources, updateProfile],
+  );
+
+  const dismissEventFeedback = useCallback(
+    async (eventId: string) => {
+      const nextSaved = savedSnapshots.map((entry) =>
+        entry.id === eventId
+          ? { ...entry, feedbackDismissedAt: new Date().toISOString() }
+          : entry,
+      );
+      await updateProfile({ savedEvents: nextSaved });
+      void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+    },
+    [savedSnapshots, updateProfile],
+  );
+
   return {
     savedSnapshots,
     savedAsLocalEvents,
     upcomingSaved,
+    eventsNeedingFeedback,
     savedCount: savedSnapshots.length,
     isSaved,
     addToOnePager,
     removeFromOnePager,
     toggleSaved,
     getSnapshotById,
+    recordEventFeedback,
+    dismissEventFeedback,
   };
 }

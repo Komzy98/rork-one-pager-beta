@@ -3,6 +3,7 @@ import { Platform } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import createContextHook from '@nkzw/create-context-hook';
 import { useAuth } from './useAuth';
+import { BRAND } from '@/constants/brand';
 
 let Calendar: typeof import('expo-calendar') | null = null;
 if (Platform.OS !== 'web') {
@@ -89,8 +90,18 @@ export const [EventKitProvider, useEventKit] = createContextHook(() => {
     }
   }, [isEventKitAvailable, EVENTKIT_PERMISSIONS_KEY]);
 
+  const resetCalendarState = useCallback(() => {
+    setHasPermission(false);
+    setCalendars([]);
+    setSelectedCalendarIds([]);
+    setEvents([]);
+    setError(null);
+  }, []);
+
   // Load calendars from device
-  const loadDeviceCalendars = useCallback(async (): Promise<void> => {
+  const loadDeviceCalendars = useCallback(async (options?: {
+    applyDefaultSelection?: boolean;
+  }): Promise<void> => {
     if (!isEventKitAvailable) {
       console.log('Cannot load calendars: EventKit not available');
       return;
@@ -107,7 +118,7 @@ export const [EventKitProvider, useEventKit] = createContextHook(() => {
       const formattedCalendars: EventKitCalendar[] = deviceCalendars.map(cal => ({
         id: cal.id,
         title: cal.title,
-        color: cal.color || '#007AFF',
+        color: cal.color || BRAND.light.primary,
         source: {
           name: cal.source?.name || 'Unknown',
           type: cal.source?.type || 'unknown'
@@ -118,28 +129,26 @@ export const [EventKitProvider, useEventKit] = createContextHook(() => {
       
       setCalendars(formattedCalendars);
       
-      // Load previously selected calendars
+      // Load previously selected calendars for this account only
       const stored = await AsyncStorage.getItem(SELECTED_CALENDARS_KEY);
       if (stored) {
         const selectedIds = JSON.parse(stored);
-        // Filter to only include calendars that still exist
         const validIds = selectedIds.filter((id: string) => 
           formattedCalendars.some(cal => cal.id === id)
         );
         setSelectedCalendarIds(validIds);
         
-        // Update stored selection if some calendars were removed
         if (validIds.length !== selectedIds.length) {
           await AsyncStorage.setItem(SELECTED_CALENDARS_KEY, JSON.stringify(validIds));
         }
-      } else if (formattedCalendars.length > 0) {
+      } else if (options?.applyDefaultSelection && formattedCalendars.length > 0) {
         const defaultIds = formattedCalendars
           .filter((cal) => !cal.title.toLowerCase().includes('birthday'))
           .slice(0, 4)
           .map((cal) => cal.id);
         setSelectedCalendarIds(defaultIds);
         await AsyncStorage.setItem(SELECTED_CALENDARS_KEY, JSON.stringify(defaultIds));
-        console.log(`Auto-selected ${defaultIds.length} calendars for habit planning`);
+        console.log(`User opted in: selected ${defaultIds.length} calendars for habit planning`);
       } else {
         setSelectedCalendarIds([]);
         console.log('No stored EventKit calendar selection for current user, reset selection');
@@ -342,7 +351,8 @@ export const [EventKitProvider, useEventKit] = createContextHook(() => {
     }
   }, [isEventKitAvailable, hasPermission, calendars, selectedCalendarIds, loadEvents]);
 
-  // Initialize EventKit
+  // Initialize EventKit for the current account only.
+  // Device-level OS permission is not enough — each user must opt in explicitly.
   const initialize = useCallback(async (): Promise<void> => {
     if (!isEventKitAvailable) {
       console.log('EventKit not available on this platform');
@@ -351,23 +361,39 @@ export const [EventKitProvider, useEventKit] = createContextHook(() => {
 
     try {
       setIsLoading(true);
-      
-      // Check current permission status first
-      const { status } = await Calendar!.getCalendarPermissionsAsync();
-      const hasAccess = status === 'granted';
-      setHasPermission(hasAccess);
-      
-      if (hasAccess) {
-        // Load calendars if we have permission
-        await loadDeviceCalendars();
+
+      const storedOptIn = await AsyncStorage.getItem(EVENTKIT_PERMISSIONS_KEY);
+      const userOptedIn = storedOptIn === 'true';
+
+      if (!userOptedIn) {
+        resetCalendarState();
+        return;
       }
+
+      const { status } = await Calendar!.getCalendarPermissionsAsync();
+      const hasOsAccess = status === 'granted';
+
+      if (!hasOsAccess) {
+        await AsyncStorage.setItem(EVENTKIT_PERMISSIONS_KEY, 'false');
+        resetCalendarState();
+        return;
+      }
+
+      setHasPermission(true);
+      await loadDeviceCalendars();
     } catch (error) {
       console.error('Error initializing EventKit:', error);
       setError('Failed to initialize calendar access');
+      resetCalendarState();
     } finally {
       setIsLoading(false);
     }
-  }, [isEventKitAvailable, loadDeviceCalendars]);
+  }, [
+    isEventKitAvailable,
+    EVENTKIT_PERMISSIONS_KEY,
+    loadDeviceCalendars,
+    resetCalendarState,
+  ]);
 
   // Auto-refresh events periodically
   const refreshEvents = useCallback(async (): Promise<void> => {
@@ -380,10 +406,11 @@ export const [EventKitProvider, useEventKit] = createContextHook(() => {
     }
   }, [loadEvents]);
 
-  // Initialize on mount
+  // Re-initialize when the signed-in account changes so calendar state cannot leak across users.
   useEffect(() => {
-    initialize();
-  }, [initialize]);
+    resetCalendarState();
+    void initialize();
+  }, [userId, initialize, resetCalendarState]);
 
   // Load events when calendars are selected and we have permission
   // Use a more controlled approach to prevent infinite loops

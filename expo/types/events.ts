@@ -43,6 +43,8 @@ export interface OnePagerEvent {
   isLiveNow?: boolean;
   rating?: number;
   attendees?: number;
+  /** Merged sub-tag when category is rolled into a bento parent (fitness → sports, etc.). */
+  subCategory?: 'fitness' | 'networking' | 'family';
 }
 
 /** Persisted snapshot when user adds an event to their One Pager. */
@@ -66,6 +68,13 @@ export interface SavedEventSnapshot {
   dateLabel?: string;
   timeLabel?: string;
   tags?: string[];
+  /** Set when the user confirms they went (post-event feedback). */
+  attendedAt?: string;
+  /** 1–5 post-event rating; 4+ can reinforce joy sources. */
+  feedbackRating?: number;
+  /** ISO timestamp when the user skipped the feedback prompt. */
+  feedbackDismissedAt?: string;
+  subCategory?: 'fitness' | 'networking' | 'family';
 }
 
 /** @deprecated Use OnePagerEvent — kept for backward compatibility in hooks. */
@@ -92,6 +101,8 @@ export interface LocalEvent {
   startIso?: string;
   ticketUrl?: string;
   distanceKm?: number;
+  /** Merged sub-tag when category is rolled into a bento parent (fitness → sports, etc.). */
+  subCategory?: 'fitness' | 'networking' | 'family';
 }
 
 export type NearbyEventsSource = 'ticketmaster' | 'skiddle' | 'mixed' | 'fallback' | 'none';
@@ -100,4 +111,16 @@ export interface NearbyEventsResult {
   events: LocalEvent[];
   source: NearbyEventsSource;
   areaLabel?: string;
+}
+
+export interface NearbyCategoryBucket {
+  events: LocalEvent[];
+  count: number;
+}
+
+export interface NearbyEventsBatchResult {
+  categories: Record<string, NearbyCategoryBucket>;
+  categoryCounts: Record<string, number>;
+  allEvents: LocalEvent[];
+  source: NearbyEventsSource;
 }

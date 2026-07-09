@@ -1,8 +1,5 @@
-import { configureYounify } from "../services/younify";
-import { isYounifyAuthUnreachableError } from "@/utils/onboardingProfileSave";
-
-import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { Stack, useRouter } from "expo-router";
+import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import * as SplashScreen from "expo-splash-screen";
 import * as Linking from "expo-linking";
 import { parseDeepLink } from "@/utils/deepLinks";
@@ -59,7 +56,6 @@ import { WalkthroughProvider } from "@/hooks/useWalkthrough";
 import { EventKitProvider } from "@/hooks/useEventKit";
 import { CalendarProvider } from "@/hooks/useCalendar";
 import { YounifyAuthDevBanner } from "@/components/younify/YounifyAuthUnavailablePanel";
-import { LaunchIntroGate } from "@/components/branding/LaunchIntroGate";
 
 import { trpc, trpcReactClient } from "@/lib/trpc";
 
@@ -164,25 +160,17 @@ function RootLayoutNav() {
 
 export default function RootLayout() {
   const router = useRouter();
-  useEffect(() => {
-    configureYounify().catch((error) => {
-      const msg = error instanceof Error ? error.message : String(error);
-      const authDown = isYounifyAuthUnreachableError(msg);
-      if (__DEV__ && authDown) {
-        console.warn(
-          "[Younify] Auth on :3000 is not running — use npm run dev (simulator) or npm run younify-auth in another terminal.",
-        );
-        return;
-      }
-      if (__DEV__) {
-        console.warn("Younify configure failed:", error);
-        return;
-      }
-      console.error("Younify configure failed:", error);
-    });
-  }, []);
 
   useEffect(() => {
+    const hideSplash = async () => {
+      try {
+        await SplashScreen.hideAsync();
+      } catch {
+        if (__DEV__) console.log('Splash screen already hidden');
+      }
+    };
+    void hideSplash();
+
     if (Platform.OS === 'web' && typeof window !== 'undefined' && !window.localStorage) {
       const mockStorage = {
         getItem: () => null,
@@ -286,14 +274,12 @@ export default function RootLayout() {
                                       <SafeProvider provider={WalkthroughProvider}>
                                         <SafeProvider provider={EventKitProvider}>
                                           <SafeProvider provider={CalendarProvider}>
-                                            <LaunchIntroGate>
-                                              <StatusBarManager />
-                                              {typeof __DEV__ !== "undefined" && __DEV__ ? (
-                                                <YounifyAuthDevBanner />
-                                              ) : null}
-                                              <PartnerEventSaveSync />
-                                              <RootLayoutNav />
-                                            </LaunchIntroGate>
+                                            <StatusBarManager />
+                                            {typeof __DEV__ !== "undefined" && __DEV__ ? (
+                                              <YounifyAuthDevBanner />
+                                            ) : null}
+                                            <PartnerEventSaveSync />
+                                            <RootLayoutNav />
                                           </SafeProvider>
                                         </SafeProvider>
                                       </SafeProvider>

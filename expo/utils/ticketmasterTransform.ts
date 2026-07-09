@@ -1,5 +1,6 @@
 import type { EventCategory, LocalEvent } from '@/types/events';
 import { isEventLiveNow, isEventStartingSoon } from '@/utils/eventDiscovery';
+import { normalizeEventCategories } from '@/utils/eventCategories';
 
 type TmClassification = {
   segment?: { name?: string };
@@ -47,10 +48,26 @@ function mapCategory(classifications?: TmClassification[]): EventCategory | stri
   if (names.some((n) => n.includes('comedy'))) return 'comedy';
   if (names.some((n) => n.includes('theatre') || n.includes('theater'))) return 'theatre';
   if (names.some((n) => n.includes('food') || n.includes('culinary'))) return 'food';
+  if (names.some((n) => n.includes('family') || n.includes('kids') || n.includes('children'))) {
+    return 'family';
+  }
+  if (names.some((n) => n.includes('health') || n.includes('wellness') || n.includes('fitness'))) {
+    return 'fitness';
+  }
   if (names.some((n) => n.includes('dance') || n.includes('club') || n.includes('electronic'))) {
     return 'nightlife';
   }
-  if (names.some((n) => n.includes('tech') || n.includes('conference'))) return 'tech';
+  if (
+    names.some(
+      (n) =>
+        n.includes('tech') ||
+        n.includes('conference') ||
+        n.includes('network') ||
+        n.includes('meetup'),
+    )
+  ) {
+    return 'tech';
+  }
   if (names.some((n) => n.includes('art') || n.includes('museum'))) return 'arts';
   if (names.some((n) => n.includes('music'))) return 'music';
   return 'music';
@@ -146,7 +163,7 @@ export function mapTicketmasterEvent(raw: TmEvent): LocalEvent | null {
 
   event.isLiveNow = isEventLiveNow(event);
   event.isHot = isEventStartingSoon(event, 72);
-  return event;
+  return normalizeEventCategories(event);
 }
 
 export function mapTicketmasterResponse(payload: unknown): LocalEvent[] {

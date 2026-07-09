@@ -46,7 +46,7 @@ export function useCalendarHabitRecommendations(
     }
     if (!granted) return false;
 
-    await eventKit.loadDeviceCalendars();
+    await eventKit.loadDeviceCalendars({ applyDefaultSelection: true });
     await eventKit.refreshEvents();
     return true;
   }, [eventKit]);

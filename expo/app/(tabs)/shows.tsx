@@ -1134,15 +1134,19 @@ export default function ShowsScreen() {
 
   useFocusEffect(
     useCallback(() => {
+      if (selectedTab === 'for-you') {
+        setForYouQueriesEnabled(true);
+        return;
+      }
       let timer: ReturnType<typeof setTimeout> | null = null;
       const interactionTask = InteractionManager.runAfterInteractions(() => {
-        timer = setTimeout(() => setForYouQueriesEnabled(true), 2500);
+        timer = setTimeout(() => setForYouQueriesEnabled(true), 1500);
       });
       return () => {
         interactionTask.cancel?.();
         if (timer) clearTimeout(timer);
       };
-    }, []),
+    }, [selectedTab]),
   );
 
   const forYouQueryOptions = { enabled: forYouQueriesEnabled, staleTime: 1000 * 60 * 30 };
@@ -1150,11 +1154,14 @@ export default function ShowsScreen() {
   const trendingQuery = useQuery({
     queryKey: ['trending-all'],
     queryFn: async () => {
-      const [movies, tvShows] = await Promise.all([
+      const [moviesResult, tvResult] = await Promise.allSettled([
         tmdbApi.getTrendingMovies('week'),
-        tmdbApi.getTrendingTVShows('week')
+        tmdbApi.getTrendingTVShows('week'),
       ]);
-      return { movies: movies.results, tvShows: tvShows.results };
+      return {
+        movies: moviesResult.status === 'fulfilled' ? moviesResult.value.results : [],
+        tvShows: tvResult.status === 'fulfilled' ? tvResult.value.results : [],
+      };
     },
     ...forYouQueryOptions,
   });
@@ -1162,11 +1169,14 @@ export default function ShowsScreen() {
   const popularQuery = useQuery({
     queryKey: ['popular-all'],
     queryFn: async () => {
-      const [movies, tvShows] = await Promise.all([
+      const [moviesResult, tvResult] = await Promise.allSettled([
         tmdbApi.getPopularMovies(),
-        tmdbApi.getPopularTVShows()
+        tmdbApi.getPopularTVShows(),
       ]);
-      return { movies: movies.results, tvShows: tvShows.results };
+      return {
+        movies: moviesResult.status === 'fulfilled' ? moviesResult.value.results : [],
+        tvShows: tvResult.status === 'fulfilled' ? tvResult.value.results : [],
+      };
     },
     ...forYouQueryOptions,
   });
@@ -1174,11 +1184,14 @@ export default function ShowsScreen() {
   const topRatedQuery = useQuery({
     queryKey: ['top-rated-all'],
     queryFn: async () => {
-      const [movies, tvShows] = await Promise.all([
+      const [moviesResult, tvResult] = await Promise.allSettled([
         tmdbApi.getTopRatedMovies(),
-        tmdbApi.getTopRatedTVShows()
+        tmdbApi.getTopRatedTVShows(),
       ]);
-      return { movies: movies.results, tvShows: tvShows.results };
+      return {
+        movies: moviesResult.status === 'fulfilled' ? moviesResult.value.results : [],
+        tvShows: tvResult.status === 'fulfilled' ? tvResult.value.results : [],
+      };
     },
     ...forYouQueryOptions,
   });
@@ -1205,11 +1218,14 @@ export default function ShowsScreen() {
     queryKey: ['region-trending', userCountryCode],
     queryFn: async () => {
       if (!userCountryCode) return null;
-      const [movies, tvShows] = await Promise.all([
+      const [moviesResult, tvResult] = await Promise.allSettled([
         tmdbApi.getTrendingMoviesByRegion(userCountryCode, 'week'),
         tmdbApi.getTrendingTVShowsByRegion(userCountryCode, 'week'),
       ]);
-      return { movies: movies.results, tvShows: tvShows.results };
+      return {
+        movies: moviesResult.status === 'fulfilled' ? moviesResult.value.results : [],
+        tvShows: tvResult.status === 'fulfilled' ? tvResult.value.results : [],
+      };
     },
     enabled: forYouQueriesEnabled && !!userCountryCode,
     staleTime: 1000 * 60 * 30,
@@ -1524,6 +1540,29 @@ export default function ShowsScreen() {
     forYouQueriesEnabled &&
     heroItems.length === 0 &&
     (trendingQuery.isLoading || (!!userCountryCode && regionTrendingQuery.isLoading));
+
+  const forYouMovieRailsLoading =
+    forYouQueriesEnabled &&
+    (nowPlayingQuery.isLoading || popularQuery.isLoading || upcomingMoviesQuery.isLoading);
+
+  const hasAnyForYouMovieContent = useMemo(() => {
+    const moviePools = [
+      trendingQuery.data?.movies,
+      regionTrendingQuery.data?.movies,
+      nowPlayingQuery.data,
+      upcomingMoviesQuery.data,
+      popularQuery.data?.movies,
+      topRatedQuery.data?.movies,
+    ];
+    return moviePools.some((pool) => Array.isArray(pool) && pool.length > 0);
+  }, [
+    trendingQuery.data?.movies,
+    regionTrendingQuery.data?.movies,
+    nowPlayingQuery.data,
+    upcomingMoviesQuery.data,
+    popularQuery.data?.movies,
+    topRatedQuery.data?.movies,
+  ]);
   
   const filteredShows = useMemo(() => {
     let filtered = shows;
@@ -2504,139 +2543,153 @@ export default function ShowsScreen() {
             <View style={styles.loadingSection}>
               <ActivityIndicator size="large" color={THEME.primary} />
             </View>
-          ) : (
+          ) : heroItems.length > 0 ? (
+            <RNAnimated.View
+              style={[
+                styles.heroSection,
+                {
+                  transform: [{ translateY: forYouHeroTranslateY }, { scale: forYouHeroScale }],
+                  opacity: forYouHeroOpacity,
+                },
+              ]}
+            >
+              <RNAnimated.FlatList
+                data={heroItems}
+                renderItem={renderHeroItem}
+                keyExtractor={(item) => `hero-${item.id}`}
+                horizontal
+                pagingEnabled
+                showsHorizontalScrollIndicator={false}
+                onScroll={RNAnimated.event(
+                  [{ nativeEvent: { contentOffset: { x: heroScrollX } } }],
+                  { useNativeDriver: Platform.OS !== 'web' }
+                )}
+                scrollEventThrottle={16}
+                style={{ height: HERO_HEIGHT }}
+                getItemLayout={(_data, index) => ({
+                  length: screenWidth,
+                  offset: screenWidth * index,
+                  index,
+                })}
+              />
+              <View style={styles.heroIndicators}>
+                {heroItems.map((_, index) => {
+                  const inputRange = [
+                    (index - 1) * screenWidth,
+                    index * screenWidth,
+                    (index + 1) * screenWidth,
+                  ];
+                  const opacity = heroScrollX.interpolate({
+                    inputRange,
+                    outputRange: [0.3, 1, 0.3],
+                    extrapolate: 'clamp',
+                  });
+                  const scale = heroScrollX.interpolate({
+                    inputRange,
+                    outputRange: [1, 1.5, 1],
+                    extrapolate: 'clamp',
+                  });
+                  return (
+                    <RNAnimated.View 
+                      key={index} 
+                      style={[styles.heroIndicator, { opacity, transform: [{ scale }] }]} 
+                    />
+                  );
+                })}
+              </View>
+            </RNAnimated.View>
+          ) : null}
+
+          {forYouQueriesEnabled && !forYouMovieRailsLoading && !hasAnyForYouMovieContent ? (
+            <View style={styles.forYouEmptyState}>
+              <Film size={28} color={THEME.textMuted} />
+              <Text style={styles.forYouEmptyTitle}>Couldn&apos;t load movie picks</Text>
+              <Text style={styles.forYouEmptyText}>
+                Pull down to refresh, or check your connection.
+              </Text>
+            </View>
+          ) : null}
+
+          {renderSection(
+            'Trending Movies',
+            <Film size={18} color={THEME.accent} />,
+            sortForYouRail(trendingQuery.data?.movies || [], 'movie', 'trending'),
+            'movie',
+            true,
+          )}
+
+          {regionTrendingQuery.data && userCountryName ? (
             <>
-              {heroItems.length > 0 && (
-                <RNAnimated.View
-                  style={[
-                    styles.heroSection,
-                    {
-                      transform: [{ translateY: forYouHeroTranslateY }, { scale: forYouHeroScale }],
-                      opacity: forYouHeroOpacity,
-                    },
-                  ]}
-                >
-                  <RNAnimated.FlatList
-                    data={heroItems}
-                    renderItem={renderHeroItem}
-                    keyExtractor={(item) => `hero-${item.id}`}
-                    horizontal
-                    pagingEnabled
-                    showsHorizontalScrollIndicator={false}
-                    onScroll={RNAnimated.event(
-                      [{ nativeEvent: { contentOffset: { x: heroScrollX } } }],
-                      { useNativeDriver: Platform.OS !== 'web' }
-                    )}
-                    scrollEventThrottle={16}
-                    style={{ height: HERO_HEIGHT }}
-                    getItemLayout={(_data, index) => ({
-                      length: screenWidth,
-                      offset: screenWidth * index,
-                      index,
-                    })}
-                  />
-                  <View style={styles.heroIndicators}>
-                    {heroItems.map((_, index) => {
-                      const inputRange = [
-                        (index - 1) * screenWidth,
-                        index * screenWidth,
-                        (index + 1) * screenWidth,
-                      ];
-                      const opacity = heroScrollX.interpolate({
-                        inputRange,
-                        outputRange: [0.3, 1, 0.3],
-                        extrapolate: 'clamp',
-                      });
-                      const scale = heroScrollX.interpolate({
-                        inputRange,
-                        outputRange: [1, 1.5, 1],
-                        extrapolate: 'clamp',
-                      });
-                      return (
-                        <RNAnimated.View 
-                          key={index} 
-                          style={[styles.heroIndicator, { opacity, transform: [{ scale }] }]} 
-                        />
-                      );
-                    })}
-                  </View>
-                </RNAnimated.View>
-              )}
-
-              {regionTrendingQuery.data && userCountryName && (
-                <>
-                  {renderSection(
-                    `${userCountryName} Movie Releases`,
-                    <Globe size={18} color={'#00D1FF'} />,
-                    sortForYouRail(regionTrendingQuery.data.movies.slice(0, 10) || [], 'movie', 'region'),
-                    'movie',
-                    true
-                  )}
-                  {renderSection(
-                    `Popular TV in ${userCountryName}`,
-                    <Tv size={18} color={'#00D1FF'} />,
-                    sortForYouRail(regionTrendingQuery.data.tvShows.slice(0, 10) || [], 'tv', 'region'),
-                    'tv'
-                  )}
-                </>
-              )}
-
               {renderSection(
-                'In Cinemas Now', 
-                <Film size={18} color={THEME.primary} />, 
-                sortForYouRail(nowPlayingQuery.data || [], 'movie', 'now-playing'),
+                `${userCountryName} Movie Releases`,
+                <Globe size={18} color={'#00D1FF'} />,
+                sortForYouRail(regionTrendingQuery.data.movies.slice(0, 10) || [], 'movie', 'region'),
                 'movie',
                 true
               )}
-
               {renderSection(
-                'Streaming Now', 
-                <Tv size={18} color={THEME.success} />, 
-                sortForYouRail(onTheAirQuery.data || [], 'tv', 'on-the-air'),
-                'tv',
-                true
-              )}
-              
-              {renderNewEpisodesSection()}
-
-              {renderSection(
-                'Coming Soon to Cinemas', 
-                <Play size={18} color={THEME.warning} />, 
-                sortForYouRail(upcomingMoviesQuery.data || [], 'movie', 'upcoming'),
-                'movie'
-              )}
-              
-              {renderSection(
-                'Popular Movies', 
-                <TrendingUp size={18} color={THEME.warning} />, 
-                sortForYouRail(popularQuery.data?.movies || [], 'movie', 'popular'),
-                'movie'
-              )}
-              
-              {renderSection(
-                'Popular TV Shows', 
-                <TrendingUp size={18} color={THEME.accent} />, 
-                sortForYouRail(popularQuery.data?.tvShows || [], 'tv', 'popular'),
+                `Popular TV in ${userCountryName}`,
+                <Tv size={18} color={'#00D1FF'} />,
+                sortForYouRail(regionTrendingQuery.data.tvShows.slice(0, 10) || [], 'tv', 'region'),
                 'tv'
               )}
-              
-              {renderSection(
-                'Top Rated Movies', 
-                <Star size={18} color={'#FFD700'} />, 
-                sortForYouRail(topRatedQuery.data?.movies || [], 'movie', 'top-rated'),
-                'movie'
-              )}
-              
-              {renderSection(
-                'Top Rated TV Shows', 
-                <Star size={18} color={'#FFD700'} />, 
-                sortForYouRail(topRatedQuery.data?.tvShows || [], 'tv', 'top-rated'),
-                'tv'
-              )}
-              
-              <View style={{ height: 120 }} />
             </>
+          ) : null}
+
+          {renderSection(
+            'In Cinemas Now', 
+            <Film size={18} color={THEME.primary} />, 
+            sortForYouRail(nowPlayingQuery.data || [], 'movie', 'now-playing'),
+            'movie',
+            true
           )}
+
+          {renderSection(
+            'Streaming Now', 
+            <Tv size={18} color={THEME.success} />, 
+            sortForYouRail(onTheAirQuery.data || [], 'tv', 'on-the-air'),
+            'tv',
+            true
+          )}
+          
+          {renderNewEpisodesSection()}
+
+          {renderSection(
+            'Coming Soon to Cinemas', 
+            <Play size={18} color={THEME.warning} />, 
+            sortForYouRail(upcomingMoviesQuery.data || [], 'movie', 'upcoming'),
+            'movie'
+          )}
+          
+          {renderSection(
+            'Popular Movies', 
+            <TrendingUp size={18} color={THEME.warning} />, 
+            sortForYouRail(popularQuery.data?.movies || [], 'movie', 'popular'),
+            'movie'
+          )}
+          
+          {renderSection(
+            'Popular TV Shows', 
+            <TrendingUp size={18} color={THEME.accent} />, 
+            sortForYouRail(popularQuery.data?.tvShows || [], 'tv', 'popular'),
+            'tv'
+          )}
+          
+          {renderSection(
+            'Top Rated Movies', 
+            <Star size={18} color={'#FFD700'} />, 
+            sortForYouRail(topRatedQuery.data?.movies || [], 'movie', 'top-rated'),
+            'movie'
+          )}
+          
+          {renderSection(
+            'Top Rated TV Shows', 
+            <Star size={18} color={'#FFD700'} />, 
+            sortForYouRail(topRatedQuery.data?.tvShows || [], 'tv', 'top-rated'),
+            'tv'
+          )}
+          
+          <View style={{ height: 120 }} />
         </RNAnimated.ScrollView>
       ) : selectedTab === 'streaming' ? (
         <View style={styles.content}>
@@ -3127,6 +3180,30 @@ const styles = StyleSheet.create({
     height: HERO_HEIGHT,
     justifyContent: 'center',
     alignItems: 'center',
+  },
+  forYouEmptyState: {
+    marginHorizontal: 20,
+    marginTop: 8,
+    marginBottom: 20,
+    padding: 20,
+    borderRadius: 16,
+    borderWidth: 1,
+    borderColor: 'rgba(0, 209, 255, 0.12)',
+    backgroundColor: THEME.surface,
+    alignItems: 'center',
+    gap: 8,
+  },
+  forYouEmptyTitle: {
+    fontSize: 16,
+    fontWeight: '700' as const,
+    color: THEME.text,
+    textAlign: 'center',
+  },
+  forYouEmptyText: {
+    fontSize: 13,
+    lineHeight: 18,
+    color: THEME.textSecondary,
+    textAlign: 'center',
   },
   heroSection: {
     marginBottom: 24,

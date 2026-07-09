@@ -9,12 +9,14 @@ import {
   TouchableOpacity,
   View,
 } from 'react-native';
-import { Calendar, ChevronUp, Heart, MapPin, Sparkles, Ticket, X } from 'lucide-react-native';
+import { Calendar, ChevronUp, Heart, MapPin, Sparkles, Ticket, UserPlus, X } from 'lucide-react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import * as Haptics from 'expo-haptics';
 import type { LocalEvent } from '@/types/events';
 import { formatDistanceKm } from '@/utils/eventDiscovery';
 import type { EventsPalette } from '@/utils/eventsPalette';
+import { EventSocialProofRow } from '@/components/events/EventSocialProofRow';
+import type { EventFriendProfile } from '@/utils/eventSocialProof';
 
 const { height: SCREEN_HEIGHT } = Dimensions.get('window');
 const PEEK_HEIGHT = 210;
@@ -30,6 +32,9 @@ interface EventsMapBottomSheetProps {
   onAddToOnePager: (event: LocalEvent) => void;
   onToggleSaved: (event: LocalEvent) => void;
   onOpenTickets: (event: LocalEvent) => void;
+  onInviteFriends?: (event: LocalEvent) => void;
+  socialProofLabel?: string | null;
+  socialProofFriends?: EventFriendProfile[];
   bottomInset?: number;
 }
 
@@ -43,6 +48,9 @@ export const EventsMapBottomSheet = React.memo(function EventsMapBottomSheet({
   onAddToOnePager,
   onToggleSaved,
   onOpenTickets,
+  onInviteFriends,
+  socialProofLabel,
+  socialProofFriends = [],
   bottomInset = 0,
 }: EventsMapBottomSheetProps) {
   const sheetHeight = useRef(new Animated.Value(0)).current;
@@ -160,6 +168,14 @@ export const EventsMapBottomSheet = React.memo(function EventsMapBottomSheet({
               {event.date} · {event.time}
             </Text>
           </View>
+          {socialProofLabel && socialProofFriends.length > 0 ? (
+            <EventSocialProofRow
+              label={socialProofLabel}
+              friends={socialProofFriends}
+              palette={palette}
+              compact
+            />
+          ) : null}
           {!expanded ? (
             <Text style={[styles.swipeHint, { color: palette.primary }]}>Swipe up for details</Text>
           ) : null}
@@ -207,6 +223,16 @@ export const EventsMapBottomSheet = React.memo(function EventsMapBottomSheet({
                 {event.price === 'Free' ? 'Register' : 'Tickets'}
               </Text>
             </TouchableOpacity>
+            {onInviteFriends ? (
+              <TouchableOpacity
+                style={[styles.iconBtn, { borderColor: palette.border }]}
+                onPress={() => onInviteFriends(event)}
+                accessibilityRole="button"
+                accessibilityLabel="Invite friends"
+              >
+                <UserPlus size={16} color={palette.primary} />
+              </TouchableOpacity>
+            ) : null}
           </View>
         </View>
       ) : null}

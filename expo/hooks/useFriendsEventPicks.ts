@@ -11,6 +11,7 @@ import {
 } from '@/utils/sharedPlansService';
 import { supabaseConfigured } from '@/utils/supabaseClient';
 import { listCatalogEvents } from '@/utils/eventCatalog';
+import { groupFriendsByEventId } from '@/utils/eventSocialProof';
 
 export function useFriendsEventPicks(pool: LocalEvent[]) {
   const { supabaseUser, isGuest } = useAuth();
@@ -87,10 +88,16 @@ export function useFriendsEventPicks(pool: LocalEvent[]) {
 
   const friendCountByEventId = countsQuery.data ?? new Map<string, number>();
 
+  const friendsByEventId = useMemo(
+    () => groupFriendsByEventId(savesQuery.data ?? []),
+    [savesQuery.data],
+  );
+
   return {
     available: available === true,
     friendsPickEvents,
     friendCountByEventId,
+    friendsByEventId,
     friendSaves: savesQuery.data ?? [],
     isLoading: countsQuery.isLoading || savesQuery.isLoading,
   };

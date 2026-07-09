@@ -88,7 +88,7 @@ export default function CalendarOnboardingScreen() {
     try {
       const granted = hasPermission || (await requestPermissions());
       if (granted) {
-        await loadDeviceCalendars();
+        await loadDeviceCalendars({ applyDefaultSelection: true });
         await refreshEvents();
         void Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
       }

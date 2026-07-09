@@ -43,6 +43,9 @@ import { getCurrentWeather, getHeroGradientColors } from '@/utils/weatherApi';
 import { LiveFootballMatch, Show } from '@/types/habit';
 import { useCalendar } from '@/hooks/useCalendar';
 import { useSavedEvents } from '@/hooks/useSavedEvents';
+import { useEventRecommendationInput } from '@/hooks/useEventRecommendationInput';
+import { OnePagerSavedFitSection } from '@/components/events/OnePagerSavedFitSection';
+import { EventFeedbackPrompt } from '@/components/events/EventFeedbackPrompt';
 import { tmdbApi, TMDBTVShowDetails, isTmdbFetchAbortError } from '@/utils/tmdbApi';
 import {
   summarizeDailyProgress,
@@ -217,7 +220,9 @@ export default function ActivitiesScreen() {
   const tasksContext = useTasks();
   const userProfileData = useUserProfile();
   const profile = userProfileData?.profile;
-  const { upcomingSaved } = useSavedEvents();
+  const { upcomingSaved, eventsNeedingFeedback, recordEventFeedback, dismissEventFeedback } =
+    useSavedEvents();
+  const eventRecommendationInput = useEventRecommendationInput();
   const savedEventsCount = profile?.savedEvents?.length ?? 0;
   const [summarySharePayload, setSummarySharePayload] = useState<SharePayload | null>(null);
   const defaultFavoriteTeam = useCallback(() => false, []);
@@ -1836,7 +1841,7 @@ export default function ActivitiesScreen() {
       case 'HBO': return '#8A2BE2';
       case 'Hulu': return '#1CE783';
       case 'YouTube': return '#FF0000';
-      default: return COLORS.primary;
+      default: return colors.primary;
     }
   };
 
@@ -2363,7 +2368,7 @@ export default function ActivitiesScreen() {
                       setDailySummary(null);
                     }}
                       >
-                        <X size={18} color={COLORS.textLight} />
+                        <X size={18} color={colors.textTertiary} />
                       </TouchableOpacity>
                     </View>
                   </View>
@@ -2482,10 +2487,26 @@ export default function ActivitiesScreen() {
                   textMuted: colors.textMuted,
                   card: colors.card,
                   border: colors.border,
-                  primary: COLORS.primary,
+                  primary: colors.primary,
                   surfaceSecondary: colors.surfaceSecondary,
                 }}
                 onCheer={(eventId, on) => void partnerActivity.cheer(eventId, on)}
+              />
+            ) : null}
+
+            {eventsNeedingFeedback[0] ? (
+              <EventFeedbackPrompt
+                snapshot={eventsNeedingFeedback[0]}
+                colors={{
+                  text: colors.text,
+                  textSecondary: colors.textSecondary,
+                  card: colors.card,
+                  border: colors.border,
+                  primary: colors.primary,
+                  primaryLight: `${colors.primary}18`,
+                }}
+                onRate={recordEventFeedback}
+                onDismiss={dismissEventFeedback}
               />
             ) : null}
 
@@ -2506,6 +2527,20 @@ export default function ActivitiesScreen() {
               }}
             />
 
+            <OnePagerSavedFitSection
+              events={upcomingSaved}
+              recommendationInput={eventRecommendationInput}
+              colors={{
+                text: colors.text,
+                textSecondary: colors.textSecondary,
+                textMuted: colors.textMuted,
+                card: colors.card,
+                border: colors.border,
+                primary: colors.primary,
+                primaryLight: `${colors.primary}18`,
+              }}
+            />
+
             {/* Calendar Events */}
             <View style={styles.section}>
               <View style={styles.sectionHeaderRow}>
@@ -2519,7 +2554,7 @@ export default function ActivitiesScreen() {
                     style={styles.viewAllBtn}
                   >
                     <Text style={styles.viewAllText}>Manage</Text>
-                    <ChevronRight size={16} color={COLORS.primary} />
+                    <ChevronRight size={16} color={colors.primary} />
                   </TouchableOpacity>
                 )}
               </View>
@@ -2582,7 +2617,7 @@ export default function ActivitiesScreen() {
                         style={[styles.eventCard, { backgroundColor: colors.card, borderColor: colors.border }]}
                       >
                         <View style={[styles.eventIndicator, { 
-                          backgroundColor: event.kind === 'onepager' ? COLORS.primary : colors.textMuted 
+                          backgroundColor: event.kind === 'onepager' ? colors.primary : colors.textMuted
                         }]} />
                         <View style={styles.eventInfo}>
                           <Text style={[styles.eventTitle, { color: colors.text }]}>{event.title}</Text>

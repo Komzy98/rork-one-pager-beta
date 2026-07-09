@@ -25,6 +25,7 @@ interface EventsDiscoveryPillsProps {
   activeTab: DiscoveryTabKey;
   onTabChange: (tab: DiscoveryTabKey) => void;
   palette: EventsPalette;
+  compact?: boolean;
 }
 
 export const EventsDiscoveryPills = React.memo(function EventsDiscoveryPills({
@@ -32,6 +33,7 @@ export const EventsDiscoveryPills = React.memo(function EventsDiscoveryPills({
   activeTab,
   onTabChange,
   palette,
+  compact = false,
 }: EventsDiscoveryPillsProps) {
   const scrollRef = useRef<ScrollView>(null);
   const tabLayouts = useRef<Partial<Record<DiscoveryTabKey, { x: number; width: number }>>>({});
@@ -79,6 +81,7 @@ export const EventsDiscoveryPills = React.memo(function EventsDiscoveryPills({
             onLayout={(event) => handleTabLayout(tab.key, event)}
             style={[
               styles.pill,
+              compact && styles.pillCompact,
               {
                 backgroundColor: isActive ? palette.primaryLight : palette.card,
                 borderColor: isActive ? palette.primary : palette.border,
@@ -95,6 +98,7 @@ export const EventsDiscoveryPills = React.memo(function EventsDiscoveryPills({
             <Text
               style={[
                 styles.label,
+                compact && styles.labelCompact,
                 { color: isActive ? palette.text : palette.textSecondary },
               ]}
             >
@@ -110,13 +114,13 @@ export const EventsDiscoveryPills = React.memo(function EventsDiscoveryPills({
 const styles = StyleSheet.create({
   scroll: {
     flexGrow: 0,
-    marginBottom: 4,
+    marginBottom: 2,
   },
   scrollContent: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 10,
-    paddingVertical: 4,
+    gap: 8,
+    paddingVertical: 2,
   },
   pill: {
     flexDirection: 'row',
@@ -128,9 +132,19 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     minHeight: 44,
   },
+  pillCompact: {
+    paddingHorizontal: 12,
+    paddingVertical: 7,
+    borderRadius: 18,
+    minHeight: 34,
+  },
   label: {
     fontSize: 13,
     fontWeight: '700',
     letterSpacing: -0.2,
+  },
+  labelCompact: {
+    fontSize: 12,
+    fontWeight: '600',
   },
 });

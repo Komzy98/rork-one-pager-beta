@@ -4,6 +4,7 @@ import { getFallbackEvents } from '@/constants/mockEvents';
 import type { LocalEvent, NearbyEventsSource } from '@/types/events';
 import {
   attachDistanceKm,
+  EVENTS_PER_CATEGORY,
   filterUpcomingEvents,
   sortEventsByStartDate,
 } from '@/utils/eventDiscovery';
@@ -47,7 +48,7 @@ export function useNearbyEvents(options: UseNearbyEventsOptions = {}): UseNearby
       longitude: queryCoords.longitude,
       radiusMiles,
       category: category !== 'all' ? category : undefined,
-      size: 30,
+      size: EVENTS_PER_CATEGORY,
     },
     {
       enabled,

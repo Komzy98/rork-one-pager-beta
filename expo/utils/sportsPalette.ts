@@ -1,6 +1,7 @@
+import { BRAND } from '@/constants/brand';
 import { COLORS } from '@/constants/colors';
 
-/** UFC Fight Center — always dark + red (independent of Profile appearance). */
+/** UFC Fight Center — sub-brand red (scoped to UFC section only). */
 export const UFC_BRAND = {
   bg: '#050507',
   red: '#E50914',
@@ -16,7 +17,6 @@ export const UFC_BRAND = {
   winGreen: '#2ECC71',
 } as const;
 
-/** Palette for UFC list cards, banners, countdown, and modals — matches Results tab chrome. */
 export function ufcFixedPalette() {
   return {
     card: UFC_BRAND.surface,
@@ -38,7 +38,7 @@ export function ufcFixedPalette() {
   };
 }
 
-/** Football-tab match cards — green tint aligned with hero / League tables CTA. */
+/** Football match cards — green accent (sport-specific only). */
 const MATCH_CHROME_LIGHT = {
   card: '#F4FBF7',
   border: 'rgba(21, 128, 61, 0.28)',
@@ -57,8 +57,9 @@ const MATCH_CHROME_DARK = {
   shadow: '#145A32',
 };
 
-/** Fixed iOS-style sports chrome — ignores Profile → Appearance (match cards, headers, UFC cards). */
+/** Sports chrome — brand spine + green match accents only. */
 export function sportsFixedPalette(isDark: boolean) {
+  const brand = isDark ? BRAND.dark : BRAND.light;
   if (isDark) {
     return {
       matchChrome: MATCH_CHROME_DARK,
@@ -74,17 +75,17 @@ export function sportsFixedPalette(isDark: boolean) {
       backgroundTertiary: '#1A1A32',
       live: '#FF453A',
       success: '#32D74B',
-      primary: '#0A84FF',
-      warning: '#FFD60A',
-      error: '#FF453A',
-      warningLight: '#FFD60A',
-      successLight: '#32D74B',
+      primary: brand.primary,
+      warning: '#FBBF24',
+      error: '#F87171',
+      warningLight: '#FBBF24',
+      successLight: '#4ADE80',
       shadow: '#000000',
-      info: '#5E5CE6',
-      secondary: '#BF5AF2',
+      info: brand.accent,
+      secondary: brand.accent,
       errorLight: '#3A1A1A',
-      tickerGradient: ['#0A1A12', '#145A32', '#1A1A2E'] as const,
-      tickerSheen: 'rgba(50, 215, 75, 0.22)',
+      tickerGradient: [brand.backgroundSecondary, brand.primaryDark, brand.surface] as const,
+      tickerSheen: 'rgba(110, 150, 251, 0.22)',
       ufcGradient: ['#0A0606', '#0E0814', '#06040E'] as const,
     };
   }
@@ -111,8 +112,8 @@ export function sportsFixedPalette(isDark: boolean) {
     info: COLORS.info,
     secondary: COLORS.secondary,
     errorLight: COLORS.errorLight,
-    tickerGradient: ['#0A1A12', '#145A32', '#1A1A2E'] as const,
-    tickerSheen: 'rgba(50, 215, 75, 0.22)',
+    tickerGradient: [brand.background, brand.primary, brand.surfaceSecondary] as const,
+    tickerSheen: 'rgba(36, 64, 211, 0.14)',
     ufcGradient: ['#1A0808', '#1C0A18', '#0F0A1E'] as const,
   };
 }

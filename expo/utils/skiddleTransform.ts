@@ -1,5 +1,6 @@
 import type { EventCategory, LocalEvent } from '@/types/events';
 import { isEventLiveNow, isEventStartingSoon } from '@/utils/eventDiscovery';
+import { eventMatchesBentoCategory, normalizeEventCategories } from '@/utils/eventCategories';
 
 type SkiddleVenue = {
   name?: string;
@@ -70,11 +71,10 @@ export const SKIDDLE_EVENT_CODES_BY_CATEGORY: Record<string, string[] | undefine
   sports: ['SPORT'],
   comedy: ['COMEDY'],
   theatre: ['THEATRE'],
-  arts: ['ARTS', 'EXHIB'],
+  arts: ['ARTS', 'EXHIB', 'KIDS'],
   food: ['BARPUB'],
   nightlife: ['CLUB'],
-  fitness: ['SPORT'],
-  family: ['KIDS'],
+  tech: undefined,
 };
 
 function formatDateLabel(isoOrDate?: string): string {
@@ -160,7 +160,7 @@ export function mapSkiddleEvent(raw: SkiddleEvent): LocalEvent | null {
 
   event.isLiveNow = isEventLiveNow(event);
   event.isHot = event.isHot || isEventStartingSoon(event, 72);
-  return event;
+  return normalizeEventCategories(event);
 }
 
 export function mapSkiddleResponse(payload: unknown): LocalEvent[] {
@@ -194,5 +194,5 @@ export function filterSkiddleEventsByCategory(
   category?: string,
 ): LocalEvent[] {
   if (!category || category === 'all') return events;
-  return events.filter((event) => event.category === category);
+  return events.filter((event) => eventMatchesBentoCategory(event, category));
 }

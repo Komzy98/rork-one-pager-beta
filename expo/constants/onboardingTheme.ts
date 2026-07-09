@@ -4,6 +4,7 @@
  */
 import { Platform, StyleSheet, type TextStyle, type ViewStyle } from "react-native";
 import { COLORS } from "@/constants/colors";
+import { displayFont, interFont } from "@/constants/fonts";
 
 export const ONBOARDING = {
   bg: COLORS.background,
@@ -20,9 +21,9 @@ export const ONBOARDING = {
   shadow: COLORS.shadow,
 } as const;
 
-/** Ambient screen gradient — reads like a high-end fintech / lifestyle app (soft cool slate → warm paper). */
+/** Ambient screen gradient — soft neutral wash. */
 export const ONBOARDING_PREMIUM = {
-  gradientColors: ["#FAFCFE", "#F4F7FC", "#EDF1FA"] as const,
+  gradientColors: ['#F7F8FC', '#EEF2FF', '#E8EDFF'] as const,
   gradientLocations: [0, 0.52, 1] as const,
   gradientStart: { x: 0.12, y: 0 },
   gradientEnd: { x: 0.88, y: 1 },
@@ -31,6 +32,7 @@ export const ONBOARDING_PREMIUM = {
   hairlineStrong: "rgba(15, 23, 42, 0.12)",
   /** Kicker / overline label */
   kicker: {
+    fontFamily: interFont('600'),
     fontSize: 10,
     fontWeight: "700" as const,
     letterSpacing: 3.2,
@@ -67,12 +69,14 @@ export const ONBOARDING_PREMIUM = {
   }),
   /** Hero display title */
   displayLarge: {
+    fontFamily: displayFont('700'),
     fontSize: 32,
     fontWeight: "800" as const,
     letterSpacing: -0.8,
     color: COLORS.text,
   } satisfies TextStyle,
   titleMedium: {
+    fontFamily: interFont('500'),
     fontSize: 13,
     fontWeight: "500" as const,
     letterSpacing: 0.15,

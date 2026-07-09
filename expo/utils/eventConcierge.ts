@@ -1,6 +1,7 @@
 import type { LocalEvent } from '@/types/events';
 import type { CalendarBusyEvent } from '@/utils/calendarHabitSlots';
 import { eventsToBusyIntervals } from '@/utils/calendarHabitSlots';
+import { getLogicalCategoryIds } from '@/utils/eventCategories';
 
 export type EventConciergeContext =
   | 'busy_week'
@@ -50,7 +51,11 @@ const INDOOR_CATEGORIES = new Set([
   'networking',
 ]);
 
-const OUTDOOR_CATEGORIES = new Set(['sports', 'fitness', 'family']);
+const OUTDOOR_CATEGORIES = new Set(['sports', 'fitness', 'family', 'arts']);
+
+function eventHasLogicalCategory(event: LocalEvent, categories: Set<string>): boolean {
+  return getLogicalCategoryIds(event).some((cat) => categories.has(cat));
+}
 
 function firstName(full?: string): string {
   const trimmed = full?.trim();
@@ -171,14 +176,14 @@ export function boostEventsForConciergeContext(
 
   const score = (event: LocalEvent): number => {
     let s = 0;
-    if (context === 'rainy' && INDOOR_CATEGORIES.has(event.category)) s += 3;
-    if (context === 'sunny' && OUTDOOR_CATEGORIES.has(event.category)) s += 3;
+    if (context === 'rainy' && eventHasLogicalCategory(event, INDOOR_CATEGORIES)) s += 3;
+    if (context === 'sunny' && eventHasLogicalCategory(event, OUTDOOR_CATEGORIES)) s += 3;
     if (context === 'busy_week') {
-      if (event.category === 'comedy' || event.category === 'music' || event.category === 'food') s += 2;
-      if (event.category === 'nightlife') s -= 1;
+      if (eventHasLogicalCategory(event, new Set(['comedy', 'music', 'food']))) s += 2;
+      if (getLogicalCategoryIds(event).includes('nightlife')) s -= 1;
     }
     if (context === 'low_activity') {
-      if (event.category === 'fitness' || event.category === 'family' || event.category === 'arts') s += 2;
+      if (eventHasLogicalCategory(event, new Set(['fitness', 'family', 'arts']))) s += 2;
     }
     if (context === 'travelling' && event.distanceKm != null && event.distanceKm < 8) s += 2;
     const price = event.price ?? '';

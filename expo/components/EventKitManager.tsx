@@ -43,7 +43,7 @@ export default function EventKitManager({ visible, onClose }: EventKitManagerPro
   const handleRequestPermissions = async () => {
     const granted = await requestPermissions();
     if (granted) {
-      await loadDeviceCalendars();
+      await loadDeviceCalendars({ applyDefaultSelection: true });
     }
   };
 

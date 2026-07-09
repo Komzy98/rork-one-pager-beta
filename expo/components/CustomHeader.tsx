@@ -3,8 +3,9 @@ import { View, Text, StyleSheet, TouchableOpacity, Animated } from 'react-native
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Search, Menu, User } from 'lucide-react-native';
 import { LinearGradient } from 'expo-linear-gradient';
-import { COLORS } from '@/constants/colors';
 import { useTheme } from '@/hooks/useTheme';
+import { brandIconGradient } from '@/constants/brand';
+import { displayFont, interFont } from '@/constants/fonts';
 
 interface CustomHeaderProps {
   title: string;
@@ -32,10 +33,11 @@ export default function CustomHeader({
   showBorder = false,
   showTitleIcon = false,
   icon,
-  iconGradientColors = ['#3B82F6', '#8B5CF6'],
+  iconGradientColors,
 }: CustomHeaderProps) {
   const insets = useSafeAreaInsets();
   const { isDark, colors } = useTheme();
+  const resolvedIconGradient = iconGradientColors ?? brandIconGradient(isDark);
   const headerAnim = useRef(new Animated.Value(0)).current;
 
   useEffect(() => {
@@ -59,7 +61,7 @@ export default function CustomHeader({
           })
         }]
       },
-      showBorder && styles.withBorder
+      showBorder && [styles.withBorder, { borderBottomColor: colors.border }]
     ]}>
       <LinearGradient
         colors={isDark ? [colors.background, colors.backgroundSecondary] : [colors.background, colors.surface]}
@@ -69,9 +71,9 @@ export default function CustomHeader({
           <View style={styles.headerTopRow}>
             <View style={styles.titleRow}>
               {showTitleIcon ? (
-                <View style={[styles.headerIconContainer, { shadowColor: iconGradientColors[0] }]}>
+                <View style={[styles.headerIconContainer, { shadowColor: resolvedIconGradient[0] }]}>
                   <LinearGradient
-                    colors={iconGradientColors}
+                    colors={resolvedIconGradient}
                     start={{ x: 0, y: 0 }}
                     end={{ x: 1, y: 1 }}
                     style={styles.headerIconGradient}
@@ -124,7 +126,6 @@ const styles = StyleSheet.create({
   },
   withBorder: {
     borderBottomWidth: 1,
-    borderBottomColor: COLORS.border,
   },
   headerGradient: {
     paddingHorizontal: 20,
@@ -166,11 +167,13 @@ const styles = StyleSheet.create({
     paddingTop: 2,
   },
   title: {
+    fontFamily: displayFont('700'),
     fontSize: 28,
-    fontWeight: '800' as const,
+    fontWeight: '700' as const,
     letterSpacing: -0.8,
   },
   subtitle: {
+    fontFamily: interFont('500'),
     fontSize: 13,
     letterSpacing: 0,
     marginTop: 2,

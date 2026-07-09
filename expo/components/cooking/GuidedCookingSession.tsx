@@ -26,6 +26,7 @@ import {
   VolumeX,
 } from 'lucide-react-native';
 import type { CookingRecipe } from '@/constants/cookingRecipes';
+import { appFont } from '@/constants/fonts';
 import { formatCountdown, getStepTimerDefault } from '@/utils/cookingTimers';
 
 const ACCENT = '#2E9A3F';
@@ -363,8 +364,8 @@ const styles = StyleSheet.create({
   },
   headerBtn: { width: 40, height: 40, borderRadius: 20, alignItems: 'center', justifyContent: 'center' },
   headerCenter: { flex: 1, alignItems: 'center' },
-  headerTitle: { fontSize: 16, fontWeight: '800' },
-  headerSub: { fontSize: 12, marginTop: 2, fontWeight: '600' },
+  headerTitle: { ...appFont('700'), fontSize: 16, fontWeight: '700' as const },
+  headerSub: { ...appFont('600'), fontSize: 12, marginTop: 2, fontWeight: '600' as const },
   progressBg: { height: 4, width: '100%' },
   progressFill: { height: 4 },
   voiceRow: {
@@ -375,17 +376,17 @@ const styles = StyleSheet.create({
     paddingVertical: 10,
     borderBottomWidth: 1,
   },
-  voiceLabel: { flex: 1, fontSize: 14, fontWeight: '700' },
+  voiceLabel: { ...appFont('700'), flex: 1, fontSize: 14, fontWeight: '700' as const },
   scroll: { flex: 1 },
   stepCard: { marginHorizontal: 16, marginTop: 16, borderRadius: 16, borderWidth: 1, padding: 16 },
   stepBadge: { alignSelf: 'flex-start', paddingHorizontal: 10, paddingVertical: 4, borderRadius: 10, marginBottom: 10 },
-  stepBadgeText: { color: '#FFF', fontWeight: '900', fontSize: 12 },
-  stepTitle: { fontSize: 18, lineHeight: 26, fontWeight: '700' },
-  stepHint: { marginTop: 10, fontSize: 14, lineHeight: 21, fontWeight: '500' },
+  stepBadgeText: { ...appFont('700'), color: '#FFF', fontWeight: '700' as const, fontSize: 12 },
+  stepTitle: { ...appFont('700'), fontSize: 18, lineHeight: 26, fontWeight: '700' as const },
+  stepHint: { ...appFont('500'), marginTop: 10, fontSize: 14, lineHeight: 21, fontWeight: '500' as const },
   timerCard: { marginHorizontal: 16, marginTop: 14, borderRadius: 16, borderWidth: 1, padding: 16 },
   timerHeader: { flexDirection: 'row', alignItems: 'center', gap: 8 },
-  timerLabel: { fontSize: 13, fontWeight: '600' },
-  timerDigits: { marginTop: 10, fontSize: 44, fontWeight: '900', letterSpacing: 1 },
+  timerLabel: { ...appFont('600'), fontSize: 13, fontWeight: '600' as const },
+  timerDigits: { ...appFont('700', { display: true }), marginTop: 10, fontSize: 44, fontWeight: '700' as const, letterSpacing: 1 },
   timerRow: { flexDirection: 'row', gap: 10, marginTop: 14, alignItems: 'center' },
   timerPrimary: {
     flex: 1,
@@ -396,17 +397,17 @@ const styles = StyleSheet.create({
     paddingVertical: 14,
     borderRadius: 14,
   },
-  timerPrimaryText: { color: '#FFF', fontWeight: '800', fontSize: 15 },
+  timerPrimaryText: { ...appFont('700'), color: '#FFF', fontWeight: '700' as const, fontSize: 15 },
   timerReset: { width: 52, height: 52, borderRadius: 14, borderWidth: 1, alignItems: 'center', justifyContent: 'center' },
   quickTimers: { marginTop: 14 },
-  quickLabel: { fontSize: 12, fontWeight: '600', marginBottom: 8 },
+  quickLabel: { ...appFont('600'), fontSize: 12, fontWeight: '600' as const, marginBottom: 8 },
   quickRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 8 },
   quickChip: { paddingHorizontal: 14, paddingVertical: 10, borderRadius: 12, borderWidth: 1 },
-  quickChipText: { fontWeight: '800', fontSize: 13 },
-  timerHint: { marginTop: 8, fontSize: 13, lineHeight: 18 },
+  quickChipText: { ...appFont('700'), fontWeight: '700' as const, fontSize: 13 },
+  timerHint: { ...appFont('400'), marginTop: 8, fontSize: 13, lineHeight: 18 },
   ingHeader: { flexDirection: 'row', alignItems: 'center', gap: 8, marginTop: 22, marginHorizontal: 16, marginBottom: 8 },
-  ingTitle: { fontSize: 16, fontWeight: '800', flex: 1 },
-  ingHint: { fontSize: 12, fontWeight: '600' },
+  ingTitle: { ...appFont('700'), fontSize: 16, fontWeight: '700' as const, flex: 1 },
+  ingHint: { ...appFont('600'), fontSize: 12, fontWeight: '600' as const },
   ingRow: {
     marginHorizontal: 16,
     marginBottom: 8,
@@ -418,7 +419,7 @@ const styles = StyleSheet.create({
     gap: 12,
   },
   check: { width: 24, height: 24, borderRadius: 8, borderWidth: 2, alignItems: 'center', justifyContent: 'center' },
-  ingName: { flex: 1, fontSize: 15, fontWeight: '600' },
+  ingName: { ...appFont('600'), flex: 1, fontSize: 15, fontWeight: '600' as const },
   nav: {
     position: 'absolute',
     left: 0,
@@ -439,7 +440,7 @@ const styles = StyleSheet.create({
     borderRadius: 14,
     borderWidth: 1,
   },
-  navSideText: { fontWeight: '700', fontSize: 15 },
+  navSideText: { ...appFont('700'), fontWeight: '700' as const, fontSize: 15 },
   navPrimary: {
     flex: 1,
     flexDirection: 'row',
@@ -449,5 +450,5 @@ const styles = StyleSheet.create({
     paddingVertical: 14,
     borderRadius: 14,
   },
-  navPrimaryText: { color: '#FFF', fontWeight: '900', fontSize: 16 },
+  navPrimaryText: { ...appFont('700'), color: '#FFF', fontWeight: '700' as const, fontSize: 16 },
 });

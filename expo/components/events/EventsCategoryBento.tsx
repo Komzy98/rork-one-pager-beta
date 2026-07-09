@@ -13,7 +13,16 @@ import * as Haptics from 'expo-haptics';
 import { Check } from 'lucide-react-native';
 import type { LocalEvent } from '@/types/events';
 import { EVENT_CATEGORY_META } from '@/utils/eventCategoryMeta';
+import {
+  countEventsByBentoCategory,
+  countSubCategoriesForBento,
+  formatBentoCountLabel,
+  getBentoCategoryId,
+  SUB_CATEGORY_META,
+  type BentoCategoryId,
+} from '@/utils/eventCategories';
 import type { EventsPalette } from '@/utils/eventsPalette';
+import { EventsBentoSkeleton } from '@/components/events/EventsShimmer';
 
 const { width: SCREEN_WIDTH } = Dimensions.get('window');
 const GAP = 12;
@@ -22,6 +31,8 @@ const TILE_HEIGHT = 132;
 
 interface EventsCategoryBentoProps {
   events: LocalEvent[];
+  categoryCounts?: Map<string, number>;
+  countsLoading?: boolean;
   selectedCategory: string;
   palette: EventsPalette;
   onSelectCategory: (categoryId: string) => void;
@@ -29,6 +40,8 @@ interface EventsCategoryBentoProps {
 
 export const EventsCategoryBento = React.memo(function EventsCategoryBento({
   events,
+  categoryCounts,
+  countsLoading = false,
   selectedCategory,
   palette,
   onSelectCategory,
@@ -36,19 +49,20 @@ export const EventsCategoryBento = React.memo(function EventsCategoryBento({
   const categories = EVENT_CATEGORY_META.filter((c) => c.id !== 'all');
 
   const countsByCategory = useMemo(() => {
-    const counts = new Map<string, number>();
-    for (const event of events) {
-      counts.set(event.category, (counts.get(event.category) ?? 0) + 1);
-    }
-    return counts;
-  }, [events]);
+    if (categoryCounts) return categoryCounts;
+    return countEventsByBentoCategory(events);
+  }, [categoryCounts, events]);
 
   const coverForCategory = useCallback(
     (categoryId: string): string | undefined => {
-      return events.find((e) => e.category === categoryId)?.image;
+      return events.find((event) => getBentoCategoryId(event) === categoryId)?.image;
     },
     [events]
   );
+
+  if (countsLoading) {
+    return <EventsBentoSkeleton palette={palette} />;
+  }
 
   return (
     <View style={styles.grid}>
@@ -57,6 +71,8 @@ export const EventsCategoryBento = React.memo(function EventsCategoryBento({
         const cover = coverForCategory(cat.id);
         const CatIcon = cat.icon;
         const count = countsByCategory.get(cat.id) ?? 0;
+        const subCounts = countSubCategoriesForBento(events, cat.id as BentoCategoryId);
+        const countLabel = formatBentoCountLabel(count, subCounts);
         const hasCover = Boolean(cover);
         const labelColor = hasCover ? palette.textOnImage : palette.text;
         const sublabelColor = hasCover ? palette.textOnImageSecondary : palette.textSecondary;
@@ -137,9 +153,36 @@ export const EventsCategoryBento = React.memo(function EventsCategoryBento({
                 <Text style={[styles.tileLabel, { color: labelColor }]} numberOfLines={1}>
                   {cat.label}
                 </Text>
-                <Text style={[styles.tileCount, { color: sublabelColor }]} numberOfLines={1}>
-                  {count === 1 ? '1 event' : `${count} events`}
+                <Text style={[styles.tileCount, { color: sublabelColor }]} numberOfLines={2}>
+                  {countLabel}
                 </Text>
+                {cat.subCategories && cat.subCategories.length > 0 && subCounts.size > 0 ? (
+                  <View style={styles.subTagRow}>
+                    {cat.subCategories
+                      .filter((subId) => (subCounts.get(subId) ?? 0) > 0)
+                      .map((subId) => (
+                        <View
+                          key={subId}
+                          style={[
+                            styles.subTag,
+                            {
+                              backgroundColor: hasCover ? 'rgba(255,255,255,0.14)' : `${cat.color}22`,
+                              borderColor: hasCover ? 'rgba(255,255,255,0.2)' : `${cat.color}40`,
+                            },
+                          ]}
+                        >
+                          <Text
+                            style={[
+                              styles.subTagText,
+                              { color: hasCover ? palette.textOnImageSecondary : cat.color },
+                            ]}
+                          >
+                            {SUB_CATEGORY_META[subId].shortLabel}
+                          </Text>
+                        </View>
+                      ))}
+                  </View>
+                ) : null}
               </BlurView>
             </View>
 
@@ -246,6 +289,23 @@ const styles = StyleSheet.create({
     fontSize: 11,
     fontWeight: '600',
     letterSpacing: -0.1,
+  },
+  subTagRow: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 4,
+    marginTop: 4,
+  },
+  subTag: {
+    paddingHorizontal: 6,
+    paddingVertical: 2,
+    borderRadius: 6,
+    borderWidth: 1,
+  },
+  subTagText: {
+    fontSize: 9,
+    fontWeight: '700',
+    letterSpacing: 0.2,
   },
   activeRing: {
     ...StyleSheet.absoluteFillObject,

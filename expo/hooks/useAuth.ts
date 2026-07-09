@@ -17,7 +17,7 @@ import {
 import * as Linking from 'expo-linking';
 import * as Crypto from 'expo-crypto';
 import Constants from 'expo-constants';
-import { getGoogleOAuthRedirectUri, isNativeBrandedGoogleSignInAvailable } from '@/utils/googleSignIn';
+import { getGoogleOAuthRedirectUri, isNativeBrandedGoogleSignInAvailable } from '@/utils/googleSignIn.shared';
 
 import {
   migrateLocalDataToSupabaseUser,

@@ -11,6 +11,7 @@ import Animated, {
   withTiming,
 } from 'react-native-reanimated';
 import { COLORS } from '@/constants/colors';
+import { displayFont, interFont } from '@/constants/fonts';
 
 const LOGO = require('@/assets/images/icon.png');
 
@@ -144,13 +145,15 @@ const styles = StyleSheet.create({
     height: 112,
   },
   title: {
+    fontFamily: displayFont('700'),
     fontSize: 28,
-    fontWeight: '800',
+    fontWeight: '700',
     color: COLORS.text,
     letterSpacing: -0.6,
     marginBottom: 6,
   },
   tagline: {
+    fontFamily: interFont('500'),
     fontSize: 15,
     fontWeight: '500',
     color: COLORS.textTertiary,

@@ -1,5 +1,11 @@
 import type { LocalEvent } from '@/types/events';
 
+/** Minimum events fetched per category on the Events tab. */
+export const EVENTS_PER_CATEGORY = 20;
+
+/** Fast preview fetch for hero + discovery rail before batch categories load. */
+export const EVENTS_PREVIEW_SIZE = 30;
+
 export const toRadians = (deg: number) => (deg * Math.PI) / 180;
 
 export function haversineDistanceKm(
@@ -206,6 +212,27 @@ export function filterUpcomingEvents(events: LocalEvent[], referenceMs = Date.no
 
 export function filterThisWeekEvents(events: LocalEvent[]): LocalEvent[] {
   return events.filter((event) => {
+    const days = getDaysUntilEvent(event);
+    return days !== null && days >= 0 && days <= 7;
+  });
+}
+
+export function isEventOnWeekend(event: LocalEvent): boolean {
+  const start = parseEventStartDateTime(event);
+  if (!start) return false;
+  const day = start.getDay();
+  return day === 0 || day === 5 || day === 6;
+}
+
+export function filterTonightEvents(events: LocalEvent[]): LocalEvent[] {
+  return events.filter((event) => getDaysUntilEvent(event) === 0);
+}
+
+/** Fri–Sun events in the next 7 days — for “Build my weekend”. */
+export function filterWeekendEvents(events: LocalEvent[], referenceMs = Date.now()): LocalEvent[] {
+  return events.filter((event) => {
+    if (!isUpcomingEvent(event, referenceMs)) return false;
+    if (!isEventOnWeekend(event)) return false;
     const days = getDaysUntilEvent(event);
     return days !== null && days >= 0 && days <= 7;
   });

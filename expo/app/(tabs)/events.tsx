@@ -1,6 +1,5 @@
 import React, { useState, useRef, useCallback, useEffect, useMemo } from 'react';
 import {
-  ActivityIndicator,
   Alert,
   StyleSheet,
   View,
@@ -32,38 +31,54 @@ import {
 } from 'lucide-react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useUserProfile } from '@/hooks/useUserProfile';
-import { useNearbyEvents } from '@/hooks/useNearbyEvents';
+import { useUserLocation } from '@/hooks/useUserLocation';
+import { usePerCategoryEvents } from '@/hooks/usePerCategoryEvents';
 import { useEventKit } from '@/hooks/useEventKit';
 import { useEventReminders } from '@/hooks/useEventReminders';
 import { useSocialActivity } from '@/hooks/useSocialActivity';
 import { useFriendsEventPicks } from '@/hooks/useFriendsEventPicks';
+import { useEventInviteFlow } from '@/hooks/useEventInviteFlow';
+import { EventInviteFriendsModal } from '@/components/events/EventInviteFriendsModal';
 import {
   filterHappeningNow,
   filterThisWeekEvents,
+  filterTonightEvents,
+  filterWeekendEvents,
   formatDistanceKm,
   regionsDifferSignificantly,
   sortEventsByDistance,
 } from '@/utils/eventDiscovery';
 import { useTheme } from '@/hooks/useTheme';
+import { BRAND } from '@/constants/brand';
 import { eventsFixedPalette } from '@/utils/eventsPalette';
 import { PremiumEventHeroCard } from '@/components/events/PremiumEventHeroCard';
 import { PremiumEventPosterCard } from '@/components/events/PremiumEventPosterCard';
 import { PremiumEventListRow } from '@/components/events/PremiumEventListRow';
 import { EventsDiscoveryPills, type DiscoveryTabKey } from '@/components/events/EventsDiscoveryPills';
 import { EventsCategoryBento } from '@/components/events/EventsCategoryBento';
+import { EventsHeroSkeleton, EventsRailSkeleton } from '@/components/events/EventsShimmer';
 import { EventsMapBottomSheet } from '@/components/events/EventsMapBottomSheet';
 import { EventsMapMarker } from '@/components/events/EventsMapMarker';
 import { EventsSaveToast } from '@/components/events/EventsSaveToast';
 import { EventsStatsRow } from '@/components/events/EventsStatsRow';
+import { EventPlanShortcuts } from '@/components/events/EventPlanShortcuts';
+import { EventFeedbackPrompt } from '@/components/events/EventFeedbackPrompt';
+import { SavedEventsWeekTimeline } from '@/components/events/SavedEventsWeekTimeline';
+import { CombinedNightOutPrompt } from '@/components/events/CombinedNightOutPrompt';
 import { PremiumSavedEventCard } from '@/components/events/PremiumSavedEventCard';
+import { EventConciergeFeedBanner } from '@/components/events/EventConciergeFeedBanner';
+import { EventWhyThisSheet } from '@/components/events/EventWhyThisSheet';
 import {
   buildEditorialEventRows,
-  getCompactRecommendationLabel,
+  buildEventRecommendationReasons,
+  explainEventPersonalization,
   getEditorialRowChipLabel,
   getEditorialRowSecondaryChipLabel,
-  getFeedCardChipLabel,
   getPrimaryEventRecommendationReason,
   getPrimaryEventRecommendationReasonForCategory,
+  getRecommendationChipLabel,
+  rankEventsForConciergeFeed,
+  rankEventsForYou,
 } from '@/utils/eventPersonalization';
 import { useEventRecommendationInput } from '@/hooks/useEventRecommendationInput';
 import { useEventConcierge } from '@/hooks/useEventConcierge';
@@ -80,9 +95,16 @@ import * as Haptics from 'expo-haptics';
 import { Stack, useRouter } from 'expo-router';
 import MapView, { Marker } from 'react-native-maps';
 import { useSavedEvents } from '@/hooks/useSavedEvents';
-import { rankEventsForYou } from '@/utils/eventPersonalization';
+import { useSavedEventsSocial } from '@/hooks/useSavedEventsSocial';
+import { groupSavedEventsByDay, findMultiEventDays } from '@/utils/savedEventsWeek';
+import type { PlanRsvpStatus } from '@/utils/sharedPlansService';
+import { eventMatchesBentoCategory } from '@/utils/eventCategories';
 import { registerDiscoveryEvents, registerSavedEvents } from '@/utils/eventCatalog';
 import { getEventCategoryMeta } from '@/utils/eventCategoryMeta';
+import {
+  formatFriendsGoingLabel,
+  getEventFriendProfiles,
+} from '@/utils/eventSocialProof';
 import { ErrorBoundary } from '@/components/ErrorBoundary';
 
 const { width: SCREEN_WIDTH } = Dimensions.get('window');
@@ -93,13 +115,12 @@ type Event = LocalEvent;
 
 const DISCOVERY_PILL_TABS = [
   { key: 'now' as const, label: 'Now', icon: Flame, color: '#FF6B6B' },
-  { key: 'near' as const, label: 'Near You', icon: MapPin, color: '#6C5CE7' },
-  { key: 'forYou' as const, label: 'For You', icon: Target, color: '#E84393' },
-  { key: 'friendsPicks' as const, label: 'Friends', icon: Users, color: '#60A5FA' },
-  { key: 'thisWeek' as const, label: 'This Week', icon: CalendarDays, color: '#4ADE80' },
+  { key: 'near' as const, label: 'Near You', icon: MapPin, color: BRAND.light.accent },
+  { key: 'forYou' as const, label: 'For You', icon: Target, color: BRAND.light.primary },
+  { key: 'friendsPicks' as const, label: 'Friends', icon: Users, color: BRAND.light.primaryLight },
+  { key: 'thisWeek' as const, label: 'This Week', icon: CalendarDays, color: '#34C759' },
 ];
 
-const HERO_ROTATE_MS = 5500;
 
 function EventsScreenInner() {
   const { isDark } = useTheme();
@@ -116,6 +137,9 @@ function EventsScreenInner() {
     toggleSaved,
     addToOnePager,
     savedSnapshots,
+    eventsNeedingFeedback,
+    recordEventFeedback,
+    dismissEventFeedback,
   } = useSavedEvents();
   const insets = useSafeAreaInsets();
   const [selectedCategory, setSelectedCategory] = useState<string>('all');
@@ -125,8 +149,12 @@ function EventsScreenInner() {
   const [viewMode, setViewMode] = useState<ViewMode>('list');
   const [selectedMapEvent, setSelectedMapEvent] = useState<string | null>(null);
   const [discoveryTab, setDiscoveryTab] = useState<DiscoveryTabKey>('now');
-  const [heroIndex, setHeroIndex] = useState(0);
   const [toastMessage, setToastMessage] = useState<string | null>(null);
+  const [planLoading, setPlanLoading] = useState<'tonight' | 'weekend' | null>(null);
+  const [expandedCombinedDayKey, setExpandedCombinedDayKey] = useState<string | null>(null);
+  const [dismissedCombinedDayKeys, setDismissedCombinedDayKeys] = useState<Set<string>>(new Set());
+  const [rsvpPendingByEventId, setRsvpPendingByEventId] = useState<Record<string, PlanRsvpStatus | null>>({});
+  const [whyThisEvent, setWhyThisEvent] = useState<LocalEvent | null>(null);
   const [mapSearchCenter, setMapSearchCenter] = useState<{ latitude: number; longitude: number } | null>(null);
   const [showSearchAreaBtn, setShowSearchAreaBtn] = useState(false);
   const [mapSheetExpanded, setMapSheetExpanded] = useState(false);
@@ -143,15 +171,31 @@ function EventsScreenInner() {
   const palette = useMemo(() => eventsFixedPalette(isDark, mainTab), [isDark, mainTab]);
 
   const {
-    events: nearbyEvents,
-    source: eventsSource,
-    userCoords,
+    coords: userCoords,
     areaLabel,
-    isLoading: eventsLoading,
+    isLoading: locationLoading,
     permissionDenied,
-    refetch: refetchEvents,
-    refreshLocation,
-  } = useNearbyEvents({ category: selectedCategory, searchCenter: mapSearchCenter });
+    refresh: refreshLocation,
+  } = useUserLocation();
+
+  const eventQueryCenter = mapSearchCenter ?? userCoords;
+  const {
+    countsByCategory,
+    getEventsForCategory,
+    source: eventsSource,
+    isPreviewLoading,
+    isBatchLoading,
+    refetch: refetchPerCategory,
+  } = usePerCategoryEvents({
+    latitude: eventQueryCenter.latitude,
+    longitude: eventQueryCenter.longitude,
+    enabled: mainTab === 'discover',
+  });
+
+  const nearbyEvents = useMemo(
+    () => getEventsForCategory(selectedCategory),
+    [getEventsForCategory, selectedCategory],
+  );
 
   const events = useMemo(
     () => nearbyEvents.map((e) => ({ ...e, isSaved: isSaved(e.id) })),
@@ -249,7 +293,7 @@ function EventsScreenInner() {
   const filteredEvents = useMemo(() => {
     let filtered = events;
     if (selectedCategory !== 'all') {
-      filtered = filtered.filter(e => e.category === selectedCategory);
+      filtered = filtered.filter((event) => eventMatchesBentoCategory(event, selectedCategory));
     }
     if (searchQuery.trim()) {
       const q = searchQuery.toLowerCase();
@@ -292,16 +336,16 @@ function EventsScreenInner() {
     return events.find(e => e.id === selectedMapEvent) ?? null;
   }, [selectedMapEvent, events]);
 
-  const featuredEvents = useMemo(() => events.filter(e => e.isFeatured), [events]);
+  const selectedMapSocialProof = useMemo(() => {
+    if (!selectedMapEvent) return { label: null, friends: [] };
+    const profiles = getEventFriendProfiles(selectedMapEvent, friendsByEventId);
+    return {
+      label: formatFriendsGoingLabel(profiles),
+      friends: profiles,
+    };
+  }, [selectedMapEvent, friendsByEventId]);
 
-  const handleRefresh = useCallback(async () => {
-    setRefreshing(true);
-    try {
-      await Promise.all([refetchEvents(), refreshLocation()]);
-    } finally {
-      setRefreshing(false);
-    }
-  }, [refetchEvents, refreshLocation]);
+  const featuredEvents = useMemo(() => events.filter(e => e.isFeatured), [events]);
 
   const handleOpenTickets = useCallback((event: Event) => {
     void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
@@ -367,8 +411,87 @@ function EventsScreenInner() {
 
   const baseEvents = filteredEvents.length > 0 ? filteredEvents : events;
   const savedEvents = savedAsLocalEvents;
-  const { friendsPickEvents, available: friendsPicksAvailable, friendCountByEventId } =
-    useFriendsEventPicks(baseEvents);
+  const savedEventsSocial = useSavedEventsSocial(savedEvents);
+
+  const weekTimelineGroups = useMemo(
+    () => groupSavedEventsByDay(upcomingSaved),
+    [upcomingSaved],
+  );
+
+  const multiEventDays = useMemo(
+    () => findMultiEventDays(upcomingSaved),
+    [upcomingSaved],
+  );
+
+  const nextCombinedDay = useMemo(
+    () => multiEventDays.find((day) => !dismissedCombinedDayKeys.has(day.dayKey)) ?? null,
+    [multiEventDays, dismissedCombinedDayKeys],
+  );
+  const {
+    friendsPickEvents,
+    friendCountByEventId,
+    friendsByEventId,
+  } = useFriendsEventPicks(baseEvents);
+
+  const {
+    inviteEvent,
+    openInvite,
+    closeInvite,
+    handleInviteFriend,
+    friends: inviteFriendsList,
+    inviterUsername,
+    canInvite,
+  } = useEventInviteFlow();
+
+  const handleRefresh = useCallback(async () => {
+    setRefreshing(true);
+    try {
+      if (mainTab === 'myEvents') {
+        await savedEventsSocial.refresh();
+      } else {
+        await Promise.all([refetchPerCategory(), refreshLocation()]);
+      }
+    } finally {
+      setRefreshing(false);
+    }
+  }, [mainTab, refetchPerCategory, refreshLocation, savedEventsSocial]);
+
+  const handleSavedEventRsvp = useCallback(
+    async (event: Event, status: PlanRsvpStatus) => {
+      setRsvpPendingByEventId((prev) => ({ ...prev, [event.id]: status }));
+      try {
+        await savedEventsSocial.setRsvp(event, status);
+        void Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+      } catch (error) {
+        Alert.alert(
+          'Could not save RSVP',
+          error instanceof Error ? error.message : 'Please try again in a moment.',
+        );
+      } finally {
+        setRsvpPendingByEventId((prev) => ({ ...prev, [event.id]: null }));
+      }
+    },
+    [savedEventsSocial],
+  );
+
+  const handleInviteSavedEvent = useCallback(
+    (event: Event) => {
+      openInvite(event);
+    },
+    [openInvite],
+  );
+
+  const getCardSocialProps = useCallback(
+    (eventId: string) => {
+      const profiles = getEventFriendProfiles(eventId, friendsByEventId);
+      return {
+        socialProofLabel: formatFriendsGoingLabel(profiles),
+        socialProofFriends: profiles,
+        onInviteFriends: canInvite ? openInvite : undefined,
+      };
+    },
+    [friendsByEventId, canInvite, openInvite],
+  );
 
   const recommendationInput = useEventRecommendationInput(friendCountByEventId);
 
@@ -379,14 +502,39 @@ function EventsScreenInner() {
     areaLabel,
   });
 
-  const getRecommendationReason = useCallback(
-    (event: LocalEvent) =>
-      getPrimaryEventRecommendationReason(event, {
-        ...recommendationInput,
-        discoveryTab,
-      }),
+  const getChipLabel = useCallback(
+    (event: LocalEvent, categoryId?: string) =>
+      getRecommendationChipLabel(
+        event,
+        { ...recommendationInput, discoveryTab },
+        categoryId ? { categoryId } : undefined,
+      ),
     [recommendationInput, discoveryTab],
   );
+
+  const openWhyThis = useCallback((event: LocalEvent) => {
+    void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+    setWhyThisEvent(event);
+  }, []);
+
+  const whyThisReasons = useMemo(() => {
+    if (!whyThisEvent) return [];
+    return buildEventRecommendationReasons(
+      whyThisEvent,
+      { ...recommendationInput, discoveryTab },
+      6,
+    );
+  }, [whyThisEvent, recommendationInput, discoveryTab]);
+
+  const whyThisExplanation = useMemo(() => {
+    if (!whyThisEvent) return null;
+    return explainEventPersonalization(whyThisEvent, profile, {
+      ...recommendationInput,
+      discoveryTab,
+    });
+  }, [whyThisEvent, profile, recommendationInput, discoveryTab]);
+
+  const conciergeContext = eventConcierge?.context ?? 'default';
 
   const eventStats = useMemo(
     () => getEventStatsSummary(profile, savedSnapshots),
@@ -418,13 +566,59 @@ function EventsScreenInner() {
 
   const forYouEvents = useMemo(() => {
     if (baseEvents.length === 0) return [];
-    return rankEventsForYou(baseEvents, recommendationInput).slice(0, 4);
-  }, [baseEvents, recommendationInput]);
+    return rankEventsForConciergeFeed(baseEvents, recommendationInput, conciergeContext).slice(0, 4);
+  }, [baseEvents, recommendationInput, conciergeContext]);
 
   const thisWeekEvents = useMemo(() => {
     if (baseEvents.length === 0) return [];
     return filterThisWeekEvents(baseEvents).slice(0, 4);
   }, [baseEvents]);
+
+  const tonightCandidates = useMemo(() => {
+    const pool = baseEvents.filter((event) => !isSaved(event.id));
+    return rankEventsForYou(filterTonightEvents(pool), recommendationInput).slice(0, 3);
+  }, [baseEvents, isSaved, recommendationInput]);
+
+  const weekendCandidates = useMemo(() => {
+    const pool = baseEvents.filter((event) => !isSaved(event.id));
+    return rankEventsForYou(filterWeekendEvents(pool), recommendationInput).slice(0, 5);
+  }, [baseEvents, isSaved, recommendationInput]);
+
+  const handleAddTonight = useCallback(async () => {
+    if (tonightCandidates.length === 0) return;
+    setPlanLoading('tonight');
+    try {
+      for (const event of tonightCandidates) {
+        await addToOnePager(event);
+      }
+      setToastMessage(
+        tonightCandidates.length === 1
+          ? 'Added 1 event to your One Pager for tonight'
+          : `Added ${tonightCandidates.length} events to your One Pager for tonight`,
+      );
+      void Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+    } finally {
+      setPlanLoading(null);
+    }
+  }, [addToOnePager, tonightCandidates]);
+
+  const handleBuildWeekend = useCallback(async () => {
+    if (weekendCandidates.length === 0) return;
+    setPlanLoading('weekend');
+    try {
+      for (const event of weekendCandidates) {
+        await addToOnePager(event);
+      }
+      setToastMessage(
+        weekendCandidates.length === 1
+          ? 'Added 1 event to build your weekend'
+          : `Added ${weekendCandidates.length} events to build your weekend`,
+      );
+      void Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+    } finally {
+      setPlanLoading(null);
+    }
+  }, [addToOnePager, weekendCandidates]);
 
   const smartDiscoveryEvents =
     discoveryTab === 'now'
@@ -437,10 +631,13 @@ function EventsScreenInner() {
             ? friendsPickEvents.slice(0, 4)
             : forYouEvents;
 
-  const editorialRows = useMemo(
-    () => buildEditorialEventRows(filteredEvents, recommendationInput, 2),
-    [filteredEvents, recommendationInput],
-  );
+  const editorialRows = useMemo(() => {
+    const rows = buildEditorialEventRows(filteredEvents, recommendationInput, 2);
+    return rows.map((row) => ({
+      ...row,
+      events: rankEventsForConciergeFeed(row.events, recommendationInput, conciergeContext),
+    }));
+  }, [filteredEvents, recommendationInput, conciergeContext]);
 
   const editorialEventIds = useMemo(
     () => new Set(editorialRows.flatMap((row) => row.events.map((e) => e.id))),
@@ -461,9 +658,8 @@ function EventsScreenInner() {
           : nearYouEvents.length > 0
             ? nearYouEvents
             : events.slice(0, 3);
-    const context = eventConcierge?.context ?? 'default';
-    return boostEventsForConciergeContext(pool, context).slice(0, 3);
-  }, [forYouEvents, featuredEvents, nearYouEvents, events, eventConcierge?.context]);
+    return boostEventsForConciergeContext(pool, conciergeContext).slice(0, 3);
+  }, [forYouEvents, featuredEvents, nearYouEvents, events, conciergeContext]);
 
   const heroEventIdSet = useMemo(() => new Set(heroEvents.map((e) => e.id)), [heroEvents]);
 
@@ -471,34 +667,26 @@ function EventsScreenInner() {
     const excludeHeroAndRail = (event: LocalEvent) =>
       !smartDiscoveryEventIds.has(event.id) && !heroEventIdSet.has(event.id);
 
-    if (selectedCategory !== 'all') {
-      return filteredEvents.filter(excludeHeroAndRail);
-    }
+    let pool =
+      selectedCategory !== 'all'
+        ? filteredEvents.filter(excludeHeroAndRail)
+        : filteredEvents.filter(
+            (e) => excludeHeroAndRail(e) && !editorialEventIds.has(e.id),
+          );
 
-    return filteredEvents.filter(
-      (e) => excludeHeroAndRail(e) && !editorialEventIds.has(e.id),
-    );
+    if (selectedCategory === 'all') {
+      return rankEventsForConciergeFeed(pool, recommendationInput, conciergeContext);
+    }
+    return rankEventsForYou(pool, recommendationInput);
   }, [
     filteredEvents,
     selectedCategory,
     smartDiscoveryEventIds,
     editorialEventIds,
     heroEventIdSet,
+    recommendationInput,
+    conciergeContext,
   ]);
-
-  const heroEventIds = useMemo(() => heroEvents.map((e) => e.id).join(','), [heroEvents]);
-
-  useEffect(() => {
-    setHeroIndex(0);
-  }, [heroEventIds]);
-
-  useEffect(() => {
-    if (heroEvents.length <= 1 || mainTab !== 'discover') return;
-    const timer = setInterval(() => {
-      setHeroIndex((prev) => (prev + 1) % heroEvents.length);
-    }, HERO_ROTATE_MS);
-    return () => clearInterval(timer);
-  }, [heroEvents.length, mainTab]);
 
   const showCinematicHero = mainTab === 'discover' && viewMode === 'list';
 
@@ -532,34 +720,26 @@ function EventsScreenInner() {
           },
         ]}
         refreshControl={
-          mainTab === 'discover' ? (
-            <RefreshControl refreshing={refreshing} onRefresh={handleRefresh} tintColor={accentColor} />
-          ) : undefined
+          <RefreshControl refreshing={refreshing} onRefresh={handleRefresh} tintColor={accentColor} />
         }
         onScroll={Animated.event([{ nativeEvent: { contentOffset: { y: scrollY } } }], { useNativeDriver: false })}
         scrollEventThrottle={16}
         keyboardShouldPersistTaps="handled"
         nestedScrollEnabled
       >
-      {showCinematicHero ? (
+      {showCinematicHero && isPreviewLoading ? (
+        <EventsHeroSkeleton palette={palette} />
+      ) : null}
+      {showCinematicHero && !isPreviewLoading ? (
         <PremiumEventHeroCard
           events={heroEvents}
-          activeIndex={heroIndex}
-          onIndexChange={setHeroIndex}
           scrollY={scrollY}
           palette={palette}
           areaLabel={areaLabel ?? undefined}
           safeAreaTop={insets.top}
           onePagerThisWeekLabel={onePagerThisWeekLabel}
           concierge={eventConcierge}
-          recommendationChipLabel={
-            heroEvents.length > 0
-              ? getCompactRecommendationLabel(
-                  getRecommendationReason(heroEvents[heroIndex] ?? heroEvents[0]),
-                  heroEvents[heroIndex] ?? heroEvents[0],
-                )
-              : undefined
-          }
+          getRecommendationChipLabel={(event) => getChipLabel(event)}
           onPressEvent={openEventDetail}
           onAddToOnePager={handleAddToOnePager}
           onInterested={handleToggleSavedWithToast}
@@ -644,10 +824,11 @@ function EventsScreenInner() {
           )}
         </View>
 
-        <View style={styles.mainTabRow}>
+        <View style={[styles.mainTabRow, showCinematicHero && styles.mainTabRowCompact]}>
           <TouchableOpacity
             style={[
               styles.mainTabPill,
+              showCinematicHero && styles.mainTabPillCompact,
               { backgroundColor: mainTab === 'discover' ? accentColor : cardBg, borderColor: mainTab === 'discover' ? accentColor : cardBorder },
             ]}
             onPress={() => setMainTab('discover')}
@@ -659,6 +840,7 @@ function EventsScreenInner() {
           <TouchableOpacity
             style={[
               styles.mainTabPill,
+              showCinematicHero && styles.mainTabPillCompact,
               { backgroundColor: mainTab === 'myEvents' ? accentColor : cardBg, borderColor: mainTab === 'myEvents' ? accentColor : cardBorder },
             ]}
             onPress={() => setMainTab('myEvents')}
@@ -703,41 +885,66 @@ function EventsScreenInner() {
         </View>
       )}
 
-      {mainTab === 'discover' && eventsLoading && events.length === 0 && (
-        <View style={styles.loadingRow}>
-          <ActivityIndicator color={accentColor} />
-          <Text style={[styles.loadingText, { color: subtleText }]}>Finding events near you…</Text>
-        </View>
-      )}
-
-      {mainTab === 'discover' && viewMode === 'list' && !searchQuery ? (
-        <EventsStatsRow stats={eventStats} palette={palette} />
-      ) : null}
-
       {mainTab === 'myEvents' && savedEvents.length > 0 ? (
         <EventsStatsRow stats={eventStats} palette={palette} />
       ) : null}
 
       {mainTab === 'discover' && viewMode === 'list' && (
       <View style={styles.smartDiscoveryWrap}>
+        {showCinematicHero ? (
+          <View style={[styles.railHeader, styles.railHeaderFirst]}>
+            <Text style={[styles.railTitle, { color: mainText }]}>{discoveryRailTitle}</Text>
+            <Text style={[styles.railCount, { color: subtleText }]}>{smartDiscoveryEvents.length} events</Text>
+          </View>
+        ) : null}
+
         <EventsDiscoveryPills
           tabs={DISCOVERY_PILL_TABS}
           activeTab={discoveryTab}
           onTabChange={setDiscoveryTab}
           palette={palette}
+          compact
         />
 
+        {!showCinematicHero && eventConcierge ? (
+          <EventConciergeFeedBanner
+            narrative={eventConcierge}
+            palette={palette}
+            tonightCount={tonightCandidates.length}
+            weekendCount={weekendCandidates.length}
+            onAddTonight={handleAddTonight}
+            onBuildWeekend={handleBuildWeekend}
+            loading={planLoading}
+          />
+        ) : null}
+
+        {showCinematicHero && !eventConcierge ? (
+          <EventPlanShortcuts
+            tonightCount={tonightCandidates.length}
+            weekendCount={weekendCandidates.length}
+            onAddTonight={handleAddTonight}
+            onBuildWeekend={handleBuildWeekend}
+            loading={planLoading}
+            palette={palette}
+            variant="compact"
+          />
+        ) : null}
+
+        {!showCinematicHero ? (
         <View style={styles.railHeader}>
           <Text style={[styles.railTitle, { color: mainText }]}>{discoveryRailTitle}</Text>
           <Text style={[styles.railCount, { color: subtleText }]}>{smartDiscoveryEvents.length} events</Text>
         </View>
+        ) : null}
 
         <ScrollView
           horizontal
           showsHorizontalScrollIndicator={false}
           contentContainerStyle={styles.discoveryRailScroll}
         >
-          {smartDiscoveryEvents.length === 0 ? (
+          {isPreviewLoading ? (
+            <EventsRailSkeleton palette={palette} />
+          ) : smartDiscoveryEvents.length === 0 ? (
             <View style={styles.smartDiscoveryEmpty}>
               <Text style={{ color: subtleText, fontWeight: '600' as const }}>No events match yet</Text>
             </View>
@@ -748,12 +955,10 @@ function EventsScreenInner() {
                 event={event}
                 palette={palette}
                 variant="horizontal"
-                recommendationChipLabel={
-                  index === 0
-                    ? getCompactRecommendationLabel(getRecommendationReason(event), event)
-                    : getFeedCardChipLabel(event)
-                }
+                recommendationChipLabel={getChipLabel(event)}
                 recommendationChipVariant={index === 0 ? 'featured-chip' : 'feed-chip'}
+                onWhyThis={openWhyThis}
+                {...getCardSocialProps(event.id)}
                 onPress={openEventDetail}
                 onToggleSaved={handleToggleSavedWithToast}
                 onSaved={showSaveToast}
@@ -787,6 +992,7 @@ function EventsScreenInner() {
                 <EventsMapMarker
                   category={event.category}
                   selected={selectedMapEvent === event.id}
+                  friendAvatars={getEventFriendProfiles(event.id, friendsByEventId)}
                 />
               </Marker>
             ))}
@@ -823,6 +1029,9 @@ function EventsScreenInner() {
               onAddToOnePager={handleAddToOnePager}
               onToggleSaved={handleToggleSavedWithToast}
               onOpenTickets={handleOpenTickets}
+              onInviteFriends={canInvite ? openInvite : undefined}
+              socialProofLabel={selectedMapSocialProof.label}
+              socialProofFriends={selectedMapSocialProof.friends}
               bottomInset={0}
             />
           </View>
@@ -891,6 +1100,8 @@ function EventsScreenInner() {
                       : getEditorialRowSecondaryChipLabel(row.categoryId, event)
                   }
                   recommendationChipVariant={index === 0 ? 'featured-chip' : 'feed-chip'}
+                  onWhyThis={openWhyThis}
+                  {...getCardSocialProps(event.id)}
                   onPress={openEventDetail}
                   onToggleSaved={handleToggleSavedWithToast}
                   onSaved={showSaveToast}
@@ -913,6 +1124,8 @@ function EventsScreenInner() {
             </View>
             <EventsCategoryBento
               events={events}
+              categoryCounts={countsByCategory}
+              countsLoading={isBatchLoading}
               selectedCategory={selectedCategory}
               palette={palette}
               onSelectCategory={setSelectedCategory}
@@ -955,10 +1168,12 @@ function EventsScreenInner() {
                 variant="feed"
                 recommendationChipLabel={
                   index === 0 && selectedCategory !== 'all'
-                    ? getCompactRecommendationLabel(getRecommendationReason(event), event)
-                    : getFeedCardChipLabel(event)
+                    ? getChipLabel(event, selectedCategory)
+                    : getChipLabel(event)
                 }
                 recommendationChipVariant={index === 0 && selectedCategory !== 'all' ? 'featured-chip' : 'feed-chip'}
+                onWhyThis={openWhyThis}
+                {...getCardSocialProps(event.id)}
                 onPress={openEventDetail}
                 onToggleSaved={handleToggleSavedWithToast}
                 onSaved={showSaveToast}
@@ -973,11 +1188,54 @@ function EventsScreenInner() {
 
       {mainTab === 'myEvents' && (
         <>
+          {eventsNeedingFeedback[0] ? (
+            <EventFeedbackPrompt
+              snapshot={eventsNeedingFeedback[0]}
+              colors={{
+                text: mainText,
+                textSecondary: subtleText,
+                card: cardBg,
+                border: cardBorder,
+                primary: palette.primary,
+                primaryLight: palette.primaryLight,
+              }}
+              onRate={recordEventFeedback}
+              onDismiss={dismissEventFeedback}
+            />
+          ) : null}
+
           <View style={styles.section}>
             <Text style={[styles.myEventsIntro, { color: subtleText }]}>
               Events you added to One Pager — your plans, reminders, and calendar live here.
             </Text>
           </View>
+
+          {weekTimelineGroups.length > 0 ? (
+            <SavedEventsWeekTimeline
+              groups={weekTimelineGroups}
+              palette={palette}
+              onPressEvent={openEventDetail}
+            />
+          ) : null}
+
+          {nextCombinedDay ? (
+            <CombinedNightOutPrompt
+              dayLabel={nextCombinedDay.dayLabel}
+              events={nextCombinedDay.events}
+              palette={palette}
+              areaLabel={areaLabel ?? undefined}
+              expanded={expandedCombinedDayKey === nextCombinedDay.dayKey}
+              onToggle={() =>
+                setExpandedCombinedDayKey((current) =>
+                  current === nextCombinedDay.dayKey ? null : nextCombinedDay.dayKey,
+                )
+              }
+              onDismiss={() =>
+                setDismissedCombinedDayKeys((prev) => new Set([...prev, nextCombinedDay.dayKey]))
+              }
+            />
+          ) : null}
+
           {savedEvents.length === 0 ? (
             <View style={[styles.emptyState, { backgroundColor: cardBg, borderColor: cardBorder }]}>
               <Heart size={32} color={palette.primary} />
@@ -999,11 +1257,17 @@ function EventsScreenInner() {
                 event={event}
                 palette={palette}
                 areaLabel={areaLabel ?? undefined}
+                socialSummary={savedEventsSocial.getSummary(event.id)}
+                canRsvp={savedEventsSocial.available}
+                rsvpLoading={!!rsvpPendingByEventId[event.id]}
+                pendingRsvpStatus={rsvpPendingByEventId[event.id] ?? null}
                 onPress={openEventDetail}
                 onAddToOnePager={handleAddToOnePager}
                 onRemind={handleRemind}
                 onAddToCalendar={handleAddToCalendar}
                 onDirections={handleOpenDirections}
+                onRsvp={savedEventsSocial.available ? handleSavedEventRsvp : undefined}
+                onInviteFriends={canInvite ? handleInviteSavedEvent : undefined}
               />
             ))
           )}
@@ -1017,6 +1281,31 @@ function EventsScreenInner() {
         bottomInset={110 + insets.bottom}
         onDismiss={dismissToast}
       />
+
+      <EventWhyThisSheet
+        visible={!!whyThisEvent}
+        event={whyThisEvent}
+        reasons={whyThisReasons}
+        explanation={whyThisExplanation}
+        palette={palette}
+        onClose={() => setWhyThisEvent(null)}
+      />
+
+      {inviteEvent ? (
+        <EventInviteFriendsModal
+          visible={!!inviteEvent}
+          onClose={closeInvite}
+          palette={palette}
+          eventTitle={inviteEvent.title}
+          eventDateLabel={inviteEvent.date}
+          eventTimeLabel={inviteEvent.time}
+          venueName={inviteEvent.venue}
+          eventId={inviteEvent.id}
+          inviterUsername={inviterUsername}
+          friends={inviteFriendsList}
+          onInviteFriend={handleInviteFriend}
+        />
+      ) : null}
     </View>
   );
 }
@@ -1070,8 +1359,11 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-    marginTop: 14,
-    marginBottom: 10,
+    marginTop: 8,
+    marginBottom: 8,
+  },
+  railHeaderFirst: {
+    marginTop: 4,
   },
   railTitle: {
     fontSize: 16,
@@ -1110,6 +1402,9 @@ const styles = StyleSheet.create({
     marginTop: 12,
     alignItems: 'center',
   },
+  mainTabRowCompact: {
+    marginTop: 8,
+  },
   mainTabPill: {
     flex: 1,
     flexDirection: 'row',
@@ -1119,6 +1414,10 @@ const styles = StyleSheet.create({
     paddingVertical: 10,
     borderRadius: 12,
     borderWidth: 1,
+  },
+  mainTabPillCompact: {
+    paddingVertical: 8,
+    borderRadius: 10,
   },
   mainTabText: {
     fontSize: 14,
@@ -1145,7 +1444,8 @@ const styles = StyleSheet.create({
     paddingBottom: 12,
   },
   headerCompact: {
-    paddingTop: 12,
+    paddingTop: 8,
+    paddingBottom: 8,
   },
   headerIconWrap: {
     width: 40,
@@ -1900,9 +2200,9 @@ const styles = StyleSheet.create({
   // Smart discovery (Events tab)
   smartDiscoveryWrap: {
     paddingHorizontal: 20,
-    marginTop: 4,
-    marginBottom: 8,
-    gap: 4,
+    marginTop: 2,
+    marginBottom: 6,
+    gap: 0,
   },
   smartDiscoveryTabs: {
     flexDirection: 'row',

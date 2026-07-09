@@ -303,8 +303,8 @@ function CustomTabBar({ state, descriptors, navigation }: BottomTabBarProps) {
       opacity: containerOpacity,
     }]}>
       <BlurView intensity={isShowsTabActive ? 88 : 72} tint={isDark ? 'dark' : 'light'} style={[styles.blurContainer, {
-        backgroundColor: isShowsTabActive ? 'rgba(10, 10, 18, 0.72)' : (isDark ? 'rgba(12, 12, 20, 0.56)' : 'rgba(255, 255, 255, 0.64)'),
-        borderColor: isDark ? 'rgba(255,255,255,0.08)' : 'rgba(255,255,255,0.42)',
+        backgroundColor: isShowsTabActive ? 'rgba(13, 14, 18, 0.72)' : (isDark ? 'rgba(13, 14, 18, 0.58)' : 'rgba(255, 255, 255, 0.72)'),
+        borderColor: isDark ? 'rgba(110, 150, 251, 0.12)' : 'rgba(36, 64, 211, 0.08)',
       }]}>
         <View style={styles.tabBarInner}>
           {pinnedStartRoute ? renderTab(pinnedStartRoute, 'pinned') : null}

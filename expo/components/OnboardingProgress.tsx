@@ -1,6 +1,7 @@
 import React, { useEffect, useRef } from 'react';
 import { View, StyleSheet, Animated, Text, Platform } from 'react-native';
 import { COLORS } from '@/constants/colors';
+import { interFont } from '@/constants/fonts';
 
 interface OnboardingProgressProps {
   currentStep: number;
@@ -63,7 +64,7 @@ const styles = StyleSheet.create({
   segmentTrack: {
     flex: 1,
     height: Platform.OS === 'ios' ? 4 : 5,
-    backgroundColor: 'rgba(15, 23, 42, 0.07)',
+    backgroundColor: 'rgba(36, 64, 211, 0.08)',
     borderRadius: 100,
     overflow: 'hidden',
   },
@@ -73,6 +74,7 @@ const styles = StyleSheet.create({
     backgroundColor: COLORS.primary,
   },
   stepIndicator: {
+    fontFamily: interFont('600'),
     fontSize: 11,
     fontWeight: '600',
     color: COLORS.textMuted,

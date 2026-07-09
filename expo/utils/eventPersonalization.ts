@@ -13,6 +13,8 @@ import {
   kmToMiles,
   parseEventStartDateTime,
 } from '@/utils/eventDiscovery';
+import { getBentoCategoryId, getLogicalCategoryIds } from '@/utils/eventCategories';
+import { boostEventsForConciergeContext, type EventConciergeContext } from '@/utils/eventConcierge';
 
 export type EventRecommendationReasonKind =
   | 'team'
@@ -98,15 +100,15 @@ const INTEREST_CATEGORY_MAP: Record<string, string[]> = {
 /** Onboarding interest ids → event categories and search terms. */
 const ONBOARDING_INTEREST_MAP: Record<string, { categories: string[]; keywords: string[] }> = {
   football: { categories: ['sports'], keywords: ['football', 'soccer', 'premier league', 'match'] },
-  ufc: { categories: ['sports', 'fitness'], keywords: ['ufc', 'mma', 'boxing', 'fight'] },
+  ufc: { categories: ['sports'], keywords: ['ufc', 'mma', 'boxing', 'fight'] },
   nba: { categories: ['sports'], keywords: ['nba', 'basketball'] },
   f1: { categories: ['sports', 'tech'], keywords: ['formula 1', 'f1', 'grand prix', 'motorsport'] },
-  fitness: { categories: ['fitness'], keywords: ['fitness', 'gym', 'workout', 'run club', 'yoga'] },
+  fitness: { categories: ['sports'], keywords: ['fitness', 'gym', 'workout', 'run club', 'yoga'] },
   movies: { categories: ['arts', 'theatre', 'music'], keywords: ['film', 'cinema', 'screening', 'premiere'] },
   cooking: { categories: ['food'], keywords: ['cooking', 'supper club', 'food festival', 'tasting'] },
-  learning: { categories: ['tech', 'networking'], keywords: ['workshop', 'talk', 'masterclass', 'lecture'] },
+  learning: { categories: ['tech'], keywords: ['workshop', 'talk', 'masterclass', 'lecture'] },
   events: { categories: ['music', 'comedy', 'theatre', 'food', 'arts'], keywords: ['festival', 'live'] },
-  productivity: { categories: ['networking', 'tech'], keywords: ['meetup', 'conference', 'networking'] },
+  productivity: { categories: ['tech'], keywords: ['meetup', 'conference', 'networking'] },
 };
 
 const INTEREST_DISPLAY_NAMES: Record<string, string> = {
@@ -325,8 +327,12 @@ export function scoreEventForUser(event: LocalEvent, ctx: EventPersonalizationCo
   let score = 0;
   const text = haystack(event);
 
-  const catWeight = ctx.categoryWeights.get(event.category) ?? 0;
-  score += catWeight * 4;
+  let categoryScore = 0;
+  for (const logicalCat of getLogicalCategoryIds(event)) {
+    const weight = ctx.categoryWeights.get(logicalCat) ?? 0;
+    categoryScore = Math.max(categoryScore, weight * 4);
+  }
+  score += categoryScore;
 
   for (const kw of ctx.interestKeywords) {
     if (kw.length >= 3 && text.includes(kw)) score += 5;
@@ -375,7 +381,7 @@ export function scoreEventForUser(event: LocalEvent, ctx: EventPersonalizationCo
   }
 
   if (ctx.recoveryModeActive) {
-    if (RECOVERY_FRIENDLY_CATEGORIES.has(event.category)) score += 4;
+    if (getLogicalCategoryIds(event).some((cat) => RECOVERY_FRIENDLY_CATEGORIES.has(cat))) score += 4;
     if (priceLabel === 'Free' || priceLabel.toLowerCase().includes('free')) score += 3;
     if (event.category === 'nightlife') score -= 4;
   }
@@ -416,23 +422,28 @@ function getCalendarFitReason(
 
   const daysUntil = getDaysUntilEvent(event);
   const hour = range.start.getHours();
+  const weekday = range.start.toLocaleDateString('en-GB', { weekday: 'long' });
+  const evening = hour >= 17 && hour <= 22;
 
-  if (daysUntil === 1 && hour >= 17 && hour <= 22) {
+  if (daysUntil === 1 && evening) {
     return {
       kind: 'calendar',
-      label: 'Your calendar is free tomorrow evening',
+      label: `Free evening ${weekday}`,
       priority: 96,
     };
   }
-  if (daysUntil === 0 && hour >= 17 && hour <= 22) {
+  if (daysUntil === 0 && evening) {
     return {
       kind: 'calendar',
-      label: 'Your calendar is free this evening',
+      label: `Free evening ${weekday}`,
       priority: 95,
     };
   }
+  if (daysUntil != null && daysUntil >= 0 && daysUntil <= 7 && evening) {
+    return { kind: 'calendar', label: `Free evening ${weekday}`, priority: 88 };
+  }
   if (daysUntil != null && daysUntil >= 0 && daysUntil <= 7) {
-    return { kind: 'calendar', label: 'Fits your calendar', priority: 88 };
+    return { kind: 'calendar', label: `Fits your ${weekday} schedule`, priority: 86 };
   }
   return null;
 }
@@ -499,7 +510,7 @@ export function buildEventRecommendationReasons(
     if (teamKey.length >= 3 && text.includes(teamKey)) {
       reasons.push({
         kind: 'team',
-        label: `You follow ${teamName}`,
+        label: `Because you follow ${teamName}`,
         priority: 100,
       });
       break;
@@ -513,7 +524,7 @@ export function buildEventRecommendationReasons(
     if ((teamKey.length >= 3 && text.includes(teamKey)) || (abbr.length >= 2 && text.includes(abbr))) {
       reasons.push({
         kind: 'nba',
-        label: `You follow ${teamName}`,
+        label: `Because you follow ${teamName}`,
         priority: 99,
       });
       break;
@@ -534,7 +545,7 @@ export function buildEventRecommendationReasons(
     reasons.push({
       kind: 'friends',
       label:
-        friendCount === 1 ? '1 friend saved this event' : `${friendCount} friends saved this event`,
+        friendCount === 1 ? '1 friend saved this' : `${friendCount} friends saved this`,
       priority: 85 + Math.min(friendCount, 5),
     });
   }
@@ -785,11 +796,12 @@ export function isEditorialReasonRelevant(
   event: LocalEvent,
   categoryId: string,
 ): boolean {
+  const logicalCategories = getLogicalCategoryIds(event);
   if (isSportRecommendationReason(reason.kind)) {
-    return event.category === 'sports' && categoryId === 'sports';
+    return logicalCategories.includes('sports') && categoryId === 'sports';
   }
   if (reason.kind === 'saved_category') {
-    return event.category === categoryId;
+    return logicalCategories.includes(categoryId) || getBentoCategoryId(event) === categoryId;
   }
   return true;
 }
@@ -811,7 +823,7 @@ export function getEditorialRowChipLabel(
   const phrase = EDITORIAL_CATEGORY_PHRASES[categoryId] ?? categoryId.replace(/_/g, ' ');
 
   if (reason && isEditorialReasonRelevant(reason, event, categoryId)) {
-    return getCompactRecommendationLabel(reason, event);
+    return formatRecommendationChipLabel(reason, event);
   }
 
   if (categoryId === 'sports') return 'Sports pick';
@@ -825,56 +837,105 @@ export function getEditorialRowSecondaryChipLabel(categoryId: string, event: Loc
   return phrase.charAt(0).toUpperCase() + phrase.slice(1);
 }
 
-export function getCompactRecommendationLabel(
+export function shortenRecommendationChipLabel(label: string, maxLen = 44): string {
+  let text = label.trim();
+  text = text.replace(/ friends saved this event$/i, ' friends saved this');
+  if (text.length <= maxLen) return text;
+  return `${text.slice(0, maxLen - 1)}…`;
+}
+
+/** Specific chip copy from a scored reason — avoids generic “Fits your interests”. */
+export function formatRecommendationChipLabel(
   reason: EventRecommendationReason | null | undefined,
   event?: LocalEvent,
 ): string {
   if (!reason) {
-    return event?.category === 'sports' ? 'Sports pick' : 'Fits your interests';
+    if (event?.isHot || event?.isLiveNow) return 'Happening now';
+    if (event?.subCategory === 'fitness') return 'Fitness pick';
+    if (event?.subCategory === 'family') return 'Family pick';
+    if (event?.subCategory === 'networking') return 'Networking pick';
+    return event?.category === 'sports' ? 'Sports pick' : 'Picked for you';
   }
 
+  if (isSportRecommendationReason(reason.kind) && event?.category !== 'sports') {
+    return event?.category === 'sports' ? 'Sports pick' : 'Picked for you';
+  }
+
+  return shortenRecommendationChipLabel(reason.label);
+}
+
+export function getRecommendationChipLabel(
+  event: LocalEvent,
+  input: EventRecommendationInput,
+  options?: { categoryId?: string },
+): string {
+  const reason = options?.categoryId
+    ? getPrimaryEventRecommendationReasonForCategory(event, input, options.categoryId)
+    : getPrimaryEventRecommendationReason(event, input);
+  return formatRecommendationChipLabel(reason, event);
+}
+
+export function getCompactRecommendationLabel(
+  reason: EventRecommendationReason | null | undefined,
+  event?: LocalEvent,
+): string {
+  return formatRecommendationChipLabel(reason, event);
+}
+
+/** Overview chip — surfaces habits, sports, calendar, and joy fit on saved gigs. */
+export function getOverviewFitChipLabel(
+  reason: EventRecommendationReason | null | undefined,
+  event?: LocalEvent,
+): string {
+  if (!reason) return 'On your One Pager';
+
   switch (reason.kind) {
-    case 'team':
-    case 'nba':
-    case 'country':
-    case 'nationality':
-      return event?.category === 'sports' ? 'Because you follow sport' : 'Fits your interests';
-    case 'interest':
-    case 'saved_category':
-    case 'joy':
-    case 'show':
-    case 'book':
     case 'habit':
-    case 'identity':
-      return 'Fits your interests';
+      return 'Fits your habits';
     case 'calendar':
     case 'timing':
-      return 'Fits your schedule';
-    case 'distance':
-      return 'Near you';
+      return 'Fits your calendar';
+    case 'team':
+    case 'nba':
+      return 'Matches your teams';
+    case 'country':
+    case 'nationality':
+      return event?.category === 'sports' ? 'Matches your teams' : 'Fits your interests';
+    case 'joy':
+      return 'Matches your joy';
+    case 'show':
+      return 'Like your shows';
     case 'friends':
-      return 'Friends saved this';
-    case 'trending':
-      return 'Trending now';
-    case 'budget':
-      return 'Budget-friendly';
-    case 'live':
-      return 'Happening now';
-    case 'recovery':
-      return 'Gentle pick';
+      return 'Friends are going';
+    case 'interest':
+    case 'saved_category':
+      if (event?.subCategory === 'fitness') return 'Fits your fitness habits';
+      if (event?.subCategory === 'family') return 'Family-friendly pick';
+      if (event?.subCategory === 'networking') return 'Fits your work interests';
+      return 'Fits your interests';
     default:
-      return event?.category === 'sports' ? 'Sports pick' : 'For you';
+      return getCompactRecommendationLabel(reason, event);
   }
 }
 
-export function getFeedCardChipLabel(event: LocalEvent): string {
+export function getFeedCardChipLabel(
+  event: LocalEvent,
+  reason?: EventRecommendationReason | null,
+): string {
+  if (reason) return formatRecommendationChipLabel(reason, event);
+  if (event.subCategory === 'fitness') return 'Fitness pick';
+  if (event.subCategory === 'family') return 'Family pick';
+  if (event.subCategory === 'networking') return 'Networking pick';
   if (event.category === 'sports') return 'Sports pick';
-  if (event.isHot || event.isLiveNow) return 'Trending now';
-  return 'For you';
+  if (event.isHot || event.isLiveNow) return 'Happening now';
+  return 'Picked for you';
 }
 
 function reasonLabelToClause(label: string): string {
   const trimmed = label.trim();
+  if (/^Because you follow /i.test(trimmed)) {
+    return `you follow ${trimmed.slice('Because you follow '.length)}`;
+  }
   if (/^You follow /i.test(trimmed)) {
     return `you follow ${trimmed.slice('You follow '.length)}`;
   }
@@ -936,6 +997,15 @@ export function rankEventsForYou(
     .map((event) => ({ event, score: scoreEventForUser(event, ctx) }))
     .sort((a, b) => b.score - a.score || (a.event.distanceKm ?? 999) - (b.event.distanceKm ?? 999))
     .map(({ event }) => event);
+}
+
+export function rankEventsForConciergeFeed(
+  events: LocalEvent[],
+  profileOrInput: UserProfile | EventRecommendationInput | null | undefined,
+  context: EventConciergeContext = 'default',
+): LocalEvent[] {
+  const ranked = rankEventsForYou(events, profileOrInput);
+  return boostEventsForConciergeContext(ranked, context);
 }
 
 export function getSimilarEvents(

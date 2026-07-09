@@ -1,64 +1,64 @@
+import { BRAND } from '@/constants/brand';
 import { COLORS } from '@/constants/colors';
 
-/** Events tab — dark cinematic chrome. */
+/** Events — dark cinematic chrome using website navy + blue/purple accents. */
 const EVENTS_DARK = {
-  background: '#07060B',
-  surface: '#111018',
-  surfaceLight: '#181622',
-  card: '#16141F',
-  border: 'rgba(255,255,255,0.09)',
-  text: '#F8F7FC',
-  textSecondary: '#9B98AE',
-  textMuted: '#5C586E',
-  accent: '#E84393',
-  accentLight: 'rgba(232, 67, 147, 0.16)',
-  accentSecondary: '#6C5CE7',
+  background: BRAND.dark.background,
+  surface: BRAND.dark.surface,
+  surfaceLight: BRAND.dark.surfaceSecondary,
+  card: '#141824',
+  border: BRAND.dark.border,
+  text: BRAND.dark.text,
+  textSecondary: BRAND.dark.textSecondary,
+  textMuted: BRAND.dark.textMuted,
+  accent: BRAND.dark.primary,
+  accentLight: 'rgba(110, 150, 251, 0.16)',
+  accentSecondary: BRAND.dark.accent,
   success: '#4ADE80',
   successLight: 'rgba(74, 222, 128, 0.14)',
   warning: '#FBBF24',
-  error: '#FF453A',
-  errorLight: 'rgba(255, 69, 58, 0.14)',
-  heroScrim: ['transparent', 'rgba(7,6,11,0.35)', 'rgba(7,6,11,0.94)'] as const,
-  heroGradient: ['#E84393', '#6C5CE7', '#2D1B4E'] as const,
-  glow: 'rgba(232, 67, 147, 0.2)',
-  pillTrack: 'rgba(255,255,255,0.06)',
-  pillBorder: 'rgba(255,255,255,0.1)',
-  categoryScrim: 'rgba(7,6,11,0.88)',
+  error: '#F87171',
+  errorLight: 'rgba(248, 113, 113, 0.14)',
+  heroScrim: ['transparent', 'rgba(8, 21, 51, 0.35)', 'rgba(13, 14, 18, 0.94)'] as const,
+  heroGradient: [BRAND.dark.gradientStart, BRAND.dark.gradientMiddle, BRAND.dark.gradientEnd] as const,
+  glow: 'rgba(110, 150, 251, 0.22)',
+  pillTrack: 'rgba(255, 255, 255, 0.06)',
+  pillBorder: BRAND.dark.border,
+  categoryScrim: 'rgba(13, 14, 18, 0.88)',
   blurTint: 'dark' as const,
-  toolbarGradient: ['rgba(7,6,11,0.92)', 'rgba(7,6,11,0.55)', 'transparent'] as const,
-  toolbarTitle: '#FFFFFF',
-  chromeFallback: 'rgba(7,6,11,0.88)',
+  toolbarGradient: ['rgba(13, 14, 18, 0.92)', 'rgba(8, 21, 51, 0.55)', 'transparent'] as const,
+  toolbarTitle: BRAND.dark.text,
+  chromeFallback: 'rgba(13, 14, 18, 0.88)',
   textOnImage: '#FFFFFF',
   textOnImageSecondary: 'rgba(255,255,255,0.82)',
   textInverse: '#FFFFFF',
 } as const;
 
-/** Events tab — light mode aligned with app-wide light tokens. */
 const EVENTS_LIGHT = {
   background: COLORS.background,
   surface: COLORS.surface,
   surfaceLight: COLORS.surfaceSecondary,
   card: COLORS.card,
-  border: 'rgba(17, 24, 39, 0.08)',
+  border: 'rgba(36, 64, 211, 0.10)',
   text: COLORS.text,
   textSecondary: COLORS.textSecondary,
   textMuted: COLORS.textMuted,
-  accent: '#E84393',
-  accentLight: 'rgba(232, 67, 147, 0.10)',
-  accentSecondary: '#6C5CE7',
+  accent: BRAND.light.primary,
+  accentLight: 'rgba(36, 64, 211, 0.10)',
+  accentSecondary: BRAND.light.accent,
   success: '#22C55E',
   successLight: 'rgba(34, 197, 94, 0.12)',
   warning: '#F59E0B',
   error: '#EF4444',
   errorLight: 'rgba(239, 68, 68, 0.10)',
-  heroScrim: ['transparent', 'rgba(7,6,11,0.22)', 'rgba(7,6,11,0.82)'] as const,
-  heroGradient: ['#FCE7F3', '#EDE9FE', '#F8F9FA'] as const,
-  glow: 'rgba(232, 67, 147, 0.12)',
-  pillTrack: 'rgba(17, 24, 39, 0.05)',
-  pillBorder: 'rgba(17, 24, 39, 0.08)',
-  categoryScrim: 'rgba(248, 249, 250, 0.9)',
+  heroScrim: ['transparent', 'rgba(8, 21, 51, 0.18)', 'rgba(13, 14, 18, 0.78)'] as const,
+  heroGradient: ['#EEF2FF', '#E8EDFF', COLORS.background] as const,
+  glow: 'rgba(36, 64, 211, 0.12)',
+  pillTrack: 'rgba(36, 64, 211, 0.05)',
+  pillBorder: 'rgba(36, 64, 211, 0.10)',
+  categoryScrim: 'rgba(247, 248, 252, 0.92)',
   blurTint: 'light' as const,
-  toolbarGradient: ['rgba(255,255,255,0.96)', 'rgba(255,255,255,0.78)', 'transparent'] as const,
+  toolbarGradient: ['rgba(255,255,255,0.96)', 'rgba(247,248,252,0.78)', 'transparent'] as const,
   toolbarTitle: COLORS.text,
   chromeFallback: 'rgba(255,255,255,0.92)',
   textOnImage: '#FFFFFF',
@@ -74,6 +74,7 @@ function buildPalette(tokens: typeof EVENTS_DARK | typeof EVENTS_LIGHT, mode: Ev
     background: tokens.background,
     surface: tokens.surface,
     surfaceLight: tokens.surfaceLight,
+    surfaceSecondary: tokens.surfaceLight,
     card: tokens.card,
     border: tokens.border,
     text: tokens.text,
@@ -103,12 +104,11 @@ function buildPalette(tokens: typeof EVENTS_DARK | typeof EVENTS_LIGHT, mode: Ev
   };
 }
 
-/** Events tab palette — respects Profile → Appearance (light / dark / auto). */
 export function eventsFixedPalette(isDark: boolean, mode: EventsTabMode = 'discover') {
   return buildPalette(isDark ? EVENTS_DARK : EVENTS_LIGHT, mode);
 }
 
 export type EventsPalette = ReturnType<typeof eventsFixedPalette>;
 
-/** @deprecated Use EVENTS_DARK values via eventsFixedPalette(true). */
+/** @deprecated Use eventsFixedPalette(isDark) instead. */
 export const EVENTS_DISCOVER = EVENTS_DARK;

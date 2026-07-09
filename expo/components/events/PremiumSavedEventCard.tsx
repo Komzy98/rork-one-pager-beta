@@ -8,27 +8,41 @@ import { getEventCountdownLabel } from '@/utils/eventDiscovery';
 import { getEventCategoryMeta } from '@/utils/eventCategoryMeta';
 import type { EventsPalette } from '@/utils/eventsPalette';
 import { EventNightOutPlanner } from '@/components/events/EventNightOutPlanner';
+import { SavedEventSocialRow } from '@/components/events/SavedEventSocialRow';
+import type { PlanRsvpStatus, SavedEventSocialSummary } from '@/utils/sharedPlansService';
 
 interface PremiumSavedEventCardProps {
   event: LocalEvent;
   palette: EventsPalette;
   areaLabel?: string;
+  socialSummary?: SavedEventSocialSummary;
+  canRsvp?: boolean;
+  rsvpLoading?: boolean;
+  pendingRsvpStatus?: PlanRsvpStatus | null;
   onPress: (eventId: string) => void;
   onAddToOnePager: (event: LocalEvent) => void;
   onRemind: (event: LocalEvent) => void;
   onAddToCalendar: (event: LocalEvent) => void;
   onDirections: (event: LocalEvent) => void;
+  onRsvp?: (event: LocalEvent, status: PlanRsvpStatus) => void | Promise<void>;
+  onInviteFriends?: (event: LocalEvent) => void;
 }
 
 export const PremiumSavedEventCard = React.memo(function PremiumSavedEventCard({
   event,
   palette,
   areaLabel,
+  socialSummary,
+  canRsvp = false,
+  rsvpLoading = false,
+  pendingRsvpStatus = null,
   onPress,
   onAddToOnePager,
   onRemind,
   onAddToCalendar,
   onDirections,
+  onRsvp,
+  onInviteFriends,
 }: PremiumSavedEventCardProps) {
   const categoryMeta = getEventCategoryMeta(event.category);
   const CategoryIcon = categoryMeta.icon;
@@ -65,6 +79,20 @@ export const PremiumSavedEventCard = React.memo(function PremiumSavedEventCard({
           <Text style={[styles.countdownText, { color: palette.primary }]}>{countdown}</Text>
         </View>
       </View>
+
+      {socialSummary ? (
+        <View onStartShouldSetResponder={() => true}>
+          <SavedEventSocialRow
+            summary={socialSummary}
+            palette={palette}
+            canRsvp={canRsvp}
+            rsvpLoading={rsvpLoading}
+            pendingStatus={pendingRsvpStatus}
+            onRsvp={onRsvp ? (status) => onRsvp(event, status) : undefined}
+            onInviteFriends={onInviteFriends ? () => onInviteFriends(event) : undefined}
+          />
+        </View>
+      ) : null}
 
       <EventNightOutPlanner steps={planSteps} palette={palette} />
 

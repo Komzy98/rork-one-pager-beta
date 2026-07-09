@@ -1,95 +1,74 @@
 import { Platform } from 'react-native';
-import Constants from 'expo-constants';
-import * as Device from 'expo-device';
 import * as AuthSession from 'expo-auth-session';
 import { ResponseType } from 'expo-auth-session';
 import { AccessTokenRequest } from 'expo-auth-session';
 import * as Google from 'expo-auth-session/providers/google';
 import {
-  GoogleSignin,
-  isErrorWithCode,
-  isSuccessResponse,
-  statusCodes,
-} from '@react-native-google-signin/google-signin';
-import { APP_SCHEME } from '@/utils/deepLinks';
+  GOOGLE_ANDROID_CLIENT_ID,
+  GOOGLE_IOS_CLIENT_ID,
+  GOOGLE_WEB_CLIENT_ID,
+  getGoogleOAuthRedirectUri,
+  getGoogleSignInFailureMessage,
+  isNativeBrandedGoogleSignInAvailable,
+} from '@/utils/googleSignIn.shared';
 
 export type GoogleSignInResult =
   | { ok: true; idToken: string; accessToken?: string }
   | { ok: false; error: string; cancelled?: boolean };
 
-function readEnv(name: string, extraKey: string): string {
-  const fromEnv = process.env[name]?.trim();
-  if (fromEnv) return fromEnv;
-  const extra = Constants.expoConfig?.extra?.[extraKey];
-  return typeof extra === 'string' ? extra.trim() : '';
-}
-
-const WEB_CLIENT_ID = readEnv('EXPO_PUBLIC_GOOGLE_CLIENT_ID', 'googleWebClientId');
-const IOS_CLIENT_ID = readEnv('EXPO_PUBLIC_GOOGLE_IOS_CLIENT_ID', 'googleIosClientId');
-const ANDROID_CLIENT_ID = readEnv('EXPO_PUBLIC_GOOGLE_ANDROID_CLIENT_ID', 'googleAndroidClientId');
+export {
+  getGoogleIosUrlScheme,
+  getGoogleOAuthRedirectUri,
+  getGoogleSignInFailureMessage,
+  isNativeBrandedGoogleSignInAvailable,
+} from '@/utils/googleSignIn.shared';
 
 let nativeGoogleConfigured = false;
 
-/** Reversed iOS client id URL scheme for Expo config plugin, e.g. com.googleusercontent.apps.123-abc */
-export function getGoogleIosUrlScheme(iosClientId: string): string | null {
-  const trimmed = iosClientId.trim();
-  if (!trimmed.endsWith('.apps.googleusercontent.com')) return null;
-  const prefix = trimmed.replace(/\.apps\.googleusercontent\.com$/, '');
-  return `com.googleusercontent.apps.${prefix}`;
+type GoogleSigninModule = typeof import('@react-native-google-signin/google-signin');
+
+function loadGoogleSigninModule(): GoogleSigninModule | null {
+  if (Platform.OS === 'web') return null;
+  try {
+    // Lazy load — must not run at app startup (useAuth imports shared helpers only).
+    return require('@react-native-google-signin/google-signin') as GoogleSigninModule;
+  } catch (error) {
+    if (__DEV__) {
+      console.warn('[GoogleSignIn] Native module unavailable:', error);
+    }
+    return null;
+  }
 }
 
-/** Native SDK sign-in shows "One Pager" on Google (like Strava). Requires platform OAuth client ids. */
-export function isNativeBrandedGoogleSignInAvailable(): boolean {
-  if (Platform.OS === 'web' || !WEB_CLIENT_ID) return false;
-  if (Platform.OS === 'ios') return !!IOS_CLIENT_ID;
-  if (Platform.OS === 'android') return !!ANDROID_CLIENT_ID;
-  return false;
-}
-
-export function configureNativeGoogleSignIn(): void {
-  if (nativeGoogleConfigured || Platform.OS === 'web' || !WEB_CLIENT_ID) return;
-  if (Platform.OS === 'ios' && !IOS_CLIENT_ID) return;
+function configureNativeGoogleSignIn(GoogleSignin: GoogleSigninModule['GoogleSignin']): void {
+  if (nativeGoogleConfigured || Platform.OS === 'web' || !GOOGLE_WEB_CLIENT_ID) return;
+  if (Platform.OS === 'ios' && !GOOGLE_IOS_CLIENT_ID) return;
 
   GoogleSignin.configure({
-    webClientId: WEB_CLIENT_ID,
-    iosClientId: Platform.OS === 'ios' ? IOS_CLIENT_ID : undefined,
+    webClientId: GOOGLE_WEB_CLIENT_ID,
+    iosClientId: Platform.OS === 'ios' ? GOOGLE_IOS_CLIENT_ID : undefined,
     offlineAccess: false,
     scopes: ['openid', 'profile', 'email'],
   });
   nativeGoogleConfigured = true;
 }
 
-/** OAuth return URL for Supabase browser OAuth fallback. */
-export function getGoogleOAuthRedirectUri(): string {
-  if (Platform.OS === 'web') {
-    return AuthSession.makeRedirectUri({ scheme: APP_SCHEME, path: 'auth' });
-  }
-  return `${APP_SCHEME}://auth`;
-}
-
-/** User-friendly message; iOS 18.4+ simulators often break Google OAuth in Safari. */
-export function getGoogleSignInFailureMessage(error: string): string {
-  if (/network connection|connection was lost|-1005|timed out|-1001/i.test(error)) {
-    if (Platform.OS === 'ios' && !Device.isDevice) {
-      return (
-        'Google sign-in is broken on many iOS 18.4+ simulators (Apple bug). ' +
-        'Try a physical iPhone, install an iOS 18.3 simulator in Xcode, or erase this simulator ' +
-        '(Device → Erase All Content and Settings) and try once more.'
-      );
-    }
-  }
-  return error;
-}
-
 async function promptNativeGoogleSignIn(): Promise<GoogleSignInResult> {
-  if (Platform.OS === 'ios' && !IOS_CLIENT_ID) {
+  const native = loadGoogleSigninModule();
+  if (!native) {
+    return { ok: false, error: 'Native Google Sign-In is not available in this build.' };
+  }
+
+  const { GoogleSignin, isErrorWithCode, isSuccessResponse, statusCodes } = native;
+
+  if (Platform.OS === 'ios' && !GOOGLE_IOS_CLIENT_ID) {
     return {
       ok: false,
       error: 'Missing EXPO_PUBLIC_GOOGLE_IOS_CLIENT_ID. Restart Metro after updating .env.',
     };
   }
 
-  configureNativeGoogleSignIn();
+  configureNativeGoogleSignIn(GoogleSignin);
 
   try {
     if (Platform.OS === 'android') {
@@ -129,13 +108,13 @@ async function promptNativeGoogleSignIn(): Promise<GoogleSignInResult> {
 }
 
 async function promptWebGoogleSignIn(): Promise<GoogleSignInResult> {
-  if (!WEB_CLIENT_ID) {
+  if (!GOOGLE_WEB_CLIENT_ID) {
     return { ok: false, error: 'Google client id not configured' };
   }
 
   const redirectUri = getGoogleOAuthRedirectUri();
   const request = new AuthSession.AuthRequest({
-    clientId: WEB_CLIENT_ID,
+    clientId: GOOGLE_WEB_CLIENT_ID,
     redirectUri,
     responseType: ResponseType.Code,
     usePKCE: true,
@@ -162,7 +141,7 @@ async function promptWebGoogleSignIn(): Promise<GoogleSignInResult> {
 
   try {
     const tokenResult = await new AccessTokenRequest({
-      clientId: WEB_CLIENT_ID,
+      clientId: GOOGLE_WEB_CLIENT_ID,
       redirectUri,
       code: result.params.code,
       extraParams: {
@@ -182,7 +161,7 @@ async function promptWebGoogleSignIn(): Promise<GoogleSignInResult> {
   }
 }
 
-/** Branded native sign-in on iOS/Android; browser OAuth on web. */
+/** Branded native sign-in on iOS/Android when enabled; browser OAuth otherwise. */
 export async function promptGoogleSignIn(): Promise<GoogleSignInResult> {
   if (isNativeBrandedGoogleSignInAvailable()) {
     return promptNativeGoogleSignIn();
