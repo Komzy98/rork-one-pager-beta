@@ -235,6 +235,10 @@ export function mergeProfilesFromCloud(
     ).slice(0, 6) as UserProfile['nationalities'],
     favoriteBooks: mergeRecordsById(older.favoriteBooks ?? [], newer.favoriteBooks ?? []) as UserProfile['favoriteBooks'],
     interests: unionStrings(older.interests, newer.interests),
+    favoriteEventCategories: unionStrings(
+      older.favoriteEventCategories,
+      newer.favoriteEventCategories,
+    ),
     tabOrder: newer.tabOrder?.length ? newer.tabOrder : older.tabOrder,
     tabVisitCounts: mergeTabVisitCounts(older.tabVisitCounts, newer.tabVisitCounts),
     onboardingCompleted: newer.onboardingCompleted || older.onboardingCompleted,

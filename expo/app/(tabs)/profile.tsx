@@ -105,6 +105,9 @@ import {
 import { buildChallengeLink } from '@/utils/deepLinks';
 import type { Achievement, Challenge } from '@/types/gamification';
 import { useFriends } from '@/hooks/useFriends';
+import { resolveDisplayAvatarUrl } from '@/utils/avatarUtils';
+import { uploadProfileAvatar } from '@/utils/avatarService';
+import { updateProfileAvatar } from '@/utils/friendsService';
 import { MOCK_CHALLENGES } from '@/mocks/socialData';
 import { ThemeSettings } from '@/components/ThemeSettings';
 import { GOOGLE_G_LOGO } from '@/constants/googleBrandAssets';
@@ -347,7 +350,20 @@ export default function ProfileScreen() {
     : [];
   const isGoogleSignedIn =
     !isGuest && (googleProvider === 'google' || googleProviders.includes('google') || user?.id?.startsWith('google_'));
-  const profileAvatarUri = profile?.avatar || user?.avatar;
+  const {
+    friends: socialFriends,
+    incomingRequests: socialIncoming,
+    unreadNudges: socialUnreadNudges,
+    friendsLeaderboard: socialLeaderboard,
+    myProfile: socialProfile,
+  } = useFriends();
+  const partnerBadgeCount = socialIncoming.length + socialUnreadNudges.length;
+
+  const profileAvatarUri = resolveDisplayAvatarUrl({
+    profileAvatar: profile?.avatar,
+    authAvatar: user?.avatar,
+    socialAvatar: socialProfile?.avatarUrl,
+  });
 
   useEffect(() => {
     if (isGuest) return;
@@ -356,14 +372,6 @@ export default function ProfileScreen() {
       updateProfile({ avatar: user.avatar });
     }
   }, [isGuest, user?.avatar, profile?.avatar, updateProfile]);
-
-  const {
-    friends: socialFriends,
-    incomingRequests: socialIncoming,
-    unreadNudges: socialUnreadNudges,
-    friendsLeaderboard: socialLeaderboard,
-  } = useFriends();
-  const partnerBadgeCount = socialIncoming.length + socialUnreadNudges.length;
 
   const [sharePayload, setSharePayload] = useState<SharePayload | null>(null);
   const shareUsername =
@@ -521,17 +529,31 @@ export default function ProfileScreen() {
       }
 
       if (!result.canceled && result.assets[0]) {
-        setIsUploadingImage(true);
         const imageUri = result.assets[0].uri;
-        updateProfile({ avatar: imageUri });
-        setIsUploadingImage(false);
+        const userId = user?.id;
+        if (!userId) return;
+
+        setIsUploadingImage(true);
+        try {
+          const remoteUrl = await uploadProfileAvatar(userId, imageUri);
+          const avatar = remoteUrl ?? imageUri;
+          updateProfile({ avatar });
+          await updateProfileAvatar(userId, avatar);
+        } catch (error) {
+          Alert.alert(
+            'Photo not saved',
+            error instanceof Error ? error.message : 'Could not upload your profile photo.',
+          );
+        } finally {
+          setIsUploadingImage(false);
+        }
       }
     } catch (error) {
       if (__DEV__) console.error('Error picking image:', error);
       setIsUploadingImage(false);
       Alert.alert('Error', 'Failed to pick image. Please try again.');
     }
-  }, [updateProfile]);
+  }, [updateProfile, user?.id]);
 
   const showImagePickerOptions = useCallback(() => {
     if (Platform.OS === 'ios') {
@@ -559,7 +581,7 @@ export default function ProfileScreen() {
         ]
       );
     }
-  }, [pickImage, profile?.avatar, updateProfile]);
+  }, [pickImage, profile?.avatar, updateProfile, user?.id]);
 
   if (!user) {
     return (

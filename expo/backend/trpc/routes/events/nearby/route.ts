@@ -9,6 +9,7 @@ import {
   sortEventsByStartDate,
 } from '@/utils/eventDiscovery';
 import { BENTO_CATEGORY_IDS } from '@/utils/eventCategoryMeta';
+import { eventMatchesBentoCategory } from '@/utils/eventCategories';
 import { mergeDiscoveryEvents } from '@/utils/mergeDiscoveryEvents';
 import {
   buildSkiddleEventsSearchUrl,
@@ -124,6 +125,11 @@ async function fetchTicketmasterEvents(
   apiKey: string,
   input: FetchInput,
 ): Promise<LocalEventPayload[]> {
+  if (input.category && input.category !== 'all') {
+    const classification = TICKETMASTER_CATEGORY_FILTER[input.category];
+    if (!classification) return [];
+  }
+
   const classification = input.category
     ? TICKETMASTER_CATEGORY_FILTER[input.category]
     : undefined;
@@ -258,7 +264,11 @@ async function resolveNearbyEvents(input: FetchInput): Promise<NearbyEventsResul
     skiddleKey ? fetchSkiddleEvents(skiddleKey, input) : Promise.resolve([]),
   ]);
 
-  const events = mergeDiscoveryEvents([ticketmasterEvents, skiddleEvents], input.size);
+  const merged = mergeDiscoveryEvents([ticketmasterEvents, skiddleEvents], input.size);
+  const events =
+    input.category && input.category !== 'all'
+      ? merged.filter((event) => eventMatchesBentoCategory(event, input.category!))
+      : merged;
   const result: NearbyEventsResult = {
     events,
     source: resolveSource(ticketmasterEvents.length, skiddleEvents.length),

@@ -61,7 +61,7 @@ export function mapSkiddleEventCode(eventCode?: string): EventCategory | string 
     case 'DATE':
       return 'other';
     default:
-      return 'music';
+      return 'other';
   }
 }
 
@@ -74,7 +74,8 @@ export const SKIDDLE_EVENT_CODES_BY_CATEGORY: Record<string, string[] | undefine
   arts: ['ARTS', 'EXHIB', 'KIDS'],
   food: ['BARPUB'],
   nightlife: ['CLUB'],
-  tech: undefined,
+  networking: undefined,
+  other: undefined,
 };
 
 function formatDateLabel(isoOrDate?: string): string {

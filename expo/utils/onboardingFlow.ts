@@ -9,6 +9,7 @@ export const HABIT_ONBOARDING_INTERESTS = [
 
 export type OnboardingScreenId =
   | 'interests'
+  | 'event-categories'
   | 'football-favorites'
   | 'nba-teams'
   | 'streaming'
@@ -20,6 +21,7 @@ export type OnboardingScreenId =
 
 const SCREEN_ROUTES: Record<Exclude<OnboardingScreenId, 'complete'>, string> = {
   interests: '/(onboarding)/interests',
+  'event-categories': '/(onboarding)/event-categories',
   'football-favorites': '/(onboarding)/football-favorites',
   'nba-teams': '/(onboarding)/nba-teams',
   streaming: '/(onboarding)/streaming',
@@ -42,6 +44,10 @@ function wantsHabitsSetup(interests: readonly string[]): boolean {
 /** Linear onboarding path from interests selection (excludes welcome + complete from progress). */
 export function buildOnboardingPath(interests: readonly string[]): OnboardingScreenId[] {
   const path: OnboardingScreenId[] = ['interests'];
+
+  if (hasInterest(interests, 'events')) {
+    path.push('event-categories');
+  }
 
   if (hasInterest(interests, 'football')) {
     path.push('football-favorites');
@@ -117,6 +123,10 @@ export function hasNbaOnboarding(interests: readonly string[]): boolean {
 
 export function hasMoviesOnboarding(interests: readonly string[]): boolean {
   return hasInterest(interests, 'movies');
+}
+
+export function hasEventsOnboarding(interests: readonly string[]): boolean {
+  return hasInterest(interests, 'events');
 }
 
 /** @deprecated Use football-favorites — kept for deep links */

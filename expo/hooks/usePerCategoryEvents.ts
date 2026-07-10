@@ -100,7 +100,9 @@ export function usePerCategoryEvents(options: UsePerCategoryEventsOptions) {
     if (batchQuery.data) {
       for (const category of BENTO_CATEGORIES) {
         const bucket = batchQuery.data.categories[category];
-        const raw = bucket?.events ?? [];
+        const raw = (bucket?.events ?? []).filter((event) =>
+          eventMatchesBentoCategory(event, category),
+        );
         map.set(category, normalizeEvents(raw, queryCoords));
       }
       return map;
@@ -127,15 +129,11 @@ export function usePerCategoryEvents(options: UsePerCategoryEventsOptions) {
 
   const countsByCategory = useMemo(() => {
     const counts = new Map<string, number>();
-    if (batchQuery.data?.categoryCounts) {
-      for (const category of BENTO_CATEGORIES) {
-        counts.set(category, batchQuery.data.categoryCounts[category] ?? 0);
-      }
-      return counts;
+    for (const category of BENTO_CATEGORIES) {
+      counts.set(category, eventsByCategory.get(category)?.length ?? 0);
     }
-    eventsByCategory.forEach((events, category) => counts.set(category, events.length));
     return counts;
-  }, [batchQuery.data, eventsByCategory]);
+  }, [eventsByCategory]);
 
   const source: NearbyEventsSource = useMemo(() => {
     if (batchQuery.data?.source && batchQuery.data.source !== 'none') {

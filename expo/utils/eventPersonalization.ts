@@ -2,7 +2,7 @@ import type { JoySources, UserProfile } from '@/types/habit';
 import type { LocalEvent, SavedEventSnapshot } from '@/types/events';
 import { getNationalitySignals } from '@/utils/nationalityPersonalization';
 import { getChronotypeInfo } from '@/constants/chronotypes';
-import type { Task } from '@/types/task';
+import type { Task, TaskCategory } from '@/types/task';
 import {
   eventsToBusyIntervals,
   type CalendarBusyEvent,
@@ -15,6 +15,22 @@ import {
 } from '@/utils/eventDiscovery';
 import { getBentoCategoryId, getLogicalCategoryIds } from '@/utils/eventCategories';
 import { boostEventsForConciergeContext, type EventConciergeContext } from '@/utils/eventConcierge';
+import {
+  eventMatchesFootballFollow,
+  eventMatchesNbaFollow,
+  includesSportToken,
+  shouldDeprioritizeSportEvent,
+} from '@/utils/eventSportMatching';
+
+function normalizeHaystack(event: LocalEvent): string {
+  const tags = (event.tags ?? []).join(' ');
+  const description = event.description ?? '';
+  return `${event.title} ${event.venue} ${event.location} ${event.category} ${tags} ${description}`
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+}
 
 export type EventRecommendationReasonKind =
   | 'team'
@@ -53,8 +69,12 @@ export interface EventRecommendationInput {
   now?: Date;
   /** Merged manual + inferred joy picks (shows, habits, interests). */
   effectiveJoySources?: JoySources;
-  /** Keywords from habit titles and descriptions. */
+  /** Keywords from habit titles, tags, and inferred activity types. */
   habitKeywords?: string[];
+  /** Event categories boosted from habit task categories and patterns. */
+  habitCategoryWeights?: Record<string, number>;
+  /** Short habit titles for editorial copy (e.g. "Morning yoga"). */
+  habitLabels?: string[];
   recoveryModeActive?: boolean;
   friendCountByEventId?: Map<string, number>;
 }
@@ -62,6 +82,7 @@ export interface EventRecommendationInput {
 export interface EventPersonalizationExtras {
   effectiveJoySources?: JoySources;
   habitKeywords?: string[];
+  habitCategoryWeights?: Record<string, number>;
   recoveryModeActive?: boolean;
 }
 
@@ -71,6 +92,7 @@ export interface EventPersonalizationContext {
   categoryWeights: Map<string, number>;
   teamKeywords: string[];
   nbaTeamKeywords: string[];
+  profile: UserProfile | null | undefined;
   joyKeywords: string[];
   youtuberKeywords: string[];
   budgetKeywords: string[];
@@ -90,11 +112,12 @@ const INTEREST_CATEGORY_MAP: Record<string, string[]> = {
   theatre: ['theatre', 'theater', 'musical', 'acting', 'drama'],
   food: ['food', 'drink', 'cooking', 'restaurant', 'brunch', 'supper', 'culinary', 'wine'],
   arts: ['art', 'design', 'painting', 'creative', 'gallery', 'exhibition', 'museum'],
-  tech: ['tech', 'ai', 'coding', 'startup', 'network', 'conference'],
+  networking: ['network', 'meetup', 'professional', 'business', 'conference', 'founder'],
+  tech: ['tech', 'ai', 'coding', 'startup', 'software', 'developer'],
   nightlife: ['night', 'party', 'club', 'nightlife'],
-  fitness: ['fitness', 'gym', 'yoga', 'pilates', 'run club', 'workout', 'wellness', 'walk'],
-  networking: ['network', 'meetup', 'professional', 'business'],
   family: ['family', 'kids', 'children', 'parent'],
+  other: ['market', 'fair', 'festival', 'community', 'local', 'miscellaneous'],
+  fitness: ['fitness', 'gym', 'yoga', 'pilates', 'run club', 'workout', 'wellness', 'walk'],
 };
 
 /** Onboarding interest ids → event categories and search terms. */
@@ -102,13 +125,13 @@ const ONBOARDING_INTEREST_MAP: Record<string, { categories: string[]; keywords: 
   football: { categories: ['sports'], keywords: ['football', 'soccer', 'premier league', 'match'] },
   ufc: { categories: ['sports'], keywords: ['ufc', 'mma', 'boxing', 'fight'] },
   nba: { categories: ['sports'], keywords: ['nba', 'basketball'] },
-  f1: { categories: ['sports', 'tech'], keywords: ['formula 1', 'f1', 'grand prix', 'motorsport'] },
+  f1: { categories: ['sports', 'networking'], keywords: ['formula 1', 'f1', 'grand prix', 'motorsport'] },
   fitness: { categories: ['sports'], keywords: ['fitness', 'gym', 'workout', 'run club', 'yoga'] },
   movies: { categories: ['arts', 'theatre', 'music'], keywords: ['film', 'cinema', 'screening', 'premiere'] },
   cooking: { categories: ['food'], keywords: ['cooking', 'supper club', 'food festival', 'tasting'] },
-  learning: { categories: ['tech'], keywords: ['workshop', 'talk', 'masterclass', 'lecture'] },
+  learning: { categories: ['networking', 'arts'], keywords: ['workshop', 'talk', 'masterclass', 'lecture'] },
   events: { categories: ['music', 'comedy', 'theatre', 'food', 'arts'], keywords: ['festival', 'live'] },
-  productivity: { categories: ['tech'], keywords: ['meetup', 'conference', 'networking'] },
+  productivity: { categories: ['networking'], keywords: ['meetup', 'conference', 'networking'] },
 };
 
 const INTEREST_DISPLAY_NAMES: Record<string, string> = {
@@ -126,27 +149,96 @@ const INTEREST_DISPLAY_NAMES: Record<string, string> = {
 
 const RECOVERY_FRIENDLY_CATEGORIES = new Set(['arts', 'family', 'fitness', 'food', 'music']);
 
+const TASK_CATEGORY_EVENT_BOOST: Record<TaskCategory, readonly string[]> = {
+  health: ['sports', 'food'],
+  social: ['comedy', 'nightlife', 'music', 'food'],
+  learning: ['networking', 'arts', 'theatre'],
+  personal: ['arts', 'music', 'other'],
+  work: ['networking'],
+  finance: ['other'],
+  other: ['other'],
+};
+
+const HABIT_ACTIVITY_PATTERNS: {
+  pattern: RegExp;
+  keywords: string[];
+  categories: string[];
+}[] = [
+  { pattern: /\byoga\b|\bpilates\b|\bmeditat/i, keywords: ['yoga', 'pilates', 'wellness'], categories: ['sports'] },
+  { pattern: /\brun|\bjog|\b5k\b|\bmarathon|\bparkrun/i, keywords: ['running', 'run club', 'parkrun'], categories: ['sports'] },
+  { pattern: /\bwalk|\bhike|\bhiking/i, keywords: ['walking', 'hiking'], categories: ['sports', 'arts'] },
+  { pattern: /\bgym|\blift|\bweights|\bstrength|\bworkout/i, keywords: ['gym', 'fitness', 'workout'], categories: ['sports'] },
+  { pattern: /\bread|\bbook|\blibrary/i, keywords: ['reading', 'book', 'literature'], categories: ['arts', 'theatre'] },
+  { pattern: /\bcook|\bbake|\bmeal prep/i, keywords: ['cooking', 'food', 'tasting'], categories: ['food'] },
+  { pattern: /\bjournal|\bwrite|\bcreative writing/i, keywords: ['writing', 'workshop', 'creative'], categories: ['arts', 'networking'] },
+  { pattern: /\blanguage|\bstudy|\blearn/i, keywords: ['learning', 'workshop', 'class'], categories: ['networking', 'arts'] },
+  { pattern: /\bsocial|\bfriend|\bnetwork/i, keywords: ['social', 'meetup', 'networking'], categories: ['comedy', 'nightlife', 'food'] },
+  { pattern: /\bdraw|\bpaint|\bart\b/i, keywords: ['art', 'gallery', 'exhibition'], categories: ['arts'] },
+  { pattern: /\bmusic|\bguitar|\bpiano|\bpractice\b/i, keywords: ['music', 'live', 'concert'], categories: ['music'] },
+  { pattern: /\bvolunteer|\bcharity|\bgive back/i, keywords: ['community', 'charity', 'volunteer'], categories: ['other', 'arts'] },
+  { pattern: /\bcomedy|\blaugh/i, keywords: ['comedy', 'stand-up'], categories: ['comedy'] },
+  { pattern: /\bdance|\bclass\b/i, keywords: ['dance', 'class', 'workshop'], categories: ['arts', 'nightlife'] },
+];
+
+export interface HabitEventSignals {
+  keywords: string[];
+  categoryWeights: Record<string, number>;
+  habitLabels: string[];
+}
+
+export function buildHabitEventSignals(habitTasks: Task[]): HabitEventSignals {
+  const keywords = new Set<string>();
+  const categoryWeights: Record<string, number> = {};
+  const habitLabels: string[] = [];
+
+  const bumpCategory = (category: string, amount: number) => {
+    categoryWeights[category] = (categoryWeights[category] ?? 0) + amount;
+  };
+
+  for (const task of habitTasks) {
+    if (!task.isHabit) continue;
+
+    const title = task.title.trim();
+    const titleKey = title.toLowerCase();
+    const blob = `${title} ${task.description ?? ''} ${(task.tags ?? []).join(' ')}`.toLowerCase();
+
+    if (titleKey.length >= 3) keywords.add(titleKey);
+    for (const tag of task.tags ?? []) {
+      const normalized = tag.trim().toLowerCase();
+      if (normalized.length >= 3) keywords.add(normalized);
+    }
+
+    for (const category of TASK_CATEGORY_EVENT_BOOST[task.category] ?? ['other']) {
+      bumpCategory(category, 2);
+    }
+
+    for (const { pattern, keywords: patternKeywords, categories } of HABIT_ACTIVITY_PATTERNS) {
+      if (!pattern.test(blob)) continue;
+      for (const kw of patternKeywords) keywords.add(kw);
+      for (const category of categories) bumpCategory(category, 3);
+    }
+
+    if (title.length >= 3) {
+      habitLabels.push(title.length > 28 ? `${title.slice(0, 27)}…` : title);
+    }
+  }
+
+  return {
+    keywords: [...keywords],
+    categoryWeights,
+    habitLabels: habitLabels.slice(0, 3),
+  };
+}
+
+export function extractHabitKeywords(habitTasks: Task[]): string[] {
+  return buildHabitEventSignals(habitTasks).keywords;
+}
+
 function pushKeywords(set: Set<string>, values: string[] | undefined): void {
   for (const v of values ?? []) {
     const t = v.trim().toLowerCase();
     if (t) set.add(t);
   }
-}
-
-export function extractHabitKeywords(habitTasks: Task[]): string[] {
-  const keywords = new Set<string>();
-  for (const task of habitTasks) {
-    const blob = `${task.title} ${task.description ?? ''}`.toLowerCase();
-    const title = task.title.trim().toLowerCase();
-    if (title.length >= 4) keywords.add(title);
-    if (/\byoga\b|\bmeditat/.test(blob)) keywords.add('yoga');
-    if (/\brun|\bjog|\b5k\b|\bmarathon/.test(blob)) keywords.add('running');
-    if (/\bwalk|\bhike/.test(blob)) keywords.add('walking');
-    if (/\bgym|\blift|\bweights/.test(blob)) keywords.add('gym');
-    if (/\bread|\bbook/.test(blob)) keywords.add('reading');
-    if (/\bsocial|\bfriend/.test(blob)) keywords.add('social');
-  }
-  return [...keywords];
 }
 
 function mergeJoySources(manual?: JoySources | null, effective?: JoySources | null): JoySources {
@@ -177,6 +269,16 @@ export function buildEventPersonalizationContext(
   const categoryWeights = new Map<string, number>();
 
   const interests = (profile?.interests ?? []).map((i) => i.toLowerCase());
+
+  for (const category of profile?.favoriteEventCategories ?? []) {
+    const normalized = (category === 'tech' ? 'networking' : category).toLowerCase();
+    categoryWeights.set(normalized, (categoryWeights.get(normalized) ?? 0) + 6);
+    interestKeywords.add(normalized);
+    for (const kw of INTEREST_CATEGORY_MAP[normalized] ?? INTEREST_CATEGORY_MAP[category] ?? []) {
+      interestKeywords.add(kw);
+    }
+  }
+
   for (const interest of interests) {
     interestKeywords.add(interest);
     const onboarding = ONBOARDING_INTEREST_MAP[interest];
@@ -197,10 +299,10 @@ export function buildEventPersonalizationContext(
     categoryWeights.set('sports', (categoryWeights.get('sports') ?? 0) + 3);
   }
   if ((profile?.favoriteNBATeams?.length ?? 0) > 0) {
-    categoryWeights.set('sports', (categoryWeights.get('sports') ?? 0) + 3);
+    categoryWeights.set('sports', (categoryWeights.get('sports') ?? 0) + 2);
   }
   if (interests.includes('nba')) {
-    categoryWeights.set('sports', (categoryWeights.get('sports') ?? 0) + 2);
+    categoryWeights.set('sports', (categoryWeights.get('sports') ?? 0) + 1);
   }
 
   for (const country of profile?.favoriteCountries ?? []) {
@@ -259,6 +361,10 @@ export function buildEventPersonalizationContext(
     if (/read|book/i.test(kw)) categoryWeights.set('arts', (categoryWeights.get('arts') ?? 0) + 1);
   }
 
+  for (const [category, weight] of Object.entries(extras?.habitCategoryWeights ?? {})) {
+    categoryWeights.set(category, (categoryWeights.get(category) ?? 0) + weight);
+  }
+
   const identityGoalKeywords = new Set<string>();
   for (const goal of profile?.identityGoals ?? []) {
     const trimmed = goal.trim().toLowerCase();
@@ -281,6 +387,7 @@ export function buildEventPersonalizationContext(
     interestKeywords: [...interestKeywords],
     interestIds: [...interests],
     categoryWeights,
+    profile,
     teamKeywords,
     nbaTeamKeywords,
     joyKeywords: [...joyKeywords],
@@ -300,6 +407,7 @@ function buildContextFromInput(input: EventRecommendationInput): EventPersonaliz
   return buildEventPersonalizationContext(input.profile, {
     effectiveJoySources: input.effectiveJoySources,
     habitKeywords: input.habitKeywords,
+    habitCategoryWeights: input.habitCategoryWeights,
     recoveryModeActive: input.recoveryModeActive,
   });
 }
@@ -318,9 +426,7 @@ export function resolveEventRecommendationInput(
 }
 
 function haystack(event: LocalEvent): string {
-  const tags = (event.tags ?? []).join(' ');
-  const description = event.description ?? '';
-  return `${event.title} ${event.venue} ${event.location} ${event.category} ${tags} ${description}`.toLowerCase();
+  return normalizeHaystack(event);
 }
 
 export function scoreEventForUser(event: LocalEvent, ctx: EventPersonalizationContext): number {
@@ -339,11 +445,15 @@ export function scoreEventForUser(event: LocalEvent, ctx: EventPersonalizationCo
   }
 
   for (const team of ctx.teamKeywords) {
-    if (team.length >= 3 && text.includes(team)) score += 8;
+    if (team.length >= 3 && includesSportToken(text, team)) score += 8;
   }
 
   for (const team of ctx.nbaTeamKeywords) {
-    if (team.length >= 2 && text.includes(team)) score += 8;
+    if (team.length >= 2 && includesSportToken(text, team)) score += 8;
+  }
+
+  if (ctx.profile && shouldDeprioritizeSportEvent(event, ctx.profile)) {
+    score -= 10;
   }
 
   for (const joy of ctx.joyKeywords) {
@@ -367,7 +477,7 @@ export function scoreEventForUser(event: LocalEvent, ctx: EventPersonalizationCo
   }
 
   for (const habit of ctx.habitKeywords) {
-    if (habit.length >= 4 && text.includes(habit)) score += 4;
+    if (habit.length >= 3 && text.includes(habit)) score += habit.length >= 8 ? 7 : 5;
   }
 
   for (const goal of ctx.identityGoalKeywords) {
@@ -505,12 +615,10 @@ export function buildEventRecommendationReasons(
   const savedSnapshots = input.savedSnapshots ?? [];
 
   for (const team of input.profile?.favoriteTeams ?? []) {
-    const teamName = team.name.trim();
-    const teamKey = teamName.toLowerCase();
-    if (teamKey.length >= 3 && text.includes(teamKey)) {
+    if (eventMatchesFootballFollow(event, team)) {
       reasons.push({
         kind: 'team',
-        label: `Because you follow ${teamName}`,
+        label: `Because you follow ${team.name.trim()}`,
         priority: 100,
       });
       break;
@@ -518,13 +626,10 @@ export function buildEventRecommendationReasons(
   }
 
   for (const team of input.profile?.favoriteNBATeams ?? []) {
-    const teamName = team.name.trim();
-    const teamKey = teamName.toLowerCase();
-    const abbr = team.abbreviation.toLowerCase();
-    if ((teamKey.length >= 3 && text.includes(teamKey)) || (abbr.length >= 2 && text.includes(abbr))) {
+    if (eventMatchesNbaFollow(event, team)) {
       reasons.push({
         kind: 'nba',
-        label: `Because you follow ${teamName}`,
+        label: `Because you follow ${team.name.trim()}`,
         priority: 99,
       });
       break;
@@ -636,11 +741,23 @@ export function buildEventRecommendationReasons(
   }
 
   for (const habit of ctx.habitKeywords) {
-    if (habit.length >= 4 && text.includes(habit)) {
+    if (habit.length >= 3 && text.includes(habit)) {
       reasons.push({
         kind: 'habit',
         label: `Fits your ${habit} habit`,
-        priority: 71,
+        priority: 78,
+      });
+      break;
+    }
+  }
+
+  for (const label of input.habitLabels ?? []) {
+    const key = label.trim().toLowerCase();
+    if (key.length >= 3 && text.includes(key)) {
+      reasons.push({
+        kind: 'habit',
+        label: `Because you track ${label}`,
+        priority: 77,
       });
       break;
     }
@@ -803,6 +920,9 @@ export function isEditorialReasonRelevant(
   if (reason.kind === 'saved_category') {
     return logicalCategories.includes(categoryId) || getBentoCategoryId(event) === categoryId;
   }
+  if (categoryId === 'habits') {
+    return reason.kind === 'habit';
+  }
   return true;
 }
 
@@ -827,12 +947,14 @@ export function getEditorialRowChipLabel(
   }
 
   if (categoryId === 'sports') return 'Sports pick';
+  if (categoryId === 'habits') return 'Habit match';
   return phrase.charAt(0).toUpperCase() + phrase.slice(1);
 }
 
 export function getEditorialRowSecondaryChipLabel(categoryId: string, event: LocalEvent): string {
   if (event.isHot || event.isLiveNow) return 'Trending now';
   if (categoryId === 'sports') return 'Sports pick';
+  if (categoryId === 'habits') return 'Habit match';
   const phrase = EDITORIAL_CATEGORY_PHRASES[categoryId] ?? categoryId.replace(/_/g, ' ');
   return phrase.charAt(0).toUpperCase() + phrase.slice(1);
 }
@@ -853,7 +975,7 @@ export function formatRecommendationChipLabel(
     if (event?.isHot || event?.isLiveNow) return 'Happening now';
     if (event?.subCategory === 'fitness') return 'Fitness pick';
     if (event?.subCategory === 'family') return 'Family pick';
-    if (event?.subCategory === 'networking') return 'Networking pick';
+    if (event?.subCategory === 'tech') return 'Tech pick';
     return event?.category === 'sports' ? 'Sports pick' : 'Picked for you';
   }
 
@@ -911,7 +1033,7 @@ export function getOverviewFitChipLabel(
     case 'saved_category':
       if (event?.subCategory === 'fitness') return 'Fits your fitness habits';
       if (event?.subCategory === 'family') return 'Family-friendly pick';
-      if (event?.subCategory === 'networking') return 'Fits your work interests';
+      if (event?.subCategory === 'tech') return 'Fits your work interests';
       return 'Fits your interests';
     default:
       return getCompactRecommendationLabel(reason, event);
@@ -925,7 +1047,8 @@ export function getFeedCardChipLabel(
   if (reason) return formatRecommendationChipLabel(reason, event);
   if (event.subCategory === 'fitness') return 'Fitness pick';
   if (event.subCategory === 'family') return 'Family pick';
-  if (event.subCategory === 'networking') return 'Networking pick';
+  if (event.subCategory === 'tech') return 'Tech pick';
+  if (event.category === 'networking') return 'Networking pick';
   if (event.category === 'sports') return 'Sports pick';
   if (event.isHot || event.isLiveNow) return 'Happening now';
   return 'Picked for you';
@@ -980,10 +1103,11 @@ const EDITORIAL_CATEGORY_PHRASES: Record<string, string> = {
   theatre: 'theatre',
   food: 'food & drink',
   arts: 'arts',
+  networking: 'networking & meetups',
   tech: 'tech',
   nightlife: 'nightlife',
+  other: 'miscellaneous events',
   fitness: 'fitness',
-  networking: 'networking',
   family: 'family events',
 };
 
@@ -1043,6 +1167,7 @@ export function buildEditorialEventRows(
   events: LocalEvent[],
   profileOrInput: UserProfile | EventRecommendationInput | null | undefined,
   maxRows = 2,
+  excludeEventIds?: ReadonlySet<string>,
 ): EditorialEventRow[] {
   if (events.length === 0) return [];
 
@@ -1059,7 +1184,7 @@ export function buildEditorialEventRows(
   for (const categoryId of categoryOrder) {
     if (rows.length >= maxRows) break;
     const matches = rankEventsForYou(
-      events.filter((e) => e.category === categoryId),
+      events.filter((e) => e.category === categoryId && !excludeEventIds?.has(e.id)),
       input,
     );
     if (matches.length === 0) continue;
@@ -1074,4 +1199,112 @@ export function buildEditorialEventRows(
   }
 
   return rows;
+}
+
+/** Categories the user chose explicitly — not inferred from daily habits. */
+function getProfileDrivenCategories(profile: UserProfile | null | undefined): Set<string> {
+  const categories = new Set<string>();
+
+  for (const category of profile?.favoriteEventCategories ?? []) {
+    categories.add((category === 'tech' ? 'networking' : category).toLowerCase());
+  }
+
+  const interests = (profile?.interests ?? []).map((i) => i.toLowerCase());
+  for (const interest of interests) {
+    const onboarding = ONBOARDING_INTEREST_MAP[interest];
+    if (onboarding) {
+      for (const cat of onboarding.categories) categories.add(cat);
+    }
+    for (const [category, keys] of Object.entries(INTEREST_CATEGORY_MAP)) {
+      if (keys.some((k) => interest.includes(k) || k.includes(interest))) {
+        categories.add(category);
+      }
+    }
+  }
+
+  if ((profile?.favoriteTeams?.length ?? 0) > 0) categories.add('sports');
+  if ((profile?.favoriteNBATeams?.length ?? 0) > 0) categories.add('sports');
+  if (interests.includes('nba') || interests.includes('football')) categories.add('sports');
+
+  const joyMerged = mergeJoySources(profile?.joySources, undefined);
+  for (const ex of joyMerged.exerciseTypes ?? []) {
+    if (ex.trim()) categories.add('fitness');
+  }
+  for (const rest of joyMerged.restaurants ?? []) {
+    if (rest.trim()) categories.add('food');
+  }
+  for (const show of joyMerged.tvShows ?? []) {
+    if (/comedy|stand.?up/i.test(show)) categories.add('comedy');
+  }
+  for (const music of joyMerged.music ?? []) {
+    if (music.trim()) categories.add('music');
+  }
+
+  return categories;
+}
+
+function eventMatchesHabitSignals(event: LocalEvent, input: EventRecommendationInput): boolean {
+  const text = haystack(event);
+  if (input.habitKeywords?.some((kw) => kw.length >= 3 && text.includes(kw))) {
+    return true;
+  }
+  if (input.habitLabels?.some((label) => {
+    const key = label.trim().toLowerCase();
+    return key.length >= 3 && text.includes(key);
+  })) {
+    return true;
+  }
+
+  const weightedCategories = Object.entries(input.habitCategoryWeights ?? {})
+    .filter(([, weight]) => weight >= 3)
+    .map(([category]) => category);
+  if (weightedCategories.length === 0) return false;
+
+  const profileCategories = getProfileDrivenCategories(input.profile);
+  const logical = getLogicalCategoryIds(event);
+  return weightedCategories.some(
+    (category) => logical.includes(category) && !profileCategories.has(category),
+  );
+}
+
+export function rankEventsForHabits(
+  events: LocalEvent[],
+  profileOrInput: UserProfile | EventRecommendationInput | null | undefined,
+): LocalEvent[] {
+  const input = resolveEventRecommendationInput(profileOrInput);
+  const ctx = buildContextFromInput(input);
+  return [...events]
+    .map((event) => ({ event, score: scoreEventForUser(event, ctx) }))
+    .sort((a, b) => b.score - a.score || (a.event.distanceKm ?? 999) - (b.event.distanceKm ?? 999))
+    .map(({ event }) => event);
+}
+
+export function buildHabitBasedEventRow(
+  events: LocalEvent[],
+  profileOrInput: UserProfile | EventRecommendationInput | null | undefined,
+  maxEvents = 4,
+): EditorialEventRow | null {
+  const input = resolveEventRecommendationInput(profileOrInput);
+  const hasHabitSignals =
+    (input.habitKeywords?.length ?? 0) > 0 ||
+    Object.keys(input.habitCategoryWeights ?? {}).length > 0;
+  if (!hasHabitSignals) return null;
+
+  const matched = rankEventsForHabits(
+    events.filter((event) => eventMatchesHabitSignals(event, input)),
+    input,
+  ).slice(0, maxEvents);
+  if (matched.length === 0) return null;
+
+  const title =
+    input.habitLabels?.length === 1
+      ? `Because you track ${input.habitLabels[0]}`
+      : 'Based on your habits';
+
+  return {
+    id: 'habits',
+    title,
+    categoryId: 'habits',
+    events: matched,
+  };
 }

@@ -2,9 +2,10 @@ import { Stack, useRouter } from "expo-router";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import * as SplashScreen from "expo-splash-screen";
 import * as Linking from "expo-linking";
-import { parseDeepLink } from "@/utils/deepLinks";
-import React, { useEffect, ReactNode } from "react";
-import { LogBox, Platform, StatusBar, StyleSheet } from "react-native";
+import { registerQueryClient } from '@/utils/queryClientRef';
+import { parseDeepLink } from '@/utils/deepLinks';
+import React, { useEffect, ReactNode } from 'react';
+import { LogBox, Platform, StatusBar, StyleSheet } from 'react-native';
 
 if (typeof __DEV__ !== 'undefined' && !__DEV__) {
   const noop = () => {};
@@ -90,6 +91,7 @@ const queryClient = new QueryClient({
     },
   },
 });
+registerQueryClient(queryClient);
 
 function RootLayoutNav() {
   return (

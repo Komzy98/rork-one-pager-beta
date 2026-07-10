@@ -1,4 +1,5 @@
 import { supabase, supabaseConfigured } from '@/utils/supabaseClient';
+import { pickPublishedAvatarUrl } from '@/utils/avatarUtils';
 
 export type ActivityVisibility = 'public' | 'friends' | 'private';
 
@@ -120,7 +121,6 @@ export async function ensureMyProfile(input: MyProfileInput): Promise<SocialProf
   ensureConfigured();
   const stats = {
     display_name: input.displayName ?? null,
-    avatar_url: input.avatarUrl ?? null,
     current_streak: input.currentStreak ?? 0,
     total_completions: input.totalCompletions ?? 0,
     level: input.level ?? 1,
@@ -136,10 +136,19 @@ export async function ensureMyProfile(input: MyProfileInput): Promise<SocialProf
   if (selErr && !isSocialUnavailableError(selErr)) throw selErr;
   if (selErr && isSocialUnavailableError(selErr)) throw selErr;
 
+  const avatar_url = pickPublishedAvatarUrl(
+    (existing as ProfileRow | null)?.avatar_url,
+    input.avatarUrl,
+  );
+
   if (existing) {
     const { data, error } = await supabase
       .from('profiles')
-      .update({ ...stats, ...(input.username ? { username: input.username } : {}) })
+      .update({
+        ...stats,
+        avatar_url,
+        ...(input.username ? { username: input.username } : {}),
+      })
       .eq('id', input.userId)
       .select('*')
       .single();
@@ -153,13 +162,40 @@ export async function ensureMyProfile(input: MyProfileInput): Promise<SocialProf
     const candidate = attempt === 0 ? base : `${base}${Math.floor(10 + Math.random() * 9990)}`;
     const { data, error } = await supabase
       .from('profiles')
-      .insert({ id: input.userId, username: candidate, ...stats })
+      .insert({ id: input.userId, username: candidate, avatar_url, ...stats })
       .select('*')
       .single();
     if (!error && data) return mapProfile(data as ProfileRow);
     if (error && (error as { code?: string }).code !== '23505') throw error; // not a unique violation
   }
   throw new Error('Could not allocate a unique username');
+}
+
+export async function updateProfileAvatar(
+  userId: string,
+  avatarUrl: string | null,
+): Promise<SocialProfile | null> {
+  ensureConfigured();
+  const { data: existing, error: selErr } = await supabase
+    .from('profiles')
+    .select('*')
+    .eq('id', userId)
+    .maybeSingle();
+  if (selErr && !isSocialUnavailableError(selErr)) throw selErr;
+  if (!existing) return null;
+
+  const nextAvatar = pickPublishedAvatarUrl((existing as ProfileRow).avatar_url, avatarUrl);
+  const { data, error } = await supabase
+    .from('profiles')
+    .update({
+      avatar_url: nextAvatar,
+      updated_at: new Date().toISOString(),
+    })
+    .eq('id', userId)
+    .select('*')
+    .single();
+  if (error) throw error;
+  return mapProfile(data as ProfileRow);
 }
 
 export async function updateActivityVisibility(

@@ -8,14 +8,15 @@ export const BENTO_CATEGORY_IDS = [
   'theatre',
   'food',
   'arts',
-  'tech',
+  'networking',
   'nightlife',
+  'other',
 ] as const;
 
 export type BentoCategoryId = (typeof BENTO_CATEGORY_IDS)[number];
 
 /** Merged into a parent bento tile; surfaced as sub-tags in UI and personalization. */
-export type EventSubCategory = 'fitness' | 'networking' | 'family';
+export type EventSubCategory = 'fitness' | 'tech' | 'family';
 
 export interface SubCategoryMeta {
   parent: BentoCategoryId;
@@ -31,11 +32,11 @@ export const SUB_CATEGORY_META: Record<EventSubCategory, SubCategoryMeta> = {
     shortLabel: 'Fitness',
     tag: 'fitness',
   },
-  networking: {
-    parent: 'tech',
-    label: 'Networking & meetups',
-    shortLabel: 'Networking',
-    tag: 'networking',
+  tech: {
+    parent: 'networking',
+    label: 'Tech & coding',
+    shortLabel: 'Tech',
+    tag: 'tech',
   },
   family: {
     parent: 'arts',
@@ -53,18 +54,18 @@ export const LEGACY_CATEGORY_TO_BENTO: Record<string, BentoCategoryId> = {
   theatre: 'theatre',
   food: 'food',
   arts: 'arts',
-  tech: 'tech',
+  networking: 'networking',
   nightlife: 'nightlife',
+  other: 'other',
   fitness: 'sports',
-  networking: 'tech',
+  tech: 'networking',
   family: 'arts',
-  other: 'music',
 };
 
 const FITNESS_PATTERN =
   /\b(yoga|pilates|run club|parkrun|workout|wellness|hiit|crossfit|gym\b|5k\b|bootcamp|meditation|mindful)/i;
-const NETWORKING_PATTERN =
-  /\b(networking|meetup|conference|professional|business event|founder|startup week)/i;
+const TECH_PATTERN =
+  /\b(ai\b|artificial intelligence|coding|code|developer|hackathon|startup|saas|software|engineer|tech talk)/i;
 const FAMILY_PATTERN = /\b(kids|children|family|toddler|baby|parent|pantomime|cbeebies)/i;
 
 export function isBentoCategoryId(value: string): value is BentoCategoryId {
@@ -77,9 +78,9 @@ export function getBentoCategoryId(
   if (event.subCategory && SUB_CATEGORY_META[event.subCategory]) {
     return SUB_CATEGORY_META[event.subCategory].parent;
   }
-  const raw = String(event.category ?? 'music');
+  const raw = String(event.category ?? 'other');
   if (isBentoCategoryId(raw)) return raw;
-  return LEGACY_CATEGORY_TO_BENTO[raw] ?? 'music';
+  return LEGACY_CATEGORY_TO_BENTO[raw] ?? 'other';
 }
 
 /** Bento tile + optional sub-tag ids used for personalization weights. */
@@ -112,7 +113,7 @@ export function inferSubCategory(
 
   if (rawCategory === 'family' || event.tags?.includes('kids')) return 'family';
   if (rawCategory === 'fitness') return 'fitness';
-  if (rawCategory === 'networking') return 'networking';
+  if (rawCategory === 'tech') return 'tech';
 
   if (FAMILY_PATTERN.test(blob) && (rawCategory === 'arts' || rawCategory === 'theatre' || rawCategory === 'family')) {
     return 'family';
@@ -120,8 +121,11 @@ export function inferSubCategory(
   if (FITNESS_PATTERN.test(blob) && (rawCategory === 'sports' || rawCategory === 'fitness')) {
     return 'fitness';
   }
-  if (NETWORKING_PATTERN.test(blob) && (rawCategory === 'tech' || rawCategory === 'networking')) {
-    return 'networking';
+  if (
+    TECH_PATTERN.test(blob) &&
+    (rawCategory === 'networking' || rawCategory === 'tech')
+  ) {
+    return 'tech';
   }
 
   return undefined;

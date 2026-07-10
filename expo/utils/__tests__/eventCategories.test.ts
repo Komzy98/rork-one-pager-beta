@@ -52,13 +52,32 @@ describe('eventCategories', () => {
     assert.ok(eventMatchesBentoCategory(normalized, 'sports'));
   });
 
-  it('rolls networking into tech with a networking sub-tag', () => {
+  it('rolls tech into networking with a tech sub-tag', () => {
     const normalized = normalizeEventCategories(
-      baseEvent({ category: 'tech', title: 'Founder networking meetup' }),
+      baseEvent({ category: 'tech', title: 'AI developer meetup' }),
     );
-    assert.equal(normalized.category, 'tech');
-    assert.equal(normalized.subCategory, 'networking');
-    assert.ok(getBentoCategoryId(normalized) === 'tech');
+    assert.equal(normalized.category, 'networking');
+    assert.equal(normalized.subCategory, 'tech');
+    assert.ok(normalized.tags.includes('tech'));
+    assert.ok(eventMatchesBentoCategory(normalized, 'networking'));
+  });
+
+  it('keeps pure networking on the networking tile', () => {
+    const normalized = normalizeEventCategories(
+      baseEvent({ category: 'networking', title: 'Founder networking breakfast' }),
+    );
+    assert.equal(normalized.category, 'networking');
+    assert.equal(normalized.subCategory, undefined);
+    assert.ok(getBentoCategoryId(normalized) === 'networking');
+  });
+
+  it('maps unknown categories to other', () => {
+    const normalized = normalizeEventCategories(
+      baseEvent({ category: 'other', title: 'Village market day' }),
+    );
+    assert.equal(normalized.category, 'other');
+    assert.ok(eventMatchesBentoCategory(normalized, 'other'));
+    assert.equal(getBentoCategoryId(baseEvent({ category: 'mystery' })), 'other');
   });
 
   it('formats bento counts with sub-tag highlights', () => {

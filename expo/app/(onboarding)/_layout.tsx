@@ -25,6 +25,7 @@ export default function OnboardingLayout() {
       >
       <Stack.Screen name="welcome" />
       <Stack.Screen name="interests" />
+      <Stack.Screen name="event-categories" />
       <Stack.Screen name="football-favorites" />
       <Stack.Screen name="leagues" />
       <Stack.Screen name="streaming" />

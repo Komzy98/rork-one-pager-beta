@@ -5,7 +5,7 @@ import { useEventKit } from '@/hooks/useEventKit';
 import { useAppSafe } from '@/hooks/useHabitsStore';
 import { useTasksSafe } from '@/hooks/useTasksStore';
 import { resolveEffectiveJoySources } from '@/utils/joySources';
-import { extractHabitKeywords, type EventRecommendationInput } from '@/utils/eventPersonalization';
+import { buildHabitEventSignals, type EventRecommendationInput } from '@/utils/eventPersonalization';
 
 /** Shared profile, habits, shows, calendar, and save history for event recommendations. */
 export function useEventRecommendationInput(
@@ -24,14 +24,16 @@ export function useEventRecommendationInput(
     [profile, shows, habitTasks],
   );
 
-  const habitKeywords = useMemo(() => extractHabitKeywords(habitTasks), [habitTasks]);
+  const habitSignals = useMemo(() => buildHabitEventSignals(habitTasks), [habitTasks]);
 
   return useMemo(
     () => ({
       profile,
       savedSnapshots,
       effectiveJoySources,
-      habitKeywords,
+      habitKeywords: habitSignals.keywords,
+      habitCategoryWeights: habitSignals.categoryWeights,
+      habitLabels: habitSignals.habitLabels,
       recoveryModeActive: profile?.recoveryMode?.active === true,
       friendCountByEventId,
       calendarEvents: hasPermission
@@ -47,7 +49,7 @@ export function useEventRecommendationInput(
       profile,
       savedSnapshots,
       effectiveJoySources,
-      habitKeywords,
+      habitSignals,
       friendCountByEventId,
       calendarEvents,
       hasPermission,

@@ -28,6 +28,7 @@ import {
   CalendarDays,
   Users,
   ChevronLeft,
+  Repeat,
 } from 'lucide-react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useUserProfile } from '@/hooks/useUserProfile';
@@ -71,6 +72,7 @@ import { EventWhyThisSheet } from '@/components/events/EventWhyThisSheet';
 import {
   buildEditorialEventRows,
   buildEventRecommendationReasons,
+  buildHabitBasedEventRow,
   explainEventPersonalization,
   getEditorialRowChipLabel,
   getEditorialRowSecondaryChipLabel,
@@ -78,6 +80,7 @@ import {
   getPrimaryEventRecommendationReasonForCategory,
   getRecommendationChipLabel,
   rankEventsForConciergeFeed,
+  rankEventsForHabits,
   rankEventsForYou,
 } from '@/utils/eventPersonalization';
 import { useEventRecommendationInput } from '@/hooks/useEventRecommendationInput';
@@ -566,7 +569,13 @@ function EventsScreenInner() {
 
   const forYouEvents = useMemo(() => {
     if (baseEvents.length === 0) return [];
-    return rankEventsForConciergeFeed(baseEvents, recommendationInput, conciergeContext).slice(0, 4);
+    const hasHabitSignals =
+      (recommendationInput.habitKeywords?.length ?? 0) > 0 ||
+      Object.keys(recommendationInput.habitCategoryWeights ?? {}).length > 0;
+    const ranked = hasHabitSignals
+      ? rankEventsForHabits(baseEvents, recommendationInput)
+      : rankEventsForConciergeFeed(baseEvents, recommendationInput, conciergeContext);
+    return ranked.slice(0, 4);
   }, [baseEvents, recommendationInput, conciergeContext]);
 
   const thisWeekEvents = useMemo(() => {
@@ -631,13 +640,23 @@ function EventsScreenInner() {
             ? friendsPickEvents.slice(0, 4)
             : forYouEvents;
 
+  const habitEventRow = useMemo(
+    () => buildHabitBasedEventRow(filteredEvents, recommendationInput, 4),
+    [filteredEvents, recommendationInput],
+  );
+
+  const habitEventIds = useMemo(
+    () => new Set(habitEventRow?.events.map((e) => e.id) ?? []),
+    [habitEventRow],
+  );
+
   const editorialRows = useMemo(() => {
-    const rows = buildEditorialEventRows(filteredEvents, recommendationInput, 2);
+    const rows = buildEditorialEventRows(filteredEvents, recommendationInput, 2, habitEventIds);
     return rows.map((row) => ({
       ...row,
       events: rankEventsForConciergeFeed(row.events, recommendationInput, conciergeContext),
     }));
-  }, [filteredEvents, recommendationInput, conciergeContext]);
+  }, [filteredEvents, recommendationInput, conciergeContext, habitEventIds]);
 
   const editorialEventIds = useMemo(
     () => new Set(editorialRows.flatMap((row) => row.events.map((e) => e.id))),
@@ -667,22 +686,23 @@ function EventsScreenInner() {
     const excludeHeroAndRail = (event: LocalEvent) =>
       !smartDiscoveryEventIds.has(event.id) && !heroEventIdSet.has(event.id);
 
-    let pool =
-      selectedCategory !== 'all'
-        ? filteredEvents.filter(excludeHeroAndRail)
-        : filteredEvents.filter(
-            (e) => excludeHeroAndRail(e) && !editorialEventIds.has(e.id),
-          );
-
-    if (selectedCategory === 'all') {
-      return rankEventsForConciergeFeed(pool, recommendationInput, conciergeContext);
+    if (selectedCategory !== 'all') {
+      return rankEventsForYou(filteredEvents, recommendationInput);
     }
-    return rankEventsForYou(pool, recommendationInput);
+
+    const pool = filteredEvents.filter(
+      (e) =>
+        excludeHeroAndRail(e) &&
+        !editorialEventIds.has(e.id) &&
+        !habitEventIds.has(e.id),
+    );
+    return rankEventsForConciergeFeed(pool, recommendationInput, conciergeContext);
   }, [
     filteredEvents,
     selectedCategory,
     smartDiscoveryEventIds,
     editorialEventIds,
+    habitEventIds,
     heroEventIdSet,
     recommendationInput,
     conciergeContext,
@@ -1063,6 +1083,52 @@ function EventsScreenInner() {
             ))}
           </View>
         )}
+
+        {habitEventRow && selectedCategory === 'all' && !searchQuery ? (
+          <View style={styles.section}>
+            <View style={styles.sectionHeader}>
+              <View style={styles.sectionTitleRow}>
+                <View style={[styles.sectionIconWrap, { backgroundColor: palette.primaryLight }]}>
+                  <Repeat size={14} color={palette.primary} />
+                </View>
+                <Text style={[styles.sectionTitle, { color: mainText }]}>{habitEventRow.title}</Text>
+              </View>
+            </View>
+            <ScrollView
+              horizontal
+              showsHorizontalScrollIndicator={false}
+              contentContainerStyle={styles.sectionRailScroll}
+            >
+              {habitEventRow.events.map((event, index) => (
+                <PremiumEventPosterCard
+                  key={event.id}
+                  event={event}
+                  palette={palette}
+                  variant="horizontal"
+                  recommendationChipLabel={
+                    index === 0
+                      ? getEditorialRowChipLabel(
+                          habitEventRow.categoryId,
+                          event,
+                          getPrimaryEventRecommendationReasonForCategory(
+                            event,
+                            { ...recommendationInput, discoveryTab },
+                            habitEventRow.categoryId,
+                          ),
+                        )
+                      : getEditorialRowSecondaryChipLabel(habitEventRow.categoryId, event)
+                  }
+                  recommendationChipVariant={index === 0 ? 'featured-chip' : 'feed-chip'}
+                  onWhyThis={openWhyThis}
+                  {...getCardSocialProps(event.id)}
+                  onPress={openEventDetail}
+                  onToggleSaved={handleToggleSavedWithToast}
+                  onSaved={showSaveToast}
+                />
+              ))}
+            </ScrollView>
+          </View>
+        ) : null}
 
         {editorialRows.length > 0 && selectedCategory === 'all' && !searchQuery
           ? editorialRows.map((row) => (

@@ -6,9 +6,10 @@ import {
   Star,
   Wine,
   Palette,
-  Monitor,
+  Users,
   Moon,
   Sparkles,
+  LayoutGrid,
 } from 'lucide-react-native';
 import { BRAND } from '@/constants/brand';
 import {
@@ -48,13 +49,14 @@ export const EVENT_CATEGORY_META: EventCategoryMeta[] = [
     subCategories: getSubCategoriesForBento('arts'),
   },
   {
-    id: 'tech',
-    label: 'Tech',
-    icon: Monitor,
+    id: 'networking',
+    label: 'Networking',
+    icon: Users,
     color: '#0984E3',
-    subCategories: getSubCategoriesForBento('tech'),
+    subCategories: getSubCategoriesForBento('networking'),
   },
   { id: 'nightlife', label: 'Nightlife', icon: Moon, color: '#636E72' },
+  { id: 'other', label: 'Other', icon: LayoutGrid, color: '#8E99A4' },
 ];
 
 export { BENTO_CATEGORY_IDS, type BentoCategoryId };

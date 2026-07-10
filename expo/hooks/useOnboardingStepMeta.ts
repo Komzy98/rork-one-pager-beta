@@ -12,6 +12,7 @@ import {
  * - Football → football-favorites → feed-tuning (right after sports picks)
  * - NBA only → nba-teams
  * - Movies → streaming
+ * - Events → event-categories (music, comedy, tech, etc.)
  * - Fitness/productivity/etc. → chronotype → calendar (after sports tuning)
  * - UFC/F1-only → interests → complete (short path)
  */

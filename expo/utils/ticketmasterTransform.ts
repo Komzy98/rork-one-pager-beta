@@ -66,11 +66,11 @@ function mapCategory(classifications?: TmClassification[]): EventCategory | stri
         n.includes('meetup'),
     )
   ) {
-    return 'tech';
+    return 'networking';
   }
   if (names.some((n) => n.includes('art') || n.includes('museum'))) return 'arts';
   if (names.some((n) => n.includes('music'))) return 'music';
-  return 'music';
+  return 'other';
 }
 
 function formatPrice(ranges?: TmEvent['priceRanges']): string {
@@ -188,6 +188,7 @@ export const TICKETMASTER_CATEGORY_FILTER: Record<string, string | undefined> = 
   theatre: 'Arts & Theatre',
   arts: 'Arts & Theatre',
   food: 'Food & Drink',
-  tech: 'Miscellaneous',
+  networking: undefined,
   nightlife: 'Music',
+  other: 'Miscellaneous',
 };

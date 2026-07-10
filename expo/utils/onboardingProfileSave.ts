@@ -59,6 +59,21 @@ export function shouldApplyNationalities(params: {
   return true;
 }
 
+export function pickOnboardingEventCategories(params: {
+  dirty: boolean;
+  selected: readonly string[];
+  existing: readonly string[] | undefined;
+}): string[] | undefined {
+  const { dirty, selected, existing } = params;
+  if (dirty) return [...selected];
+  if (selected.length > 0) {
+    if (!existing || existing.length === 0) return [...selected];
+    return undefined;
+  }
+  if (existing && existing.length > 0) return undefined;
+  return undefined;
+}
+
 export function pickOnboardingNbaTeams<T extends { id: string }>(params: {
   dirty: boolean;
   selected: readonly T[];

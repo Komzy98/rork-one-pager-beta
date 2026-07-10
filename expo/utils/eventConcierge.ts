@@ -46,9 +46,9 @@ const INDOOR_CATEGORIES = new Set([
   'music',
   'arts',
   'food',
+  'networking',
   'tech',
   'nightlife',
-  'networking',
 ]);
 
 const OUTDOOR_CATEGORIES = new Set(['sports', 'fitness', 'family', 'arts']);

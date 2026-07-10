@@ -25,6 +25,7 @@ import {
   getLastGuestUserId,
 } from '@/utils/localToSupabaseMigration';
 import { resetYounifySession, setYounifyExternalUserId } from '@/services/younify';
+import { clearUserScopedQueries } from '@/utils/queryClientRef';
 import { likedContentService } from '@/utils/likedContentService';
 import { episodeNotificationService } from '@/utils/episodeNotificationService';
 import notificationService from '@/utils/notificationService';
@@ -264,6 +265,7 @@ export const [AuthProvider, useAuth] = createContextHook(() => {
 
   const applySupabaseSession = useCallback(async (sessionUser: any) => {
     if (!sessionUser) return;
+    clearUserScopedQueries();
     const meta = sessionUser.user_metadata || {};
     const firstName: string = meta.firstName || (meta.full_name ? String(meta.full_name).split(' ')[0] : '') || '';
     const lastName: string = meta.lastName || (meta.full_name ? String(meta.full_name).split(' ').slice(1).join(' ') : '') || '';
@@ -862,6 +864,7 @@ export const [AuthProvider, useAuth] = createContextHook(() => {
       setUser(null);
       setSupabaseUser(null);
       setIsGuest(false);
+      clearUserScopedQueries();
       console.log('✅ Logout successful');
     } catch (error) {
       console.error('💥 Logout error:', error);

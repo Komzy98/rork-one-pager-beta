@@ -450,6 +450,8 @@ export interface UserProfile {
   };
   favoriteBooks: Book[];
   interests: string[];
+  /** Bento event categories picked during onboarding (music, comedy, tech, etc.). */
+  favoriteEventCategories?: string[];
   chronotype?: Chronotype;
   nationalities?: UserNationality[]; // User's nationalities for national team matches (AFCON, World Cup, etc.)
   notificationSettings: {

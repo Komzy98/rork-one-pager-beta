@@ -4,6 +4,9 @@ import {
   rankEventsForYou,
   scoreEventForUser,
   buildEventPersonalizationContext,
+  buildHabitBasedEventRow,
+  buildEditorialEventRows,
+  buildHabitEventSignals,
   explainEventPersonalization,
   getPrimaryEventRecommendationReason,
   getPrimaryEventRecommendationReasonForCategory,
@@ -45,6 +48,19 @@ describe('eventPersonalization', () => {
     const sports = scoreEventForUser(baseEvent({ category: 'sports', title: 'Arsenal vs Chelsea' }), ctx);
     const comedy = scoreEventForUser(baseEvent({ category: 'comedy', title: 'Stand up' }), ctx);
     assert.ok(sports > comedy);
+  });
+
+  it('boosts onboarding event category picks', () => {
+    const profile = {
+      interests: ['events'],
+      favoriteEventCategories: ['networking', 'comedy'],
+      favoriteTeams: [],
+    } as unknown as UserProfile;
+    const ctx = buildEventPersonalizationContext(profile);
+    const networking = scoreEventForUser(baseEvent({ category: 'networking', title: 'Startup meetup' }), ctx);
+    const music = scoreEventForUser(baseEvent({ category: 'music', title: 'Rock gig' }), ctx);
+    assert.ok(networking > music);
+    assert.ok((ctx.categoryWeights.get('networking') ?? 0) > (ctx.categoryWeights.get('music') ?? 0));
   });
 
   it('ranks interest-aligned events first', () => {
@@ -173,6 +189,8 @@ describe('eventPersonalization', () => {
     const input = {
       profile,
       habitKeywords: ['yoga'],
+      habitCategoryWeights: { sports: 3 },
+      habitLabels: ['Morning yoga'],
     };
     const ranked = rankEventsForYou(
       [
@@ -182,6 +200,102 @@ describe('eventPersonalization', () => {
       input,
     );
     assert.equal(ranked[0]?.id, 'b');
+  });
+
+  it('builds a habit-based editorial row from tracked habits', () => {
+    const profile = { interests: [], favoriteTeams: [] } as unknown as UserProfile;
+    const input = {
+      profile,
+      habitKeywords: ['yoga', 'wellness'],
+      habitCategoryWeights: { sports: 5 },
+      habitLabels: ['Morning yoga'],
+    };
+    const row = buildHabitBasedEventRow(
+      [
+        baseEvent({ id: 'a', category: 'music', title: 'Rock gig' }),
+        baseEvent({ id: 'b', category: 'sports', title: 'Sunrise yoga in the park' }),
+      ],
+      input,
+    );
+    assert.ok(row);
+    assert.match(row!.title, /Morning yoga|Based on your habits/);
+    assert.equal(row!.events[0]?.id, 'b');
+  });
+
+  it('routes profile-interest sports to editorial row, not habit row', () => {
+    const profile = {
+      interests: ['nba'],
+      favoriteNBATeams: [{ id: 'gsw', name: 'Golden State Warriors', abbreviation: 'GSW', conference: 'Western' }],
+      favoriteTeams: [],
+    } as unknown as UserProfile;
+    const input = {
+      profile,
+      habitKeywords: ['gym', 'workout'],
+      habitCategoryWeights: { sports: 5 },
+      habitLabels: ['Gym session'],
+    };
+    const events = [
+      baseEvent({ id: 'wnba', category: 'sports', title: 'Golden State Valkyries vs Washington Mystics', venue: 'Chase Center' }),
+      baseEvent({ id: 'yoga', category: 'sports', title: 'Sunrise yoga in the park' }),
+    ];
+
+    const habitRow = buildHabitBasedEventRow(events, input);
+    if (habitRow) {
+      assert.equal(habitRow.events.some((event) => event.id === 'wnba'), false);
+    }
+
+    const editorialRows = buildEditorialEventRows(events, input, 2);
+    const sportsRow = editorialRows.find((row) => row.categoryId === 'sports');
+    assert.ok(sportsRow);
+    assert.equal(sportsRow!.events[0]?.id, 'wnba');
+  });
+
+  it('dedupes editorial rows against habit rail events', () => {
+    const profile = { interests: [], favoriteTeams: [] } as unknown as UserProfile;
+    const input = {
+      profile,
+      habitKeywords: ['yoga'],
+      habitCategoryWeights: { sports: 5 },
+      habitLabels: ['Morning yoga'],
+    };
+    const events = [
+      baseEvent({ id: 'shared', category: 'sports', title: 'Sunrise yoga in the park' }),
+      baseEvent({ id: 'other', category: 'sports', title: 'Local run club 5k' }),
+    ];
+    const habitRow = buildHabitBasedEventRow(events, input);
+    assert.ok(habitRow);
+    const exclude = new Set(habitRow!.events.map((event) => event.id));
+    const editorialRows = buildEditorialEventRows(events, input, 2, exclude);
+    const sportsRow = editorialRows.find((row) => row.categoryId === 'sports');
+    if (sportsRow) {
+      assert.equal(sportsRow.events.some((event) => event.id === 'shared'), false);
+    }
+  });
+
+  it('infers habit signals from task habits', () => {
+    const signals = buildHabitEventSignals([
+      {
+        id: 'h1',
+        title: 'Morning yoga',
+        description: 'Stretch and breathe',
+        isHabit: true,
+        category: 'health',
+        tags: ['wellness'],
+        priority: 'medium',
+        status: 'todo',
+        subTasks: [],
+        reminders: [],
+        attachments: [],
+        createdAt: '',
+        updatedAt: '',
+        completionLogs: [],
+        progress: 0,
+        isRecurring: true,
+      },
+    ]);
+    assert.ok(signals.keywords.includes('yoga'));
+    assert.ok((signals.categoryWeights.sports ?? 0) > 0);
+    assert.equal(signals.habitLabels[0], 'Morning yoga');
   });
 
   it('prefers gentle events during recovery mode', () => {

@@ -221,6 +221,10 @@ export const [UserProfileProvider, useUserProfile] = createContextHook(() => {
     });
     
     if (isAuthenticated && user) {
+      if (loadedUserIdRef.current !== user.id) {
+        setProfile(null);
+        setIsLoading(true);
+      }
       console.log('✅ Loading profile for authenticated user:', user.email, 'on', Platform.OS);
       loadProfile(user.id, user.email, user.name);
     } else {

@@ -44,7 +44,7 @@ export interface OnePagerEvent {
   rating?: number;
   attendees?: number;
   /** Merged sub-tag when category is rolled into a bento parent (fitness → sports, etc.). */
-  subCategory?: 'fitness' | 'networking' | 'family';
+  subCategory?: 'fitness' | 'tech' | 'family';
 }
 
 /** Persisted snapshot when user adds an event to their One Pager. */
@@ -74,7 +74,7 @@ export interface SavedEventSnapshot {
   feedbackRating?: number;
   /** ISO timestamp when the user skipped the feedback prompt. */
   feedbackDismissedAt?: string;
-  subCategory?: 'fitness' | 'networking' | 'family';
+  subCategory?: 'fitness' | 'tech' | 'family';
 }
 
 /** @deprecated Use OnePagerEvent — kept for backward compatibility in hooks. */
@@ -102,7 +102,7 @@ export interface LocalEvent {
   ticketUrl?: string;
   distanceKm?: number;
   /** Merged sub-tag when category is rolled into a bento parent (fitness → sports, etc.). */
-  subCategory?: 'fitness' | 'networking' | 'family';
+  subCategory?: 'fitness' | 'tech' | 'family';
 }
 
 export type NearbyEventsSource = 'ticketmaster' | 'skiddle' | 'mixed' | 'fallback' | 'none';

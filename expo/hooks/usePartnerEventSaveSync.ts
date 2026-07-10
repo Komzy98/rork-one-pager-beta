@@ -24,11 +24,13 @@ export function usePartnerEventSaveSync(): void {
   useEffect(() => {
     const userId = supabaseUser?.id;
     if (isLoading || isGuest || !userId || friendsAvailable !== true) return;
+    // Never publish saves while the previous account's profile is still in memory.
+    if (!profile || profile.id !== userId) return;
 
     const visibility = myProfile?.activityVisibility ?? 'friends';
     if (visibility === 'private') return;
 
-    const snapshots = profile?.savedEvents ?? [];
+    const snapshots = profile.savedEvents ?? [];
     if (snapshots.length === 0) return;
 
     let cancelled = false;
@@ -62,6 +64,7 @@ export function usePartnerEventSaveSync(): void {
     supabaseUser?.id,
     friendsAvailable,
     myProfile?.activityVisibility,
+    profile?.id,
     profile?.savedEvents,
   ]);
 }

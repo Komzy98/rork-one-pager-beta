@@ -8,6 +8,8 @@ import type { BottomTabBarProps, BottomTabNavigationOptions } from "@react-navig
 import * as Haptics from 'expo-haptics';
 
 import { useUserProfile } from "@/hooks/useUserProfile";
+import { useFriends } from "@/hooks/useFriends";
+import { resolveDisplayAvatarUrl } from "@/utils/avatarUtils";
 import { useTheme } from "@/hooks/useTheme";
 import type { ThemeColors } from "@/types/theme";
 import { FootballBundleProvider } from "@/contexts/FootballBundleContext";
@@ -192,8 +194,14 @@ AnimatedTabItem.displayName = 'AnimatedTabItem';
 
 function CustomTabBar({ state, descriptors, navigation }: BottomTabBarProps) {
   const { getPersonalizedTabs, profile, recordTabVisit } = useUserProfile();
+  const { myProfile } = useFriends();
   const { colors, isDark } = useTheme();
   const { user } = useAuth();
+  const tabAvatarUrl = resolveDisplayAvatarUrl({
+    profileAvatar: profile?.avatar,
+    authAvatar: user?.avatar,
+    socialAvatar: myProfile?.avatarUrl,
+  });
   const personalizedTabs = getPersonalizedTabs();
   const containerOpacity = useRef(new Animated.Value(0)).current;
   const middleScrollRef = useRef<ScrollView>(null);
@@ -277,7 +285,7 @@ function CustomTabBar({ state, descriptors, navigation }: BottomTabBarProps) {
         options={options}
         colors={colors}
         isShowsTabActive={isShowsTabActive}
-        avatarUrl={profile?.avatar || user?.avatar}
+        avatarUrl={tabAvatarUrl ?? undefined}
         variant={variant}
         onLayout={
           variant === 'scroll'

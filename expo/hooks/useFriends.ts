@@ -7,6 +7,8 @@ import { useAuth } from './useAuth';
 import { useGamification } from './useHabitsEnhancement';
 import { useUserProfile } from './useUserProfile';
 import { supabaseConfigured } from '@/utils/supabaseClient';
+import { isLocalAvatarUri, resolveDisplayAvatarUrl } from '@/utils/avatarUtils';
+import { uploadProfileAvatar } from '@/utils/avatarService';
 import {
   acceptFriendRequest,
   cancelFriendRequest,
@@ -24,6 +26,7 @@ import {
   sendFriendRequest,
   sendNudge,
   subscribeToSocialChanges,
+  updateProfileAvatar,
   type SendRequestResult,
   type SocialProfile,
 } from '@/utils/friendsService';
@@ -48,7 +51,7 @@ async function notifyLocal(title: string, body: string) {
 export const [FriendsProvider, useFriends] = createContextHook(() => {
   const { supabaseUser, user, isGuest } = useAuth();
   const { stats } = useGamification();
-  const { profile } = useUserProfile();
+  const { profile, updateProfile } = useUserProfile();
   const queryClient = useQueryClient();
 
   const myUserId: string | undefined = supabaseUser?.id;
@@ -56,6 +59,12 @@ export const [FriendsProvider, useFriends] = createContextHook(() => {
   const socialNotifsEnabled = profile?.notificationSettings?.socialNotifications !== false;
   const socialNotifsRef = useRef(socialNotifsEnabled);
   socialNotifsRef.current = socialNotifsEnabled;
+
+  const publishedAvatarUrl = resolveDisplayAvatarUrl({
+    profileAvatar: profile?.avatar,
+    authAvatar: user?.avatar,
+    socialAvatar: null,
+  });
 
   // null = unknown, true = tables present, false = not signed in OR migration not applied
   const [available, setAvailable] = useState<boolean | null>(enabled ? null : false);
@@ -78,7 +87,7 @@ export const [FriendsProvider, useFriends] = createContextHook(() => {
           userId: myUserId,
           displayName: user?.name ?? null,
           email: user?.email ?? null,
-          avatarUrl: user?.avatar ?? null,
+          avatarUrl: publishedAvatarUrl,
           currentStreak,
           totalCompletions,
           level,
@@ -97,7 +106,34 @@ export const [FriendsProvider, useFriends] = createContextHook(() => {
     return () => {
       cancelled = true;
     };
-  }, [enabled, myUserId, currentStreak, totalCompletions, level, user?.name, user?.avatar, user?.email]);
+  }, [enabled, myUserId, currentStreak, totalCompletions, level, user?.name, user?.email, publishedAvatarUrl]);
+
+  // Backfill local-only avatars to Supabase Storage so friends can see them.
+  useEffect(() => {
+    if (!enabled || !myUserId || !profile?.avatar || !isLocalAvatarUri(profile.avatar)) return;
+    let cancelled = false;
+
+    void (async () => {
+      try {
+        const remoteUrl = await uploadProfileAvatar(myUserId, profile.avatar!);
+        if (!remoteUrl || cancelled) return;
+        updateProfile({ avatar: remoteUrl });
+        const updated = await updateProfileAvatar(myUserId, remoteUrl);
+        if (!cancelled && updated) {
+          setMyProfile(updated);
+          queryClient.invalidateQueries({ queryKey: ['social', 'friends', myUserId] });
+        }
+      } catch (e) {
+        if (__DEV__) {
+          console.warn('useFriends: avatar upload backfill failed', e);
+        }
+      }
+    })();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [enabled, myUserId, profile?.avatar, queryClient, updateProfile]);
 
   const queriesEnabled = enabled && available === true;
 

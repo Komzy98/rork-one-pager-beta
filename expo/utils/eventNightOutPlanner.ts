@@ -132,6 +132,14 @@ const CATEGORY_PROFILES: Record<string, CategoryNightProfile> = {
     wrapTitle: 'Networking wraps',
     includeInterval: false,
   },
+  tech: {
+    defaultDurationMinutes: 120,
+    arriveEarlyMinutes: 10,
+    exitBufferMinutes: 10,
+    doorsTitle: 'Event starts',
+    wrapTitle: 'Session ends',
+    includeInterval: false,
+  },
   family: {
     defaultDurationMinutes: 120,
     arriveEarlyMinutes: 20,

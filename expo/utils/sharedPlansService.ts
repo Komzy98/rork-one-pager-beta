@@ -585,9 +585,12 @@ export async function getSavedEventsSocialSummaries(
     const guestGoing = guests.filter((guest) => guest.status === 'in');
     const guestMaybe = guests.filter((guest) => guest.status === 'maybe');
     const myStatus = rsvps.find((rsvp) => rsvp.userId === myUserId)?.status ?? null;
+    const friendIdSet = new Set(friendIds);
     const goingNames = [
-      ...goingRsvps.map((rsvp) => displayRsvpName(rsvp.profile)).filter(Boolean),
-      ...guestGoing.map((guest) => guest.displayName),
+      ...goingRsvps
+        .filter((rsvp) => friendIdSet.has(rsvp.userId))
+        .map((rsvp) => displayRsvpName(rsvp.profile))
+        .filter(Boolean),
     ].slice(0, 3) as string[];
 
     summaries[eventId] = {
