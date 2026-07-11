@@ -81,17 +81,19 @@ export const [ActivityProvider, useActivity] = createContextHook(() => {
     );
   }, [myProfile?.activityVisibility, myUserId]);
 
+  const friendIdsKey = useMemo(() => [...friendIds].sort().join(','), [friendIds]);
+
   const queriesEnabled = enabled && available === true;
 
   const feedQuery = useQuery({
-    queryKey: ['activity', 'feed', myUserId, friendIds.length],
+    queryKey: ['activity', 'feed', myUserId, friendIdsKey],
     queryFn: () => getFeed(myUserId as string, friendIds),
     enabled: queriesEnabled,
     staleTime: 30_000,
   });
 
   const activeTodayQuery = useQuery({
-    queryKey: ['activity', 'active-today', myUserId, friends.length],
+    queryKey: ['activity', 'active-today', myUserId, friendIdsKey],
     queryFn: () => getActiveTodayCount(friends),
     enabled: queriesEnabled && friends.length > 0,
     staleTime: 60_000,

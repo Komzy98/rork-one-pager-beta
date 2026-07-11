@@ -106,17 +106,10 @@ export function getCircleProgress(
 /** Partners with a streak who haven't been active today. */
 export function derivePartnersAtRisk(
   friends: SocialProfile[],
-  activeTodayCount: number,
-  feed: ActivityEvent[],
+  _activeTodayCount: number,
+  _feed: ActivityEvent[],
 ): PartnerAtRisk[] {
   if (friends.length === 0) return [];
-
-  const activeUserIds = new Set<string>();
-  for (const event of feed) {
-    if (event.type === 'workout' && isToday(event.createdAt)) {
-      activeUserIds.add(event.userId);
-    }
-  }
 
   const startOfDay = new Date();
   startOfDay.setHours(0, 0, 0, 0);
@@ -126,8 +119,8 @@ export function derivePartnersAtRisk(
     .filter((friend) => {
       if (!shouldIncludeInActiveToday(friend)) return false;
       if (friend.currentStreak < 2) return false;
-      if (activeUserIds.has(friend.id)) return false;
       const lastActive = new Date(friend.lastActiveAt).getTime();
+      if (!Number.isFinite(lastActive)) return true;
       return lastActive < startMs;
     })
     .slice(0, 3)

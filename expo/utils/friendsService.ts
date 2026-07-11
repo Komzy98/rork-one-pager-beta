@@ -508,11 +508,9 @@ export async function listFriends(myUserId: string): Promise<SocialProfile[]> {
 
   const { data: rpcRows, error: rpcError } = await supabase.rpc('list_my_friend_profiles');
   if (!rpcError) {
-    const rpcList = ((rpcRows as ProfileRow[] | null) ?? []).map(mapProfile);
-    if (rpcList.length > 0) return rpcList;
-  } else if (!isMissingRpcError(rpcError)) {
-    throw rpcError;
+    return ((rpcRows as ProfileRow[] | null) ?? []).map(mapProfile);
   }
+  if (!isMissingRpcError(rpcError)) throw rpcError;
 
   return listFriendsFromIds(myUserId);
 }
@@ -528,12 +526,11 @@ export async function listIncomingRequests(myUserId: string): Promise<IncomingRe
   if (error) throw error;
   const rows = data as { id: string; from_user: string; created_at: string }[];
   const profiles = await fetchProfilesByIds(rows.map((r) => r.from_user));
-  return rows
-    .map((r) => {
-      const from = profiles.get(r.from_user);
-      return from ? { id: r.id, createdAt: r.created_at, from } : null;
-    })
-    .filter((r): r is IncomingRequest => !!r);
+  return rows.map((r) => ({
+    id: r.id,
+    createdAt: r.created_at,
+    from: profiles.get(r.from_user) ?? stubPartnerProfile(r.from_user),
+  }));
 }
 
 export async function listOutgoingRequests(myUserId: string): Promise<OutgoingRequest[]> {
@@ -551,7 +548,7 @@ export async function listOutgoingRequests(myUserId: string): Promise<OutgoingRe
     id: r.id,
     createdAt: r.created_at,
     toUserId: r.to_user,
-    to: profiles.get(r.to_user) ?? null,
+    to: profiles.get(r.to_user) ?? stubPartnerProfile(r.to_user),
   }));
 }
 

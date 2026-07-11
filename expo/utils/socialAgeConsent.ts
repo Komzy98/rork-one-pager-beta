@@ -12,7 +12,7 @@ export function ageFromBirthYear(birthYear: number, now = new Date()): number {
 
 export function canUseSocialFeatures(profile?: UserProfile | null): boolean {
   const birthYear = profile?.birthYear;
-  if (!birthYear || birthYear < 1900) return true;
+  if (!birthYear || birthYear < 1900) return false;
 
   const age = ageFromBirthYear(birthYear);
   if (age < APP_MIN_AGE) return false;

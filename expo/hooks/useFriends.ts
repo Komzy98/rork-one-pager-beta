@@ -21,7 +21,6 @@ import {
   listOutgoingRequests,
   markNudgesRead,
   countFriendships,
-  repairFriendshipLinks,
   rejectFriendRequest,
   removeFriend as removeFriendSvc,
   searchProfiles,
@@ -75,24 +74,22 @@ export const [FriendsProvider, useFriends] = createContextHook(() => {
     socialAvatar: null,
   });
 
-  // null = unknown, true = tables present, false = not signed in OR migration not applied
-  const [available, setAvailable] = useState<boolean | null>(enabled ? null : false);
+  // null = initializing, true = social tables ready, false = migrations missing
+  const [backendReady, setBackendReady] = useState<boolean | null>(enabled ? null : false);
   const [myProfile, setMyProfile] = useState<SocialProfile | null>(null);
+  const [initAttempt, setInitAttempt] = useState(0);
 
   const currentStreak = stats?.currentStreak ?? 0;
   const totalCompletions = stats?.totalCompletions ?? 0;
   const level = stats?.level ?? 1;
 
-  useEffect(() => {
-    if (enabled && !socialAllowed) {
-      setAvailable(false);
-    }
-  }, [enabled, socialAllowed]);
+  const available = backendReady === true && socialAllowed;
+  const isInitializing = enabled && backendReady === null;
 
   // Ensure my published profile row exists + keep streak fresh.
   useEffect(() => {
-    if (!enabled || !socialAllowed || !myUserId) {
-      if (!enabled) setAvailable(false);
+    if (!enabled || !myUserId) {
+      if (!enabled) setBackendReady(false);
       return;
     }
     let cancelled = false;
@@ -120,10 +117,10 @@ export const [FriendsProvider, useFriends] = createContextHook(() => {
               prof.activityVisibility,
             ),
           });
-          setAvailable(true);
+          setBackendReady(true);
         }
       } catch (e) {
-        if (!cancelled) setAvailable(isSocialUnavailableError(e) ? false : true);
+        if (!cancelled) setBackendReady(false);
         if (!isSocialUnavailableError(e) && __DEV__) {
           console.warn('useFriends: ensureMyProfile failed', e);
         }
@@ -134,6 +131,7 @@ export const [FriendsProvider, useFriends] = createContextHook(() => {
     };
   }, [
     enabled,
+    socialAllowed,
     myUserId,
     currentStreak,
     totalCompletions,
@@ -145,6 +143,7 @@ export const [FriendsProvider, useFriends] = createContextHook(() => {
     profile?.birthYear,
     profile?.parentalSocialConsent,
     publishedAvatarUrl,
+    initAttempt,
   ]);
 
   const myProfileForUi = useMemo(
@@ -190,13 +189,14 @@ export const [FriendsProvider, useFriends] = createContextHook(() => {
     setMyProfile((prev) => (prev ? { ...prev, ...patch } : prev));
   }, []);
 
-  const queriesEnabled = enabled && available === true && socialAllowed;
+  const queriesEnabled = enabled && backendReady === true && socialAllowed;
 
   const friendsQuery = useQuery({
     queryKey: ['social', 'friends', myUserId],
     queryFn: () => listFriends(myUserId as string),
     enabled: queriesEnabled,
     staleTime: 30_000,
+    retry: 2,
   });
 
   const friendshipCountQuery = useQuery({
@@ -227,9 +227,13 @@ export const [FriendsProvider, useFriends] = createContextHook(() => {
     staleTime: 15_000,
   });
 
+  const retryInit = useCallback(() => {
+    setBackendReady(null);
+    setInitAttempt((n) => n + 1);
+  }, []);
+
   const invalidateAll = useCallback(() => {
     if (!myUserId) return;
-    void repairFriendshipLinks();
     queryClient.invalidateQueries({ queryKey: ['social', 'friends', myUserId] });
     queryClient.invalidateQueries({ queryKey: ['social', 'friendship-count', myUserId] });
     queryClient.invalidateQueries({ queryKey: ['social', 'incoming', myUserId] });
@@ -397,7 +401,7 @@ export const [FriendsProvider, useFriends] = createContextHook(() => {
 
   // Live leaderboard built from real partners (+ me), ranked by current streak.
   const friendsLeaderboard = useMemo<Leaderboard | null>(() => {
-    if (available !== true) return null;
+    if (backendReady !== true) return null;
     const friendsData = friendsQuery.data ?? [];
     const entries = friendsData.map((f) => ({
       rank: 0,
@@ -426,10 +430,15 @@ export const [FriendsProvider, useFriends] = createContextHook(() => {
       entries: entries.map((e, i) => ({ ...e, rank: i + 1 })),
       updatedAt: new Date().toISOString(),
     };
-  }, [available, friendsQuery.data, myUserId, myProfile, currentStreak]);
+  }, [backendReady, friendsQuery.data, myUserId, myProfile, currentStreak]);
+
+  const friendsError = friendsQuery.error as Error | null;
+  const hasFriendsError = friendsQuery.isError;
 
   return {
     available,
+    backendReady,
+    isInitializing,
     isSignedIn: enabled,
     myProfile: myProfileForUi,
     patchMyProfile,
@@ -441,6 +450,8 @@ export const [FriendsProvider, useFriends] = createContextHook(() => {
     unreadNudges,
     socialAlertCount,
     friendsLeaderboard,
+    friendsError,
+    hasFriendsError,
     isLoading:
       friendsQuery.isLoading ||
       friendshipCountQuery.isLoading ||
@@ -451,6 +462,7 @@ export const [FriendsProvider, useFriends] = createContextHook(() => {
       friendshipCountQuery.isFetching ||
       incomingQuery.isFetching,
     refresh: invalidateAll,
+    retryInit,
     search,
     requestByUserId,
     requestByUsername,

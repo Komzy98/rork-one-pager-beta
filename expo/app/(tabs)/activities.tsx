@@ -75,6 +75,7 @@ import { AccountabilityInboxCard } from '@/components/social/AccountabilityInbox
 import { AccountabilityCircleCard } from '@/components/social/AccountabilityCircleCard';
 import { PartnerInviteEmptyCard } from '@/components/social/PartnerInviteEmptyCard';
 import { PartnerListSyncCard } from '@/components/social/PartnerListSyncCard';
+import { confirmBeforeFirstPartner } from '@/utils/partnerPrivacy';
 import {
   derivePartnersAtRisk,
   getCircleProgress,
@@ -253,6 +254,7 @@ export default function ActivitiesScreen() {
     socialAlertCount,
     isLoading: friendsLoading,
     isRefreshing: friendsRefreshing,
+    hasFriendsError,
     refresh: refreshFriends,
     accept: acceptPartnerRequest,
     nudge: nudgePartner,
@@ -283,6 +285,21 @@ export default function ActivitiesScreen() {
       void partnerActions.runAction(event, kind);
     },
     [partnerActions],
+  );
+
+  const handleAcceptPartnerRequest = useCallback(
+    async (requestId: string) => {
+      if (myProfile?.id) {
+        const ok = await confirmBeforeFirstPartner(myProfile.id);
+        if (!ok) return;
+      }
+      try {
+        await acceptPartnerRequest(requestId);
+      } catch (e) {
+        Alert.alert('Could not accept', (e as Error)?.message || 'Please try again.');
+      }
+    },
+    [acceptPartnerRequest, myProfile?.id],
   );
   
   const calendarData = useCalendar();
@@ -2569,7 +2586,7 @@ export default function ActivitiesScreen() {
               ) : null}
             </View>
 
-            {friendsAvailable === true && !friendsLoading && partnerList.length === 0 && friendshipCount === 0 ? (
+            {friendsAvailable === true && !friendsLoading && !hasFriendsError && partnerList.length === 0 && friendshipCount === 0 ? (
               <PartnerInviteEmptyCard
                 username={myProfile?.username}
                 colors={{
@@ -2584,7 +2601,8 @@ export default function ActivitiesScreen() {
               />
             ) : null}
 
-            {friendsAvailable === true && !friendsLoading && partnerList.length === 0 && friendshipCount > 0 ? (
+            {(friendsAvailable === true && !friendsLoading && partnerList.length === 0 && friendshipCount > 0) ||
+            (friendsAvailable === true && hasFriendsError) ? (
               <PartnerListSyncCard
                 partnerCount={friendshipCount}
                 isRefreshing={friendsRefreshing}
@@ -2625,7 +2643,7 @@ export default function ActivitiesScreen() {
                 unreadNudges={unreadNudges}
                 unreadFeedCount={unreadActivityCount}
                 unreadCheerCount={unreadCheerCount}
-                onAccept={(id) => void acceptPartnerRequest(id)}
+                onAccept={(id) => void handleAcceptPartnerRequest(id)}
                 onNudgeBack={(userId) => void nudgePartner(userId, 'You got this — keep the streak alive! 💪')}
                 onCheerLatest={() => router.push('/friends' as any)}
                 colors={{

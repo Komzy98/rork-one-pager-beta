@@ -15,7 +15,7 @@ import {
 } from 'react-native';
 import { Image } from 'expo-image';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { router, useLocalSearchParams } from 'expo-router';
+import { router, useLocalSearchParams, useFocusEffect } from 'expo-router';
 import {
   X,
   UserPlus,
@@ -49,7 +49,6 @@ import {
   type SocialPrivacyPreferences,
 } from '@/utils/socialPrivacy';
 import {
-  canUseSocialFeatures,
   isValidBirthYear,
   MIN_SOCIAL_AGE,
   socialRestrictionMessage,
@@ -122,14 +121,20 @@ export default function FriendsScreen() {
 
   const {
     available,
+    backendReady,
+    isInitializing,
     isSignedIn,
     myProfile,
     friends: friendList,
     incomingRequests,
     outgoingRequests,
     nudges,
+    isLoading,
     isRefreshing,
+    hasFriendsError,
+    friendsError,
     refresh,
+    retryInit,
     search,
     requestByUserId,
     requestByUsername,
@@ -150,16 +155,19 @@ export default function FriendsScreen() {
   const privacyPrefs = mergeSocialPrivacy(profile?.socialPrivacy);
 
   const socialRestriction = socialRestrictionMessage(profile);
-  const partnersEnabled = socialAllowed && canUseSocialFeatures(profile);
+  const partnersEnabled = socialAllowed;
 
   const haptic = useCallback(() => {
     void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
   }, []);
 
-  // Mark nudges as read when the screen opens.
-  useEffect(() => {
-    if (available) void markAllNudgesRead();
-  }, [available, markAllNudgesRead]);
+  useFocusEffect(
+    useCallback(() => {
+      return () => {
+        if (backendReady === true) void markAllNudgesRead();
+      };
+    }, [backendReady, markAllNudgesRead]),
+  );
 
   // Debounced username search.
   useEffect(() => {
@@ -190,7 +198,7 @@ export default function FriendsScreen() {
   // Deep link: onepager://u/{username} → auto-send a friend request.
   useEffect(() => {
     const target = params.addUsername;
-    if (!target || autoAddHandled.current || available !== true) return;
+    if (!target || autoAddHandled.current || backendReady !== true) return;
     autoAddHandled.current = true;
     void (async () => {
       try {
@@ -213,7 +221,7 @@ export default function FriendsScreen() {
         Alert.alert('Could not add', 'Please try again in a moment.');
       }
     })();
-  }, [params.addUsername, available, requestByUsername, refresh, myProfile?.id]);
+  }, [params.addUsername, backendReady, requestByUsername, refresh, myProfile?.id]);
 
   const handleRefresh = useCallback(() => {
     refresh();
@@ -305,6 +313,8 @@ export default function FriendsScreen() {
       setBusyId(requestId);
       try {
         await accept(requestId);
+      } catch (e) {
+        Alert.alert('Could not accept', (e as Error)?.message || 'Please try again.');
       } finally {
         setBusyId(null);
       }
@@ -507,13 +517,41 @@ export default function FriendsScreen() {
             <Text style={[styles.primaryBtnText, { color: colors.textInverse }]}>Sign in</Text>
           </TouchableOpacity>
         </View>
-      ) : available === false ? (
+      ) : isInitializing || isLoading ? (
+        <View style={styles.center}>
+          <ActivityIndicator size="large" color={colors.primary} />
+          <Text style={[styles.emptyBody, { color: colors.textTertiary, marginTop: 12 }]}>
+            Loading your partners…
+          </Text>
+        </View>
+      ) : !socialAllowed && socialRestriction ? (
+        <View style={styles.center}>
+          <Lock size={40} color={colors.textTertiary} />
+          <Text style={[styles.emptyTitle, { color: colors.text }]}>Partners not available</Text>
+          <Text style={[styles.emptyBody, { color: colors.textTertiary }]}>{socialRestriction}</Text>
+          <TouchableOpacity
+            style={[styles.primaryBtn, { backgroundColor: colors.primary }]}
+            onPress={() => router.push('/(tabs)/profile' as any)}
+          >
+            <Text style={[styles.primaryBtnText, { color: colors.textInverse }]}>Go to Profile</Text>
+          </TouchableOpacity>
+        </View>
+      ) : backendReady === false ? (
         <View style={styles.center}>
           <Clock size={40} color={colors.textTertiary} />
-          <Text style={[styles.emptyTitle, { color: colors.text }]}>Almost there</Text>
+          <Text style={[styles.emptyTitle, { color: colors.text }]}>Backend setup needed</Text>
           <Text style={[styles.emptyBody, { color: colors.textTertiary }]}>
-            The friends backend isn't set up on this project yet. Apply the {`002_social.sql`} migration in Supabase, then reopen this screen.
+            Apply Supabase migrations 002_social, 010_technical_enforcement, 011_compliance, and 013_friend_profiles_rpc, then reopen this screen.
           </Text>
+          <TouchableOpacity
+            style={[styles.primaryBtn, { backgroundColor: colors.primary }]}
+            onPress={() => {
+              retryInit();
+              refresh();
+            }}
+          >
+            <Text style={[styles.primaryBtnText, { color: colors.textInverse }]}>Retry</Text>
+          </TouchableOpacity>
         </View>
       ) : (
         <ScrollView
@@ -877,11 +915,21 @@ export default function FriendsScreen() {
           <Text style={[styles.sectionLabel, { color: colors.textTertiary }]}>
             PARTNERS ({friendList.length})
           </Text>
-          {friendList.length === 0 ? (
+          {hasFriendsError ? (
+            <View style={[styles.privateActiveBanner, { backgroundColor: '#FF3B3012', borderColor: '#FF3B3033', marginBottom: 8 }]}>
+              <Text style={[styles.privateActiveText, { color: colors.textSecondary }]}>
+                Could not load partners: {friendsError?.message || 'Check your connection and try again.'}
+              </Text>
+              <TouchableOpacity onPress={() => refresh()} style={{ marginTop: 8 }}>
+                <Text style={{ color: colors.primary, fontWeight: '700' }}>Retry</Text>
+              </TouchableOpacity>
+            </View>
+          ) : null}
+          {!hasFriendsError && friendList.length === 0 && !isLoading ? (
             <Text style={[styles.hint, { color: colors.textTertiary }]}>
               No partners yet. Share your invite link or add someone by username. Partners see your streak and activity summaries — switch to Private anytime.
             </Text>
-          ) : (
+          ) : !hasFriendsError ? (
             friendList.map((f) => {
               const p = partnerPresenceLabel(f) ?? { label: 'Offline', color: '#8E8E93' };
               const showPresenceDot = !f.hideLastActive;
@@ -934,7 +982,7 @@ export default function FriendsScreen() {
                 </TouchableOpacity>
               );
             })
-          )}
+          ) : null}
         </ScrollView>
       )}
     </View>
