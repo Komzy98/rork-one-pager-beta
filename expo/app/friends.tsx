@@ -276,7 +276,11 @@ export default function FriendsScreen() {
         if (res.ok) {
           setRequestedIds((prev) => new Set(prev).add(profile.id));
         } else if (res.reason === 'already_friends') {
-          Alert.alert("Already partners", `You and @${profile.username} are already connected.`);
+          refresh();
+          Alert.alert(
+            'Already partners',
+            `You and @${profile.username} are already connected. Your partner list has been refreshed.`,
+          );
         } else if (res.reason === 'already_requested') {
           setRequestedIds((prev) => new Set(prev).add(profile.id));
         } else if (res.reason !== 'self') {
@@ -286,7 +290,7 @@ export default function FriendsScreen() {
         setBusyId(null);
       }
     },
-    [requestByUserId, haptic, confirmIfFirstPartner, partnersEnabled, socialRestriction],
+    [requestByUserId, haptic, confirmIfFirstPartner, partnersEnabled, socialRestriction, refresh],
   );
 
   const handleAcceptRequest = useCallback(

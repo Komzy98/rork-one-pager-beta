@@ -34,6 +34,7 @@ import {
 } from '@/utils/friendsService';
 import { blockPartner, reportPartner, type PartnerReportReason } from '@/utils/socialCompliance';
 import { mergeSocialPrivacy } from '@/utils/socialPrivacy';
+import { preferLocalActivityVisibility } from '@/utils/visibilityWriteGuard';
 import { canUseSocialFeatures } from '@/utils/socialAgeConsent';
 import type { Leaderboard } from '@/types/gamification';
 import {
@@ -110,7 +111,13 @@ export const [FriendsProvider, useFriends] = createContextHook(() => {
           blockNudges: privacy.blockNudges,
         });
         if (!cancelled) {
-          setMyProfile(prof);
+          setMyProfile({
+            ...prof,
+            activityVisibility: preferLocalActivityVisibility(
+              myUserId,
+              prof.activityVisibility,
+            ),
+          });
           setAvailable(true);
         }
       } catch (e) {

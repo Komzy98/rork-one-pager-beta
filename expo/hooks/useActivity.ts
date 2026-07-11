@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { Alert } from 'react-native';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import createContextHook from '@nkzw/create-context-hook';
 import { useAuth } from './useAuth';
@@ -17,6 +18,11 @@ import {
   updateActivityVisibility,
   type ActivityVisibility,
 } from '@/utils/friendsService';
+import {
+  clearVisibilityWrite,
+  hasPendingVisibilityWrite,
+  markVisibilityWrite,
+} from '@/utils/visibilityWriteGuard';
 import {
   checkActivityAvailable,
   getActiveTodayCount,
@@ -66,15 +72,13 @@ export const [ActivityProvider, useActivity] = createContextHook(() => {
   }, [enabled]);
 
   useEffect(() => {
-    if (myProfile?.activityVisibility) {
-      setVisibilityState(myProfile.activityVisibility);
-      if (myUserId) {
-        void unifiedStorage.setItem(
-          activityVisibilityStorageKey(myUserId),
-          myProfile.activityVisibility,
-        );
-      }
-    }
+    if (!myProfile?.activityVisibility || !myUserId) return;
+    if (hasPendingVisibilityWrite(myUserId)) return;
+    setVisibilityState(myProfile.activityVisibility);
+    void unifiedStorage.setItem(
+      activityVisibilityStorageKey(myUserId),
+      myProfile.activityVisibility,
+    );
   }, [myProfile?.activityVisibility, myUserId]);
 
   const queriesEnabled = enabled && available === true;
@@ -201,13 +205,22 @@ export const [ActivityProvider, useActivity] = createContextHook(() => {
     async (v: ActivityVisibility) => {
       if (!myUserId) return;
       const previous = visibility;
+      markVisibilityWrite(myUserId, v);
       setVisibilityState(v);
+      patchMyProfile({ activityVisibility: v });
       try {
-        await updateActivityVisibility(myUserId, v);
         await unifiedStorage.setItem(activityVisibilityStorageKey(myUserId), v);
-        patchMyProfile({ activityVisibility: v });
+        await updateActivityVisibility(myUserId, v);
+        clearVisibilityWrite();
       } catch {
+        clearVisibilityWrite();
         setVisibilityState(previous);
+        patchMyProfile({ activityVisibility: previous });
+        void unifiedStorage.setItem(activityVisibilityStorageKey(myUserId), previous);
+        Alert.alert(
+          'Could not save visibility',
+          'Your privacy setting did not sync. Check your connection and try again.',
+        );
       }
     },
     [myUserId, visibility, patchMyProfile],

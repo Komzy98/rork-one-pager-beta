@@ -119,7 +119,25 @@ export async function syncAgeConsentToProfile(
   parentalSocialConsent?: boolean,
 ): Promise<void> {
   if (!supabaseConfigured || !userId) return;
-  const patch: Record<string, number | boolean | string> = {
+
+  const rpcArgs: { p_birth_year?: number | null; p_parental_social_consent?: boolean | null } = {};
+  if (birthYear !== undefined) rpcArgs.p_birth_year = birthYear;
+  if (parentalSocialConsent !== undefined) {
+    rpcArgs.p_parental_social_consent = parentalSocialConsent;
+  }
+
+  const { error: rpcError } = await supabase.rpc('sync_age_consent', rpcArgs);
+  if (!rpcError) return;
+
+  const rpcMsg = (rpcError as { message?: string }).message?.toLowerCase() ?? '';
+  const rpcMissing =
+    (rpcError as { code?: string }).code === '42883' ||
+    (rpcError as { code?: string }).code === 'PGRST202' ||
+    rpcMsg.includes('could not find the function');
+
+  if (!rpcMissing) throw rpcError;
+
+  const patch: Record<string, number | boolean | string | null> = {
     updated_at: new Date().toISOString(),
   };
   if (birthYear !== undefined) patch.birth_year = birthYear ?? null;

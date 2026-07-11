@@ -779,8 +779,14 @@ export default function ProfileScreen() {
     if (supabaseUser?.id) {
       try {
         await syncAgeConsentToProfile(supabaseUser.id, year, profile?.parentalSocialConsent);
-      } catch {
-        Alert.alert('Could not sync', 'Birth year saved locally. Run migration 011_compliance in Supabase to sync to server.');
+      } catch (e) {
+        const msg = (e as Error)?.message ?? '';
+        const hint = msg.toLowerCase().includes('profile not found')
+          ? 'Open Accountability Partners once, then try Save again.'
+          : msg.toLowerCase().includes('birth_year') || msg.toLowerCase().includes('schema cache')
+            ? 'Run migrations 011 and 014 in Supabase SQL Editor, then reload API schema (Settings → API).'
+            : 'Run migration 014_age_consent_rpc.sql in Supabase SQL Editor, then try again.';
+        Alert.alert('Could not sync', `Birth year saved on this device.\n\n${hint}`);
       }
     }
     void Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);

@@ -406,10 +406,34 @@ export async function getProfileByUsername(username: string): Promise<SocialProf
   return row ? mapSearchHit(row) : null;
 }
 
+function isMissingRpcError(error: unknown): boolean {
+  const e = error as { code?: string; message?: string } | null;
+  if (!e) return false;
+  const msg = (e.message || '').toLowerCase();
+  return (
+    e.code === '42883' ||
+    e.code === 'PGRST202' ||
+    msg.includes('could not find the function') ||
+    msg.includes('function public.list_my_friend_profiles') ||
+    msg.includes('function public.get_partner_profiles')
+  );
+}
+
 async function fetchProfilesByIds(ids: string[]): Promise<Map<string, SocialProfile>> {
   const map = new Map<string, SocialProfile>();
-  if (ids.length === 0) return map;
-  const { data, error } = await supabase.from('profiles').select('*').in('id', ids);
+  const uniqueIds = [...new Set(ids.filter(Boolean))];
+  if (uniqueIds.length === 0) return map;
+
+  const { data: rpcData, error: rpcError } = await supabase.rpc('get_partner_profiles', {
+    p_user_ids: uniqueIds,
+  });
+  if (!rpcError) {
+    for (const row of (rpcData as ProfileRow[] | null) ?? []) map.set(row.id, mapProfile(row));
+    return map;
+  }
+  if (!isMissingRpcError(rpcError)) throw rpcError;
+
+  const { data, error } = await supabase.from('profiles').select('*').in('id', uniqueIds);
   if (error) throw error;
   for (const row of data as ProfileRow[]) map.set(row.id, mapProfile(row));
   return map;
@@ -417,6 +441,13 @@ async function fetchProfilesByIds(ids: string[]): Promise<Map<string, SocialProf
 
 export async function listFriends(myUserId: string): Promise<SocialProfile[]> {
   ensureConfigured();
+
+  const { data: rpcRows, error: rpcError } = await supabase.rpc('list_my_friend_profiles');
+  if (!rpcError) {
+    return ((rpcRows as ProfileRow[] | null) ?? []).map(mapProfile);
+  }
+  if (!isMissingRpcError(rpcError)) throw rpcError;
+
   const { data, error } = await supabase
     .from('friendships')
     .select('friend_id')
@@ -424,7 +455,13 @@ export async function listFriends(myUserId: string): Promise<SocialProfile[]> {
   if (error) throw error;
   const ids = (data as { friend_id: string }[]).map((r) => r.friend_id);
   const profiles = await fetchProfilesByIds(ids);
-  return ids.map((id) => profiles.get(id)).filter((p): p is SocialProfile => !!p);
+  const listed = ids.map((id) => profiles.get(id)).filter((p): p is SocialProfile => !!p);
+  if (__DEV__ && ids.length > 0 && listed.length < ids.length) {
+    console.warn(
+      `listFriends: ${ids.length - listed.length} partner(s) hidden by profile RLS — apply migration 013_friend_profiles_rpc.sql`,
+    );
+  }
+  return listed;
 }
 
 export async function listIncomingRequests(myUserId: string): Promise<IncomingRequest[]> {
