@@ -153,15 +153,16 @@ function formatRelativeTime(iso: string): string {
 function formatMergeSummary(summary: CloudMergeStats | null): string | null {
   if (!summary) return null;
   const parts: string[] = [];
-  if (summary.habitsMerged) parts.push('habits');
-  if (summary.tasksMerged) parts.push('tasks');
-  if (summary.profileMerged) parts.push('profile');
-  if (summary.projectsMerged) parts.push('projects');
-  if (summary.activitiesMerged) parts.push('activities');
-  if (summary.showsMerged) parts.push('shows');
-  if (summary.sportsMerged) parts.push('sports');
-  if (parts.length === 0) return 'No changes from cloud';
-  return `Merged ${parts.join(', ')}`;
+  if (summary.habitsMerged) parts.push('Habits');
+  if (summary.tasksMerged) parts.push('Tasks');
+  if (summary.profileMerged) parts.push('Profile');
+  if (summary.projectsMerged) parts.push('Projects');
+  if (summary.activitiesMerged) parts.push('Activities');
+  if (summary.showsMerged) parts.push('Shows');
+  if (summary.sportsMerged) parts.push('Sports');
+  if (parts.length === 0) return 'No changes';
+  if (parts.length <= 3) return parts.join(' · ');
+  return `${parts.slice(0, 2).join(' · ')} +${parts.length - 2} more`;
 }
 
 const INTEREST_ICONS: Record<string, React.ComponentType<any>> = {
@@ -1943,45 +1944,50 @@ export default function ProfileScreen() {
               </View>
 
               <Text style={[styles.syncConflictNote, { color: colors.textTertiary }]}>
-                Conflict-safe merge: newer edits win per item; habit and task completion days from both devices are kept.
+                Newer edits win on conflict. Completion history from both devices is kept.
               </Text>
 
-              {lastPullTime && (
-                <View style={[styles.syncDetailRow, { borderTopColor: colors.border }]}>
-                  <Text style={[styles.syncDetailLabel, { color: colors.textTertiary }]}>Last pull</Text>
-                  <Text style={[styles.syncDetailValue, { color: colors.text }]}>
-                    {new Date(lastPullTime).toLocaleString([], { dateStyle: 'medium', timeStyle: 'short' })}
-                  </Text>
+              {(lastPullTime || lastSyncTime || lastMergeSummary || latestSnapshotTime) ? (
+                <View style={[styles.syncDetailsPanel, { backgroundColor: colors.surfaceSecondary, borderColor: colors.border }]}>
+                  {lastPullTime ? (
+                    <View style={styles.syncDetailItem}>
+                      <Text style={[styles.syncDetailLabel, { color: colors.textTertiary }]}>Last pull</Text>
+                      <Text style={[styles.syncDetailValue, { color: colors.text }]}>
+                        {new Date(lastPullTime).toLocaleString([], { dateStyle: 'medium', timeStyle: 'short' })}
+                      </Text>
+                    </View>
+                  ) : null}
+                  {lastSyncTime ? (
+                    <View style={styles.syncDetailItem}>
+                      <Text style={[styles.syncDetailLabel, { color: colors.textTertiary }]}>Last backup</Text>
+                      <Text style={[styles.syncDetailValue, { color: colors.text }]}>
+                        {new Date(lastSyncTime).toLocaleString([], { dateStyle: 'medium', timeStyle: 'short' })}
+                      </Text>
+                    </View>
+                  ) : null}
+                  {lastMergeSummary && formatMergeSummary(lastMergeSummary) ? (
+                    <View style={[styles.syncDetailItem, styles.syncDetailItemStacked]}>
+                      <Text style={[styles.syncDetailLabel, { color: colors.textTertiary }]}>Last merge</Text>
+                      <Text style={[styles.syncDetailValueStacked, { color: colors.text }]}>
+                        {formatMergeSummary(lastMergeSummary)}
+                      </Text>
+                    </View>
+                  ) : null}
+                  {latestSnapshotTime ? (
+                    <View style={styles.syncDetailItem}>
+                      <Text style={[styles.syncDetailLabel, { color: colors.textTertiary }]}>Recovery snapshot</Text>
+                      <Text style={[styles.syncDetailValue, { color: colors.text }]}>
+                        {new Date(latestSnapshotTime).toLocaleString([], { dateStyle: 'medium', timeStyle: 'short' })}
+                      </Text>
+                    </View>
+                  ) : null}
                 </View>
-              )}
-              {lastSyncTime && (
-                <View style={[styles.syncDetailRow, { borderTopColor: colors.border }]}>
-                  <Text style={[styles.syncDetailLabel, { color: colors.textTertiary }]}>Last backup</Text>
-                  <Text style={[styles.syncDetailValue, { color: colors.text }]}>
-                    {new Date(lastSyncTime).toLocaleString([], { dateStyle: 'medium', timeStyle: 'short' })}
-                  </Text>
-                </View>
-              )}
-              {lastMergeSummary && formatMergeSummary(lastMergeSummary) && (
-                <View style={[styles.syncDetailRow, { borderTopColor: colors.border }]}>
-                  <Text style={[styles.syncDetailLabel, { color: colors.textTertiary }]}>Last merge</Text>
-                  <Text style={[styles.syncDetailValue, { color: colors.text }]}>
-                    {formatMergeSummary(lastMergeSummary)}
-                  </Text>
-                </View>
-              )}
-              {latestSnapshotTime && (
-                <View style={[styles.syncDetailRow, { borderTopColor: colors.border }]}>
-                  <Text style={[styles.syncDetailLabel, { color: colors.textTertiary }]}>Recovery snapshot</Text>
-                  <Text style={[styles.syncDetailValue, { color: colors.text }]}>
-                    {new Date(latestSnapshotTime).toLocaleString([], { dateStyle: 'medium', timeStyle: 'short' })}
-                  </Text>
-                </View>
-              )}
+              ) : null}
 
+              <View style={styles.syncActions}>
               <TouchableOpacity
                 style={[
-                  styles.syncBackupBtn,
+                  styles.syncPrimaryBtn,
                   { backgroundColor: colors.primary },
                   (syncStatus === 'syncing') && { opacity: 0.5 },
                 ]}
@@ -2010,10 +2016,11 @@ export default function ProfileScreen() {
                 </Text>
               </TouchableOpacity>
 
+              <View style={styles.syncSecondaryRow}>
               <TouchableOpacity
                 style={[
-                  styles.syncBackupBtn,
-                  { backgroundColor: colors.surfaceSecondary, marginTop: 8 },
+                  styles.syncSecondaryBtn,
+                  { backgroundColor: colors.surfaceSecondary, borderColor: colors.border },
                   (syncStatus === 'syncing') && { opacity: 0.5 },
                 ]}
                 onPress={async () => {
@@ -2036,16 +2043,58 @@ export default function ProfileScreen() {
                 activeOpacity={0.8}
               >
                 <Cloud size={16} color={colors.text} />
-                <Text style={[styles.syncBackupBtnText, { color: colors.text }]}>
-                  {syncStatus === 'syncing' ? 'Backing up...' : 'Back Up Only'}
+                <Text style={[styles.syncSecondaryBtnText, { color: colors.text }]} numberOfLines={1}>
+                  {syncStatus === 'syncing' ? 'Backing up...' : 'Back Up'}
                 </Text>
               </TouchableOpacity>
+
+              {!isGuest && (
+                <TouchableOpacity
+                  style={[
+                    styles.syncSecondaryBtn,
+                    { backgroundColor: colors.surfaceSecondary, borderColor: colors.border },
+                  ]}
+                  onPress={async () => {
+                    void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+                    Alert.alert(
+                      'Restore latest backup snapshot?',
+                      'This will restore the latest local recovery snapshot for your account on this device. Restart the app afterward to fully reload all tabs.',
+                      [
+                        { text: 'Cancel', style: 'cancel' },
+                        {
+                          text: 'Restore',
+                          style: 'destructive',
+                          onPress: async () => {
+                            const result = await restoreLatestSnapshot();
+                            if (!result.success) {
+                              Alert.alert('Restore failed', result.error || 'No backup snapshot available yet.');
+                              return;
+                            }
+                            void Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+                            Alert.alert(
+                              'Snapshot restored',
+                              'Latest backup snapshot restored locally. Please restart the app to reload synced data everywhere.'
+                            );
+                          },
+                        },
+                      ]
+                    );
+                  }}
+                  activeOpacity={0.8}
+                >
+                  <Download size={16} color={colors.text} />
+                  <Text style={[styles.syncSecondaryBtnText, { color: colors.text }]} numberOfLines={1}>
+                    Restore
+                  </Text>
+                </TouchableOpacity>
+              )}
+              </View>
 
               {!isGuest && user?.email && (
                 <TouchableOpacity
                   style={[
-                    styles.syncBackupBtn,
-                    { backgroundColor: colors.surfaceSecondary, marginTop: 8 },
+                    styles.syncTertiaryBtn,
+                    { borderColor: colors.border },
                     isImportingLocal && { opacity: 0.5 },
                   ]}
                   onPress={async () => {
@@ -2090,52 +2139,12 @@ export default function ProfileScreen() {
                   ) : (
                     <Download size={16} color={colors.text} />
                   )}
-                  <Text style={[styles.syncBackupBtnText, { color: colors.text }]}>
-                    {isImportingLocal ? 'Importing...' : 'Import Old Local Data'}
+                  <Text style={[styles.syncTertiaryBtnText, { color: colors.textSecondary }]}>
+                    {isImportingLocal ? 'Importing...' : 'Import old local data'}
                   </Text>
                 </TouchableOpacity>
               )}
-
-              {!isGuest && (
-                <TouchableOpacity
-                  style={[
-                    styles.syncBackupBtn,
-                    { backgroundColor: colors.surfaceSecondary, marginTop: 8 },
-                  ]}
-                  onPress={async () => {
-                    void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-                    Alert.alert(
-                      'Restore latest backup snapshot?',
-                      'This will restore the latest local recovery snapshot for your account on this device. Restart the app afterward to fully reload all tabs.',
-                      [
-                        { text: 'Cancel', style: 'cancel' },
-                        {
-                          text: 'Restore',
-                          style: 'destructive',
-                          onPress: async () => {
-                            const result = await restoreLatestSnapshot();
-                            if (!result.success) {
-                              Alert.alert('Restore failed', result.error || 'No backup snapshot available yet.');
-                              return;
-                            }
-                            void Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
-                            Alert.alert(
-                              'Snapshot restored',
-                              'Latest backup snapshot restored locally. Please restart the app to reload synced data everywhere.'
-                            );
-                          },
-                        },
-                      ]
-                    );
-                  }}
-                  activeOpacity={0.8}
-                >
-                  <Download size={16} color={colors.text} />
-                  <Text style={[styles.syncBackupBtnText, { color: colors.text }]}>
-                    Restore Latest Snapshot
-                  </Text>
-                </TouchableOpacity>
-              )}
+              </View>
             </View>
           </View>
 
@@ -2893,22 +2902,87 @@ const styles = StyleSheet.create({
     fontSize: 12,
     lineHeight: 17,
     marginTop: 10,
-    marginBottom: 4,
+    marginBottom: 10,
   },
-  syncDetailRow: {
+  syncDetailsPanel: {
+    borderRadius: 12,
+    borderWidth: 1,
+    paddingHorizontal: 12,
+    paddingVertical: 4,
+    marginBottom: 4,
+    gap: 2,
+  },
+  syncDetailItem: {
     flexDirection: 'row',
+    alignItems: 'flex-start',
     justifyContent: 'space-between',
-    alignItems: 'center',
-    borderTopWidth: 1,
-    marginTop: 14,
-    paddingTop: 12,
+    gap: 12,
+    paddingVertical: 8,
+  },
+  syncDetailItemStacked: {
+    flexDirection: 'column',
+    gap: 4,
   },
   syncDetailLabel: {
-    fontSize: 13,
+    fontSize: 12,
+    flexShrink: 0,
+    minWidth: 108,
   },
   syncDetailValue: {
+    flex: 1,
     fontSize: 13,
     fontWeight: '600',
+    textAlign: 'right',
+  },
+  syncDetailValueStacked: {
+    fontSize: 13,
+    fontWeight: '600',
+    lineHeight: 18,
+  },
+  syncActions: {
+    marginTop: 12,
+    gap: 8,
+  },
+  syncPrimaryBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 8,
+    paddingVertical: 13,
+    borderRadius: 12,
+  },
+  syncSecondaryRow: {
+    flexDirection: 'row',
+    gap: 8,
+  },
+  syncSecondaryBtn: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 6,
+    paddingVertical: 11,
+    paddingHorizontal: 8,
+    borderRadius: 12,
+    borderWidth: 1,
+  },
+  syncSecondaryBtnText: {
+    fontSize: 13,
+    fontWeight: '600',
+  },
+  syncTertiaryBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 6,
+    paddingVertical: 10,
+    borderRadius: 10,
+    borderWidth: 1,
+    borderStyle: 'dashed',
+  },
+  syncTertiaryBtnText: {
+    fontSize: 13,
+    fontWeight: '500',
   },
   syncBackupBtn: {
     flexDirection: 'row',

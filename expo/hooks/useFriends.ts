@@ -20,6 +20,8 @@ import {
   listNudges,
   listOutgoingRequests,
   markNudgesRead,
+  countFriendships,
+  repairFriendshipLinks,
   rejectFriendRequest,
   removeFriend as removeFriendSvc,
   searchProfiles,
@@ -197,6 +199,13 @@ export const [FriendsProvider, useFriends] = createContextHook(() => {
     staleTime: 30_000,
   });
 
+  const friendshipCountQuery = useQuery({
+    queryKey: ['social', 'friendship-count', myUserId],
+    queryFn: () => countFriendships(myUserId as string),
+    enabled: queriesEnabled,
+    staleTime: 30_000,
+  });
+
   const incomingQuery = useQuery({
     queryKey: ['social', 'incoming', myUserId],
     queryFn: () => listIncomingRequests(myUserId as string),
@@ -220,7 +229,9 @@ export const [FriendsProvider, useFriends] = createContextHook(() => {
 
   const invalidateAll = useCallback(() => {
     if (!myUserId) return;
+    void repairFriendshipLinks();
     queryClient.invalidateQueries({ queryKey: ['social', 'friends', myUserId] });
+    queryClient.invalidateQueries({ queryKey: ['social', 'friendship-count', myUserId] });
     queryClient.invalidateQueries({ queryKey: ['social', 'incoming', myUserId] });
     queryClient.invalidateQueries({ queryKey: ['social', 'outgoing', myUserId] });
     queryClient.invalidateQueries({ queryKey: ['social', 'nudges', myUserId] });
@@ -423,6 +434,7 @@ export const [FriendsProvider, useFriends] = createContextHook(() => {
     myProfile: myProfileForUi,
     patchMyProfile,
     friends: friendsQuery.data ?? [],
+    friendshipCount: friendshipCountQuery.data ?? 0,
     incomingRequests: incomingQuery.data ?? [],
     outgoingRequests: outgoingQuery.data ?? [],
     nudges: nudgesQuery.data ?? [],
@@ -430,8 +442,14 @@ export const [FriendsProvider, useFriends] = createContextHook(() => {
     socialAlertCount,
     friendsLeaderboard,
     isLoading:
-      friendsQuery.isLoading || incomingQuery.isLoading || outgoingQuery.isLoading,
-    isRefreshing: friendsQuery.isFetching || incomingQuery.isFetching,
+      friendsQuery.isLoading ||
+      friendshipCountQuery.isLoading ||
+      incomingQuery.isLoading ||
+      outgoingQuery.isLoading,
+    isRefreshing:
+      friendsQuery.isFetching ||
+      friendshipCountQuery.isFetching ||
+      incomingQuery.isFetching,
     refresh: invalidateAll,
     search,
     requestByUserId,

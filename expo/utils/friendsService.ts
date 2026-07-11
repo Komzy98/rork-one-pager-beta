@@ -415,8 +415,71 @@ function isMissingRpcError(error: unknown): boolean {
     e.code === 'PGRST202' ||
     msg.includes('could not find the function') ||
     msg.includes('function public.list_my_friend_profiles') ||
-    msg.includes('function public.get_partner_profiles')
+    msg.includes('function public.get_partner_profiles') ||
+    msg.includes('function public.repair_friendship_links')
   );
+}
+
+function stubPartnerProfile(id: string): SocialProfile {
+  return {
+    id,
+    username: 'partner',
+    displayName: 'Partner',
+    avatarUrl: null,
+    currentStreak: 0,
+    totalCompletions: 0,
+    level: 1,
+    lastActiveAt: '',
+    activityVisibility: 'friends',
+    shareStreakOnly: false,
+    shareEventsOnly: false,
+    hideLastActive: false,
+    blockNudges: false,
+  };
+}
+
+export async function repairFriendshipLinks(): Promise<void> {
+  ensureConfigured();
+  const { error } = await supabase.rpc('repair_friendship_links');
+  if (error && !isMissingRpcError(error) && __DEV__) {
+    console.warn('repairFriendshipLinks failed', error);
+  }
+}
+
+export async function countFriendships(myUserId: string): Promise<number> {
+  ensureConfigured();
+  const { count, error } = await supabase
+    .from('friendships')
+    .select('*', { count: 'exact', head: true })
+    .eq('user_id', myUserId);
+  if (error) throw error;
+  return count ?? 0;
+}
+
+async function listFriendIds(myUserId: string): Promise<string[]> {
+  const { data, error } = await supabase
+    .from('friendships')
+    .select('friend_id')
+    .eq('user_id', myUserId);
+  if (error) throw error;
+  return (data as { friend_id: string }[]).map((r) => r.friend_id);
+}
+
+async function listFriendsFromIds(myUserId: string): Promise<SocialProfile[]> {
+  const ids = await listFriendIds(myUserId);
+  if (ids.length === 0) return [];
+  const profiles = await fetchProfilesByIds(ids);
+  const listed: SocialProfile[] = [];
+  for (const id of ids) {
+    const profile = profiles.get(id);
+    listed.push(profile ?? stubPartnerProfile(id));
+  }
+  if (__DEV__ && ids.length > 0 && profiles.size < ids.length) {
+    console.warn(
+      `listFriends: ${ids.length - profiles.size} partner profile(s) missing — showing placeholder until sync completes`,
+    );
+  }
+  return listed;
 }
 
 async function fetchProfilesByIds(ids: string[]): Promise<Map<string, SocialProfile>> {
@@ -441,27 +504,17 @@ async function fetchProfilesByIds(ids: string[]): Promise<Map<string, SocialProf
 
 export async function listFriends(myUserId: string): Promise<SocialProfile[]> {
   ensureConfigured();
+  await repairFriendshipLinks();
 
   const { data: rpcRows, error: rpcError } = await supabase.rpc('list_my_friend_profiles');
   if (!rpcError) {
-    return ((rpcRows as ProfileRow[] | null) ?? []).map(mapProfile);
+    const rpcList = ((rpcRows as ProfileRow[] | null) ?? []).map(mapProfile);
+    if (rpcList.length > 0) return rpcList;
+  } else if (!isMissingRpcError(rpcError)) {
+    throw rpcError;
   }
-  if (!isMissingRpcError(rpcError)) throw rpcError;
 
-  const { data, error } = await supabase
-    .from('friendships')
-    .select('friend_id')
-    .eq('user_id', myUserId);
-  if (error) throw error;
-  const ids = (data as { friend_id: string }[]).map((r) => r.friend_id);
-  const profiles = await fetchProfilesByIds(ids);
-  const listed = ids.map((id) => profiles.get(id)).filter((p): p is SocialProfile => !!p);
-  if (__DEV__ && ids.length > 0 && listed.length < ids.length) {
-    console.warn(
-      `listFriends: ${ids.length - listed.length} partner(s) hidden by profile RLS — apply migration 013_friend_profiles_rpc.sql`,
-    );
-  }
-  return listed;
+  return listFriendsFromIds(myUserId);
 }
 
 export async function listIncomingRequests(myUserId: string): Promise<IncomingRequest[]> {

@@ -74,6 +74,7 @@ import { PartnerActivityFeed } from '@/components/social/PartnerActivityFeed';
 import { AccountabilityInboxCard } from '@/components/social/AccountabilityInboxCard';
 import { AccountabilityCircleCard } from '@/components/social/AccountabilityCircleCard';
 import { PartnerInviteEmptyCard } from '@/components/social/PartnerInviteEmptyCard';
+import { PartnerListSyncCard } from '@/components/social/PartnerListSyncCard';
 import {
   derivePartnersAtRisk,
   getCircleProgress,
@@ -245,10 +246,13 @@ export default function ActivitiesScreen() {
   const {
     available: friendsAvailable,
     friends: partnerList,
+    friendshipCount,
     myProfile,
     incomingRequests,
     unreadNudges,
     socialAlertCount,
+    isLoading: friendsLoading,
+    isRefreshing: friendsRefreshing,
     refresh: refreshFriends,
     accept: acceptPartnerRequest,
     nudge: nudgePartner,
@@ -2565,7 +2569,7 @@ export default function ActivitiesScreen() {
               ) : null}
             </View>
 
-            {friendsAvailable === true && partnerList.length === 0 ? (
+            {friendsAvailable === true && !friendsLoading && partnerList.length === 0 && friendshipCount === 0 ? (
               <PartnerInviteEmptyCard
                 username={myProfile?.username}
                 colors={{
@@ -2577,6 +2581,22 @@ export default function ActivitiesScreen() {
                   primary: colors.primary,
                 }}
                 onAddPartner={() => router.push('/friends' as any)}
+              />
+            ) : null}
+
+            {friendsAvailable === true && !friendsLoading && partnerList.length === 0 && friendshipCount > 0 ? (
+              <PartnerListSyncCard
+                partnerCount={friendshipCount}
+                isRefreshing={friendsRefreshing}
+                colors={{
+                  text: colors.text,
+                  textSecondary: colors.textSecondary,
+                  card: colors.card,
+                  border: colors.border,
+                  primary: colors.primary,
+                }}
+                onRefresh={() => refreshFriends()}
+                onOpenPartners={() => router.push('/friends' as any)}
               />
             ) : null}
 
