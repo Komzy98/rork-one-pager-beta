@@ -23,6 +23,13 @@ describe('deepLinks', () => {
     );
   });
 
+  it('builds HTTPS share links with plan invite token', () => {
+    assert.equal(
+      buildEventWebLink('tm-abc', { from: 'komzy', planToken: 'abc123token' }),
+      `${WEB_INVITE_ORIGIN}/event/tm-abc?from=komzy&ptoken=abc123token`,
+    );
+  });
+
   it('builds custom-scheme app links', () => {
     assert.equal(buildEventAppLink('tm-G5vYZ_F6nZj_s'), 'onepager:///event/tm-G5vYZ_F6nZj_s');
   });

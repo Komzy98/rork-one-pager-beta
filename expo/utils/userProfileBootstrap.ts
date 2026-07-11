@@ -34,10 +34,18 @@ export function createDefaultUserProfile(userId: string, email: string, name: st
       showOnlyFavorites: false,
       timeFormat: '12h',
       theme: 'auto',
+      genericSocialActivity: true,
     },
     subscriptionTier: 'free',
     onboardingCompleted: false,
     savedEvents: [],
+    socialPrivacy: {
+      shareStreakOnly: false,
+      shareEventsOnly: false,
+      shareHabitsGeneric: true,
+      hideLastActive: false,
+      blockNudges: false,
+    },
     createdAt: now,
     lastLoginAt: now,
   };

@@ -12,13 +12,21 @@ export function useEventInviteFlow() {
   const { profile } = useUserProfile();
   const { friends, nudge: nudgeFriend, available: friendsAvailable } = useFriends();
   const [inviteEvent, setInviteEvent] = useState<LocalEvent | null>(null);
+  const [planInviteToken, setPlanInviteToken] = useState<string | null>(null);
 
   const openInvite = useCallback((event: LocalEvent) => {
     setInviteEvent(event);
-  }, []);
+    setPlanInviteToken(null);
+    if (supabaseUser?.id) {
+      void getOrCreateEventPlan(supabaseUser.id, event)
+        .then((plan) => setPlanInviteToken(plan?.inviteToken ?? null))
+        .catch(() => {});
+    }
+  }, [supabaseUser?.id]);
 
   const closeInvite = useCallback(() => {
     setInviteEvent(null);
+    setPlanInviteToken(null);
   }, []);
 
   const handleInviteFriend = useCallback(
@@ -50,6 +58,7 @@ export function useEventInviteFlow() {
     handleInviteFriend,
     friends,
     inviterUsername: profile?.username ?? null,
+    planInviteToken,
     canInvite,
   };
 }

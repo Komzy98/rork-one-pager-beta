@@ -28,6 +28,7 @@ interface EventInviteFriendsModalProps {
   venueName?: string | null;
   eventId: string;
   inviterUsername?: string | null;
+  planToken?: string | null;
   friends: SocialProfile[];
   onInviteFriend: (friend: SocialProfile, message: string) => Promise<void>;
 }
@@ -53,6 +54,7 @@ export function EventInviteFriendsModal({
   venueName,
   eventId,
   inviterUsername,
+  planToken,
   friends,
   onInviteFriend,
 }: EventInviteFriendsModalProps) {
@@ -72,7 +74,7 @@ export function EventInviteFriendsModal({
   }, [friends, query]);
 
   const buildMessage = useCallback(() => {
-    const link = buildEventLink(eventId, { from: inviterUsername });
+    const link = buildEventLink(eventId, { from: inviterUsername, planToken });
     return [
       `Join me for ${eventTitle}`,
       `${eventDateLabel ?? ''} ${eventTimeLabel ?? ''}`.trim(),
@@ -81,7 +83,7 @@ export function EventInviteFriendsModal({
     ]
       .filter(Boolean)
       .join('\n');
-  }, [eventDateLabel, eventId, eventTimeLabel, eventTitle, inviterUsername, venueName]);
+  }, [eventDateLabel, eventId, eventTimeLabel, eventTitle, inviterUsername, planToken, venueName]);
 
   const buildShareText = useCallback(() => {
     return [
@@ -110,14 +112,14 @@ export function EventInviteFriendsModal({
 
   const handleShareLink = useCallback(async () => {
     void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-    const link = buildEventLink(eventId, { from: inviterUsername });
+    const link = buildEventLink(eventId, { from: inviterUsername, planToken });
     const text = buildShareText();
     await Share.share(
       Platform.OS === 'ios'
         ? { message: text, url: link }
         : { message: `${text}\n${link}` },
     );
-  }, [buildShareText, eventId, inviterUsername]);
+  }, [buildShareText, eventId, inviterUsername, planToken]);
 
   const handleClose = useCallback(() => {
     setQuery('');

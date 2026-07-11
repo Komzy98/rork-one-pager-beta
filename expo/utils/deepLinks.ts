@@ -24,7 +24,7 @@ export function buildChallengeLink(challengeId: string): string {
 /** Primary share link — HTTPS so it works without the app installed. */
 export function buildEventLink(
   eventId: string,
-  options?: { from?: string | null },
+  options?: { from?: string | null; planToken?: string | null },
 ): string {
   return buildEventWebLink(eventId, options);
 }
@@ -32,11 +32,13 @@ export function buildEventLink(
 /** HTTPS link for sharing (works without the app installed). */
 export function buildEventWebLink(
   eventId: string,
-  options?: { from?: string | null },
+  options?: { from?: string | null; planToken?: string | null },
 ): string {
   const url = new URL(`/event/${encodeURIComponent(clean(eventId))}`, WEB_INVITE_ORIGIN);
   const from = options?.from?.trim().replace(/^@/, '');
   if (from) url.searchParams.set('from', from);
+  const planToken = options?.planToken?.trim();
+  if (planToken) url.searchParams.set('ptoken', planToken);
   return url.toString();
 }
 

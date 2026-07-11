@@ -27,9 +27,14 @@ import {
   sendNudge,
   subscribeToSocialChanges,
   updateProfileAvatar,
+  updateSocialPrivacy,
+  enrichSocialProfile,
   type SendRequestResult,
   type SocialProfile,
 } from '@/utils/friendsService';
+import { blockPartner, reportPartner, type PartnerReportReason } from '@/utils/socialCompliance';
+import { mergeSocialPrivacy } from '@/utils/socialPrivacy';
+import { canUseSocialFeatures } from '@/utils/socialAgeConsent';
 import type { Leaderboard } from '@/types/gamification';
 import {
   getInviteRsvpNotificationContent,
@@ -56,6 +61,7 @@ export const [FriendsProvider, useFriends] = createContextHook(() => {
 
   const myUserId: string | undefined = supabaseUser?.id;
   const enabled = !!myUserId && supabaseConfigured && !isGuest;
+  const socialAllowed = canUseSocialFeatures(profile);
   const socialNotifsEnabled = profile?.notificationSettings?.socialNotifications !== false;
   const socialNotifsRef = useRef(socialNotifsEnabled);
   socialNotifsRef.current = socialNotifsEnabled;
@@ -74,23 +80,34 @@ export const [FriendsProvider, useFriends] = createContextHook(() => {
   const totalCompletions = stats?.totalCompletions ?? 0;
   const level = stats?.level ?? 1;
 
+  useEffect(() => {
+    if (enabled && !socialAllowed) {
+      setAvailable(false);
+    }
+  }, [enabled, socialAllowed]);
+
   // Ensure my published profile row exists + keep streak fresh.
   useEffect(() => {
-    if (!enabled || !myUserId) {
-      setAvailable(false);
+    if (!enabled || !socialAllowed || !myUserId) {
+      if (!enabled) setAvailable(false);
       return;
     }
     let cancelled = false;
     (async () => {
       try {
+        const privacy = mergeSocialPrivacy(profile?.socialPrivacy);
         const prof = await ensureMyProfile({
           userId: myUserId,
-          displayName: user?.name ?? null,
+          displayName: user?.name?.trim() || profile?.name?.trim() || null,
           email: user?.email ?? null,
           avatarUrl: publishedAvatarUrl,
           currentStreak,
           totalCompletions,
           level,
+          shareStreakOnly: privacy.shareStreakOnly,
+          shareEventsOnly: privacy.shareEventsOnly,
+          hideLastActive: privacy.hideLastActive,
+          blockNudges: privacy.blockNudges,
         });
         if (!cancelled) {
           setMyProfile(prof);
@@ -106,7 +123,32 @@ export const [FriendsProvider, useFriends] = createContextHook(() => {
     return () => {
       cancelled = true;
     };
-  }, [enabled, myUserId, currentStreak, totalCompletions, level, user?.name, user?.email, publishedAvatarUrl]);
+  }, [
+    enabled,
+    myUserId,
+    currentStreak,
+    totalCompletions,
+    level,
+    user?.name,
+    user?.email,
+    profile?.name,
+    profile?.socialPrivacy,
+    profile?.birthYear,
+    profile?.parentalSocialConsent,
+    publishedAvatarUrl,
+  ]);
+
+  const myProfileForUi = useMemo(
+    () =>
+      enrichSocialProfile(myProfile, {
+        profileName: profile?.name,
+        authName: user?.name,
+        authEmail: user?.email,
+        profileAvatar: profile?.avatar,
+        authAvatar: user?.avatar,
+      }),
+    [myProfile, profile?.name, profile?.avatar, user?.name, user?.email, user?.avatar],
+  );
 
   // Backfill local-only avatars to Supabase Storage so friends can see them.
   useEffect(() => {
@@ -135,7 +177,11 @@ export const [FriendsProvider, useFriends] = createContextHook(() => {
     };
   }, [enabled, myUserId, profile?.avatar, queryClient, updateProfile]);
 
-  const queriesEnabled = enabled && available === true;
+  const patchMyProfile = useCallback((patch: Partial<SocialProfile>) => {
+    setMyProfile((prev) => (prev ? { ...prev, ...patch } : prev));
+  }, []);
+
+  const queriesEnabled = enabled && available === true && socialAllowed;
 
   const friendsQuery = useQuery({
     queryKey: ['social', 'friends', myUserId],
@@ -183,6 +229,7 @@ export const [FriendsProvider, useFriends] = createContextHook(() => {
       },
       onNudge: ({ message }) => {
         if (!socialNotifsRef.current) return;
+        if (mergeSocialPrivacy(profile?.socialPrivacy).blockNudges) return;
         const inviteRsvp = parseInviteRsvpNudgeMessage(message);
         if (inviteRsvp) {
           const { title, body } = getInviteRsvpNotificationContent(inviteRsvp);
@@ -196,7 +243,7 @@ export const [FriendsProvider, useFriends] = createContextHook(() => {
       },
     });
     return unsubscribe;
-  }, [queriesEnabled, myUserId, invalidateAll]);
+  }, [queriesEnabled, myUserId, invalidateAll, profile?.socialPrivacy]);
 
   // --- Actions --------------------------------------------------------------
   const requestByUserId = useCallback(
@@ -267,6 +314,21 @@ export const [FriendsProvider, useFriends] = createContextHook(() => {
     [invalidateAll],
   );
 
+  const block = useCallback(
+    async (otherUserId: string) => {
+      await blockPartner(otherUserId);
+      invalidateAll();
+    },
+    [invalidateAll],
+  );
+
+  const report = useCallback(
+    async (otherUserId: string, reason: PartnerReportReason, details?: string) => {
+      await reportPartner(otherUserId, reason, details);
+    },
+    [],
+  );
+
   const nudge = useCallback(
     async (toUserId: string, message?: string) => {
       if (!myUserId) return;
@@ -285,9 +347,34 @@ export const [FriendsProvider, useFriends] = createContextHook(() => {
     }
   }, [myUserId, invalidateAll]);
 
+  const blockNudges = mergeSocialPrivacy(profile?.socialPrivacy).blockNudges;
+
   const unreadNudges = useMemo(
-    () => (nudgesQuery.data ?? []).filter((n) => !n.read),
-    [nudgesQuery.data],
+    () =>
+      blockNudges
+        ? []
+        : (nudgesQuery.data ?? []).filter((n) => !n.read),
+    [nudgesQuery.data, blockNudges],
+  );
+
+  const socialAlertCount = useMemo(
+    () => (incomingQuery.data ?? []).length + unreadNudges.length,
+    [incomingQuery.data, unreadNudges.length],
+  );
+
+  const updatePartnerPrivacy = useCallback(
+    async (patch: {
+      shareStreakOnly?: boolean;
+      shareEventsOnly?: boolean;
+      hideLastActive?: boolean;
+      blockNudges?: boolean;
+    }) => {
+      if (!myUserId) return null;
+      const updated = await updateSocialPrivacy(myUserId, patch);
+      if (updated) setMyProfile(updated);
+      return updated;
+    },
+    [myUserId],
   );
 
   // Live leaderboard built from real partners (+ me), ranked by current streak.
@@ -326,12 +413,14 @@ export const [FriendsProvider, useFriends] = createContextHook(() => {
   return {
     available,
     isSignedIn: enabled,
-    myProfile,
+    myProfile: myProfileForUi,
+    patchMyProfile,
     friends: friendsQuery.data ?? [],
     incomingRequests: incomingQuery.data ?? [],
     outgoingRequests: outgoingQuery.data ?? [],
     nudges: nudgesQuery.data ?? [],
     unreadNudges,
+    socialAlertCount,
     friendsLeaderboard,
     isLoading:
       friendsQuery.isLoading || incomingQuery.isLoading || outgoingQuery.isLoading,
@@ -344,7 +433,12 @@ export const [FriendsProvider, useFriends] = createContextHook(() => {
     reject,
     cancel,
     unfriend,
+    block,
+    report,
     nudge,
     markAllNudgesRead,
+    updatePartnerPrivacy,
+    blockNudges,
+    socialAllowed,
   };
 });

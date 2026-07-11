@@ -443,6 +443,7 @@ function EventsScreenInner() {
     handleInviteFriend,
     friends: inviteFriendsList,
     inviterUsername,
+    planInviteToken,
     canInvite,
   } = useEventInviteFlow();
 
@@ -1368,6 +1369,7 @@ function EventsScreenInner() {
           venueName={inviteEvent.venue}
           eventId={inviteEvent.id}
           inviterUsername={inviterUsername}
+          planToken={planInviteToken}
           friends={inviteFriendsList}
           onInviteFriend={handleInviteFriend}
         />

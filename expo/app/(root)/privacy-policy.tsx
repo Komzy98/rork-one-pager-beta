@@ -11,6 +11,8 @@ import { ArrowLeft } from 'lucide-react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useTheme } from '@/hooks/useTheme';
 
+import { WHAT_PARTNERS_SEE_SECTION } from '@/utils/partnerPrivacy';
+
 interface PolicySection {
   title: string;
   content: string;
@@ -19,6 +21,10 @@ interface PolicySection {
 const LAST_UPDATED = 'April 4, 2026';
 
 const POLICY_SECTIONS: PolicySection[] = [
+  {
+    title: WHAT_PARTNERS_SEE_SECTION.title,
+    content: WHAT_PARTNERS_SEE_SECTION.content,
+  },
   {
     title: 'Introduction',
     content:
@@ -47,7 +53,7 @@ const POLICY_SECTIONS: PolicySection[] = [
   {
     title: 'Your Rights',
     content:
-      'You have the right to:\n\n• Access the personal data we hold about you.\n\n• Request correction of inaccurate data.\n\n• Request deletion of your data (available in Profile > Delete Account).\n\n• Withdraw consent for data processing at any time.\n\n• Export your data in a portable format.\n\n• Object to processing of your personal data.',
+      'You have the right to:\n\n• Access the personal data we hold about you.\n\n• Request correction of inaccurate data.\n\n• Request deletion of your data (available in Profile > Delete Account).\n\n• Withdraw consent for data processing at any time.\n\n• Export your social data in a portable JSON format (Profile > Your data > Export social data).\n\n• Delete your published activity history without deleting your account (Profile > Your data > Delete activity history).\n\n• Block or report accountability partners — blocking removes their read access immediately.\n\n• Object to processing of your personal data.',
   },
   {
     title: 'Data Retention',
@@ -57,7 +63,7 @@ const POLICY_SECTIONS: PolicySection[] = [
   {
     title: "Children's Privacy",
     content:
-      'Our app is not intended for children under the age of 13. We do not knowingly collect personal information from children under 13. If we become aware that we have collected personal data from a child under 13, we will take steps to delete that information.',
+      `Our app is not intended for children under age ${13}. We do not knowingly collect personal information from children under ${13}. Accountability partners and social features require age ${16}+, or ages ${13}–${15} with verified parental consent configured in Profile. If we learn we collected data from a child under ${13}, we will delete it.`,
   },
   {
     title: 'Changes to This Policy',

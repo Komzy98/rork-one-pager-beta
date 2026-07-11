@@ -11,6 +11,7 @@ import {
   Alert,
   Share,
   Platform,
+  Switch,
 } from 'react-native';
 import { Image } from 'expo-image';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -33,8 +34,27 @@ import * as Haptics from 'expo-haptics';
 import { useTheme } from '@/hooks/useTheme';
 import { useFriends } from '@/hooks/useFriends';
 import { useActivity } from '@/hooks/useActivity';
+import { useUserProfile } from '@/hooks/useUserProfile';
 import { buildUserLink } from '@/utils/deepLinks';
-import type { SocialProfile, ActivityVisibility } from '@/utils/friendsService';
+import type { SocialProfile } from '@/utils/friendsService';
+import {
+  VISIBILITY_OPTIONS,
+  confirmBeforeFirstPartner,
+  getVisibilityCopy,
+  UNFRIEND_REVOKE_MESSAGE,
+} from '@/utils/partnerPrivacy';
+import {
+  mergeSocialPrivacy,
+  partnerPresenceLabel,
+  type SocialPrivacyPreferences,
+} from '@/utils/socialPrivacy';
+import {
+  canUseSocialFeatures,
+  isValidBirthYear,
+  MIN_SOCIAL_AGE,
+  socialRestrictionMessage,
+} from '@/utils/socialAgeConsent';
+import type { PartnerReportReason } from '@/utils/socialCompliance';
 
 function timeAgo(iso: string): string {
   const diff = Date.now() - new Date(iso).getTime();
@@ -47,24 +67,42 @@ function timeAgo(iso: string): string {
   return `${d}d`;
 }
 
-const VISIBILITY_OPTIONS: { key: ActivityVisibility; label: string }[] = [
-  { key: 'public', label: 'Public' },
-  { key: 'friends', label: 'Partners' },
-  { key: 'private', label: 'Private' },
-];
+const VISIBILITY_SEGMENT_OPTIONS = VISIBILITY_OPTIONS.map(({ key, label }) => ({ key, label }));
 
 function initials(name: string | null, username: string): string {
   const base = (name || username || '?').trim();
-  const parts = base.split(/\s+/);
+  if (!base || base === '?') return '?';
+  const parts = base.split(/\s+/).filter(Boolean);
   if (parts.length >= 2) return (parts[0][0] + parts[1][0]).toUpperCase();
   return base.slice(0, 2).toUpperCase();
 }
 
-function presence(lastActiveAt: string): { label: string; color: string } {
-  const diffMin = (Date.now() - new Date(lastActiveAt).getTime()) / 60000;
-  if (diffMin < 5) return { label: 'Online', color: '#34C759' };
-  if (diffMin < 60) return { label: 'Away', color: '#FF9500' };
-  return { label: 'Offline', color: '#8E8E93' };
+function PrivacyToggleRow({
+  title,
+  body,
+  value,
+  onValueChange,
+  colors,
+}: {
+  title: string;
+  body: string;
+  value: boolean;
+  onValueChange: (value: boolean) => void;
+  colors: ReturnType<typeof useTheme>['colors'];
+}) {
+  return (
+    <View style={[styles.genericCopyRow, { backgroundColor: colors.card, borderColor: colors.border }]}>
+      <View style={styles.genericCopyCopy}>
+        <Text style={[styles.genericCopyTitle, { color: colors.text }]}>{title}</Text>
+        <Text style={[styles.genericCopyBody, { color: colors.textTertiary }]}>{body}</Text>
+      </View>
+      <Switch
+        value={value}
+        onValueChange={onValueChange}
+        trackColor={{ false: colors.border, true: colors.primary }}
+      />
+    </View>
+  );
 }
 
 export default function FriendsScreen() {
@@ -72,6 +110,7 @@ export default function FriendsScreen() {
   const insets = useSafeAreaInsets();
   const friends = useFriends();
   const activity = useActivity();
+  const { profile, updateDisplayPreferences, updateProfile } = useUserProfile();
   const params = useLocalSearchParams<{ addUsername?: string }>();
 
   const [query, setQuery] = useState('');
@@ -88,6 +127,7 @@ export default function FriendsScreen() {
     friends: friendList,
     incomingRequests,
     outgoingRequests,
+    nudges,
     isRefreshing,
     refresh,
     search,
@@ -97,9 +137,24 @@ export default function FriendsScreen() {
     reject,
     cancel,
     unfriend,
+    block,
+    report,
     nudge,
     markAllNudgesRead,
+    patchMyProfile,
+    updatePartnerPrivacy,
+    blockNudges,
+    socialAllowed,
   } = friends;
+
+  const privacyPrefs = mergeSocialPrivacy(profile?.socialPrivacy);
+
+  const socialRestriction = socialRestrictionMessage(profile);
+  const partnersEnabled = socialAllowed && canUseSocialFeatures(profile);
+
+  const haptic = useCallback(() => {
+    void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+  }, []);
 
   // Mark nudges as read when the screen opens.
   useEffect(() => {
@@ -114,10 +169,20 @@ export default function FriendsScreen() {
       return;
     }
     setSearching(true);
-    const t = setTimeout(async () => {
-      const r = await search(query);
-      setResults(r);
-      setSearching(false);
+    const t = setTimeout(() => {
+      void (async () => {
+        try {
+          const r = await search(query);
+          setResults(r);
+        } catch (e) {
+          setResults([]);
+          if ((e as { code?: string })?.code === 'RATE_LIMITED') {
+            Alert.alert('Slow down', (e as Error).message);
+          }
+        } finally {
+          setSearching(false);
+        }
+      })();
     }, 350);
     return () => clearTimeout(t);
   }, [query, search]);
@@ -127,28 +192,84 @@ export default function FriendsScreen() {
     const target = params.addUsername;
     if (!target || autoAddHandled.current || available !== true) return;
     autoAddHandled.current = true;
-    (async () => {
-      const res = await requestByUsername(String(target));
-      if (res.ok) {
-        Alert.alert('Request sent', `Your friend request to @${target} is on its way.`);
-      } else if (res.reason === 'already_friends') {
-        Alert.alert("You're already partners", `You and @${target} are already accountability partners.`);
-      } else if (res.reason === 'already_requested') {
-        Alert.alert('Already requested', `You already have a pending request with @${target}.`);
-      } else if (res.reason !== 'self') {
-        Alert.alert('Could not add', res.message || `We couldn't find @${target}.`);
+    void (async () => {
+      try {
+        if (myProfile?.id) {
+          const ok = await confirmBeforeFirstPartner(myProfile.id);
+          if (!ok) return;
+        }
+        const res = await requestByUsername(String(target));
+        if (res.ok) {
+          Alert.alert('Request sent', `Your friend request to @${target} is on its way.`);
+        } else if (res.reason === 'already_friends') {
+          Alert.alert("You're already partners", `You and @${target} are already accountability partners.`);
+        } else if (res.reason === 'already_requested') {
+          Alert.alert('Already requested', `You already have a pending request with @${target}.`);
+        } else if (res.reason !== 'self') {
+          Alert.alert('Could not add', res.message || `We couldn't find @${target}.`);
+        }
+        refresh();
+      } catch {
+        Alert.alert('Could not add', 'Please try again in a moment.');
       }
-      refresh();
     })();
-  }, [params.addUsername, available, requestByUsername, refresh]);
+  }, [params.addUsername, available, requestByUsername, refresh, myProfile?.id]);
 
-  const haptic = useCallback(() => {
-    if (Platform.OS !== 'web') Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light).catch(() => {});
-  }, []);
+  const handleRefresh = useCallback(() => {
+    refresh();
+    activity.refresh();
+  }, [refresh, activity.refresh]);
+
+  const patchPrivacy = useCallback(
+    async (patch: Partial<SocialPrivacyPreferences>) => {
+      let next = mergeSocialPrivacy({ ...profile?.socialPrivacy, ...patch });
+      if (patch.shareStreakOnly === true) {
+        next = { ...next, shareEventsOnly: false };
+      }
+      if (patch.shareEventsOnly === true) {
+        next = { ...next, shareStreakOnly: false };
+      }
+      updateProfile({ socialPrivacy: next });
+      try {
+        const updated = await updatePartnerPrivacy({
+          shareStreakOnly: next.shareStreakOnly,
+          shareEventsOnly: next.shareEventsOnly,
+          hideLastActive: next.hideLastActive,
+          blockNudges: next.blockNudges,
+        });
+        if (updated) patchMyProfile(updated);
+      } catch {
+        Alert.alert(
+          'Could not save setting',
+          'Partner controls need the latest database migration (009_social_privacy). Run it in Supabase, then try again.',
+        );
+      }
+    },
+    [profile?.socialPrivacy, updateProfile, updatePartnerPrivacy, patchMyProfile],
+  );
+
+  const handleGenericActivity = useCallback(
+    (value: boolean) => {
+      updateDisplayPreferences({ genericSocialActivity: value });
+      void patchPrivacy({ shareHabitsGeneric: value });
+    },
+    [updateDisplayPreferences, patchPrivacy],
+  );
+
+  const confirmIfFirstPartner = useCallback(async (): Promise<boolean> => {
+    if (!myProfile?.id) return true;
+    return confirmBeforeFirstPartner(myProfile.id);
+  }, [myProfile?.id]);
 
   const handleAdd = useCallback(
     async (profile: SocialProfile) => {
+      if (!partnersEnabled) {
+        Alert.alert('Not available', socialRestriction || 'Accountability partners are not available for this account.');
+        return;
+      }
       haptic();
+      const ok = await confirmIfFirstPartner();
+      if (!ok) return;
       setBusyId(profile.id);
       try {
         const res = await requestByUserId(profile.id);
@@ -165,18 +286,46 @@ export default function FriendsScreen() {
         setBusyId(null);
       }
     },
-    [requestByUserId, haptic],
+    [requestByUserId, haptic, confirmIfFirstPartner, partnersEnabled, socialRestriction],
+  );
+
+  const handleAcceptRequest = useCallback(
+    async (requestId: string) => {
+      if (!partnersEnabled) {
+        Alert.alert('Not available', socialRestriction || 'Accountability partners are not available for this account.');
+        return;
+      }
+      haptic();
+      const ok = await confirmIfFirstPartner();
+      if (!ok) return;
+      setBusyId(requestId);
+      try {
+        await accept(requestId);
+      } finally {
+        setBusyId(null);
+      }
+    },
+    [accept, haptic, confirmIfFirstPartner, partnersEnabled, socialRestriction],
   );
 
   const handleNudge = useCallback(
     async (friend: SocialProfile) => {
+      if (friend.blockNudges) {
+        Alert.alert('Nudges off', 'This partner is not accepting nudges right now.');
+        return;
+      }
       haptic();
       setBusyId(friend.id);
       try {
         await nudge(friend.id);
         Alert.alert('Nudge sent 👋', `${friend.displayName || '@' + friend.username} will get a little push to keep their streak going.`);
-      } catch {
-        Alert.alert('Could not send', 'Please try again in a moment.');
+      } catch (e) {
+        const code = (e as { code?: string })?.code;
+        if (code === 'NUDGES_BLOCKED') {
+          Alert.alert('Nudges off', 'This partner is not accepting nudges right now.');
+        } else {
+          Alert.alert('Could not send', 'Please try again in a moment.');
+        }
       } finally {
         setBusyId(null);
       }
@@ -186,13 +335,14 @@ export default function FriendsScreen() {
 
   const handleUnfriend = useCallback(
     (friend: SocialProfile) => {
+      const name = friend.displayName || '@' + friend.username;
       Alert.alert(
-        'Remove partner',
-        `Remove ${friend.displayName || '@' + friend.username} from your accountability partners?`,
+        'Remove partner?',
+        `${name} will be removed from your accountability partners.\n\n${UNFRIEND_REVOKE_MESSAGE}`,
         [
           { text: 'Cancel', style: 'cancel' },
           {
-            text: 'Remove',
+            text: 'Remove partner',
             style: 'destructive',
             onPress: async () => {
               setBusyId(friend.id);
@@ -209,8 +359,97 @@ export default function FriendsScreen() {
     [unfriend],
   );
 
+  const handleBlock = useCallback(
+    (friend: SocialProfile) => {
+      const name = friend.displayName || '@' + friend.username;
+      Alert.alert(
+        'Block partner?',
+        `${name} will be removed and immediately lose access to your profile, activity, and plans. They cannot re-add you unless you unblock them (contact support).`,
+        [
+          { text: 'Cancel', style: 'cancel' },
+          {
+            text: 'Block',
+            style: 'destructive',
+            onPress: async () => {
+              setBusyId(friend.id);
+              try {
+                await block(friend.id);
+                Alert.alert('Blocked', `${name} can no longer see your social data.`);
+              } catch {
+                Alert.alert('Could not block', 'Please try again in a moment.');
+              } finally {
+                setBusyId(null);
+              }
+            },
+          },
+        ],
+      );
+    },
+    [block],
+  );
+
+  const submitReport = useCallback(
+    async (friend: SocialProfile, reason: PartnerReportReason) => {
+      setBusyId(friend.id);
+      try {
+        await report(friend.id, reason);
+        Alert.alert('Report submitted', 'Thank you. Our team will review this report.');
+      } catch {
+        Alert.alert('Could not submit report', 'Please try again in a moment.');
+      } finally {
+        setBusyId(null);
+      }
+    },
+    [report],
+  );
+
+  const handleReport = useCallback(
+    (friend: SocialProfile) => {
+      Alert.alert('Report partner', 'What would you like to report?', [
+        { text: 'Harassment', onPress: () => void submitReport(friend, 'harassment') },
+        { text: 'Spam', onPress: () => void submitReport(friend, 'spam') },
+        { text: 'Inappropriate content', onPress: () => void submitReport(friend, 'inappropriate') },
+        { text: 'Other', onPress: () => void submitReport(friend, 'other') },
+        { text: 'Cancel', style: 'cancel' },
+      ]);
+    },
+    [submitReport],
+  );
+
+  const handlePartnerLongPress = useCallback(
+    (friend: SocialProfile) => {
+      haptic();
+      Alert.alert(friend.displayName || '@' + friend.username, undefined, [
+        { text: 'Report', onPress: () => handleReport(friend) },
+        { text: 'Block', style: 'destructive', onPress: () => handleBlock(friend) },
+        { text: 'Remove partner', style: 'destructive', onPress: () => handleUnfriend(friend) },
+        { text: 'Cancel', style: 'cancel' },
+      ]);
+    },
+    [haptic, handleReport, handleBlock, handleUnfriend],
+  );
+
+  const handleGoPrivate = useCallback(() => {
+    haptic();
+    if (activity.visibility === 'private') return;
+    Alert.alert(
+      'Go private?',
+      'Partners will stop seeing your activity, saved events, and RSVPs. They can still see your name, avatar, and streak.',
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Go private',
+          onPress: () => void activity.setVisibility('private'),
+        },
+      ],
+    );
+  }, [activity, haptic]);
+
   const handleShareInvite = useCallback(async () => {
-    if (!myProfile) return;
+    if (!myProfile?.username) {
+      Alert.alert('Almost ready', 'Your partner handle is still being set up. Pull to refresh and try again.');
+      return;
+    }
     const link = buildUserLink(myProfile.username);
     try {
       await Share.share({
@@ -238,6 +477,8 @@ export default function FriendsScreen() {
       )}
     </View>
   );
+
+  const visibilityCopy = getVisibilityCopy(activity.visibility);
 
   return (
     <View style={[styles.container, { backgroundColor: colors.background, paddingTop: insets.top }]}>
@@ -274,7 +515,7 @@ export default function FriendsScreen() {
         <ScrollView
           contentContainerStyle={{ padding: 16, paddingBottom: insets.bottom + 32 }}
           keyboardShouldPersistTaps="handled"
-          refreshControl={<RefreshControl refreshing={isRefreshing} onRefresh={refresh} tintColor={colors.primary} />}
+          refreshControl={<RefreshControl refreshing={isRefreshing} onRefresh={handleRefresh} tintColor={colors.primary} />}
         >
           {/* Invite card */}
           {myProfile && (
@@ -284,13 +525,82 @@ export default function FriendsScreen() {
                 <Text style={[styles.inviteName, { color: colors.text }]} numberOfLines={1}>
                   {myProfile.displayName || 'You'}
                 </Text>
-                <Text style={[styles.inviteHandle, { color: colors.textTertiary }]}>@{myProfile.username}</Text>
+                <Text style={[styles.inviteHandle, { color: colors.textTertiary }]}>
+                  {myProfile.username ? `@${myProfile.username}` : 'Setting up your handle…'}
+                </Text>
               </View>
               <TouchableOpacity style={[styles.inviteBtn, { backgroundColor: colors.primary }]} onPress={handleShareInvite}>
                 <Share2 size={16} color={colors.textInverse} />
                 <Text style={[styles.inviteBtnText, { color: colors.textInverse }]}>Invite</Text>
               </TouchableOpacity>
             </View>
+          )}
+
+          {!partnersEnabled && socialRestriction ? (
+            <View style={[styles.privateActiveBanner, { backgroundColor: '#FF950012', borderColor: '#FF950033', marginBottom: 8 }]}>
+              <Lock size={14} color="#FF9500" />
+              <Text style={[styles.privateActiveText, { color: colors.textSecondary }]}>
+                {socialRestriction} Set your birth year in Profile → Your data. Ages {MIN_SOCIAL_AGE - 3}–{MIN_SOCIAL_AGE - 1} need parental consent.
+              </Text>
+            </View>
+          ) : null}
+
+          {/* Partner alerts — requests & nudges land here first */}
+          {incomingRequests.length > 0 && (
+            <>
+              <Text style={[styles.sectionLabel, { color: colors.textTertiary, marginTop: 20 }]}>
+                REQUESTS ({incomingRequests.length})
+              </Text>
+              {incomingRequests.map((req) => (
+                <View key={req.id} style={[styles.row, { backgroundColor: colors.card, borderColor: colors.border }]}>
+                  <Avatar profile={req.from} />
+                  <View style={styles.rowInfo}>
+                    <Text style={[styles.rowName, { color: colors.text }]} numberOfLines={1}>
+                      {req.from.displayName || req.from.username}
+                    </Text>
+                    <Text style={[styles.rowSub, { color: colors.textTertiary }]}>Wants to be your partner</Text>
+                  </View>
+                  <TouchableOpacity
+                    style={[styles.iconBtn, { backgroundColor: colors.primary }]}
+                    onPress={() => void handleAcceptRequest(req.id)}
+                  >
+                    <Check size={18} color={colors.textInverse} />
+                  </TouchableOpacity>
+                  <TouchableOpacity
+                    style={[styles.iconBtn, { backgroundColor: colors.surfaceSecondary, marginLeft: 8 }]}
+                    onPress={() => reject(req.id)}
+                  >
+                    <X size={18} color={colors.textTertiary} />
+                  </TouchableOpacity>
+                </View>
+              ))}
+            </>
+          )}
+
+          {!blockNudges && nudges.filter((n) => !n.read).length > 0 && (
+            <>
+              <Text style={[styles.sectionLabel, { color: colors.textTertiary, marginTop: 20 }]}>
+                NUDGES ({nudges.filter((n) => !n.read).length})
+              </Text>
+              {nudges
+                .filter((n) => !n.read)
+                .map((nudgeItem) => (
+                  <View
+                    key={nudgeItem.id}
+                    style={[styles.nudgeCard, { backgroundColor: colors.card, borderColor: colors.border }]}
+                  >
+                    <Hand size={18} color={colors.primary} />
+                    <View style={styles.nudgeCardBody}>
+                      <Text style={[styles.rowName, { color: colors.text }]} numberOfLines={1}>
+                        {nudgeItem.from?.displayName || nudgeItem.from?.username || 'A partner'}
+                      </Text>
+                      <Text style={[styles.feedSub, { color: colors.textTertiary }]} numberOfLines={3}>
+                        {nudgeItem.message?.trim() || 'Keep your streak going — they’re cheering you on!'}
+                      </Text>
+                    </View>
+                  </View>
+                ))}
+            </>
           )}
 
           {/* Activity privacy */}
@@ -301,8 +611,33 @@ export default function FriendsScreen() {
                   SHARE MY ACTIVITY
                 </Text>
               </View>
+
+              {activity.visibility !== 'private' ? (
+                <TouchableOpacity
+                  style={[styles.goPrivateBanner, { backgroundColor: '#FF3B3012', borderColor: '#FF3B3033' }]}
+                  onPress={handleGoPrivate}
+                  activeOpacity={0.85}
+                >
+                  <Lock size={16} color="#FF3B30" strokeWidth={2.4} />
+                  <View style={styles.goPrivateCopy}>
+                    <Text style={[styles.goPrivateTitle, { color: colors.text }]}>Go private</Text>
+                    <Text style={[styles.goPrivateBody, { color: colors.textTertiary }]}>
+                      One tap to hide activity, saves, and RSVPs from partners
+                    </Text>
+                  </View>
+                  <Text style={[styles.goPrivateAction, { color: '#FF3B30' }]}>Hide</Text>
+                </TouchableOpacity>
+              ) : (
+                <View style={[styles.privateActiveBanner, { backgroundColor: colors.surfaceSecondary, borderColor: colors.border }]}>
+                  <Lock size={14} color={colors.primary} />
+                  <Text style={[styles.privateActiveText, { color: colors.textSecondary }]}>
+                    Private mode on — activity hidden. Partners still see your name, avatar, and streak.
+                  </Text>
+                </View>
+              )}
+
               <View style={[styles.segmentGroup, { backgroundColor: colors.surfaceSecondary }]}>
-                {VISIBILITY_OPTIONS.map((opt) => {
+                {VISIBILITY_SEGMENT_OPTIONS.map((opt) => {
                   const active = activity.visibility === opt.key;
                   const Icon = opt.key === 'public' ? Globe : opt.key === 'private' ? Lock : Users;
                   return (
@@ -320,6 +655,73 @@ export default function FriendsScreen() {
                   );
                 })}
               </View>
+
+              <View style={[styles.visibilityInfoCard, { backgroundColor: colors.card, borderColor: colors.border }]}>
+                <Text style={[styles.visibilityInfoTitle, { color: colors.text }]}>
+                  {visibilityCopy.label}
+                </Text>
+                <Text style={[styles.visibilityInfoBody, { color: colors.textTertiary }]}>
+                  {visibilityCopy.summary}
+                </Text>
+                {activity.visibility === 'public' ? (
+                  <Text style={[styles.visibilityInfoWarning, { color: '#FF9500' }]}>
+                    Public is broader than partners-only. Partners is the recommended default.
+                  </Text>
+                ) : null}
+              </View>
+
+              <View style={[styles.genericCopyRow, { backgroundColor: colors.card, borderColor: colors.border }]}>
+                <View style={styles.genericCopyCopy}>
+                  <Text style={[styles.genericCopyTitle, { color: colors.text }]}>Share habits (generic)</Text>
+                  <Text style={[styles.genericCopyBody, { color: colors.textTertiary }]}>
+                    Show “Checked in today” without habit names. Health and recovery habits are never shared.
+                  </Text>
+                </View>
+                <Switch
+                  value={privacyPrefs.shareHabitsGeneric}
+                  onValueChange={handleGenericActivity}
+                  trackColor={{ false: colors.border, true: colors.primary }}
+                />
+              </View>
+
+              <Text style={[styles.sectionLabel, { color: colors.textTertiary, marginTop: 16 }]}>
+                PARTNER CONTROLS
+              </Text>
+              <Text style={[styles.hint, { color: colors.textTertiary, marginTop: 0, marginBottom: 8 }]}>
+                Fine-tune what partners see beyond your visibility setting. Streak leaderboard always stays visible unless you go private.
+              </Text>
+
+              <PrivacyToggleRow
+                colors={colors}
+                title="Share streak only"
+                body="Leaderboard and streak count only — no activity feed, event saves, or habit check-ins."
+                value={privacyPrefs.shareStreakOnly}
+                onValueChange={(value) => void patchPrivacy({ shareStreakOnly: value })}
+              />
+
+              <PrivacyToggleRow
+                colors={colors}
+                title="Share events only"
+                body="Plans and RSVPs without habit logging, sports pins, or watchlist activity."
+                value={privacyPrefs.shareEventsOnly}
+                onValueChange={(value) => void patchPrivacy({ shareEventsOnly: value })}
+              />
+
+              <PrivacyToggleRow
+                colors={colors}
+                title="Hide last active"
+                body="Remove online/offline presence and “at risk” signals from partners."
+                value={privacyPrefs.hideLastActive}
+                onValueChange={(value) => void patchPrivacy({ hideLastActive: value })}
+              />
+
+              <PrivacyToggleRow
+                colors={colors}
+                title="Block nudges"
+                body="Receive no partner pings — incoming nudges are hidden and new ones are declined."
+                value={privacyPrefs.blockNudges}
+                onValueChange={(value) => void patchPrivacy({ blockNudges: value })}
+              />
 
               {/* Activity feed */}
               <View style={styles.feedHeaderRow}>
@@ -388,6 +790,8 @@ export default function FriendsScreen() {
           )}
 
           {/* Search / add */}
+          {partnersEnabled ? (
+            <>
           <Text style={[styles.sectionLabel, { color: colors.textTertiary }]}>ADD A PARTNER</Text>
           <View style={[styles.searchRow, { backgroundColor: colors.card, borderColor: colors.border }]}>
             <Search size={18} color={colors.textTertiary} />
@@ -436,38 +840,8 @@ export default function FriendsScreen() {
           {query.trim().length >= 2 && !searching && results.length === 0 && (
             <Text style={[styles.hint, { color: colors.textTertiary }]}>No users found for “{query.trim()}”.</Text>
           )}
-
-          {/* Incoming requests */}
-          {incomingRequests.length > 0 && (
-            <>
-              <Text style={[styles.sectionLabel, { color: colors.textTertiary }]}>
-                REQUESTS ({incomingRequests.length})
-              </Text>
-              {incomingRequests.map((req) => (
-                <View key={req.id} style={[styles.row, { backgroundColor: colors.card, borderColor: colors.border }]}>
-                  <Avatar profile={req.from} />
-                  <View style={styles.rowInfo}>
-                    <Text style={[styles.rowName, { color: colors.text }]} numberOfLines={1}>
-                      {req.from.displayName || req.from.username}
-                    </Text>
-                    <Text style={[styles.rowSub, { color: colors.textTertiary }]}>@{req.from.username}</Text>
-                  </View>
-                  <TouchableOpacity
-                    style={[styles.iconBtn, { backgroundColor: colors.primary }]}
-                    onPress={() => accept(req.id)}
-                  >
-                    <Check size={18} color={colors.textInverse} />
-                  </TouchableOpacity>
-                  <TouchableOpacity
-                    style={[styles.iconBtn, { backgroundColor: colors.surfaceSecondary, marginLeft: 8 }]}
-                    onPress={() => reject(req.id)}
-                  >
-                    <X size={18} color={colors.textTertiary} />
-                  </TouchableOpacity>
-                </View>
-              ))}
             </>
-          )}
+          ) : null}
 
           {/* Pending (outgoing) */}
           {outgoingRequests.length > 0 && (
@@ -501,21 +875,24 @@ export default function FriendsScreen() {
           </Text>
           {friendList.length === 0 ? (
             <Text style={[styles.hint, { color: colors.textTertiary }]}>
-              No partners yet. Share your invite link or add someone by username to start keeping each other accountable.
+              No partners yet. Share your invite link or add someone by username. Partners see your streak and activity summaries — switch to Private anytime.
             </Text>
           ) : (
             friendList.map((f) => {
-              const p = presence(f.lastActiveAt);
+              const p = partnerPresenceLabel(f) ?? { label: 'Offline', color: '#8E8E93' };
+              const showPresenceDot = !f.hideLastActive;
               return (
                 <TouchableOpacity
                   key={f.id}
                   activeOpacity={0.7}
-                  onLongPress={() => handleUnfriend(f)}
+                  onLongPress={() => handlePartnerLongPress(f)}
                   style={[styles.row, { backgroundColor: colors.card, borderColor: colors.border }]}
                 >
                   <View>
                     <Avatar profile={f} />
-                    <View style={[styles.presenceDot, { backgroundColor: p.color, borderColor: colors.card }]} />
+                    {showPresenceDot ? (
+                      <View style={[styles.presenceDot, { backgroundColor: p.color, borderColor: colors.card }]} />
+                    ) : null}
                   </View>
                   <View style={styles.rowInfo}>
                     <Text style={[styles.rowName, { color: colors.text }]} numberOfLines={1}>
@@ -529,20 +906,27 @@ export default function FriendsScreen() {
                       <Text style={[styles.rowSub, { color: colors.textTertiary }]}> · {p.label}</Text>
                     </View>
                   </View>
-                  <TouchableOpacity
-                    style={[styles.nudgeBtn, { borderColor: colors.primary }]}
-                    disabled={busyId === f.id}
-                    onPress={() => handleNudge(f)}
-                  >
-                    {busyId === f.id ? (
-                      <ActivityIndicator size="small" color={colors.primary} />
-                    ) : (
-                      <>
-                        <Hand size={15} color={colors.primary} />
-                        <Text style={[styles.nudgeText, { color: colors.primary }]}>Nudge</Text>
-                      </>
-                    )}
-                  </TouchableOpacity>
+                  {f.blockNudges ? (
+                    <View style={[styles.nudgeBtn, { borderColor: colors.border, opacity: 0.5 }]}>
+                      <Hand size={15} color={colors.textTertiary} />
+                      <Text style={[styles.nudgeText, { color: colors.textTertiary }]}>Off</Text>
+                    </View>
+                  ) : (
+                    <TouchableOpacity
+                      style={[styles.nudgeBtn, { borderColor: colors.primary }]}
+                      disabled={busyId === f.id}
+                      onPress={() => handleNudge(f)}
+                    >
+                      {busyId === f.id ? (
+                        <ActivityIndicator size="small" color={colors.primary} />
+                      ) : (
+                        <>
+                          <Hand size={15} color={colors.primary} />
+                          <Text style={[styles.nudgeText, { color: colors.primary }]}>Nudge</Text>
+                        </>
+                      )}
+                    </TouchableOpacity>
+                  )}
                 </TouchableOpacity>
               );
             })
@@ -645,6 +1029,90 @@ const styles = StyleSheet.create({
   nudgeText: { fontSize: 13, fontWeight: '700' },
   hint: { fontSize: 13, lineHeight: 19, marginTop: 8 },
   privacyRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
+  goPrivateBanner: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+    borderRadius: 14,
+    borderWidth: 1,
+    paddingHorizontal: 14,
+    paddingVertical: 12,
+    marginBottom: 10,
+  },
+  goPrivateCopy: {
+    flex: 1,
+    gap: 2,
+  },
+  goPrivateTitle: {
+    fontSize: 14,
+    fontWeight: '700',
+  },
+  goPrivateBody: {
+    fontSize: 12,
+    lineHeight: 16,
+  },
+  goPrivateAction: {
+    fontSize: 13,
+    fontWeight: '800',
+  },
+  privateActiveBanner: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    gap: 8,
+    borderRadius: 12,
+    borderWidth: 1,
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+    marginBottom: 10,
+  },
+  privateActiveText: {
+    flex: 1,
+    fontSize: 12,
+    lineHeight: 17,
+  },
+  visibilityInfoCard: {
+    borderRadius: 12,
+    borderWidth: StyleSheet.hairlineWidth,
+    paddingHorizontal: 14,
+    paddingVertical: 12,
+    marginBottom: 8,
+    gap: 6,
+  },
+  visibilityInfoTitle: {
+    fontSize: 13,
+    fontWeight: '700',
+  },
+  visibilityInfoBody: {
+    fontSize: 12,
+    lineHeight: 17,
+  },
+  visibilityInfoWarning: {
+    fontSize: 11,
+    lineHeight: 15,
+    fontWeight: '600',
+  },
+  genericCopyRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+    borderRadius: 12,
+    borderWidth: StyleSheet.hairlineWidth,
+    paddingHorizontal: 14,
+    paddingVertical: 12,
+    marginBottom: 8,
+  },
+  genericCopyCopy: {
+    flex: 1,
+    gap: 4,
+  },
+  genericCopyTitle: {
+    fontSize: 13,
+    fontWeight: '700',
+  },
+  genericCopyBody: {
+    fontSize: 12,
+    lineHeight: 17,
+  },
   segmentGroup: {
     flexDirection: 'row',
     borderRadius: 12,
@@ -697,4 +1165,17 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
   },
   cheerCount: { fontSize: 13, fontWeight: '700' },
+  nudgeCard: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    gap: 12,
+    borderRadius: 14,
+    borderWidth: StyleSheet.hairlineWidth,
+    padding: 14,
+    marginTop: 8,
+  },
+  nudgeCardBody: {
+    flex: 1,
+    gap: 4,
+  },
 });

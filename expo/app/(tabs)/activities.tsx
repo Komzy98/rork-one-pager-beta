@@ -67,7 +67,19 @@ import {
 import DailySummaryInsights from '@/components/DailySummaryInsights';
 import { ProgressShareSheet } from '@/components/ProgressShareSheet';
 import { useActivity } from '@/hooks/useActivity';
+import { useFriends } from '@/hooks/useFriends';
+import { useSocialUnread } from '@/hooks/useSocialUnread';
+import { usePartnerActivityActions } from '@/hooks/usePartnerActivityActions';
 import { PartnerActivityFeed } from '@/components/social/PartnerActivityFeed';
+import { AccountabilityInboxCard } from '@/components/social/AccountabilityInboxCard';
+import { AccountabilityCircleCard } from '@/components/social/AccountabilityCircleCard';
+import { PartnerInviteEmptyCard } from '@/components/social/PartnerInviteEmptyCard';
+import {
+  derivePartnersAtRisk,
+  getCircleProgress,
+  getHabitGapMotivation,
+} from '@/utils/socialAccountability';
+import type { ActivityRowActionKind } from '@/utils/socialAccountability';
 import { buildSummaryPayload, type SharePayload } from '@/utils/shareProgress';
 import {
   getTodayYmd,
@@ -230,6 +242,44 @@ export default function ActivitiesScreen() {
   const insets = useSafeAreaInsets();
   const intelligence = useActivityIntelligence();
   const partnerActivity = useActivity();
+  const {
+    available: friendsAvailable,
+    friends: partnerList,
+    myProfile,
+    incomingRequests,
+    unreadNudges,
+    socialAlertCount,
+    refresh: refreshFriends,
+    accept: acceptPartnerRequest,
+    nudge: nudgePartner,
+  } = useFriends();
+  const {
+    unreadFeedCount,
+    unreadCheerCount,
+    unreadActivityCount,
+    markSocialSeen,
+  } = useSocialUnread(user?.id, partnerActivity.feed);
+  const totalSocialAlertCount = socialAlertCount + unreadFeedCount;
+  const partnerActions = usePartnerActivityActions({
+    onCheer: (eventId, on) => partnerActivity.cheer(eventId, on),
+  });
+
+  const accountabilityCircle = useMemo(
+    () => getCircleProgress(partnerList, partnerActivity.activeTodayCount),
+    [partnerList, partnerActivity.activeTodayCount],
+  );
+
+  const partnersAtRisk = useMemo(
+    () => derivePartnersAtRisk(partnerList, partnerActivity.activeTodayCount, partnerActivity.feed),
+    [partnerList, partnerActivity.activeTodayCount, partnerActivity.feed],
+  );
+
+  const handlePartnerRowAction = useCallback(
+    (event: import('@/utils/activityService').ActivityEvent, kind: ActivityRowActionKind) => {
+      void partnerActions.runAction(event, kind);
+    },
+    [partnerActions],
+  );
   
   const calendarData = useCalendar();
   const getUpcomingCalendarEvents = calendarData?.getUpcomingCalendarEvents || (() => []);
@@ -265,6 +315,18 @@ export default function ActivitiesScreen() {
   const [dismissedEpisodes, setDismissedEpisodes] = useState<string[]>([]);
   const [dismissedContinueWatching, setDismissedContinueWatching] = useState<string[]>([]);
   const scopedStorageKey = useCallback((base: string) => `${base}_${user?.id || 'guest'}`, [user?.id]);
+
+  useFocusEffect(
+    useCallback(() => {
+      if (friendsAvailable === true) {
+        refreshFriends();
+        partnerActivity.refresh();
+      }
+      return () => {
+        void markSocialSeen();
+      };
+    }, [friendsAvailable, refreshFriends, partnerActivity.refresh, markSocialSeen]),
+  );
 
   useEffect(() => {
     AsyncStorage.getItem(scopedStorageKey('dismissed_new_episodes')).then(async (raw) => {
@@ -833,6 +895,16 @@ export default function ActivitiesScreen() {
   const { stats: todayHabitStats } = useTodayHabits();
   const todayYmd = useTodayYmd();
   const stats = todayHabitStats;
+
+  const habitGapMotivation = useMemo(
+    () =>
+      getHabitGapMotivation(
+        stats.completedHabits,
+        stats.totalHabits,
+        partnerActivity.feed,
+      ),
+    [stats.completedHabits, stats.totalHabits, partnerActivity.feed],
+  );
   
   const trackedTVShows = useMemo(() => {
     return shows.filter((show: Show) => 
@@ -1950,6 +2022,8 @@ export default function ActivitiesScreen() {
                 fetchYounifyContinueWatching(),
                 fetchWeather(),
                 newEpisodesForMyShows.refetch(),
+                friendsAvailable === true ? Promise.resolve(refreshFriends()) : Promise.resolve(),
+                friendsAvailable === true ? Promise.resolve(partnerActivity.refresh()) : Promise.resolve(),
               ]);
               setRefreshing(false);
             }}
@@ -2175,6 +2249,23 @@ export default function ActivitiesScreen() {
                     </Animated.View>
                   </TouchableOpacity>
                 )}
+                {friendsAvailable === true ? (
+                  <TouchableOpacity
+                    onPress={() => router.push('/friends' as any)}
+                    activeOpacity={0.8}
+                    accessibilityLabel={
+                      totalSocialAlertCount > 0
+                        ? `${totalSocialAlertCount} partner notifications`
+                        : 'Accountability partners'
+                    }
+                    style={styles.partnersHeroBtn}
+                  >
+                    <View style={[styles.partnersHeroIcon, { backgroundColor: 'rgba(255, 106, 61, 0.18)' }]}>
+                      <Users size={18} color="#FF6A3D" strokeWidth={2.4} />
+                      {totalSocialAlertCount > 0 ? <View style={styles.partnersHeroDot} /> : null}
+                    </View>
+                  </TouchableOpacity>
+                ) : null}
               </View>
             </Animated.View>
 
@@ -2474,13 +2565,74 @@ export default function ActivitiesScreen() {
               ) : null}
             </View>
 
+            {friendsAvailable === true && partnerList.length === 0 ? (
+              <PartnerInviteEmptyCard
+                username={myProfile?.username}
+                colors={{
+                  text: colors.text,
+                  textSecondary: colors.textSecondary,
+                  textMuted: colors.textMuted,
+                  card: colors.card,
+                  border: colors.border,
+                  primary: colors.primary,
+                }}
+                onAddPartner={() => router.push('/friends' as any)}
+              />
+            ) : null}
+
+            {friendsAvailable === true && partnerList.length > 0 ? (
+              <AccountabilityCircleCard
+                circle={accountabilityCircle}
+                partnersAtRisk={partnersAtRisk}
+                habitGap={habitGapMotivation}
+                onNudge={(userId) => void nudgePartner(userId)}
+                onOpenHabits={() => router.push('/(tabs)/tasks' as any)}
+                colors={{
+                  text: colors.text,
+                  textSecondary: colors.textSecondary,
+                  textMuted: colors.textMuted,
+                  card: colors.card,
+                  border: colors.border,
+                  primary: colors.primary,
+                  surfaceSecondary: colors.surfaceSecondary,
+                }}
+              />
+            ) : null}
+
+            {friendsAvailable === true && totalSocialAlertCount > 0 ? (
+              <AccountabilityInboxCard
+                incomingRequests={incomingRequests}
+                unreadNudges={unreadNudges}
+                unreadFeedCount={unreadActivityCount}
+                unreadCheerCount={unreadCheerCount}
+                onAccept={(id) => void acceptPartnerRequest(id)}
+                onNudgeBack={(userId) => void nudgePartner(userId, 'You got this — keep the streak alive! 💪')}
+                onCheerLatest={() => router.push('/friends' as any)}
+                colors={{
+                  text: colors.text,
+                  textSecondary: colors.textSecondary,
+                  textMuted: colors.textMuted,
+                  card: colors.card,
+                  border: colors.border,
+                  primary: colors.primary,
+                  surfaceSecondary: colors.surfaceSecondary,
+                }}
+              />
+            ) : null}
+
             {partnerActivity.available === true &&
-              (partnerActivity.feed.length > 0 || partnerActivity.activeTodayCount > 0) ? (
+            (partnerActivity.feed.length > 0 ||
+              partnerActivity.activeTodayCount > 0 ||
+              totalSocialAlertCount > 0 ||
+              partnerList.length > 0) ? (
               <PartnerActivityFeed
                 feed={partnerActivity.feed}
                 activeTodayCount={partnerActivity.activeTodayCount}
                 presenceLabel={partnerActivity.presenceLabel}
                 currentUserId={user?.id}
+                alertCount={totalSocialAlertCount}
+                actionOriented
+                onRowAction={handlePartnerRowAction}
                 colors={{
                   text: colors.text,
                   textSecondary: colors.textSecondary,
@@ -3966,6 +4118,30 @@ const styles = StyleSheet.create({
     textTransform: 'uppercase' as const,
     marginTop: 2,
     letterSpacing: 0.5,
+  },
+  partnersHeroBtn: {
+    marginLeft: 8,
+  },
+  partnersHeroIcon: {
+    width: 44,
+    height: 44,
+    borderRadius: 14,
+    alignItems: 'center' as const,
+    justifyContent: 'center' as const,
+    position: 'relative' as const,
+    borderWidth: 1,
+    borderColor: 'rgba(255, 255, 255, 0.12)',
+  },
+  partnersHeroDot: {
+    position: 'absolute' as const,
+    top: 6,
+    right: 6,
+    width: 10,
+    height: 10,
+    borderRadius: 5,
+    backgroundColor: '#FF3B30',
+    borderWidth: 2,
+    borderColor: '#FFFFFF',
   },
 
   newEpisodesSection: {

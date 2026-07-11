@@ -35,3 +35,19 @@ export function resolveDisplayAvatarUrl(options: {
   if (local) return local.trim();
   return null;
 }
+
+const AVATAR_FILE_PATTERN = /^[0-9a-f-]{36}\/avatar\.(jpg|jpeg|png|webp)$/i;
+
+/** Canonical Storage path: `{userId}/avatar.{jpg|png|webp}` — no other paths allowed. */
+export function avatarStoragePath(
+  userId: string,
+  ext: 'jpg' | 'jpeg' | 'png' | 'webp' = 'jpg',
+): string {
+  const normalized = ext === 'jpeg' ? 'jpg' : ext;
+  return `${userId}/avatar.${normalized}`;
+}
+
+export function isValidAvatarStoragePath(userId: string, path: string): boolean {
+  if (!userId || !path) return false;
+  return AVATAR_FILE_PATTERN.test(path) && path.startsWith(`${userId}/`);
+}

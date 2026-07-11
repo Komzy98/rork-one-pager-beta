@@ -4,6 +4,7 @@ import { useFriends } from '@/hooks/useFriends';
 import { useUserProfile } from '@/hooks/useUserProfile';
 import { unifiedStorage } from '@/utils/unifiedStorage';
 import { syncSavedEventsToPartners } from '@/utils/sharedPlansService';
+import { mergeSocialPrivacy, shouldPublishEventSaves } from '@/utils/socialPrivacy';
 
 const SYNC_FLAG_PREFIX = 'partners_event_saves_synced_';
 
@@ -29,6 +30,7 @@ export function usePartnerEventSaveSync(): void {
 
     const visibility = myProfile?.activityVisibility ?? 'friends';
     if (visibility === 'private') return;
+    if (!shouldPublishEventSaves(mergeSocialPrivacy(profile?.socialPrivacy))) return;
 
     const snapshots = profile.savedEvents ?? [];
     if (snapshots.length === 0) return;
@@ -65,6 +67,7 @@ export function usePartnerEventSaveSync(): void {
     friendsAvailable,
     myProfile?.activityVisibility,
     profile?.id,
+    profile?.socialPrivacy,
     profile?.savedEvents,
   ]);
 }

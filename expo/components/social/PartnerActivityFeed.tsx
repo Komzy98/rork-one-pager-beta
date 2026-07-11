@@ -15,6 +15,11 @@ import {
   partnerActivityInitials,
   selectPartnerActivityPreview,
 } from '@/utils/activityFeedMeta';
+import {
+  formatActionOrientedHeadline,
+  getActivityRowAction,
+  type ActivityRowActionKind,
+} from '@/utils/socialAccountability';
 
 const CATEGORY_ICONS = {
   going_out: Ticket,
@@ -43,7 +48,10 @@ interface PartnerActivityFeedProps {
     surfaceSecondary?: string;
   };
   onCheer: (eventId: string, on: boolean) => void;
+  onRowAction?: (event: ActivityEvent, kind: ActivityRowActionKind) => void;
+  actionOriented?: boolean;
   maxItems?: number;
+  alertCount?: number;
 }
 
 export const PartnerActivityFeed = React.memo(function PartnerActivityFeed({
@@ -53,7 +61,10 @@ export const PartnerActivityFeed = React.memo(function PartnerActivityFeed({
   currentUserId,
   colors,
   onCheer,
+  onRowAction,
+  actionOriented = true,
   maxItems = 4,
+  alertCount = 0,
 }: PartnerActivityFeedProps) {
   const router = useRouter();
 
@@ -62,7 +73,7 @@ export const PartnerActivityFeed = React.memo(function PartnerActivityFeed({
     [feed, currentUserId, maxItems],
   );
 
-  if (preview.length === 0 && activeTodayCount <= 0) {
+  if (preview.length === 0 && activeTodayCount <= 0 && alertCount <= 0) {
     return null;
   }
 
@@ -81,9 +92,11 @@ export const PartnerActivityFeed = React.memo(function PartnerActivityFeed({
         <View style={styles.titleRow}>
           <Users size={18} color={colors.text} strokeWidth={2.2} />
           <Text style={[styles.sectionTitle, { color: colors.text }]}>Partner Activity</Text>
+          {alertCount > 0 ? <View style={styles.headerAlertDot} /> : null}
         </View>
         <TouchableOpacity style={styles.viewAllBtn} onPress={() => router.push('/friends' as any)}>
           <Text style={[styles.viewAllText, { color: colors.primary }]}>See all</Text>
+          {alertCount > 0 ? <View style={styles.viewAllDot} /> : null}
           <ChevronRight size={16} color={colors.primary} />
         </TouchableOpacity>
       </View>
@@ -100,9 +113,13 @@ export const PartnerActivityFeed = React.memo(function PartnerActivityFeed({
           {preview.map((event, index) => {
             const visual = getActivityCategoryVisual(event.type);
             const TypeIcon = getActivityTypeIcon(event.type);
-            const { line, detail } = formatPartnerActivityHeadline(event);
+            const { line, detail } = actionOriented
+              ? formatActionOrientedHeadline(event)
+              : formatPartnerActivityHeadline(event);
+            const rowAction = getActivityRowAction(event);
             const route = getActivityEventRoute(event);
             const isLast = index === preview.length - 1;
+            const showPrimaryAction = onRowAction && rowAction.kind !== 'cheer';
 
             return (
               <View
@@ -164,22 +181,32 @@ export const PartnerActivityFeed = React.memo(function PartnerActivityFeed({
                   ]}
                   onPress={() => {
                     void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-                    void onCheer(event.id, !event.cheeredByMe);
+                    if (showPrimaryAction) {
+                      onRowAction?.(event, rowAction.kind);
+                    } else {
+                      void onCheer(event.id, !event.cheeredByMe);
+                    }
                   }}
                   activeOpacity={0.7}
-                  accessibilityLabel={event.cheeredByMe ? 'Remove cheer' : 'Cheer partner'}
+                  accessibilityLabel={showPrimaryAction ? rowAction.label : event.cheeredByMe ? 'Remove cheer' : 'Cheer partner'}
                 >
-                  <PartyPopper size={14} color={event.cheeredByMe ? '#F59E0B' : colors.textMuted} />
-                  {event.cheersCount > 0 ? (
-                    <Text
-                      style={[
-                        styles.cheerCount,
-                        { color: event.cheeredByMe ? '#F59E0B' : colors.textMuted },
-                      ]}
-                    >
-                      {event.cheersCount}
-                    </Text>
-                  ) : null}
+                  {showPrimaryAction ? (
+                    <Text style={[styles.actionLabel, { color: colors.primary }]}>{rowAction.label}</Text>
+                  ) : (
+                    <>
+                      <PartyPopper size={14} color={event.cheeredByMe ? '#F59E0B' : colors.textMuted} />
+                      {event.cheersCount > 0 ? (
+                        <Text
+                          style={[
+                            styles.cheerCount,
+                            { color: event.cheeredByMe ? '#F59E0B' : colors.textMuted },
+                          ]}
+                        >
+                          {event.cheersCount}
+                        </Text>
+                      ) : null}
+                    </>
+                  )}
                 </TouchableOpacity>
               </View>
             );
@@ -216,6 +243,19 @@ const styles = StyleSheet.create({
     fontSize: 17,
     fontWeight: '700',
     letterSpacing: -0.2,
+  },
+  headerAlertDot: {
+    width: 8,
+    height: 8,
+    borderRadius: 4,
+    backgroundColor: '#FF3B30',
+  },
+  viewAllDot: {
+    width: 8,
+    height: 8,
+    borderRadius: 4,
+    backgroundColor: '#FF3B30',
+    marginRight: 2,
   },
   viewAllBtn: {
     flexDirection: 'row',
@@ -333,6 +373,10 @@ const styles = StyleSheet.create({
   cheerCount: {
     fontSize: 11,
     fontWeight: '700',
+  },
+  actionLabel: {
+    fontSize: 12,
+    fontWeight: '800',
   },
   emptyCard: {
     borderRadius: 16,

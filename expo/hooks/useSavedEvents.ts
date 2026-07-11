@@ -14,6 +14,7 @@ import { useSocialActivity } from '@/hooks/useSocialActivity';
 import { useAuth } from '@/hooks/useAuth';
 import { useFriends } from '@/hooks/useFriends';
 import { publishEventSave, unpublishEventSave } from '@/utils/sharedPlansService';
+import { mergeSocialPrivacy, shouldPublishEventSaves } from '@/utils/socialPrivacy';
 
 export function useSavedEvents() {
   const { profile, updateProfile } = useUserProfile();
@@ -36,7 +37,8 @@ export function useSavedEvents() {
   const shareSavesWithFriends =
     !isGuest &&
     !!supabaseUser?.id &&
-    (myProfile?.activityVisibility ?? 'friends') !== 'private';
+    (myProfile?.activityVisibility ?? 'friends') !== 'private' &&
+    shouldPublishEventSaves(mergeSocialPrivacy(profile?.socialPrivacy));
 
   const addToOnePager = useCallback(
     async (event: LocalEvent) => {
@@ -49,11 +51,11 @@ export function useSavedEvents() {
       void Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
       void logEventSaved(event);
       if (shareSavesWithFriends && supabaseUser?.id) {
-        void publishEventSave(supabaseUser.id, snapshot);
+        void publishEventSave(supabaseUser.id, snapshot).catch(() => {});
       }
       return snapshot;
     },
-    [savedSnapshots, updateProfile, logEventSaved, shareSavesWithFriends, supabaseUser?.id]
+    [savedSnapshots, updateProfile, logEventSaved, shareSavesWithFriends, supabaseUser?.id, profile?.socialPrivacy]
   );
 
   const removeFromOnePager = useCallback(
@@ -63,10 +65,10 @@ export function useSavedEvents() {
       await updateProfile({ savedEvents: next });
       void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
       if (shareSavesWithFriends && supabaseUser?.id) {
-        void unpublishEventSave(supabaseUser.id, eventId);
+        void unpublishEventSave(supabaseUser.id, eventId).catch(() => {});
       }
     },
-    [savedIds, savedSnapshots, updateProfile, shareSavesWithFriends, supabaseUser?.id]
+    [savedIds, savedSnapshots, updateProfile, shareSavesWithFriends, supabaseUser?.id, profile?.socialPrivacy]
   );
 
   const toggleSaved = useCallback(

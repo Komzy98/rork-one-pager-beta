@@ -470,6 +470,8 @@ export interface UserProfile {
     showOnlyFavorites: boolean;
     timeFormat: '12h' | '24h';
     theme: 'light' | 'dark' | 'auto';
+    /** When true, partner activity uses generic labels (no habit/event names). */
+    genericSocialActivity?: boolean;
   };
   /** Drives Pro app themes in Profile; set by purchase / server sync. */
   subscriptionTier?: 'free' | 'pro';
@@ -484,6 +486,12 @@ export interface UserProfile {
   wellbeingLogs?: RecoveryWellbeingLog[];
   /** Events the user added to their One Pager from the Events tab. */
   savedEvents?: import('@/types/events').SavedEventSnapshot[];
+  /** Granular accountability partner sharing controls. */
+  socialPrivacy?: import('@/utils/socialPrivacy').SocialPrivacyPreferences;
+  /** Birth year for age-gated social features (accountability partners). */
+  birthYear?: number;
+  /** Parental consent for social if user is under MIN_SOCIAL_AGE. */
+  parentalSocialConsent?: boolean;
   createdAt: string;
   lastLoginAt: string;
 }

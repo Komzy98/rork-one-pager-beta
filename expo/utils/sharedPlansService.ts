@@ -1,6 +1,7 @@
 import { supabase, supabaseConfigured } from '@/utils/supabaseClient';
 import { isSocialUnavailableError } from '@/utils/friendsService';
 import type { LocalEvent, SavedEventSnapshot } from '@/types/events';
+import { toPartnerVisibleEventSnapshot } from '@/utils/socialActivityPublish';
 
 function toQueryError(error: unknown, fallback: string): Error {
   if (error instanceof Error) return error;
@@ -19,6 +20,7 @@ export interface SharedPlan {
   payload: Record<string, unknown>;
   meetAt: string | null;
   createdAt: string;
+  inviteToken: string | null;
 }
 
 export interface PlanRsvp {
@@ -57,6 +59,7 @@ interface PlanRow {
   payload: Record<string, unknown> | null;
   meet_at: string | null;
   created_at: string;
+  invite_token?: string | null;
 }
 
 interface RsvpRow {
@@ -89,6 +92,7 @@ function mapPlan(row: PlanRow): SharedPlan {
     payload: row.payload ?? {},
     meetAt: row.meet_at,
     createdAt: row.created_at,
+    inviteToken: row.invite_token ?? null,
   };
 }
 
@@ -168,6 +172,32 @@ export async function getOrCreateEventPlan(
   }
 
   return mapPlan(created as PlanRow);
+}
+
+/** Grant read access to a shared plan via invite link token (Layer 4). */
+export async function claimPlanInvite(token: string): Promise<string | null> {
+  if (!supabaseConfigured) return null;
+  const trimmed = token.trim();
+  if (trimmed.length < 8) return null;
+  const { data, error } = await supabase.rpc('claim_plan_invite', { p_token: trimmed });
+  if (error) {
+    if (isSocialUnavailableError(error)) return null;
+    throw toQueryError(error, 'Could not open this invite link.');
+  }
+  return typeof data === 'string' ? data : null;
+}
+
+/** Invite token for share links — requires read access to the plan row. */
+export async function getEventPlanInviteToken(eventId: string): Promise<string | null> {
+  if (!supabaseConfigured) return null;
+  const { data, error } = await supabase
+    .from('shared_plans')
+    .select('invite_token')
+    .eq('plan_type', 'event')
+    .eq('entity_id', eventId)
+    .maybeSingle();
+  if (error && !isSocialUnavailableError(error)) return null;
+  return (data as { invite_token?: string } | null)?.invite_token ?? null;
 }
 
 export async function setPlanRsvp(
@@ -296,7 +326,7 @@ export async function publishEventSave(
     {
       user_id: userId,
       event_id: snapshot.id,
-      snapshot,
+      snapshot: toPartnerVisibleEventSnapshot(snapshot),
       updated_at: new Date().toISOString(),
     },
     { onConflict: 'user_id,event_id' }
@@ -328,7 +358,7 @@ export async function syncSavedEventsToPartners(
   const rows = snapshots.map((snapshot) => ({
     user_id: userId,
     event_id: snapshot.id,
-    snapshot,
+    snapshot: toPartnerVisibleEventSnapshot(snapshot),
     updated_at: now,
   }));
 

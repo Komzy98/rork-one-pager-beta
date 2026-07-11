@@ -1,5 +1,7 @@
 import { supabase, supabaseConfigured } from '@/utils/supabaseClient';
+import { isLocalAvatarUri, isRemoteAvatarUrl } from '@/utils/avatarUtils';
 import { isSocialUnavailableError } from '@/utils/friendsService';
+import { canWriteSocialActivity } from '@/utils/socialPublishGuard';
 
 export type ActivityType =
   | 'streak_milestone'
@@ -62,11 +64,14 @@ async function fetchAuthors(ids: string[]): Promise<Map<string, FeedAuthor>> {
     .in('id', ids);
   if (error) throw error;
   for (const row of data as { id: string; username: string; display_name: string | null; avatar_url: string | null }[]) {
+    const avatar = row.avatar_url?.trim() || null;
+    const avatarUrl =
+      avatar && (isRemoteAvatarUrl(avatar) || isLocalAvatarUri(avatar)) ? avatar : null;
     map.set(row.id, {
       id: row.id,
-      username: row.username,
-      displayName: row.display_name,
-      avatarUrl: row.avatar_url,
+      username: row.username?.trim() || '',
+      displayName: row.display_name?.trim() || null,
+      avatarUrl,
     });
   }
   return map;
@@ -93,6 +98,7 @@ export interface LogEventInput {
 
 export async function logEvent(input: LogEventInput): Promise<string | null> {
   if (!supabaseConfigured) return null;
+  if (!(await canWriteSocialActivity(input.userId))) return null;
   const { data, error } = await supabase
     .from('activity_events')
     .insert({
@@ -163,7 +169,10 @@ export async function toggleCheer(eventId: string, on: boolean): Promise<number>
 }
 
 /** Count of friends whose last activity was today (lightweight presence). */
-export async function getActiveTodayCount(friendIds: string[]): Promise<number> {
+export async function getActiveTodayCount(
+  friends: Pick<import('@/utils/friendsService').SocialProfile, 'id' | 'hideLastActive'>[],
+): Promise<number> {
+  const friendIds = friends.filter((f) => !f.hideLastActive).map((f) => f.id);
   if (!supabaseConfigured || friendIds.length === 0) return 0;
   const startOfDay = new Date();
   startOfDay.setHours(0, 0, 0, 0);

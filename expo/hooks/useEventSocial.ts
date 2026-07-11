@@ -5,6 +5,7 @@ import { useFriends } from '@/hooks/useFriends';
 import type { LocalEvent } from '@/types/events';
 import {
   checkSharedPlansAvailable,
+  claimPlanInvite,
   getEventPlanBundle,
   getFriendsGoingToEvent,
   getGuestRsvpsForEvent,
@@ -26,7 +27,10 @@ type EventPlanCache = Awaited<ReturnType<typeof getEventPlanBundle>>;
 
 type RsvpProfile = NonNullable<PlanRsvp['profile']>;
 
-export function useEventSocial(event: LocalEvent | null) {
+export function useEventSocial(
+  event: LocalEvent | null,
+  options?: { planInviteToken?: string | null },
+) {
   const { supabaseUser, isGuest, user } = useAuth();
   const { friends, myProfile } = useFriends();
   const queryClient = useQueryClient();
@@ -52,6 +56,7 @@ export function useEventSocial(event: LocalEvent | null) {
   const queriesEnabled = enabled && available === true;
   const eventId = event?.id ?? '';
   const friendIds = friends.map((f) => f.id);
+  const planInviteToken = options?.planInviteToken?.trim() ?? '';
 
   const planQuery = useQuery({
     queryKey: ['event-plan', eventId, myUserId],
@@ -79,6 +84,22 @@ export function useEventSocial(event: LocalEvent | null) {
     queryClient.invalidateQueries({ queryKey: ['friends-going', eventId] });
     queryClient.invalidateQueries({ queryKey: ['guest-rsvps', eventId] });
   }, [queryClient, eventId]);
+
+  useEffect(() => {
+    if (!queriesEnabled || !myUserId || planInviteToken.length < 8) return;
+    let cancelled = false;
+    void (async () => {
+      try {
+        await claimPlanInvite(planInviteToken);
+        if (!cancelled) invalidate();
+      } catch {
+        // invite token invalid or migration pending — plan may still load for friends
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [queriesEnabled, myUserId, planInviteToken, invalidate]);
 
   const ensurePlan = useCallback(async (): Promise<SharedPlan | null> => {
     if (!queriesEnabled || !event || !myUserId) return null;

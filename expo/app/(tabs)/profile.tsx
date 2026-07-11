@@ -108,6 +108,17 @@ import { useFriends } from '@/hooks/useFriends';
 import { resolveDisplayAvatarUrl } from '@/utils/avatarUtils';
 import { uploadProfileAvatar } from '@/utils/avatarService';
 import { updateProfileAvatar } from '@/utils/friendsService';
+import {
+  deleteMyActivityHistory,
+  exportSocialData,
+  syncAgeConsentToProfile,
+} from '@/utils/socialCompliance';
+import {
+  APP_MIN_AGE,
+  canUseSocialFeatures,
+  isValidBirthYear,
+  MIN_SOCIAL_AGE,
+} from '@/utils/socialAgeConsent';
 import { MOCK_CHALLENGES } from '@/mocks/socialData';
 import { ThemeSettings } from '@/components/ThemeSettings';
 import { GOOGLE_G_LOGO } from '@/constants/googleBrandAssets';
@@ -748,6 +759,90 @@ export default function ProfileScreen() {
       ]
     );
   };
+
+  const [birthYearDraft, setBirthYearDraft] = useState(
+    () => (profile?.birthYear ? String(profile.birthYear) : ''),
+  );
+  const [dataBusy, setDataBusy] = useState(false);
+
+  useEffect(() => {
+    setBirthYearDraft(profile?.birthYear ? String(profile.birthYear) : '');
+  }, [profile?.birthYear]);
+
+  const handleSaveBirthYear = useCallback(async () => {
+    const year = parseInt(birthYearDraft.trim(), 10);
+    if (!isValidBirthYear(year)) {
+      Alert.alert('Invalid year', 'Enter a valid birth year.');
+      return;
+    }
+    updateProfile({ birthYear: year });
+    if (supabaseUser?.id) {
+      try {
+        await syncAgeConsentToProfile(supabaseUser.id, year, profile?.parentalSocialConsent);
+      } catch {
+        Alert.alert('Could not sync', 'Birth year saved locally. Run migration 011_compliance in Supabase to sync to server.');
+      }
+    }
+    void Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+  }, [birthYearDraft, profile?.parentalSocialConsent, supabaseUser?.id, updateProfile]);
+
+  const handleToggleParentalConsent = useCallback(
+    async (value: boolean) => {
+      updateProfile({ parentalSocialConsent: value });
+      if (supabaseUser?.id) {
+        try {
+          await syncAgeConsentToProfile(supabaseUser.id, profile?.birthYear ?? null, value);
+        } catch {
+          // local only
+        }
+      }
+    },
+    [profile?.birthYear, supabaseUser?.id, updateProfile],
+  );
+
+  const handleExportSocialData = useCallback(async () => {
+    if (!supabaseUser?.id) return;
+    setDataBusy(true);
+    try {
+      const json = await exportSocialData(supabaseUser.id);
+      await Share.share({ message: json });
+    } catch (e) {
+      Alert.alert('Export failed', (e as Error)?.message || 'Could not export social data.');
+    } finally {
+      setDataBusy(false);
+    }
+  }, [supabaseUser?.id]);
+
+  const handleDeleteActivityHistory = useCallback(() => {
+    Alert.alert(
+      'Delete activity history?',
+      'This removes your activity feed posts and partner-visible event saves from the server. Your habits, streak, and partners are kept.',
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Delete history',
+          style: 'destructive',
+          onPress: async () => {
+            setDataBusy(true);
+            try {
+              const removed = await deleteMyActivityHistory();
+              Alert.alert('Done', `Removed ${removed} activity post${removed === 1 ? '' : 's'} from your feed.`);
+            } catch (e) {
+              Alert.alert('Could not delete', (e as Error)?.message || 'Please try again.');
+            } finally {
+              setDataBusy(false);
+            }
+          },
+        },
+      ],
+    );
+  }, []);
+
+  const socialAgeOk = canUseSocialFeatures(profile);
+  const showParentalConsent =
+    !!profile?.birthYear &&
+    new Date().getFullYear() - profile.birthYear >= APP_MIN_AGE &&
+    new Date().getFullYear() - profile.birthYear < MIN_SOCIAL_AGE;
 
   return (
     <SwipeableTabContainer>
@@ -1623,6 +1718,89 @@ export default function ProfileScreen() {
               <ChevronRight size={20} color={colors.textTertiary} />
             </TouchableOpacity>
 
+            {/* Your data (GDPR-style social controls) */}
+            {!isGuest && (
+              <>
+                <Text style={[styles.sectionTitle, { color: colors.textTertiary, marginTop: 8 }]}>YOUR DATA</Text>
+                <View style={[styles.settingsItem, { backgroundColor: colors.card, borderColor: colors.border, flexDirection: 'column', alignItems: 'stretch' }]}>
+                  <Text style={[styles.settingsItemTitle, { color: colors.text, marginBottom: 6 }]}>Birth year</Text>
+                  <Text style={[styles.settingsItemSubtitle, { color: colors.textTertiary, marginBottom: 10 }]}>
+                    Required for accountability partners. Ages {MIN_SOCIAL_AGE}+, or {APP_MIN_AGE}–{MIN_SOCIAL_AGE - 1} with parental consent.
+                  </Text>
+                  <View style={{ flexDirection: 'row', gap: 8, alignItems: 'center' }}>
+                    <TextInput
+                      style={[styles.searchInput, { flex: 1, color: colors.text, backgroundColor: colors.surfaceSecondary, borderRadius: 10, paddingHorizontal: 12, paddingVertical: 10 }]}
+                      placeholder="e.g. 1998"
+                      placeholderTextColor={colors.textTertiary}
+                      keyboardType="number-pad"
+                      maxLength={4}
+                      value={birthYearDraft}
+                      onChangeText={setBirthYearDraft}
+                    />
+                    <TouchableOpacity
+                      style={[styles.accountBtn, { backgroundColor: colors.primary, paddingHorizontal: 16, paddingVertical: 10, marginTop: 0 }]}
+                      onPress={() => void handleSaveBirthYear()}
+                    >
+                      <Text style={[styles.accountBtnText, { color: colors.textInverse }]}>Save</Text>
+                    </TouchableOpacity>
+                  </View>
+                  {showParentalConsent ? (
+                    <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginTop: 14 }}>
+                      <Text style={[styles.settingsItemSubtitle, { color: colors.textSecondary, flex: 1, marginRight: 12 }]}>
+                        Parental consent for social features
+                      </Text>
+                      <Switch
+                        value={profile?.parentalSocialConsent === true}
+                        onValueChange={(v) => void handleToggleParentalConsent(v)}
+                        trackColor={{ false: colors.border, true: colors.primary }}
+                      />
+                    </View>
+                  ) : null}
+                  {!socialAgeOk ? (
+                    <Text style={[styles.settingsItemSubtitle, { color: '#FF9500', marginTop: 10 }]}>
+                      Accountability partners are disabled until age requirements are met.
+                    </Text>
+                  ) : null}
+                </View>
+
+                <TouchableOpacity
+                  style={[styles.settingsItem, { backgroundColor: colors.card, borderColor: colors.border }]}
+                  onPress={() => void handleExportSocialData()}
+                  disabled={dataBusy}
+                  activeOpacity={0.7}
+                >
+                  <View style={[styles.settingsIconBg, { backgroundColor: '#5856D6' + '15' }]}>
+                    <Download size={18} color="#5856D6" />
+                  </View>
+                  <View style={styles.settingsItemContent}>
+                    <Text style={[styles.settingsItemTitle, { color: colors.text }]}>Export social data</Text>
+                    <Text style={[styles.settingsItemSubtitle, { color: colors.textTertiary }]}>
+                      JSON copy of partners, activity, nudges, and saves
+                    </Text>
+                  </View>
+                  {dataBusy ? <ActivityIndicator size="small" color={colors.textTertiary} /> : <ChevronRight size={20} color={colors.textTertiary} />}
+                </TouchableOpacity>
+
+                <TouchableOpacity
+                  style={[styles.settingsItem, { backgroundColor: colors.card, borderColor: colors.border }]}
+                  onPress={handleDeleteActivityHistory}
+                  disabled={dataBusy}
+                  activeOpacity={0.7}
+                >
+                  <View style={[styles.settingsIconBg, { backgroundColor: '#FF3B30' + '15' }]}>
+                    <RotateCcw size={18} color="#FF3B30" />
+                  </View>
+                  <View style={styles.settingsItemContent}>
+                    <Text style={[styles.settingsItemTitle, { color: colors.text }]}>Delete activity history</Text>
+                    <Text style={[styles.settingsItemSubtitle, { color: colors.textTertiary }]}>
+                      Remove feed posts and partner-visible saves (keeps account)
+                    </Text>
+                  </View>
+                  <ChevronRight size={20} color={colors.textTertiary} />
+                </TouchableOpacity>
+              </>
+            )}
+
             {/* Privacy Policy */}
             <TouchableOpacity 
               style={[styles.settingsItem, { backgroundColor: colors.card, borderColor: colors.border }]}
@@ -1636,7 +1814,7 @@ export default function ProfileScreen() {
               <View style={styles.settingsItemContent}>
                 <Text style={[styles.settingsItemTitle, { color: colors.text }]}>Privacy Policy</Text>
                 <Text style={[styles.settingsItemSubtitle, { color: colors.textTertiary }]}>
-                  How we handle your data and account-level isolation
+                  What partners see, your rights, and data handling
                 </Text>
               </View>
               <ChevronRight size={20} color={colors.textTertiary} />

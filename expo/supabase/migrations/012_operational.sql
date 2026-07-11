@@ -1,7 +1,10 @@
--- Public avatar bucket for profile photos (friends, RSVPs, tab bar).
--- Run AFTER 002_social.sql. Safe to re-run.
--- Layer 6: user-scoped paths only; no bucket listing via Storage API.
+-- Layer 6 — Operational hardening
+-- Run AFTER 011_compliance.sql. Safe to re-run (idempotent).
 
+-- ---------------------------------------------------------------------------
+-- Avatar storage: user-scoped paths only, no bucket listing via Storage API
+-- Objects remain readable via known public URLs (bucket stays public).
+-- ---------------------------------------------------------------------------
 insert into storage.buckets (id, name, public, file_size_limit, allowed_mime_types)
 values (
   'avatars',
@@ -15,6 +18,7 @@ on conflict (id) do update set
   file_size_limit = excluded.file_size_limit,
   allowed_mime_types = excluded.allowed_mime_types;
 
+-- Remove blanket read/list policy (was: any authenticated user could list the bucket).
 drop policy if exists "avatars_public_read" on storage.objects;
 
 drop policy if exists "avatars_insert_own" on storage.objects;
@@ -49,6 +53,7 @@ create policy "avatars_delete_own" on storage.objects
     and name ~ ('^' || auth.uid()::text || '/avatar\.(jpg|jpeg|png|webp)$')
   );
 
+-- Owners may read their own avatar object via Storage API (not list whole bucket).
 drop policy if exists "avatars_select_own" on storage.objects;
 create policy "avatars_select_own" on storage.objects
   for select to authenticated

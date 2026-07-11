@@ -17,7 +17,7 @@ import { X, Check, Globe } from 'lucide-react-native';
 import * as Haptics from 'expo-haptics';
 import { useTheme } from '@/hooks/useTheme';
 import { useCommunity } from '@/hooks/useCommunity';
-import { useActivity } from '@/hooks/useActivity';
+import { useSocialActivity } from '@/hooks/useSocialActivity';
 
 const CATEGORIES = [
   'Fitness', 'Health', 'Productivity', 'Mindfulness', 'Learning',
@@ -34,7 +34,7 @@ export default function PublishHabitScreen() {
   const { colors } = useTheme();
   const insets = useSafeAreaInsets();
   const community = useCommunity();
-  const activity = useActivity();
+  const { logPublishedHabit } = useSocialActivity();
 
   const [name, setName] = useState('');
   const [description, setDescription] = useState('');
@@ -73,12 +73,7 @@ export default function PublishHabitScreen() {
           .slice(0, 6),
         frequency: { type: days.length === 7 ? 'daily' : 'weekly', days },
       });
-      void activity.logActivity({
-        type: 'published_habit',
-        title: `Published "${name.trim()}" 📣`,
-        body: 'A new routine is live in Discover.',
-        metadata: { category },
-      });
+      void logPublishedHabit(name.trim(), category);
       if (Platform.OS !== 'web') {
         Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success).catch(() => {});
       }
@@ -90,7 +85,7 @@ export default function PublishHabitScreen() {
     } finally {
       setPublishing(false);
     }
-  }, [canPublish, community, name, description, longDescription, category, difficulty, color, duration, tags, days]);
+  }, [canPublish, community, name, description, longDescription, category, difficulty, color, duration, tags, days, logPublishedHabit]);
 
   const Label = ({ children }: { children: string }) => (
     <Text style={[styles.label, { color: colors.textTertiary }]}>{children}</Text>

@@ -69,7 +69,7 @@ const { width: SCREEN_WIDTH, height: SCREEN_HEIGHT } = Dimensions.get('window');
 const HERO_HEIGHT = Math.round(SCREEN_HEIGHT * 0.6);
 
 export default function EventDetailScreen() {
-  const { id } = useLocalSearchParams<{ id: string }>();
+  const { id, ptoken } = useLocalSearchParams<{ id: string; ptoken?: string }>();
   const router = useRouter();
   const insets = useSafeAreaInsets();
   const scrollY = useRef(new Animated.Value(0)).current;
@@ -101,7 +101,7 @@ export default function EventDetailScreen() {
     [event, id, isSaved]
   );
 
-  const eventSocial = useEventSocial(localEvent);
+  const eventSocial = useEventSocial(localEvent, { planInviteToken: ptoken });
   const { friends, nudge: nudgeFriend, available: friendsAvailable } = useFriends();
   const [rsvpBusy, setRsvpBusy] = useState(false);
   const [rsvpPending, setRsvpPending] = useState<PlanRsvpStatus | null>(null);
@@ -643,6 +643,7 @@ export default function EventDetailScreen() {
         venueName={event.venueName}
         eventId={event.id}
         inviterUsername={profile?.username}
+        planToken={eventSocial.plan?.inviteToken}
         friends={friends}
         onInviteFriend={handleInviteFriend}
       />

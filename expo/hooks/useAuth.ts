@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback, useMemo } from 'react';
+import { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import { Platform } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import createContextHook from '@nkzw/create-context-hook';
@@ -13,6 +13,7 @@ import {
   signInWithPasswordDirect,
   signUpDirect,
   persistSupabaseSession,
+  recoverSupabaseSession,
 } from '@/utils/supabaseClient';
 import * as Linking from 'expo-linking';
 import * as Crypto from 'expo-crypto';
@@ -213,6 +214,7 @@ export const [AuthProvider, useAuth] = createContextHook(() => {
   const [biometricType, setBiometricType] = useState<BiometricType>('None');
   const [mfaEnabled, setMfaEnabled] = useState<boolean>(false);
   const [mfaLoading, setMfaLoading] = useState<boolean>(false);
+  const authBootstrapDoneRef = useRef(false);
 
   useEffect(() => {
     const checkBiometricAvailability = async () => {
@@ -311,7 +313,10 @@ export const [AuthProvider, useAuth] = createContextHook(() => {
     const initialize = async () => {
       try {
         if (supabaseConfigured) {
-          const { data: { session } } = await supabase.auth.getSession();
+          let session = (await supabase.auth.getSession()).data.session;
+          if (!session?.user) {
+            session = await recoverSupabaseSession();
+          }
           if (session?.user && isMounted) {
             console.log('🔐 Restored Supabase session for:', session.user.email);
             await applySupabaseSession(session.user);
@@ -320,7 +325,7 @@ export const [AuthProvider, useAuth] = createContextHook(() => {
             if (cachedUser && isMounted) {
               const parsedUser: AuthUser = JSON.parse(cachedUser);
               if (!parsedUser.id?.startsWith('guest_')) {
-                console.log('📱 Stale cached user without Supabase session, clearing:', parsedUser.email);
+                console.log('📱 No Supabase session after recovery; clearing stale cached user:', parsedUser.email);
                 await AsyncStorage.removeItem(AUTH_STORAGE_KEY);
               } else if (isMounted) {
                 setUser(parsedUser);
@@ -350,6 +355,7 @@ export const [AuthProvider, useAuth] = createContextHook(() => {
         console.error('💥 Error initializing auth:', error);
       } finally {
         if (isMounted) {
+          authBootstrapDoneRef.current = true;
           setIsLoading(false);
           setIsInitialized(true);
           console.log('✅ Auth state resolved, app ready');
@@ -363,7 +369,22 @@ export const [AuthProvider, useAuth] = createContextHook(() => {
           console.log('🔔 Supabase auth event:', event);
           if (session?.user) {
             void applySupabaseSession(session.user);
-          } else if (event === 'SIGNED_OUT') {
+            return;
+          }
+
+          if (event === 'TOKEN_REFRESH_FAILED') {
+            void (async () => {
+              const recovered = await recoverSupabaseSession();
+              if (recovered?.user && isMounted) {
+                console.log('🔐 Recovered session after token refresh failure');
+                await applySupabaseSession(recovered.user);
+              }
+            })();
+            return;
+          }
+
+          if (event === 'SIGNED_OUT') {
+            if (!authBootstrapDoneRef.current) return;
             if (isMounted) {
               setUser(null);
               setSupabaseUser(null);
@@ -601,9 +622,10 @@ export const [AuthProvider, useAuth] = createContextHook(() => {
           setSupabaseUser(data.user);
           await AsyncStorage.setItem(AUTH_STORAGE_KEY, JSON.stringify(authUser));
 
-          void persistSupabaseSession(
+          await persistSupabaseSession(
             authUserRecord.session.access_token,
             authUserRecord.session.refresh_token,
+            { user: authUserRecord.user },
           );
 
           try {
@@ -733,9 +755,10 @@ export const [AuthProvider, useAuth] = createContextHook(() => {
         }
 
         if (signupSession) {
-          void persistSupabaseSession(
+          await persistSupabaseSession(
             signupSession.access_token,
             signupSession.refresh_token,
+            { user: signupUser as Parameters<typeof setSupabaseUser>[0] },
           );
         }
 

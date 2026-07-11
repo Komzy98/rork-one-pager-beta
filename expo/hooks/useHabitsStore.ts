@@ -23,6 +23,7 @@ import { generateDailyTasks, generateMilestones, shouldLevelUp } from '@/utils/g
 import { useAuth } from '@/hooks/useAuth';
 import { useSupabaseSync } from '@/utils/supabaseUserSync';
 import { useSocialActivity } from '@/hooks/useSocialActivity';
+import { devLogSocial } from '@/utils/socialAnalytics';
 import {
   resolveHabitsAfterCloudSync,
   resolveGenericRecordsAfterCloudSync,
@@ -528,11 +529,7 @@ export const [AppProvider, useApp] = createContextHook(() => {
     const today = getTodayFormatted();
     let completedHabitName: string | null = null;
     
-    console.log('🔄 Toggling habit completion:', {
-      habitId,
-      today,
-      currentHabits: habits.length
-    });
+    devLogSocial('🔄 Toggling habit completion', { habitId, today });
     
     const updatedHabits = habits.map(habit => {
       if (habit.id === habitId) {
@@ -541,7 +538,7 @@ export const [AppProvider, useApp] = createContextHook(() => {
         
         if (wasCompleted) {
           delete updatedCompletions[today];
-          console.log('❌ Removing completion for habit:', habit.name, 'on', today);
+          devLogSocial('❌ Removing habit completion', { habitId, today });
           const updatedLogs = (habit.completionLogs || []).filter(log => log.date !== today);
           return {
             ...habit,
@@ -551,7 +548,7 @@ export const [AppProvider, useApp] = createContextHook(() => {
         } else {
           completedHabitName = habit.name;
           updatedCompletions[today] = true;
-          console.log('✅ Adding completion for habit:', habit.name, 'on', today);
+          devLogSocial('✅ Adding habit completion', { habitId, today });
           const quickLog: GoalCompletion = {
             id: `${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
             date: today,
@@ -594,10 +591,15 @@ export const [AppProvider, useApp] = createContextHook(() => {
       return habit;
     });
     
-    console.log('💾 Saving updated habits to storage');
+    devLogSocial('💾 Saving updated habits to storage', { count: updatedHabits.length });
     saveHabitsMutation.mutate(updatedHabits);
     if (completedHabitName) {
-      void logHabitCompleted(habitId, completedHabitName);
+      const completedHabit = habits.find((habit) => habit.id === habitId);
+      void logHabitCompleted({
+        habitId,
+        habitName: completedHabitName,
+        description: completedHabit?.description ?? null,
+      });
     }
   };
 
@@ -607,11 +609,7 @@ export const [AppProvider, useApp] = createContextHook(() => {
     const today = getTodayFormatted();
     const now = new Date().toISOString();
     
-    console.log('📝 Logging detailed habit completion:', {
-      habitId,
-      today,
-      completionData
-    });
+    devLogSocial('📝 Logging detailed habit completion', { habitId, today });
     
     const updatedHabits = habits.map(habit => {
       if (habit.id === habitId) {
@@ -625,9 +623,7 @@ export const [AppProvider, useApp] = createContextHook(() => {
         const updatedCompletions = { ...habit.completions };
         updatedCompletions[today] = true;
         
-        console.log('✅ Marking habit as completed:', habit.name, 'on', today);
-        console.log('📊 Updated completions:', updatedCompletions);
-        console.log('📋 New completion log:', newCompletion);
+        devLogSocial('✅ Marking habit as completed', { habitId, today });
         
         return {
           ...habit,
@@ -639,7 +635,7 @@ export const [AppProvider, useApp] = createContextHook(() => {
     });
     
     saveHabitsMutation.mutate(updatedHabits);
-    console.log('✅ Habit completion logged successfully:', habitId, completionData);
+    devLogSocial('✅ Habit completion logged successfully', { habitId });
   };
 
   // Get completion logs for a specific habit

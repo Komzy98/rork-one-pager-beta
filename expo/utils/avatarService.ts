@@ -1,5 +1,5 @@
 import { supabase, supabaseConfigured } from '@/utils/supabaseClient';
-import { isLocalAvatarUri, isRemoteAvatarUrl } from '@/utils/avatarUtils';
+import { isLocalAvatarUri, isRemoteAvatarUrl, avatarStoragePath } from '@/utils/avatarUtils';
 
 export {
   isLocalAvatarUri,
@@ -22,12 +22,20 @@ export async function uploadProfileAvatar(
     throw new Error('Could not read the selected photo.');
   }
 
-  const blob = await response.blob();
-  const ext = localUri.toLowerCase().includes('.png') ? 'png' : 'jpg';
-  const path = `${userId}/avatar.${ext}`;
-  const contentType = ext === 'png' ? 'image/png' : 'image/jpeg';
+  const body =
+    typeof response.arrayBuffer === 'function'
+      ? await response.arrayBuffer()
+      : await response.blob();
+  const ext = localUri.toLowerCase().includes('.png')
+    ? 'png'
+    : localUri.toLowerCase().includes('.webp')
+      ? 'webp'
+      : 'jpg';
+  const path = avatarStoragePath(userId, ext);
+  const contentType =
+    ext === 'png' ? 'image/png' : ext === 'webp' ? 'image/webp' : 'image/jpeg';
 
-  const { error } = await supabase.storage.from(AVATAR_BUCKET).upload(path, blob, {
+  const { error } = await supabase.storage.from(AVATAR_BUCKET).upload(path, body, {
     upsert: true,
     contentType,
     cacheControl: '3600',

@@ -1,5 +1,5 @@
 import { supabase, supabaseConfigured } from '@/utils/supabaseClient';
-import { pickPublishedAvatarUrl } from '@/utils/avatarUtils';
+import { pickPublishedAvatarUrl, resolveDisplayAvatarUrl } from '@/utils/avatarUtils';
 
 export type ActivityVisibility = 'public' | 'friends' | 'private';
 
@@ -13,6 +13,39 @@ export interface SocialProfile {
   level: number;
   lastActiveAt: string;
   activityVisibility: ActivityVisibility;
+  shareStreakOnly: boolean;
+  shareEventsOnly: boolean;
+  hideLastActive: boolean;
+  blockNudges: boolean;
+}
+
+/** Minimal discovery row returned by search / username lookup RPCs. */
+export interface ProfileSearchHit {
+  id: string;
+  username: string;
+}
+
+function mapSearchHit(row: ProfileSearchHit): SocialProfile {
+  return {
+    id: row.id,
+    username: row.username,
+    displayName: null,
+    avatarUrl: null,
+    currentStreak: 0,
+    totalCompletions: 0,
+    level: 1,
+    lastActiveAt: '',
+    activityVisibility: 'friends',
+    shareStreakOnly: false,
+    shareEventsOnly: false,
+    hideLastActive: false,
+    blockNudges: false,
+  };
+}
+
+function isRateLimitError(error: unknown): boolean {
+  const msg = (error as { message?: string } | null)?.message?.toLowerCase() ?? '';
+  return msg.includes('rate limit');
 }
 
 export interface IncomingRequest {
@@ -47,6 +80,10 @@ interface ProfileRow {
   level: number;
   last_active_at: string;
   activity_visibility?: ActivityVisibility | null;
+  share_streak_only?: boolean | null;
+  share_events_only?: boolean | null;
+  hide_last_active?: boolean | null;
+  block_nudges?: boolean | null;
 }
 
 function mapProfile(row: ProfileRow): SocialProfile {
@@ -60,6 +97,10 @@ function mapProfile(row: ProfileRow): SocialProfile {
     level: row.level ?? 1,
     lastActiveAt: row.last_active_at,
     activityVisibility: (row.activity_visibility ?? 'friends') as ActivityVisibility,
+    shareStreakOnly: row.share_streak_only === true,
+    shareEventsOnly: row.share_events_only === true,
+    hideLastActive: row.hide_last_active === true,
+    blockNudges: row.block_nudges === true,
   };
 }
 
@@ -82,6 +123,44 @@ export function slugifyUsername(base: string): string {
     .replace(/[^a-z0-9_]/g, '')
     .slice(0, 20);
   return s.length >= 3 ? s : `user${Math.floor(1000 + Math.random() * 9000)}`;
+}
+
+function hasUsername(value?: string | null): boolean {
+  return !!value?.trim();
+}
+
+function usernameSeed(input: MyProfileInput): string {
+  return slugifyUsername(
+    input.username || input.displayName || input.email?.split('@')[0] || '',
+  );
+}
+
+/** Merge local/auth sources into the published social row for UI display. */
+export function enrichSocialProfile(
+  social: SocialProfile | null,
+  sources: {
+    profileName?: string | null;
+    authName?: string | null;
+    authEmail?: string | null;
+    profileAvatar?: string | null;
+    authAvatar?: string | null;
+  },
+): SocialProfile | null {
+  if (!social) return null;
+  const avatarUrl = resolveDisplayAvatarUrl({
+    profileAvatar: sources.profileAvatar,
+    authAvatar: sources.authAvatar,
+    socialAvatar: social.avatarUrl,
+  });
+  const displayName =
+    social.displayName?.trim() ||
+    sources.profileName?.trim() ||
+    sources.authName?.trim() ||
+    null;
+  const username =
+    social.username?.trim() ||
+    (sources.authEmail ? slugifyUsername(sources.authEmail.split('@')[0]) : '');
+  return { ...social, avatarUrl, displayName, username };
 }
 
 function ensureConfigured() {
@@ -111,6 +190,10 @@ export interface MyProfileInput {
   totalCompletions?: number;
   level?: number;
   username?: string;
+  shareStreakOnly?: boolean;
+  shareEventsOnly?: boolean;
+  hideLastActive?: boolean;
+  blockNudges?: boolean;
 }
 
 /**
@@ -119,14 +202,6 @@ export interface MyProfileInput {
  */
 export async function ensureMyProfile(input: MyProfileInput): Promise<SocialProfile> {
   ensureConfigured();
-  const stats = {
-    display_name: input.displayName ?? null,
-    current_streak: input.currentStreak ?? 0,
-    total_completions: input.totalCompletions ?? 0,
-    level: input.level ?? 1,
-    last_active_at: new Date().toISOString(),
-    updated_at: new Date().toISOString(),
-  };
 
   const { data: existing, error: selErr } = await supabase
     .from('profiles')
@@ -141,23 +216,77 @@ export async function ensureMyProfile(input: MyProfileInput): Promise<SocialProf
     input.avatarUrl,
   );
 
+  const display_name =
+    input.displayName?.trim() ||
+    (existing as ProfileRow | null)?.display_name?.trim() ||
+    null;
+
+  const existingRow = existing as ProfileRow | null;
+  const hideLastActive = input.hideLastActive ?? existingRow?.hide_last_active ?? false;
+  const last_active_at =
+    hideLastActive && existingRow?.last_active_at
+      ? existingRow.last_active_at
+      : new Date().toISOString();
+
+  const stats = {
+    display_name,
+    current_streak: input.currentStreak ?? 0,
+    total_completions: input.totalCompletions ?? 0,
+    level: input.level ?? 1,
+    last_active_at,
+    updated_at: new Date().toISOString(),
+    share_streak_only: input.shareStreakOnly ?? existingRow?.share_streak_only ?? false,
+    share_events_only: input.shareEventsOnly ?? existingRow?.share_events_only ?? false,
+    hide_last_active: hideLastActive,
+    block_nudges: input.blockNudges ?? existingRow?.block_nudges ?? false,
+  };
+
   if (existing) {
-    const { data, error } = await supabase
-      .from('profiles')
-      .update({
-        ...stats,
-        avatar_url,
-        ...(input.username ? { username: input.username } : {}),
-      })
-      .eq('id', input.userId)
-      .select('*')
-      .single();
-    if (error) throw error;
-    return mapProfile(data as ProfileRow);
+    const row = existing as ProfileRow;
+    const patch = {
+      ...stats,
+      avatar_url,
+    };
+
+    if (input.username?.trim()) {
+      const { data, error } = await supabase
+        .from('profiles')
+        .update({ ...patch, username: input.username.trim() })
+        .eq('id', input.userId)
+        .select('*')
+        .single();
+      if (error) throw error;
+      return mapProfile(data as ProfileRow);
+    }
+
+    if (hasUsername(row.username)) {
+      const { data, error } = await supabase
+        .from('profiles')
+        .update(patch)
+        .eq('id', input.userId)
+        .select('*')
+        .single();
+      if (error) throw error;
+      return mapProfile(data as ProfileRow);
+    }
+
+    const base = usernameSeed(input);
+    for (let attempt = 0; attempt < 6; attempt++) {
+      const candidate = attempt === 0 ? base : `${base}${Math.floor(10 + Math.random() * 9990)}`;
+      const { data, error } = await supabase
+        .from('profiles')
+        .update({ ...patch, username: candidate })
+        .eq('id', input.userId)
+        .select('*')
+        .single();
+      if (!error && data) return mapProfile(data as ProfileRow);
+      if (error && (error as { code?: string }).code !== '23505') throw error;
+    }
+    throw new Error('Could not allocate a unique username');
   }
 
   // Insert with a unique username (retry on collision).
-  const base = slugifyUsername(input.username || input.displayName || input.email?.split('@')[0] || '');
+  const base = usernameSeed(input);
   for (let attempt = 0; attempt < 6; attempt++) {
     const candidate = attempt === 0 ? base : `${base}${Math.floor(10 + Math.random() * 9990)}`;
     const { data, error } = await supabase
@@ -210,30 +339,71 @@ export async function updateActivityVisibility(
   if (error) throw error;
 }
 
+export interface SocialPrivacyPatch {
+  shareStreakOnly?: boolean;
+  shareEventsOnly?: boolean;
+  hideLastActive?: boolean;
+  blockNudges?: boolean;
+}
+
+export async function updateSocialPrivacy(
+  userId: string,
+  patch: SocialPrivacyPatch,
+): Promise<SocialProfile | null> {
+  ensureConfigured();
+  const row: Record<string, boolean | string> = {
+    updated_at: new Date().toISOString(),
+  };
+  if (patch.shareStreakOnly !== undefined) row.share_streak_only = patch.shareStreakOnly;
+  if (patch.shareEventsOnly !== undefined) row.share_events_only = patch.shareEventsOnly;
+  if (patch.hideLastActive !== undefined) row.hide_last_active = patch.hideLastActive;
+  if (patch.blockNudges !== undefined) row.block_nudges = patch.blockNudges;
+
+  const { data, error } = await supabase
+    .from('profiles')
+    .update(row)
+    .eq('id', userId)
+    .select('*')
+    .single();
+  if (error) throw error;
+  return data ? mapProfile(data as ProfileRow) : null;
+}
+
 export async function searchProfiles(query: string, myUserId: string): Promise<SocialProfile[]> {
   ensureConfigured();
   const q = query.trim().replace(/^@/, '');
   if (q.length < 2) return [];
-  const { data, error } = await supabase
-    .from('profiles')
-    .select('*')
-    .ilike('username', `%${q}%`)
-    .neq('id', myUserId)
-    .limit(20);
-  if (error) throw error;
-  return (data as ProfileRow[]).map(mapProfile);
+  const { data, error } = await supabase.rpc('search_profiles', {
+    p_query: q,
+    p_limit: 20,
+  });
+  if (error) {
+    if (isRateLimitError(error)) {
+      throw Object.assign(new Error('Too many searches — wait a few minutes and try again.'), {
+        code: 'RATE_LIMITED',
+      });
+    }
+    throw error;
+  }
+  return ((data as ProfileSearchHit[] | null) ?? []).map(mapSearchHit);
 }
 
 export async function getProfileByUsername(username: string): Promise<SocialProfile | null> {
   ensureConfigured();
   const u = username.trim().replace(/^@/, '');
-  const { data, error } = await supabase
-    .from('profiles')
-    .select('*')
-    .ilike('username', u)
-    .maybeSingle();
-  if (error) throw error;
-  return data ? mapProfile(data as ProfileRow) : null;
+  const { data, error } = await supabase.rpc('lookup_profile_username', {
+    p_username: u,
+  });
+  if (error) {
+    if (isRateLimitError(error)) {
+      throw Object.assign(new Error('Too many lookups — wait a few minutes and try again.'), {
+        code: 'RATE_LIMITED',
+      });
+    }
+    throw error;
+  }
+  const row = Array.isArray(data) ? (data[0] as ProfileSearchHit | undefined) : (data as ProfileSearchHit | null);
+  return row ? mapSearchHit(row) : null;
 }
 
 async function fetchProfilesByIds(ids: string[]): Promise<Map<string, SocialProfile>> {
@@ -361,6 +531,17 @@ export async function removeFriend(otherUserId: string): Promise<void> {
 
 export async function sendNudge(myUserId: string, toUserId: string, message?: string): Promise<void> {
   ensureConfigured();
+  const { data: recipient, error: recipientErr } = await supabase
+    .from('profiles')
+    .select('block_nudges')
+    .eq('id', toUserId)
+    .maybeSingle();
+  if (recipientErr && !isSocialUnavailableError(recipientErr)) throw recipientErr;
+  if ((recipient as { block_nudges?: boolean } | null)?.block_nudges) {
+    throw Object.assign(new Error('This partner is not accepting nudges right now.'), {
+      code: 'NUDGES_BLOCKED',
+    });
+  }
   const { error } = await supabase
     .from('nudges')
     .insert({ from_user: myUserId, to_user: toUserId, message: message ?? null });

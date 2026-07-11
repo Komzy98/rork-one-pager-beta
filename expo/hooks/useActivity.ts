@@ -6,6 +6,11 @@ import { useFriends } from './useFriends';
 import { useGamification } from './useHabitsEnhancement';
 import { useUserProfile } from './useUserProfile';
 import { supabaseConfigured } from '@/utils/supabaseClient';
+import {
+  activityVisibilityStorageKey,
+  sanitizePublishedActivity,
+} from '@/utils/socialActivityPublish';
+import { canWriteSocialActivity } from '@/utils/socialPublishGuard';
 import { unifiedStorage } from '@/utils/unifiedStorage';
 import { notificationService } from '@/utils/notificationService';
 import {
@@ -28,7 +33,7 @@ const STREAK_MILESTONES = [3, 7, 14, 21, 30, 50, 60, 100, 150, 200, 365];
 
 export const [ActivityProvider, useActivity] = createContextHook(() => {
   const { supabaseUser, isGuest } = useAuth();
-  const { friends, myProfile } = useFriends();
+  const { friends, myProfile, patchMyProfile } = useFriends();
   const { stats } = useGamification();
   const { profile } = useUserProfile();
   const queryClient = useQueryClient();
@@ -61,8 +66,16 @@ export const [ActivityProvider, useActivity] = createContextHook(() => {
   }, [enabled]);
 
   useEffect(() => {
-    if (myProfile?.activityVisibility) setVisibilityState(myProfile.activityVisibility);
-  }, [myProfile?.activityVisibility]);
+    if (myProfile?.activityVisibility) {
+      setVisibilityState(myProfile.activityVisibility);
+      if (myUserId) {
+        void unifiedStorage.setItem(
+          activityVisibilityStorageKey(myUserId),
+          myProfile.activityVisibility,
+        );
+      }
+    }
+  }, [myProfile?.activityVisibility, myUserId]);
 
   const queriesEnabled = enabled && available === true;
 
@@ -74,9 +87,9 @@ export const [ActivityProvider, useActivity] = createContextHook(() => {
   });
 
   const activeTodayQuery = useQuery({
-    queryKey: ['activity', 'active-today', myUserId, friendIds.length],
-    queryFn: () => getActiveTodayCount(friendIds),
-    enabled: queriesEnabled && friendIds.length > 0,
+    queryKey: ['activity', 'active-today', myUserId, friends.length],
+    queryFn: () => getActiveTodayCount(friends),
+    enabled: queriesEnabled && friends.length > 0,
     staleTime: 60_000,
   });
 
@@ -91,11 +104,13 @@ export const [ActivityProvider, useActivity] = createContextHook(() => {
       onChange: invalidate,
       onCheerOnMyEvent: () => {
         if (!socialNotifsRef.current) return;
-        void notificationService.sendImmediateNotification(
-          'You got a cheer 🎉',
-          'A friend cheered your progress on One Pager.',
-          { type: 'social' },
-        );
+        void notificationService
+          .sendImmediateNotification(
+            'You got a cheer 🎉',
+            'A friend cheered your progress on One Pager.',
+            { type: 'social' },
+          )
+          .catch(() => {});
       },
     });
   }, [queriesEnabled, myUserId, invalidate]);
@@ -104,13 +119,20 @@ export const [ActivityProvider, useActivity] = createContextHook(() => {
     async (input: Omit<LogEventInput, 'userId'>) => {
       if (!queriesEnabled || !myUserId) return;
       try {
-        await logEvent({ ...input, userId: myUserId });
+        const visibility = await unifiedStorage.getItem(activityVisibilityStorageKey(myUserId));
+        if (visibility === 'private') return;
+        if (!(await canWriteSocialActivity(myUserId))) return;
+        const sanitized = sanitizePublishedActivity({
+          ...input,
+          genericCopy: profile?.displayPreferences?.genericSocialActivity ?? true,
+        });
+        await logEvent({ ...sanitized, userId: myUserId });
         invalidate();
       } catch {
         // best effort
       }
     },
-    [queriesEnabled, myUserId, invalidate],
+    [queriesEnabled, myUserId, invalidate, profile?.displayPreferences?.genericSocialActivity],
   );
 
   // Auto-log streak milestones once each.
@@ -125,12 +147,19 @@ export const [ActivityProvider, useActivity] = createContextHook(() => {
         const stored = await unifiedStorage.getItem(key);
         const last = stored ? parseInt(stored, 10) : 0;
         if (cancelled || milestone <= last) return;
-        await logEvent({
-          userId: myUserId,
+        const visibility = await unifiedStorage.getItem(activityVisibilityStorageKey(myUserId));
+        if (visibility === 'private') return;
+        if (!(await canWriteSocialActivity(myUserId))) return;
+        const sanitized = sanitizePublishedActivity({
           type: 'streak_milestone',
           title: `${milestone}-day streak! 🔥`,
-          body: `${myProfile?.displayName || 'You'} hit a ${milestone}-day streak.`,
+          body: 'Hit a streak milestone',
           metadata: { milestone },
+          genericCopy: profile?.displayPreferences?.genericSocialActivity ?? true,
+        });
+        await logEvent({
+          userId: myUserId,
+          ...sanitized,
         });
         await unifiedStorage.setItem(key, String(milestone));
         invalidate();
@@ -141,7 +170,7 @@ export const [ActivityProvider, useActivity] = createContextHook(() => {
     return () => {
       cancelled = true;
     };
-  }, [queriesEnabled, myUserId, currentStreak, myProfile?.displayName, invalidate]);
+  }, [queriesEnabled, myUserId, currentStreak, myProfile?.displayName, invalidate, profile?.displayPreferences?.genericSocialActivity]);
 
   const cheer = useCallback(
     async (eventId: string, on: boolean) => {
@@ -175,11 +204,13 @@ export const [ActivityProvider, useActivity] = createContextHook(() => {
       setVisibilityState(v);
       try {
         await updateActivityVisibility(myUserId, v);
+        await unifiedStorage.setItem(activityVisibilityStorageKey(myUserId), v);
+        patchMyProfile({ activityVisibility: v });
       } catch {
         setVisibilityState(previous);
       }
     },
-    [myUserId, visibility],
+    [myUserId, visibility, patchMyProfile],
   );
 
   const presenceLabel = useMemo(() => {

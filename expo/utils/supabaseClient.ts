@@ -58,6 +58,71 @@ export const supabaseAnonKey = rawKey;
 
 export const supabaseConfigured = !!supabaseUrl && !!supabaseAnonKey;
 
+export function getSupabaseAuthStorageKey(): string | null {
+  if (!supabaseUrl) return null;
+  try {
+    const ref = new URL(supabaseUrl).hostname.split('.')[0];
+    return ref ? `sb-${ref}-auth-token` : null;
+  } catch {
+    return null;
+  }
+}
+
+type StoredAuthPayload = {
+  access_token?: string;
+  refresh_token?: string;
+  expires_at?: number;
+  expires_in?: number;
+  token_type?: string;
+  user?: User;
+};
+
+async function readStoredAuthPayload(): Promise<StoredAuthPayload | null> {
+  const storageKey = getSupabaseAuthStorageKey();
+  if (!storageKey || Platform.OS === 'web') return null;
+  try {
+    const raw = await AsyncStorage.getItem(storageKey);
+    if (!raw) return null;
+    return JSON.parse(raw) as StoredAuthPayload;
+  } catch {
+    return null;
+  }
+}
+
+/** Restore a Supabase session after cold start / Metro reload / refresh hiccups. */
+export async function recoverSupabaseSession(): Promise<Session | null> {
+  if (!supabaseConfigured) return null;
+
+  try {
+    const { data: { session } } = await supabase.auth.getSession();
+    if (session?.user) return session;
+  } catch (error) {
+    if (__DEV__) console.warn('getSession failed during recovery:', error);
+  }
+
+  const stored = await readStoredAuthPayload();
+  if (!stored?.refresh_token) return null;
+
+  try {
+    if (stored.access_token) {
+      const { data, error } = await supabase.auth.setSession({
+        access_token: stored.access_token,
+        refresh_token: stored.refresh_token,
+      });
+      if (!error && data.session?.user) return data.session;
+    }
+
+    const { data: refreshed, error: refreshError } = await supabase.auth.refreshSession({
+      refresh_token: stored.refresh_token,
+    });
+    if (!refreshError && refreshed.session?.user) return refreshed.session;
+  } catch (error) {
+    if (__DEV__) console.warn('recoverSupabaseSession failed:', error);
+  }
+
+  return null;
+}
+
 /** iOS simulator dev: route Supabase through Metro proxy (direct HTTPS to *.supabase.co often fails). */
 function shouldUseDevSupabaseProxy(): boolean {
   if (typeof __DEV__ === 'undefined' || !__DEV__) return false;
@@ -481,8 +546,9 @@ if (supabaseConfigured) {
 export async function persistSupabaseSession(
   accessToken: string,
   refreshToken: string,
-  timeoutMs = 8000,
-): Promise<void> {
+  options?: { user?: User; timeoutMs?: number },
+): Promise<boolean> {
+  const timeoutMs = options?.timeoutMs ?? 8000;
   try {
     await Promise.race([
       supabase.auth.setSession({
@@ -493,18 +559,17 @@ export async function persistSupabaseSession(
         setTimeout(() => reject(new Error('setSession timed out')), timeoutMs);
       }),
     ]);
-    return;
+    return true;
   } catch (err) {
     console.warn('persistSupabaseSession failed, writing local session fallback:', err);
   }
 
-  if (Platform.OS === 'web' || !supabaseUrl) return;
+  if (Platform.OS === 'web' || !supabaseUrl) return false;
 
   try {
-    const ref = new URL(supabaseUrl).hostname.split('.')[0];
-    if (!ref) return;
+    const storageKey = getSupabaseAuthStorageKey();
+    if (!storageKey) return false;
     const expiresIn = 3600;
-    const storageKey = `sb-${ref}-auth-token`;
     await AsyncStorage.setItem(
       storageKey,
       JSON.stringify({
@@ -513,10 +578,13 @@ export async function persistSupabaseSession(
         expires_in: expiresIn,
         expires_at: Math.floor(Date.now() / 1000) + expiresIn,
         token_type: 'bearer',
+        ...(options?.user ? { user: options.user } : {}),
       }),
     );
+    return true;
   } catch (storageErr) {
     console.warn('Could not write Supabase session fallback to storage:', storageErr);
+    return false;
   }
 }
 
