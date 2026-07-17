@@ -1,5 +1,12 @@
 -- Layer 4 — Technical enforcement (backend privacy)
--- Run AFTER 009_social_privacy.sql. Safe to re-run (idempotent).
+-- Run AFTER 009_social_privacy.sql (and 004_activity, 005_shared_plans, 007 if using plans).
+-- Safe to re-run (idempotent).
+--
+-- If the SQL Editor shows "Failed to fetch (api.supabase.com)" (not a Postgres error),
+-- the request timed out — run the four files in supabase/migrations/manual_runs/010_part*.sql
+-- one at a time, then reload API schema.
+
+create extension if not exists pgcrypto;
 
 -- ---------------------------------------------------------------------------
 -- 1) Activity writes: block inserts when profile visibility is private
@@ -175,12 +182,19 @@ alter table public.shared_plans
   add column if not exists invite_token text unique
     default encode(gen_random_bytes(16), 'hex');
 
-update public.shared_plans
-  set invite_token = encode(gen_random_bytes(16), 'hex')
-  where invite_token is null;
-
-alter table public.shared_plans
-  alter column invite_token set not null;
+do $$
+begin
+  if exists (select 1 from public.shared_plans where invite_token is null) then
+    update public.shared_plans
+      set invite_token = encode(gen_random_bytes(16), 'hex')
+      where invite_token is null;
+  end if;
+  begin
+    alter table public.shared_plans alter column invite_token set not null;
+  exception when others then
+    null;
+  end;
+end $$;
 
 create table if not exists public.plan_access_grants (
   plan_id uuid not null references public.shared_plans(id) on delete cascade,

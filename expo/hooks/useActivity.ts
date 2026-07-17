@@ -4,6 +4,8 @@ import { useQuery, useQueryClient } from '@tanstack/react-query';
 import createContextHook from '@nkzw/create-context-hook';
 import { useAuth } from './useAuth';
 import { useFriends } from './useFriends';
+import { usePartnerHabitShares } from './usePartnerHabitShares';
+import { filterFeedByHabitShares } from '@/utils/partnerHabitActivityFilter';
 import { useGamification } from './useHabitsEnhancement';
 import { useUserProfile } from './useUserProfile';
 import { supabaseConfigured } from '@/utils/supabaseClient';
@@ -40,6 +42,7 @@ const STREAK_MILESTONES = [3, 7, 14, 21, 30, 50, 60, 100, 150, 200, 365];
 export const [ActivityProvider, useActivity] = createContextHook(() => {
   const { supabaseUser, isGuest } = useAuth();
   const { friends, myProfile, patchMyProfile } = useFriends();
+  const { shares: habitShares, enforced: habitShareEnforced } = usePartnerHabitShares();
   const { stats } = useGamification();
   const { profile } = useUserProfile();
   const queryClient = useQueryClient();
@@ -182,7 +185,7 @@ export const [ActivityProvider, useActivity] = createContextHook(() => {
     async (eventId: string, on: boolean) => {
       // Optimistic feed update.
       queryClient.setQueryData<ActivityEvent[]>(
-        ['activity', 'feed', myUserId, friendIds.length],
+        ['activity', 'feed', myUserId, friendIdsKey],
         (prev) =>
           (prev ?? []).map((e) =>
             e.id === eventId
@@ -193,14 +196,14 @@ export const [ActivityProvider, useActivity] = createContextHook(() => {
       try {
         const total = await toggleCheer(eventId, on);
         queryClient.setQueryData<ActivityEvent[]>(
-          ['activity', 'feed', myUserId, friendIds.length],
+          ['activity', 'feed', myUserId, friendIdsKey],
           (prev) => (prev ?? []).map((e) => (e.id === eventId ? { ...e, cheersCount: total } : e)),
         );
       } catch {
         invalidate(); // reconcile from server on failure
       }
     },
-    [queryClient, myUserId, friendIds.length, invalidate],
+    [queryClient, myUserId, friendIdsKey, invalidate],
   );
 
   const setVisibility = useCallback(
@@ -234,10 +237,16 @@ export const [ActivityProvider, useActivity] = createContextHook(() => {
     return `${n} partner${n === 1 ? '' : 's'} active today`;
   }, [activeTodayQuery.data]);
 
+  const feed = useMemo(() => {
+    const raw = feedQuery.data ?? [];
+    if (!myUserId || !habitShareEnforced) return raw;
+    return filterFeedByHabitShares(raw, myUserId, habitShares);
+  }, [feedQuery.data, myUserId, habitShares, habitShareEnforced]);
+
   return {
     available,
     isSignedIn: enabled,
-    feed: feedQuery.data ?? [],
+    feed,
     isLoading: feedQuery.isLoading,
     isRefreshing: feedQuery.isFetching,
     activeTodayCount: activeTodayQuery.data ?? 0,

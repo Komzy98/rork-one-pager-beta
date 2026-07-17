@@ -1,6 +1,6 @@
 import React, { useCallback } from 'react';
 import { Alert, Platform, Share, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
-import { Share2, UserPlus, Users } from 'lucide-react-native';
+import { Share2, UserPlus, Users, X } from 'lucide-react-native';
 import { buildUserLink } from '@/utils/deepLinks';
 
 interface PartnerInviteEmptyCardProps {
@@ -14,12 +14,14 @@ interface PartnerInviteEmptyCardProps {
     primary: string;
   };
   onAddPartner: () => void;
+  onDismiss?: () => void;
 }
 
 export function PartnerInviteEmptyCard({
   username,
   colors,
   onAddPartner,
+  onDismiss,
 }: PartnerInviteEmptyCardProps) {
   const handleShareInvite = useCallback(async () => {
     if (!username?.trim()) {
@@ -39,12 +41,23 @@ export function PartnerInviteEmptyCard({
 
   return (
     <View style={[styles.card, { backgroundColor: colors.card, borderColor: colors.border }]}>
+      {onDismiss ? (
+        <TouchableOpacity
+          style={styles.dismissBtn}
+          onPress={onDismiss}
+          hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+          accessibilityLabel="Dismiss partner invite"
+          accessibilityRole="button"
+        >
+          <X size={16} color={colors.textMuted} />
+        </TouchableOpacity>
+      ) : null}
       <View style={[styles.iconCircle, { backgroundColor: `${colors.primary}14` }]}>
         <Users size={22} color={colors.primary} strokeWidth={2.2} />
       </View>
-      <Text style={[styles.title, { color: colors.text }]}>Add your first accountability partner</Text>
+      <Text style={[styles.title, { color: colors.text }]}>Add an accountability partner</Text>
       <Text style={[styles.body, { color: colors.textSecondary }]}>
-        See streaks, nudge each other, RSVP to events together, and cheer on wins — all from Overview.
+        Optional — connect with someone to share streaks and cheer each other on. You can set this up anytime from Profile.
       </Text>
       <View style={styles.actions}>
         <TouchableOpacity
@@ -61,6 +74,11 @@ export function PartnerInviteEmptyCard({
           <UserPlus size={16} color={colors.primary} />
           <Text style={[styles.secondaryBtnText, { color: colors.primary }]}>Find by username</Text>
         </TouchableOpacity>
+        {onDismiss ? (
+          <TouchableOpacity style={styles.notNowBtn} onPress={onDismiss}>
+            <Text style={[styles.notNowText, { color: colors.textMuted }]}>Not now</Text>
+          </TouchableOpacity>
+        ) : null}
       </View>
     </View>
   );
@@ -71,9 +89,18 @@ const styles = StyleSheet.create({
     borderRadius: 16,
     borderWidth: 1,
     padding: 16,
+    paddingTop: 20,
     marginBottom: 16,
     alignItems: 'center',
     gap: 8,
+    position: 'relative',
+  },
+  dismissBtn: {
+    position: 'absolute',
+    top: 10,
+    right: 10,
+    zIndex: 1,
+    padding: 4,
   },
   iconCircle: {
     width: 52,
@@ -124,5 +151,13 @@ const styles = StyleSheet.create({
   secondaryBtnText: {
     fontSize: 15,
     fontWeight: '700',
+  },
+  notNowBtn: {
+    alignItems: 'center',
+    paddingVertical: 6,
+  },
+  notNowText: {
+    fontSize: 14,
+    fontWeight: '500',
   },
 });

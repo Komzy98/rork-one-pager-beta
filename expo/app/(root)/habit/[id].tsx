@@ -9,6 +9,8 @@ import HabitIcon from '@/components/HabitIcon';
 import ProgressCircle from '@/components/ProgressCircle';
 import DaySelector from '@/components/DaySelector';
 import { getCompletionRate, getLast7Days, getDayName, getWeekStartDate, getWeekCompletionCount } from '@/utils/dateUtils';
+import { useTheme } from '@/hooks/useTheme';
+import { HabitAccountabilitySection } from '@/components/social/HabitAccountabilitySection';
 
 const DAY_NAMES = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
 const FULL_DAY_NAMES = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
@@ -16,6 +18,7 @@ const FULL_DAY_NAMES = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 
 export default function HabitDetailScreen() {
   const { id } = useLocalSearchParams<{ id: string }>();
   const router = useRouter();
+  const { colors } = useTheme();
   const habit = useHabit(id);
   const { toggleHabitCompletion, deleteHabit, getHabitStats, updateHabit, useStreakFreeze, getStreakFreezeInfo, getPartialCreditStats } = useHabits();
   
@@ -655,6 +658,20 @@ export default function HabitDetailScreen() {
               </Text>
             )}
           </TouchableOpacity>
+
+          <HabitAccountabilitySection
+            habitId={habit.id}
+            habitName={habit.name}
+            colors={{
+              text: colors.text,
+              textSecondary: colors.textSecondary,
+              textTertiary: colors.textTertiary,
+              card: colors.card,
+              border: colors.border,
+              primary: colors.primary,
+              surfaceSecondary: colors.surfaceSecondary,
+            }}
+          />
           
           <TouchableOpacity
             style={styles.deleteRow}

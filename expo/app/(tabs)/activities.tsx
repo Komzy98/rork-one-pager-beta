@@ -75,7 +75,7 @@ import { AccountabilityInboxCard } from '@/components/social/AccountabilityInbox
 import { AccountabilityCircleCard } from '@/components/social/AccountabilityCircleCard';
 import { PartnerInviteEmptyCard } from '@/components/social/PartnerInviteEmptyCard';
 import { PartnerListSyncCard } from '@/components/social/PartnerListSyncCard';
-import { confirmBeforeFirstPartner } from '@/utils/partnerPrivacy';
+import { confirmBeforeFirstPartner, isPartnerInviteOverviewDismissed, markPartnerInviteOverviewDismissed } from '@/utils/partnerPrivacy';
 import {
   derivePartnersAtRisk,
   getCircleProgress,
@@ -319,6 +319,7 @@ export default function ActivitiesScreen() {
   const userId = user?.id || 'guest';
   const [autoSummaryScheduleLabel, setAutoSummaryScheduleLabel] = useState<string>('');
   const [autoSummaryHintDismissed, setAutoSummaryHintDismissed] = useState(true);
+  const [partnerInviteDismissed, setPartnerInviteDismissed] = useState(true);
   const [isSpeaking, setIsSpeaking] = useState<boolean>(false);
   const [showsWithThumbnails, setShowsWithThumbnails] = useState<(Show & { posterUrl?: string | null })[]>([]);
   const [younifyContinueItems, setYounifyContinueItems] = useState<Record<string, unknown>[]>([]);
@@ -1372,11 +1373,17 @@ export default function ActivitiesScreen() {
 
   useEffect(() => {
     void isAutoSummaryHintDismissed(userId).then(setAutoSummaryHintDismissed);
+    void isPartnerInviteOverviewDismissed(userId).then(setPartnerInviteDismissed);
   }, [userId]);
 
   const handleDismissAutoSummaryHint = useCallback(() => {
     setAutoSummaryHintDismissed(true);
     void dismissAutoSummaryHint(userId);
+  }, [userId]);
+
+  const handleDismissPartnerInvite = useCallback(() => {
+    setPartnerInviteDismissed(true);
+    void markPartnerInviteOverviewDismissed(userId);
   }, [userId]);
 
   useEffect(() => {
@@ -2586,7 +2593,7 @@ export default function ActivitiesScreen() {
               ) : null}
             </View>
 
-            {friendsAvailable === true && !friendsLoading && !hasFriendsError && partnerList.length === 0 && friendshipCount === 0 ? (
+            {friendsAvailable === true && !friendsLoading && !hasFriendsError && partnerList.length === 0 && friendshipCount === 0 && !partnerInviteDismissed ? (
               <PartnerInviteEmptyCard
                 username={myProfile?.username}
                 colors={{
@@ -2598,6 +2605,7 @@ export default function ActivitiesScreen() {
                   primary: colors.primary,
                 }}
                 onAddPartner={() => router.push('/friends' as any)}
+                onDismiss={handleDismissPartnerInvite}
               />
             ) : null}
 

@@ -76,6 +76,7 @@ export const [FriendsProvider, useFriends] = createContextHook(() => {
 
   // null = initializing, true = social tables ready, false = migrations missing
   const [backendReady, setBackendReady] = useState<boolean | null>(enabled ? null : false);
+  const [initError, setInitError] = useState<string | null>(null);
   const [myProfile, setMyProfile] = useState<SocialProfile | null>(null);
   const [initAttempt, setInitAttempt] = useState(0);
 
@@ -95,6 +96,7 @@ export const [FriendsProvider, useFriends] = createContextHook(() => {
     let cancelled = false;
     (async () => {
       try {
+        setInitError(null);
         const privacy = mergeSocialPrivacy(profile?.socialPrivacy);
         const prof = await ensureMyProfile({
           userId: myUserId,
@@ -118,9 +120,14 @@ export const [FriendsProvider, useFriends] = createContextHook(() => {
             ),
           });
           setBackendReady(true);
+          setInitError(null);
         }
       } catch (e) {
-        if (!cancelled) setBackendReady(false);
+        if (!cancelled) {
+          setBackendReady(false);
+          const msg = (e as { message?: string })?.message?.trim() || 'Could not connect to social backend';
+          setInitError(isSocialUnavailableError(e) ? null : msg);
+        }
         if (!isSocialUnavailableError(e) && __DEV__) {
           console.warn('useFriends: ensureMyProfile failed', e);
         }
@@ -131,7 +138,6 @@ export const [FriendsProvider, useFriends] = createContextHook(() => {
     };
   }, [
     enabled,
-    socialAllowed,
     myUserId,
     currentStreak,
     totalCompletions,
@@ -140,8 +146,6 @@ export const [FriendsProvider, useFriends] = createContextHook(() => {
     user?.email,
     profile?.name,
     profile?.socialPrivacy,
-    profile?.birthYear,
-    profile?.parentalSocialConsent,
     publishedAvatarUrl,
     initAttempt,
   ]);
@@ -228,6 +232,7 @@ export const [FriendsProvider, useFriends] = createContextHook(() => {
   });
 
   const retryInit = useCallback(() => {
+    setInitError(null);
     setBackendReady(null);
     setInitAttempt((n) => n + 1);
   }, []);
@@ -239,6 +244,7 @@ export const [FriendsProvider, useFriends] = createContextHook(() => {
     queryClient.invalidateQueries({ queryKey: ['social', 'incoming', myUserId] });
     queryClient.invalidateQueries({ queryKey: ['social', 'outgoing', myUserId] });
     queryClient.invalidateQueries({ queryKey: ['social', 'nudges', myUserId] });
+    queryClient.invalidateQueries({ queryKey: ['social', 'habit-shares', myUserId] });
   }, [queryClient, myUserId]);
 
   // Realtime: live friend/request/nudge updates + local notifications.
@@ -269,9 +275,12 @@ export const [FriendsProvider, useFriends] = createContextHook(() => {
 
   // --- Actions --------------------------------------------------------------
   const requestByUserId = useCallback(
-    async (toUserId: string): Promise<SendRequestResult> => {
+    async (
+      toUserId: string,
+      inviteHabits?: { habitId: string; habitName: string }[],
+    ): Promise<SendRequestResult> => {
       if (!myUserId) return { ok: false, reason: 'error', message: 'Not signed in' };
-      const res = await sendFriendRequest(myUserId, toUserId);
+      const res = await sendFriendRequest(myUserId, toUserId, inviteHabits);
       invalidateAll();
       return res;
     },
@@ -279,12 +288,15 @@ export const [FriendsProvider, useFriends] = createContextHook(() => {
   );
 
   const requestByUsername = useCallback(
-    async (username: string): Promise<SendRequestResult> => {
+    async (
+      username: string,
+      inviteHabits?: { habitId: string; habitName: string }[],
+    ): Promise<SendRequestResult> => {
       if (!myUserId) return { ok: false, reason: 'error', message: 'Not signed in' };
       try {
         const profile = await getProfileByUsername(username);
         if (!profile) return { ok: false, reason: 'error', message: 'No user found with that username' };
-        return await requestByUserId(profile.id);
+        return await requestByUserId(profile.id, inviteHabits);
       } catch (e) {
         return { ok: false, reason: 'error', message: (e as Error)?.message };
       }
@@ -438,6 +450,7 @@ export const [FriendsProvider, useFriends] = createContextHook(() => {
   return {
     available,
     backendReady,
+    initError,
     isInitializing,
     isSignedIn: enabled,
     myProfile: myProfileForUi,

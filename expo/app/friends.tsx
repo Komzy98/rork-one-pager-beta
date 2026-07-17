@@ -32,7 +32,9 @@ import {
 } from 'lucide-react-native';
 import * as Haptics from 'expo-haptics';
 import { useTheme } from '@/hooks/useTheme';
+import { useAuth } from '@/hooks/useAuth';
 import { useFriends } from '@/hooks/useFriends';
+import { usePartnerHabitShares } from '@/hooks/usePartnerHabitShares';
 import { useActivity } from '@/hooks/useActivity';
 import { useUserProfile } from '@/hooks/useUserProfile';
 import { buildUserLink } from '@/utils/deepLinks';
@@ -42,6 +44,8 @@ import {
   confirmBeforeFirstPartner,
   getVisibilityCopy,
   UNFRIEND_REVOKE_MESSAGE,
+  isPartnerInviteBannerDismissed,
+  markPartnerInviteBannerDismissed,
 } from '@/utils/partnerPrivacy';
 import {
   mergeSocialPrivacy,
@@ -107,21 +111,25 @@ function PrivacyToggleRow({
 export default function FriendsScreen() {
   const { colors } = useTheme();
   const insets = useSafeAreaInsets();
+  const { user } = useAuth();
   const friends = useFriends();
+  const { sharesFor } = usePartnerHabitShares();
   const activity = useActivity();
   const { profile, updateDisplayPreferences, updateProfile } = useUserProfile();
-  const params = useLocalSearchParams<{ addUsername?: string }>();
+  const params = useLocalSearchParams<{ addUsername?: string; addHabitId?: string; addHabitName?: string }>();
 
   const [query, setQuery] = useState('');
   const [results, setResults] = useState<SocialProfile[]>([]);
   const [searching, setSearching] = useState(false);
   const [busyId, setBusyId] = useState<string | null>(null);
   const [requestedIds, setRequestedIds] = useState<Set<string>>(new Set());
+  const [inviteBannerDismissed, setInviteBannerDismissed] = useState(true);
   const autoAddHandled = useRef(false);
 
   const {
     available,
     backendReady,
+    initError,
     isInitializing,
     isSignedIn,
     myProfile,
@@ -169,6 +177,18 @@ export default function FriendsScreen() {
     }, [backendReady, markAllNudgesRead]),
   );
 
+  useEffect(() => {
+    const userId = user?.id;
+    if (!userId) return;
+    void isPartnerInviteBannerDismissed(userId).then(setInviteBannerDismissed);
+  }, [user?.id]);
+
+  const handleDismissInviteBanner = useCallback(() => {
+    if (!user?.id) return;
+    setInviteBannerDismissed(true);
+    void markPartnerInviteBannerDismissed(user.id);
+  }, [user?.id]);
+
   // Debounced username search.
   useEffect(() => {
     if (query.trim().length < 2) {
@@ -200,15 +220,29 @@ export default function FriendsScreen() {
     const target = params.addUsername;
     if (!target || autoAddHandled.current || backendReady !== true) return;
     autoAddHandled.current = true;
+    const inviteHabits =
+      params.addHabitId?.trim()
+        ? [
+            {
+              habitId: String(params.addHabitId).trim(),
+              habitName: params.addHabitName?.trim() || 'Habit',
+            },
+          ]
+        : undefined;
     void (async () => {
       try {
         if (myProfile?.id) {
           const ok = await confirmBeforeFirstPartner(myProfile.id);
           if (!ok) return;
         }
-        const res = await requestByUsername(String(target));
+        const res = await requestByUsername(String(target), inviteHabits);
         if (res.ok) {
-          Alert.alert('Request sent', `Your friend request to @${target} is on its way.`);
+          Alert.alert(
+            'Request sent',
+            inviteHabits?.length
+              ? `Your invite to @${target} includes accountability for “${inviteHabits[0].habitName}”.`
+              : `Your friend request to @${target} is on its way.`,
+          );
         } else if (res.reason === 'already_friends') {
           Alert.alert("You're already partners", `You and @${target} are already accountability partners.`);
         } else if (res.reason === 'already_requested') {
@@ -221,7 +255,15 @@ export default function FriendsScreen() {
         Alert.alert('Could not add', 'Please try again in a moment.');
       }
     })();
-  }, [params.addUsername, backendReady, requestByUsername, refresh, myProfile?.id]);
+  }, [
+    params.addUsername,
+    params.addHabitId,
+    params.addHabitName,
+    backendReady,
+    requestByUsername,
+    refresh,
+    myProfile?.id,
+  ]);
 
   const handleRefresh = useCallback(() => {
     refresh();
@@ -541,7 +583,9 @@ export default function FriendsScreen() {
           <Clock size={40} color={colors.textTertiary} />
           <Text style={[styles.emptyTitle, { color: colors.text }]}>Backend setup needed</Text>
           <Text style={[styles.emptyBody, { color: colors.textTertiary }]}>
-            Apply Supabase migrations 002_social, 010_technical_enforcement, 011_compliance, and 013_friend_profiles_rpc, then reopen this screen.
+            {initError
+              ? initError
+              : 'Apply Supabase migrations 002_social through 015_partner_habit_shares (at least 011_compliance, 013_friend_profiles_rpc, 014_age_consent_rpc), then Supabase → Settings → API → Reload schema, and reopen this screen.'}
           </Text>
           <TouchableOpacity
             style={[styles.primaryBtn, { backgroundColor: colors.primary }]}
@@ -560,8 +604,16 @@ export default function FriendsScreen() {
           refreshControl={<RefreshControl refreshing={isRefreshing} onRefresh={handleRefresh} tintColor={colors.primary} />}
         >
           {/* Invite card */}
-          {myProfile && (
+          {myProfile && !inviteBannerDismissed ? (
             <View style={[styles.inviteCard, { backgroundColor: colors.card, borderColor: colors.border }]}>
+              <TouchableOpacity
+                style={styles.inviteDismissBtn}
+                onPress={handleDismissInviteBanner}
+                hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+                accessibilityLabel="Dismiss invite banner"
+              >
+                <X size={16} color={colors.textTertiary} />
+              </TouchableOpacity>
               <Avatar profile={myProfile} size={44} />
               <View style={styles.inviteInfo}>
                 <Text style={[styles.inviteName, { color: colors.text }]} numberOfLines={1}>
@@ -576,7 +628,7 @@ export default function FriendsScreen() {
                 <Text style={[styles.inviteBtnText, { color: colors.textInverse }]}>Invite</Text>
               </TouchableOpacity>
             </View>
-          )}
+          ) : null}
 
           {!partnersEnabled && socialRestriction ? (
             <View style={[styles.privateActiveBanner, { backgroundColor: '#FF950012', borderColor: '#FF950033', marginBottom: 8 }]}>
@@ -601,6 +653,11 @@ export default function FriendsScreen() {
                       {req.from.displayName || req.from.username}
                     </Text>
                     <Text style={[styles.rowSub, { color: colors.textTertiary }]}>Wants to be your partner</Text>
+                    {req.inviteHabits.length > 0 ? (
+                      <Text style={[styles.rowSub, { color: colors.primary, marginTop: 2 }]} numberOfLines={2}>
+                        Habit: {req.inviteHabits.map((h) => h.habitName).join(', ')}
+                      </Text>
+                    ) : null}
                   </View>
                   <TouchableOpacity
                     style={[styles.iconBtn, { backgroundColor: colors.primary }]}
@@ -957,6 +1014,15 @@ export default function FriendsScreen() {
                       </Text>
                       <Text style={[styles.rowSub, { color: colors.textTertiary }]}> · {p.label}</Text>
                     </View>
+                    {sharesFor(f.id).length > 0 ? (
+                      <Text style={[styles.rowSub, { color: colors.textTertiary, marginTop: 2 }]} numberOfLines={2}>
+                        Shared habits: {sharesFor(f.id).map((s) => s.habitName || 'Habit').join(', ')}
+                      </Text>
+                    ) : (
+                      <Text style={[styles.rowSub, { color: colors.textTertiary, marginTop: 2 }]}>
+                        No habits shared yet — open a habit to grant access
+                      </Text>
+                    )}
                   </View>
                   {f.blockNudges ? (
                     <View style={[styles.nudgeBtn, { borderColor: colors.border, opacity: 0.5 }]}>
@@ -1012,8 +1078,17 @@ const styles = StyleSheet.create({
     borderRadius: 16,
     borderWidth: StyleSheet.hairlineWidth,
     padding: 12,
+    paddingTop: 28,
     gap: 12,
     marginBottom: 8,
+    position: 'relative',
+  },
+  inviteDismissBtn: {
+    position: 'absolute',
+    top: 8,
+    right: 8,
+    zIndex: 1,
+    padding: 4,
   },
   inviteInfo: { flex: 1 },
   inviteName: { fontSize: 16, fontWeight: '700' },

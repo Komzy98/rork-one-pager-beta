@@ -197,7 +197,14 @@ export default function RootLayout() {
           return;
         }
         if (parsed.kind === 'user') {
-          router.push({ pathname: '/friends', params: { addUsername: parsed.username } } as any);
+          router.push({
+            pathname: '/friends',
+            params: {
+              addUsername: parsed.username,
+              ...(parsed.habitId ? { addHabitId: parsed.habitId } : {}),
+              ...(parsed.habitName ? { addHabitName: parsed.habitName } : {}),
+            },
+          } as any);
           return;
         }
         if (parsed.kind === 'event') {

@@ -111,6 +111,7 @@ import { updateProfileAvatar } from '@/utils/friendsService';
 import {
   deleteMyActivityHistory,
   exportSocialData,
+  fetchAgeConsentFromProfile,
   syncAgeConsentToProfile,
 } from '@/utils/socialCompliance';
 import {
@@ -770,41 +771,112 @@ export default function ProfileScreen() {
     setBirthYearDraft(profile?.birthYear ? String(profile.birthYear) : '');
   }, [profile?.birthYear]);
 
+  useEffect(() => {
+    if (!supabaseUser?.id) return;
+    let cancelled = false;
+    void (async () => {
+      const remote = await fetchAgeConsentFromProfile(supabaseUser.id);
+      if (cancelled || (!remote.birthYear && remote.parentalSocialConsent === undefined)) return;
+      const patch: { birthYear?: number; parentalSocialConsent?: boolean } = {};
+      if (remote.birthYear != null && remote.birthYear !== profile?.birthYear) {
+        patch.birthYear = remote.birthYear;
+      }
+      if (
+        remote.parentalSocialConsent !== undefined &&
+        remote.parentalSocialConsent !== profile?.parentalSocialConsent
+      ) {
+        patch.parentalSocialConsent = remote.parentalSocialConsent;
+      }
+      if (Object.keys(patch).length > 0) updateProfile(patch);
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [supabaseUser?.id, profile?.birthYear, profile?.parentalSocialConsent, updateProfile]);
+
+  const ageConsentEnsureInput = useCallback(() => {
+    const avatarUrl = resolveDisplayAvatarUrl({
+      profileAvatar: profile?.avatar,
+      authAvatar: user?.avatar,
+      socialAvatar: null,
+    });
+    return {
+      displayName: user?.name?.trim() || profile?.name?.trim() || null,
+      email: user?.email ?? null,
+      avatarUrl,
+      currentStreak: gamificationStats?.currentStreak ?? 0,
+      totalCompletions: gamificationStats?.totalCompletions ?? 0,
+      level: gamificationStats?.level ?? 1,
+    };
+  }, [
+    profile?.avatar,
+    profile?.name,
+    user?.avatar,
+    user?.email,
+    user?.name,
+    gamificationStats?.currentStreak,
+    gamificationStats?.totalCompletions,
+    gamificationStats?.level,
+  ]);
+
   const handleSaveBirthYear = useCallback(async () => {
     const year = parseInt(birthYearDraft.trim(), 10);
     if (!isValidBirthYear(year)) {
       Alert.alert('Invalid year', 'Enter a valid birth year.');
       return;
     }
-    updateProfile({ birthYear: year });
-    if (supabaseUser?.id) {
-      try {
-        await syncAgeConsentToProfile(supabaseUser.id, year, profile?.parentalSocialConsent);
-      } catch (e) {
-        const msg = (e as Error)?.message ?? '';
-        const hint = msg.toLowerCase().includes('profile not found')
-          ? 'Open Accountability Partners once, then try Save again.'
-          : msg.toLowerCase().includes('birth_year') || msg.toLowerCase().includes('schema cache')
-            ? 'Run migrations 011 and 014 in Supabase SQL Editor, then reload API schema (Settings → API).'
-            : 'Run migration 014_age_consent_rpc.sql in Supabase SQL Editor, then try again.';
-        Alert.alert('Could not sync', `Birth year saved on this device.\n\n${hint}`);
+    setDataBusy(true);
+    try {
+      if (supabaseUser?.id) {
+        await syncAgeConsentToProfile(
+          supabaseUser.id,
+          year,
+          profile?.parentalSocialConsent,
+          ageConsentEnsureInput(),
+        );
       }
+      updateProfile({ birthYear: year });
+      void Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+    } catch (e) {
+      const msg = (e as Error)?.message ?? '';
+      const hint = msg.toLowerCase().includes('profile not found')
+        ? 'We tried to create your partner profile automatically. Check your connection and tap Save again.'
+        : msg.toLowerCase().includes('birth_year') ||
+            msg.toLowerCase().includes('schema cache') ||
+            msg.toLowerCase().includes('could not find')
+          ? 'Run migrations 011_compliance and 014_age_consent_rpc in Supabase, then reload API schema (Settings → API).'
+          : msg || 'Run migration 014_age_consent_rpc.sql in Supabase, then try again.';
+      Alert.alert('Could not sync', hint);
+    } finally {
+      setDataBusy(false);
     }
-    void Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
-  }, [birthYearDraft, profile?.parentalSocialConsent, supabaseUser?.id, updateProfile]);
+  }, [
+    birthYearDraft,
+    profile?.parentalSocialConsent,
+    supabaseUser?.id,
+    updateProfile,
+    ageConsentEnsureInput,
+  ]);
 
   const handleToggleParentalConsent = useCallback(
     async (value: boolean) => {
-      updateProfile({ parentalSocialConsent: value });
       if (supabaseUser?.id) {
         try {
-          await syncAgeConsentToProfile(supabaseUser.id, profile?.birthYear ?? null, value);
+          await syncAgeConsentToProfile(
+            supabaseUser.id,
+            profile?.birthYear ?? null,
+            value,
+            ageConsentEnsureInput(),
+          );
+          updateProfile({ parentalSocialConsent: value });
         } catch {
-          // local only
+          Alert.alert('Could not sync', 'Parental consent saved on this device only. Check Supabase migrations 011 and 014.');
         }
+      } else {
+        updateProfile({ parentalSocialConsent: value });
       }
     },
-    [profile?.birthYear, supabaseUser?.id, updateProfile],
+    [profile?.birthYear, supabaseUser?.id, updateProfile, ageConsentEnsureInput],
   );
 
   const handleExportSocialData = useCallback(async () => {
@@ -1745,8 +1817,9 @@ export default function ProfileScreen() {
                       onChangeText={setBirthYearDraft}
                     />
                     <TouchableOpacity
-                      style={[styles.accountBtn, { backgroundColor: colors.primary, paddingHorizontal: 16, paddingVertical: 10, marginTop: 0 }]}
+                      style={[styles.accountBtn, { backgroundColor: colors.primary, paddingHorizontal: 16, paddingVertical: 10, marginTop: 0, opacity: dataBusy ? 0.6 : 1 }]}
                       onPress={() => void handleSaveBirthYear()}
+                      disabled={dataBusy}
                     >
                       <Text style={[styles.accountBtnText, { color: colors.textInverse }]}>Save</Text>
                     </TouchableOpacity>

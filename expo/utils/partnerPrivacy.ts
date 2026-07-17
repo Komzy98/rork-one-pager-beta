@@ -45,8 +45,8 @@ export const UNFRIEND_REVOKE_MESSAGE =
 export const WHAT_PARTNERS_SEE_SECTION = {
   title: 'What Accountability Partners See',
   content:
-    'When you connect with an accountability partner, they may see information based on your visibility and partner controls:\n\n' +
-    '• Always visible to partners: your display name, username, avatar, and current streak (unless you go fully private for activity — name, avatar, and streak still show on the leaderboard).\n\n' +
+    'When you connect with an accountability partner, they may see information based on your visibility, partner controls, and which habits you explicitly share:\n\n' +
+    '• Habits: partners only see check-ins for habits you share with them (invite link or Habit → Accountability). Other habits stay private.\n\n' +
     '• Partners visibility (default): generic or specific activity summaries (habit check-ins, saved events, RSVPs, sports pins, watchlist adds), saved event snapshots, shared plan RSVPs, and lightweight presence (“active today”) unless you hide last active.\n\n' +
     '• Private mode: partners keep name, avatar, and streak only — no activity feed, saves, RSVPs, or event plans.\n\n' +
     '• Partner controls you can toggle anytime: share streak only, events only, generic habit labels, hide last active, and block incoming nudges.\n\n' +
@@ -80,4 +80,39 @@ export async function confirmBeforeFirstPartner(userId: string): Promise<boolean
 
 export function getVisibilityCopy(visibility: ActivityVisibility) {
   return VISIBILITY_OPTIONS.find((opt) => opt.key === visibility) ?? VISIBILITY_OPTIONS[0];
+}
+
+const PARTNER_INVITE_OVERVIEW_DISMISS_KEY = 'partner_invite_overview_dismissed';
+const PARTNER_INVITE_BANNER_DISMISS_KEY = 'partner_invite_banner_dismissed';
+
+function partnerInviteOverviewDismissKey(userId: string): string {
+  return `${PARTNER_INVITE_OVERVIEW_DISMISS_KEY}_${userId}`;
+}
+
+function partnerInviteBannerDismissKey(userId: string): string {
+  return `${PARTNER_INVITE_BANNER_DISMISS_KEY}_${userId}`;
+}
+
+export async function isPartnerInviteOverviewDismissed(userId: string): Promise<boolean> {
+  try {
+    return (await unifiedStorage.getItem(partnerInviteOverviewDismissKey(userId))) === '1';
+  } catch {
+    return false;
+  }
+}
+
+export async function markPartnerInviteOverviewDismissed(userId: string): Promise<void> {
+  await unifiedStorage.setItem(partnerInviteOverviewDismissKey(userId), '1');
+}
+
+export async function isPartnerInviteBannerDismissed(userId: string): Promise<boolean> {
+  try {
+    return (await unifiedStorage.getItem(partnerInviteBannerDismissKey(userId))) === '1';
+  } catch {
+    return false;
+  }
+}
+
+export async function markPartnerInviteBannerDismissed(userId: string): Promise<void> {
+  await unifiedStorage.setItem(partnerInviteBannerDismissKey(userId), '1');
 }

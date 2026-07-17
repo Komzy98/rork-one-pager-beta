@@ -23,6 +23,12 @@ import {
   shouldForceGenericHabits,
   shouldPublishActivityType,
 } from '@/utils/socialPrivacy';
+import {
+  listMyHabitShares,
+  isHabitSharedWithAnyPartner,
+  isPartnerHabitEnforcementActive,
+} from '@/utils/partnerHabitShares';
+import { countFriendships } from '@/utils/friendsService';
 import { canWriteSocialActivity } from '@/utils/socialPublishGuard';
 import { trackSocialAnalyticsEvent } from '@/utils/socialAnalytics';
 
@@ -166,9 +172,24 @@ export function useSocialActivity() {
   );
 
   const logHabitCompleted = useCallback(
-    (input: HabitPublishInput) => {
+    async (input: HabitPublishInput) => {
+      if (!userId) return;
+      try {
+        const enforced = await isPartnerHabitEnforcementActive();
+        if (enforced) {
+          const friendCount = await countFriendships(userId);
+          if (friendCount > 0) {
+            const shares = await listMyHabitShares();
+            if (!isHabitSharedWithAnyPartner(shares, userId, input.habitId)) {
+              return;
+            }
+          }
+        }
+      } catch {
+        // keep legacy publish behavior
+      }
       const payload = buildHabitCompletedActivity(input, publishContext());
-      if (!payload) return Promise.resolve();
+      if (!payload) return;
       trackSocialAnalyticsEvent(
         {
           name: 'social_habit_completed',
@@ -181,7 +202,7 @@ export function useSocialActivity() {
         ...payload,
       });
     },
-    [publish, publishContext, profile?.displayPreferences?.genericSocialActivity],
+    [publish, publishContext, profile?.displayPreferences?.genericSocialActivity, userId],
   );
 
   const logPublishedHabit = useCallback(

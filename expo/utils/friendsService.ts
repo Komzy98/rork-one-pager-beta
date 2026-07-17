@@ -52,6 +52,7 @@ export interface IncomingRequest {
   id: string;
   createdAt: string;
   from: SocialProfile;
+  inviteHabits: { habitId: string; habitName: string }[];
 }
 
 export interface OutgoingRequest {
@@ -113,7 +114,8 @@ export function isSocialUnavailableError(error: unknown): boolean {
   return (
     msg.includes('does not exist') ||
     msg.includes('could not find the table') ||
-    msg.includes('schema cache')
+    msg.includes('schema cache') ||
+    msg.includes('could not find the function')
   );
 }
 
@@ -519,18 +521,35 @@ export async function listIncomingRequests(myUserId: string): Promise<IncomingRe
   ensureConfigured();
   const { data, error } = await supabase
     .from('friend_requests')
-    .select('id, from_user, created_at')
+    .select('id, from_user, created_at, invite_habit_ids, invite_habit_names')
     .eq('to_user', myUserId)
     .eq('status', 'pending')
     .order('created_at', { ascending: false });
   if (error) throw error;
-  const rows = data as { id: string; from_user: string; created_at: string }[];
+  const rows = data as {
+    id: string;
+    from_user: string;
+    created_at: string;
+    invite_habit_ids?: string[] | null;
+    invite_habit_names?: string[] | null;
+  }[];
   const profiles = await fetchProfilesByIds(rows.map((r) => r.from_user));
-  return rows.map((r) => ({
-    id: r.id,
-    createdAt: r.created_at,
-    from: profiles.get(r.from_user) ?? stubPartnerProfile(r.from_user),
-  }));
+  return rows.map((r) => {
+    const ids = r.invite_habit_ids ?? [];
+    const names = r.invite_habit_names ?? [];
+    const inviteHabits = ids
+      .map((habitId, i) => ({
+        habitId,
+        habitName: names[i]?.trim() || 'Habit',
+      }))
+      .filter((h) => h.habitId?.trim());
+    return {
+      id: r.id,
+      createdAt: r.created_at,
+      from: profiles.get(r.from_user) ?? stubPartnerProfile(r.from_user),
+      inviteHabits,
+    };
+  });
 }
 
 export async function listOutgoingRequests(myUserId: string): Promise<OutgoingRequest[]> {
@@ -556,7 +575,11 @@ export type SendRequestResult =
   | { ok: true }
   | { ok: false; reason: 'already_friends' | 'already_requested' | 'self' | 'error'; message?: string };
 
-export async function sendFriendRequest(myUserId: string, toUserId: string): Promise<SendRequestResult> {
+export async function sendFriendRequest(
+  myUserId: string,
+  toUserId: string,
+  inviteHabits?: { habitId: string; habitName: string }[],
+): Promise<SendRequestResult> {
   ensureConfigured();
   if (myUserId === toUserId) return { ok: false, reason: 'self' };
 
@@ -582,9 +605,26 @@ export async function sendFriendRequest(myUserId: string, toUserId: string): Pro
     return { ok: true };
   }
 
-  const { error } = await supabase
-    .from('friend_requests')
-    .insert({ from_user: myUserId, to_user: toUserId, status: 'pending' });
+  const habits = inviteHabits?.filter((h) => h.habitId?.trim()) ?? [];
+  let error: { code?: string; message?: string } | null = null;
+  if (habits.length > 0) {
+    const res = await supabase.from('friend_requests').insert({
+      from_user: myUserId,
+      to_user: toUserId,
+      status: 'pending',
+      invite_habit_ids: habits.map((h) => h.habitId),
+      invite_habit_names: habits.map((h) => h.habitName?.trim() || 'Habit'),
+    });
+    error = res.error;
+  }
+  if (habits.length === 0 || (error && (error as { code?: string }).code === 'PGRST204')) {
+    const res = await supabase.from('friend_requests').insert({
+      from_user: myUserId,
+      to_user: toUserId,
+      status: 'pending',
+    });
+    error = res.error;
+  }
   if (error) {
     if ((error as { code?: string }).code === '23505') return { ok: false, reason: 'already_requested' };
     return { ok: false, reason: 'error', message: error.message };

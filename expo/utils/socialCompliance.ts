@@ -1,5 +1,5 @@
 import { supabase, supabaseConfigured } from '@/utils/supabaseClient';
-import { isSocialUnavailableError } from '@/utils/friendsService';
+import { ensureMyProfile, isSocialUnavailableError } from '@/utils/friendsService';
 
 export type PartnerReportReason = 'harassment' | 'spam' | 'inappropriate' | 'other';
 
@@ -113,12 +113,81 @@ export async function deleteMyActivityHistory(): Promise<number> {
   return typeof data === 'number' ? data : 0;
 }
 
+export async function fetchAgeConsentFromProfile(userId: string): Promise<{
+  birthYear?: number;
+  parentalSocialConsent?: boolean;
+}> {
+  if (!supabaseConfigured || !userId) return {};
+  const { data, error } = await supabase
+    .from('profiles')
+    .select('birth_year, parental_social_consent')
+    .eq('id', userId)
+    .maybeSingle();
+  if (error || !data) return {};
+  const row = data as { birth_year?: number | null; parental_social_consent?: boolean | null };
+  return {
+    birthYear: row.birth_year ?? undefined,
+    parentalSocialConsent: row.parental_social_consent ?? undefined,
+  };
+}
+
+/** Creates the Supabase `profiles` row if missing (required before age sync / partners). */
+export async function ensureSocialProfileRow(input: {
+  userId: string;
+  displayName?: string | null;
+  email?: string | null;
+  avatarUrl?: string | null;
+  currentStreak?: number;
+  totalCompletions?: number;
+  level?: number;
+}): Promise<void> {
+  if (!supabaseConfigured) return;
+  await ensureMyProfile({
+    userId: input.userId,
+    displayName: input.displayName ?? null,
+    email: input.email ?? null,
+    avatarUrl: input.avatarUrl ?? null,
+    currentStreak: input.currentStreak ?? 0,
+    totalCompletions: input.totalCompletions ?? 0,
+    level: input.level ?? 1,
+  });
+}
+
+function isMissingAgeConsentRpc(error: unknown): boolean {
+  const e = error as { code?: string; message?: string } | null;
+  if (!e) return false;
+  const msg = (e.message || '').toLowerCase();
+  return (
+    e.code === '42883' ||
+    e.code === 'PGRST202' ||
+    msg.includes('could not find the function')
+  );
+}
+
 export async function syncAgeConsentToProfile(
   userId: string,
   birthYear?: number | null,
   parentalSocialConsent?: boolean,
+  ensureInput?: {
+    displayName?: string | null;
+    email?: string | null;
+    avatarUrl?: string | null;
+    currentStreak?: number;
+    totalCompletions?: number;
+    level?: number;
+  },
 ): Promise<void> {
   if (!supabaseConfigured || !userId) return;
+
+  await ensureSocialProfileRow({
+    userId,
+    displayName: ensureInput?.displayName ?? null,
+    email: ensureInput?.email ?? null,
+    avatarUrl: ensureInput?.avatarUrl ?? null,
+    currentStreak: ensureInput?.currentStreak ?? 0,
+    totalCompletions: ensureInput?.totalCompletions ?? 0,
+    level: ensureInput?.level ?? 1,
+  });
 
   const rpcArgs: { p_birth_year?: number | null; p_parental_social_consent?: boolean | null } = {};
   if (birthYear !== undefined) rpcArgs.p_birth_year = birthYear;
@@ -130,12 +199,14 @@ export async function syncAgeConsentToProfile(
   if (!rpcError) return;
 
   const rpcMsg = (rpcError as { message?: string }).message?.toLowerCase() ?? '';
-  const rpcMissing =
-    (rpcError as { code?: string }).code === '42883' ||
-    (rpcError as { code?: string }).code === 'PGRST202' ||
-    rpcMsg.includes('could not find the function');
-
-  if (!rpcMissing) throw rpcError;
+  if (rpcMsg.includes('profile not found')) {
+    await ensureSocialProfileRow({ userId, ...ensureInput });
+    const { error: retryError } = await supabase.rpc('sync_age_consent', rpcArgs);
+    if (!retryError) return;
+    if (!isMissingAgeConsentRpc(retryError)) throw retryError;
+  } else if (!isMissingAgeConsentRpc(rpcError)) {
+    throw rpcError;
+  }
 
   const patch: Record<string, number | boolean | string | null> = {
     updated_at: new Date().toISOString(),

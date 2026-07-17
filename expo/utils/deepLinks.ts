@@ -5,7 +5,7 @@ export const WEB_INVITE_ORIGIN = 'https://join.onepagerapp.co.uk';
 
 export type ParsedDeepLink =
   | { kind: 'challenge'; id: string }
-  | { kind: 'user'; username: string }
+  | { kind: 'user'; username: string; habitId?: string; habitName?: string }
   | { kind: 'event'; id: string }
   | { kind: 'tab'; name: string }
   | { kind: 'unknown'; path: string };
@@ -51,6 +51,30 @@ export function buildEventAppLink(eventId: string): string {
 export function buildUserLink(username: string): string {
   const handle = clean(username).replace(/^@/, '');
   return `${APP_SCHEME}://u/${encodeURIComponent(handle)}`;
+}
+
+/** Invite link scoped to one accountability habit. */
+export function buildHabitPartnerInviteLink(
+  username: string,
+  habitId: string,
+  habitName?: string,
+): string {
+  const handle = clean(username).replace(/^@/, '');
+  const params = new URLSearchParams({ habit: habitId });
+  if (habitName?.trim()) params.set('habitName', habitName.trim());
+  return `${APP_SCHEME}://u/${encodeURIComponent(handle)}?${params.toString()}`;
+}
+
+/** Parse habit partner params from a deep link URL. */
+export function parseHabitInviteFromUrl(url: string): { habitId?: string; habitName?: string } {
+  try {
+    const parsed = new URL(url);
+    const habitId = parsed.searchParams.get('habit')?.trim() || undefined;
+    const habitName = parsed.searchParams.get('habitName')?.trim() || undefined;
+    return { habitId, habitName };
+  } catch {
+    return {};
+  }
 }
 
 function decodeSegment(value: string): string {
@@ -110,7 +134,13 @@ export function parseDeepLink(url: string): ParsedDeepLink | null {
     return { kind: 'event', id: rest[0] };
   }
   if ((head === 'u' || head === 'user') && rest[0]) {
-    return { kind: 'user', username: rest[0].replace(/^@/, '') };
+    const invite = parseHabitInviteFromUrl(url);
+    return {
+      kind: 'user',
+      username: rest[0].replace(/^@/, ''),
+      habitId: invite.habitId,
+      habitName: invite.habitName,
+    };
   }
   if (head === 'tabs' && rest[0]) {
     return { kind: 'tab', name: rest[0] };
