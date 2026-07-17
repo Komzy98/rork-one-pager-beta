@@ -243,6 +243,30 @@ $$;
 revoke all on function public.claim_plan_invite(text) from public;
 grant execute on function public.claim_plan_invite(text) to authenticated;
 
+create or replace function public.profile_visible_to_auth(p_profile_id uuid)
+returns boolean
+language sql
+stable
+security definer
+set search_path = public
+as $$
+  select exists (
+    select 1
+    from public.profiles p
+    where p.id = p_profile_id
+      and p.activity_visibility <> 'private'
+      and (
+        p.activity_visibility = 'public'
+        or exists (
+          select 1 from public.friendships f
+          where f.user_id = auth.uid() and f.friend_id = p_profile_id
+        )
+      )
+  );
+$$;
+revoke all on function public.profile_visible_to_auth(uuid) from public;
+grant execute on function public.profile_visible_to_auth(uuid) to authenticated;
+
 -- Co-attendees on a shared plan the viewer can already access (Who's going).
 -- Must run AFTER plan_access_grants exists (referenced in policy).
 drop policy if exists "profiles_select_plan_coparticipant" on public.profiles;
@@ -262,18 +286,7 @@ create policy "profiles_select_plan_coparticipant" on public.profiles
             select 1 from public.plan_access_grants g
             where g.plan_id = sp.id and g.user_id = auth.uid()
           )
-          or exists (
-            select 1 from public.profiles owner_p
-            where owner_p.id = sp.owner_id
-              and owner_p.activity_visibility <> 'private'
-              and (
-                owner_p.activity_visibility = 'public'
-                or exists (
-                  select 1 from public.friendships f
-                  where f.user_id = auth.uid() and f.friend_id = sp.owner_id
-                )
-              )
-          )
+          or public.profile_visible_to_auth(sp.owner_id)
         )
     )
   );
@@ -292,18 +305,7 @@ create policy "sp_select_visible" on public.shared_plans
       select 1 from public.plan_access_grants g
       where g.plan_id = shared_plans.id and g.user_id = auth.uid()
     )
-    or exists (
-      select 1 from public.profiles p
-      where p.id = shared_plans.owner_id
-        and p.activity_visibility <> 'private'
-        and (
-          p.activity_visibility = 'public'
-          or exists (
-            select 1 from public.friendships f
-            where f.user_id = auth.uid() and f.friend_id = shared_plans.owner_id
-          )
-        )
-    )
+    or public.profile_visible_to_auth(shared_plans.owner_id)
   );
 
 drop policy if exists "pr_select_visible" on public.plan_rsvps;
@@ -320,18 +322,7 @@ create policy "pr_select_visible" on public.plan_rsvps
             select 1 from public.plan_access_grants g
             where g.plan_id = sp.id and g.user_id = auth.uid()
           )
-          or exists (
-            select 1 from public.profiles p
-            where p.id = sp.owner_id
-              and p.activity_visibility <> 'private'
-              and (
-                p.activity_visibility = 'public'
-                or exists (
-                  select 1 from public.friendships f
-                  where f.user_id = auth.uid() and f.friend_id = sp.owner_id
-                )
-              )
-          )
+          or public.profile_visible_to_auth(sp.owner_id)
         )
     )
   );
