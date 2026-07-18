@@ -315,36 +315,77 @@ export default function FriendsScreen() {
     return confirmBeforeFirstPartner(myProfile.id);
   }, [myProfile?.id]);
 
+  const pendingUserIds = useMemo(() => {
+    const ids = new Set(requestedIds);
+    for (const req of outgoingRequests) {
+      ids.add(req.toUserId);
+    }
+    return ids;
+  }, [requestedIds, outgoingRequests]);
+
   const handleAdd = useCallback(
     async (profile: SocialProfile) => {
       if (!partnersEnabled) {
         Alert.alert('Not available', socialRestriction || 'Accountability partners are not available for this account.');
         return;
       }
+      if (pendingUserIds.has(profile.id)) return;
       haptic();
       const ok = await confirmIfFirstPartner();
       if (!ok) return;
+      setRequestedIds((prev) => new Set(prev).add(profile.id));
       setBusyId(profile.id);
       try {
         const res = await requestByUserId(profile.id);
         if (res.ok) {
-          setRequestedIds((prev) => new Set(prev).add(profile.id));
+          refresh();
         } else if (res.reason === 'already_friends') {
+          setRequestedIds((prev) => {
+            const next = new Set(prev);
+            next.delete(profile.id);
+            return next;
+          });
           refresh();
           Alert.alert(
             'Already partners',
             `You and @${profile.username} are already connected. Your partner list has been refreshed.`,
           );
         } else if (res.reason === 'already_requested') {
-          setRequestedIds((prev) => new Set(prev).add(profile.id));
+          refresh();
         } else if (res.reason !== 'self') {
+          setRequestedIds((prev) => {
+            const next = new Set(prev);
+            next.delete(profile.id);
+            return next;
+          });
           Alert.alert('Could not add', res.message || 'Please try again.');
+        } else {
+          setRequestedIds((prev) => {
+            const next = new Set(prev);
+            next.delete(profile.id);
+            return next;
+          });
         }
+      } catch {
+        setRequestedIds((prev) => {
+          const next = new Set(prev);
+          next.delete(profile.id);
+          return next;
+        });
+        Alert.alert('Could not add', 'Please try again in a moment.');
       } finally {
         setBusyId(null);
       }
     },
-    [requestByUserId, haptic, confirmIfFirstPartner, partnersEnabled, socialRestriction, refresh],
+    [
+      requestByUserId,
+      haptic,
+      confirmIfFirstPartner,
+      partnersEnabled,
+      socialRestriction,
+      refresh,
+      pendingUserIds,
+    ],
   );
 
   const handleAcceptRequest = useCallback(
