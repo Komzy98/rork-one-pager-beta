@@ -9,6 +9,7 @@ import {
   Animated,
   RefreshControl,
   Image,
+  Platform,
 } from 'react-native';
 import {
   Search,
@@ -41,6 +42,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useTheme } from '@/hooks/useTheme';
 import * as Haptics from 'expo-haptics';
 import { Stack } from 'expo-router';
+import { KeyboardAvoidingScreen } from '@/components/KeyboardAvoidingScreen';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useCookingStorage } from '@/hooks/useCookingStorage';
 import { useAuth } from '@/hooks/useAuth';
@@ -1371,6 +1373,7 @@ export default function CookingScreen() {
   const secondaryBg = isDark ? '#221A18' : '#FAF3EF';
 
   return (
+    <KeyboardAvoidingScreen>
     <View style={[styles.container, { backgroundColor: warmBg }]}>
       <Stack.Screen options={{ headerShown: false }} />
 
@@ -1417,6 +1420,8 @@ export default function CookingScreen() {
         refreshControl={<RefreshControl refreshing={refreshing} onRefresh={handleRefresh} tintColor={accentColor} />}
         onScroll={Animated.event([{ nativeEvent: { contentOffset: { y: scrollY } } }], { useNativeDriver: false })}
         scrollEventThrottle={16}
+        keyboardShouldPersistTaps="handled"
+        automaticallyAdjustKeyboardInsets={Platform.OS === 'ios'}
       >
         {/* ── Live stats ──────────────────────────────────────────────────── */}
         <View style={styles.statsRow}>
@@ -1741,6 +1746,7 @@ export default function CookingScreen() {
         </View>
       </ScrollView>
     </View>
+    </KeyboardAvoidingScreen>
   );
 }
 

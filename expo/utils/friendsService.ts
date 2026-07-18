@@ -23,19 +23,21 @@ export interface SocialProfile {
 export interface ProfileSearchHit {
   id: string;
   username: string;
+  display_name?: string | null;
+  avatar_url?: string | null;
 }
 
 function mapSearchHit(row: ProfileSearchHit): SocialProfile {
   return {
     id: row.id,
     username: row.username,
-    displayName: null,
-    avatarUrl: null,
+    displayName: row.display_name?.trim() || null,
+    avatarUrl: row.avatar_url?.trim() || null,
     currentStreak: 0,
     totalCompletions: 0,
     level: 1,
     lastActiveAt: '',
-    activityVisibility: 'friends',
+    activityVisibility: 'private',
     shareStreakOnly: false,
     shareEventsOnly: false,
     hideLastActive: false,
@@ -97,7 +99,7 @@ function mapProfile(row: ProfileRow): SocialProfile {
     totalCompletions: row.total_completions ?? 0,
     level: row.level ?? 1,
     lastActiveAt: row.last_active_at,
-    activityVisibility: (row.activity_visibility ?? 'friends') as ActivityVisibility,
+    activityVisibility: (row.activity_visibility ?? 'private') as ActivityVisibility,
     shareStreakOnly: row.share_streak_only === true,
     shareEventsOnly: row.share_events_only === true,
     hideLastActive: row.hide_last_active === true,
@@ -293,7 +295,13 @@ export async function ensureMyProfile(input: MyProfileInput): Promise<SocialProf
     const candidate = attempt === 0 ? base : `${base}${Math.floor(10 + Math.random() * 9990)}`;
     const { data, error } = await supabase
       .from('profiles')
-      .insert({ id: input.userId, username: candidate, avatar_url, ...stats })
+      .insert({
+        id: input.userId,
+        username: candidate,
+        avatar_url,
+        activity_visibility: 'private',
+        ...stats,
+      })
       .select('*')
       .single();
     if (!error && data) return mapProfile(data as ProfileRow);
@@ -432,7 +440,7 @@ function stubPartnerProfile(id: string): SocialProfile {
     totalCompletions: 0,
     level: 1,
     lastActiveAt: '',
-    activityVisibility: 'friends',
+    activityVisibility: 'private',
     shareStreakOnly: false,
     shareEventsOnly: false,
     hideLastActive: false,

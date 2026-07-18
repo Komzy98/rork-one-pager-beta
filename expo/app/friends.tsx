@@ -3,7 +3,6 @@ import {
   View,
   Text,
   StyleSheet,
-  ScrollView,
   TouchableOpacity,
   TextInput,
   ActivityIndicator,
@@ -12,6 +11,7 @@ import {
   Share,
   Platform,
   Switch,
+  type ScrollView,
 } from 'react-native';
 import { Image } from 'expo-image';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -58,6 +58,8 @@ import {
   socialRestrictionMessage,
 } from '@/utils/socialAgeConsent';
 import type { PartnerReportReason } from '@/utils/socialCompliance';
+import { KeyboardAwareScrollView } from '@/components/KeyboardAwareScrollView';
+import { useScrollToOnFocus } from '@/hooks/useScrollToOnFocus';
 
 function timeAgo(iso: string): string {
   const diff = Date.now() - new Date(iso).getTime();
@@ -125,6 +127,8 @@ export default function FriendsScreen() {
   const [requestedIds, setRequestedIds] = useState<Set<string>>(new Set());
   const [inviteBannerDismissed, setInviteBannerDismissed] = useState(true);
   const autoAddHandled = useRef(false);
+  const scrollRef = useRef<ScrollView>(null);
+  const { bindScrollAnchor, scrollInputIntoView } = useScrollToOnFocus(scrollRef);
 
   const {
     available,
@@ -598,9 +602,11 @@ export default function FriendsScreen() {
           </TouchableOpacity>
         </View>
       ) : (
-        <ScrollView
+        <KeyboardAwareScrollView
+          ref={scrollRef}
+          style={{ flex: 1 }}
+          headerHeight={52}
           contentContainerStyle={{ padding: 16, paddingBottom: insets.bottom + 32 }}
-          keyboardShouldPersistTaps="handled"
           refreshControl={<RefreshControl refreshing={isRefreshing} onRefresh={handleRefresh} tintColor={colors.primary} />}
         >
           {/* Invite card */}
@@ -636,6 +642,64 @@ export default function FriendsScreen() {
               <Text style={[styles.privateActiveText, { color: colors.textSecondary }]}>
                 {socialRestriction} Set your birth year in Profile → Your data. Ages {MIN_SOCIAL_AGE - 3}–{MIN_SOCIAL_AGE - 1} need parental consent.
               </Text>
+            </View>
+          ) : null}
+
+          {partnersEnabled ? (
+            <View onLayout={(e) => bindScrollAnchor(e.nativeEvent.layout.y)}>
+              <Text style={[styles.sectionLabel, { color: colors.textTertiary, marginTop: 8 }]}>
+                ADD A PARTNER
+              </Text>
+              <View style={[styles.searchRow, { backgroundColor: colors.card, borderColor: colors.border }]}>
+                <Search size={18} color={colors.textTertiary} />
+                <TextInput
+                  style={[styles.searchInput, { color: colors.text }]}
+                  placeholder="Search by username"
+                  placeholderTextColor={colors.textTertiary}
+                  autoCapitalize="none"
+                  autoCorrect={false}
+                  value={query}
+                  onChangeText={setQuery}
+                  onFocus={scrollInputIntoView}
+                />
+                {searching ? <ActivityIndicator size="small" color={colors.textTertiary} /> : null}
+              </View>
+
+              {results.map((p) => {
+                const requested = requestedIds.has(p.id);
+                return (
+                  <View key={p.id} style={[styles.row, { backgroundColor: colors.card, borderColor: colors.border }]}>
+                    <Avatar profile={p} />
+                    <View style={styles.rowInfo}>
+                      <Text style={[styles.rowName, { color: colors.text }]} numberOfLines={1}>
+                        {p.displayName || p.username}
+                      </Text>
+                      <Text style={[styles.rowSub, { color: colors.textTertiary }]}>@{p.username}</Text>
+                    </View>
+                    <TouchableOpacity
+                      style={[styles.addBtn, { backgroundColor: requested ? colors.surfaceSecondary : colors.primary }]}
+                      disabled={requested || busyId === p.id}
+                      onPress={() => handleAdd(p)}
+                    >
+                      {busyId === p.id ? (
+                        <ActivityIndicator size="small" color={colors.textInverse} />
+                      ) : requested ? (
+                        <Text style={[styles.addBtnText, { color: colors.textTertiary }]}>Requested</Text>
+                      ) : (
+                        <>
+                          <UserPlus size={15} color={colors.textInverse} />
+                          <Text style={[styles.addBtnText, { color: colors.textInverse }]}>Add</Text>
+                        </>
+                      )}
+                    </TouchableOpacity>
+                  </View>
+                );
+              })}
+              {query.trim().length >= 2 && !searching && results.length === 0 ? (
+                <Text style={[styles.hint, { color: colors.textTertiary }]}>
+                  No users found for “{query.trim()}”.
+                </Text>
+              ) : null}
             </View>
           ) : null}
 
@@ -762,9 +826,13 @@ export default function FriendsScreen() {
                 <Text style={[styles.visibilityInfoBody, { color: colors.textTertiary }]}>
                   {visibilityCopy.summary}
                 </Text>
-                {activity.visibility === 'public' ? (
+                {activity.visibility === 'friends' ? (
                   <Text style={[styles.visibilityInfoWarning, { color: '#FF9500' }]}>
-                    Public is broader than partners-only. Partners is the recommended default.
+                    You’re sharing activity with partners. Switch to Private for streak-only, or use Partner Controls below.
+                  </Text>
+                ) : activity.visibility === 'public' ? (
+                  <Text style={[styles.visibilityInfoWarning, { color: '#FF9500' }]}>
+                    Public is broader than partners-only. Private or Partners is recommended for most people.
                   </Text>
                 ) : null}
               </View>
@@ -888,60 +956,6 @@ export default function FriendsScreen() {
             </>
           )}
 
-          {/* Search / add */}
-          {partnersEnabled ? (
-            <>
-          <Text style={[styles.sectionLabel, { color: colors.textTertiary }]}>ADD A PARTNER</Text>
-          <View style={[styles.searchRow, { backgroundColor: colors.card, borderColor: colors.border }]}>
-            <Search size={18} color={colors.textTertiary} />
-            <TextInput
-              style={[styles.searchInput, { color: colors.text }]}
-              placeholder="Search by username"
-              placeholderTextColor={colors.textTertiary}
-              autoCapitalize="none"
-              autoCorrect={false}
-              value={query}
-              onChangeText={setQuery}
-            />
-            {searching && <ActivityIndicator size="small" color={colors.textTertiary} />}
-          </View>
-
-          {results.map((p) => {
-            const requested = requestedIds.has(p.id);
-            return (
-              <View key={p.id} style={[styles.row, { backgroundColor: colors.card, borderColor: colors.border }]}>
-                <Avatar profile={p} />
-                <View style={styles.rowInfo}>
-                  <Text style={[styles.rowName, { color: colors.text }]} numberOfLines={1}>
-                    {p.displayName || p.username}
-                  </Text>
-                  <Text style={[styles.rowSub, { color: colors.textTertiary }]}>@{p.username}</Text>
-                </View>
-                <TouchableOpacity
-                  style={[styles.addBtn, { backgroundColor: requested ? colors.surfaceSecondary : colors.primary }]}
-                  disabled={requested || busyId === p.id}
-                  onPress={() => handleAdd(p)}
-                >
-                  {busyId === p.id ? (
-                    <ActivityIndicator size="small" color={colors.textInverse} />
-                  ) : requested ? (
-                    <Text style={[styles.addBtnText, { color: colors.textTertiary }]}>Requested</Text>
-                  ) : (
-                    <>
-                      <UserPlus size={15} color={colors.textInverse} />
-                      <Text style={[styles.addBtnText, { color: colors.textInverse }]}>Add</Text>
-                    </>
-                  )}
-                </TouchableOpacity>
-              </View>
-            );
-          })}
-          {query.trim().length >= 2 && !searching && results.length === 0 && (
-            <Text style={[styles.hint, { color: colors.textTertiary }]}>No users found for “{query.trim()}”.</Text>
-          )}
-            </>
-          ) : null}
-
           {/* Pending (outgoing) */}
           {outgoingRequests.length > 0 && (
             <>
@@ -1049,7 +1063,7 @@ export default function FriendsScreen() {
               );
             })
           ) : null}
-        </ScrollView>
+        </KeyboardAwareScrollView>
       )}
     </View>
   );

@@ -10,7 +10,8 @@ import {
   Alert,
   Animated,
   StatusBar,
-  Dimensions
+  Dimensions,
+  Platform,
 } from 'react-native';
 import { 
   Search, 
@@ -92,6 +93,7 @@ import { useApp } from '@/hooks/useHabitsStore';
 import HabitDetailModal from '@/components/HabitDetailModal';
 import * as Haptics from 'expo-haptics';
 import TabWalkthrough from '@/components/TabWalkthrough';
+import { KeyboardAvoidingScreen } from '@/components/KeyboardAvoidingScreen';
 
 const { width: SCREEN_WIDTH } = Dimensions.get('window');
 const HERO_CARD_WIDTH = SCREEN_WIDTH - 48;
@@ -934,6 +936,7 @@ export default function DiscoverScreen() {
   const bgColor = colors.background;
 
   return (
+    <KeyboardAvoidingScreen>
     <View style={[styles.container, { backgroundColor: bgColor }]}>
       <TabWalkthrough tabName="discover" />
       <StatusBar barStyle={isDark ? "light-content" : "dark-content"} />
@@ -1078,6 +1081,8 @@ export default function DiscoverScreen() {
           style={{ flex: 1 }}
           contentContainerStyle={{ paddingHorizontal: 20, paddingTop: 16, paddingBottom: 40 }}
           showsVerticalScrollIndicator={false}
+          keyboardShouldPersistTaps="handled"
+          automaticallyAdjustKeyboardInsets={Platform.OS === 'ios'}
         >
           {savedHabitDetails.length === 0 ? (
             <View style={styles.emptyState}>
@@ -1238,6 +1243,8 @@ export default function DiscoverScreen() {
           { useNativeDriver: true }
         )}
         scrollEventThrottle={16}
+        keyboardShouldPersistTaps="handled"
+        automaticallyAdjustKeyboardInsets={Platform.OS === 'ios'}
         refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={COLORS.primary} />}
       >
         {showHomeContent && (
@@ -1414,6 +1421,7 @@ export default function DiscoverScreen() {
         isAdded={selectedHabit ? isHabitSaved(selectedHabit.id) : false}
       />
     </View>
+    </KeyboardAvoidingScreen>
   );
 }
 

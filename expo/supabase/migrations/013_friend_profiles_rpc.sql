@@ -13,7 +13,7 @@ begin
   insert into public.friendships (user_id, friend_id)
   select f.friend_id, f.user_id
   from public.friendships f
-  where f.user_id = auth.uid()
+  where (f.user_id = auth.uid() or f.friend_id = auth.uid())
     and not exists (
       select 1 from public.friendships r
       where r.user_id = f.friend_id and r.friend_id = f.user_id
@@ -34,7 +34,6 @@ set search_path = public
 as $$
 begin
   if auth.uid() is null then raise exception 'not authenticated'; end if;
-  perform public.repair_friendship_links();
   return query
     select p.*
     from public.friendships f

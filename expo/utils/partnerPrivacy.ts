@@ -14,16 +14,16 @@ export const VISIBILITY_OPTIONS: {
   summary: string;
 }[] = [
   {
-    key: 'friends',
-    label: 'Partners',
-    summary:
-      'Partners see your streak, saved events, RSVPs, and activity summaries (habits, shows, sports).',
-  },
-  {
     key: 'private',
     label: 'Private',
     summary:
-      'Partners still see your name, avatar, and streak — but not your activity, saves, or RSVPs.',
+      'Recommended default — partners see your name, avatar, and streak only. Activity, saves, and RSVPs stay hidden until you choose to share more.',
+  },
+  {
+    key: 'friends',
+    label: 'Partners',
+    summary:
+      'Partners see your streak, saved events, RSVPs, and activity summaries (habits, shows, sports). Use Partner Controls below to limit further.',
   },
   {
     key: 'public',
@@ -33,10 +33,10 @@ export const VISIBILITY_OPTIONS: {
   },
 ];
 
-export const DEFAULT_ACTIVITY_VISIBILITY: ActivityVisibility = 'friends';
+export const DEFAULT_ACTIVITY_VISIBILITY: ActivityVisibility = 'private';
 
 export const FIRST_PARTNER_CONFIRM_MESSAGE =
-  'Partners can see your streak, saved events, RSVPs, and activity summaries (like habits and shows you log).\n\nYou can switch to Private anytime to hide activity details. Your name, avatar, and streak stay visible to partners.';
+  'By default, partners only see your name, avatar, and streak — not your full activity.\n\nUse “Partners” visibility or the Partner Controls below when you want to share events, habits, or activity summaries.\n\nYou can switch back to Private anytime.';
 
 export const UNFRIEND_REVOKE_MESSAGE =
   'They will immediately lose access to your activity feed, saved events, and RSVPs. Unfriending revokes that view — they can only see what your visibility setting allows if they find your profile again.';
@@ -47,8 +47,8 @@ export const WHAT_PARTNERS_SEE_SECTION = {
   content:
     'When you connect with an accountability partner, they may see information based on your visibility, partner controls, and which habits you explicitly share:\n\n' +
     '• Habits: partners only see check-ins for habits you share with them (invite link or Habit → Accountability). Other habits stay private.\n\n' +
-    '• Partners visibility (default): generic or specific activity summaries (habit check-ins, saved events, RSVPs, sports pins, watchlist adds), saved event snapshots, shared plan RSVPs, and lightweight presence (“active today”) unless you hide last active.\n\n' +
-    '• Private mode: partners keep name, avatar, and streak only — no activity feed, saves, RSVPs, or event plans.\n\n' +
+    '• Partners visibility (when enabled): generic or specific activity summaries (habit check-ins, saved events, RSVPs, sports pins, watchlist adds), saved event snapshots, shared plan RSVPs, and lightweight presence (“active today”) unless you hide last active.\n\n' +
+    '• Private mode (default for new accounts): partners keep name, avatar, and streak only — no activity feed, saves, RSVPs, or event plans until you opt in.\n\n' +
     '• Partner controls you can toggle anytime: share streak only, events only, generic habit labels, hide last active, and block incoming nudges.\n\n' +
     '• We never share health or recovery habits in the activity feed. Emails, phone numbers, and precise locations are stripped from published activity.\n\n' +
     '• Blocking a partner immediately removes their read access to your profile and activity. Reporting sends a record to our team for review.\n\n' +

@@ -7,7 +7,7 @@ import { useAuth } from './useAuth';
 import { useGamification } from './useHabitsEnhancement';
 import { useUserProfile } from './useUserProfile';
 import { supabaseConfigured } from '@/utils/supabaseClient';
-import { isLocalAvatarUri, resolveDisplayAvatarUrl } from '@/utils/avatarUtils';
+import { isLocalAvatarUri, isRemoteAvatarUrl, resolveDisplayAvatarUrl } from '@/utils/avatarUtils';
 import { uploadProfileAvatar } from '@/utils/avatarService';
 import {
   acceptFriendRequest,
@@ -162,16 +162,29 @@ export const [FriendsProvider, useFriends] = createContextHook(() => {
     [myProfile, profile?.name, profile?.avatar, user?.name, user?.email, user?.avatar],
   );
 
-  // Backfill local-only avatars to Supabase Storage so friends can see them.
+  // Publish avatar to Supabase so partners can see it (local file → Storage, or auth photo URL).
   useEffect(() => {
-    if (!enabled || !myUserId || !profile?.avatar || !isLocalAvatarUri(profile.avatar)) return;
+    if (!enabled || !myUserId || backendReady !== true) return;
+    const sourceUrl = profile?.avatar ?? user?.avatar ?? null;
+    if (!sourceUrl?.trim()) return;
+
+    const socialHasRemote = isRemoteAvatarUrl(myProfile?.avatarUrl);
     let cancelled = false;
 
     void (async () => {
       try {
-        const remoteUrl = await uploadProfileAvatar(myUserId, profile.avatar!);
-        if (!remoteUrl || cancelled) return;
-        updateProfile({ avatar: remoteUrl });
+        let remoteUrl: string | null = null;
+        if (isLocalAvatarUri(sourceUrl)) {
+          remoteUrl = await uploadProfileAvatar(myUserId, sourceUrl);
+          if (!remoteUrl || cancelled) return;
+          updateProfile({ avatar: remoteUrl });
+        } else if (isRemoteAvatarUrl(sourceUrl)) {
+          if (socialHasRemote && myProfile?.avatarUrl?.trim() === sourceUrl.trim()) return;
+          remoteUrl = sourceUrl.trim();
+        } else {
+          return;
+        }
+
         const updated = await updateProfileAvatar(myUserId, remoteUrl);
         if (!cancelled && updated) {
           setMyProfile(updated);
@@ -179,7 +192,7 @@ export const [FriendsProvider, useFriends] = createContextHook(() => {
         }
       } catch (e) {
         if (__DEV__) {
-          console.warn('useFriends: avatar upload backfill failed', e);
+          console.warn('useFriends: avatar publish backfill failed', e);
         }
       }
     })();
@@ -187,7 +200,16 @@ export const [FriendsProvider, useFriends] = createContextHook(() => {
     return () => {
       cancelled = true;
     };
-  }, [enabled, myUserId, profile?.avatar, queryClient, updateProfile]);
+  }, [
+    enabled,
+    myUserId,
+    backendReady,
+    profile?.avatar,
+    user?.avatar,
+    myProfile?.avatarUrl,
+    queryClient,
+    updateProfile,
+  ]);
 
   const patchMyProfile = useCallback((patch: Partial<SocialProfile>) => {
     setMyProfile((prev) => (prev ? { ...prev, ...patch } : prev));

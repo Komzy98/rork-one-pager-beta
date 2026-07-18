@@ -275,6 +275,15 @@ export function mergeProfilesFromCloud(
         : older.recoveryMode ?? newer.recoveryMode,
     wellbeingLogs: mergeWellbeingLogs(older.wellbeingLogs, newer.wellbeingLogs),
     savedEvents: mergeSavedEvents(older.savedEvents, newer.savedEvents),
+    birthYear: newer.birthYear ?? older.birthYear,
+    parentalSocialConsent:
+      newer.parentalSocialConsent !== undefined
+        ? newer.parentalSocialConsent
+        : older.parentalSocialConsent,
+    socialPrivacy: {
+      ...(older.socialPrivacy ?? {}),
+      ...(newer.socialPrivacy ?? {}),
+    },
     lastLoginAt:
       localTs >= cloudTs ? localProfile.lastLoginAt : cloudProfile.lastLoginAt,
   };

@@ -51,7 +51,7 @@ export const [ActivityProvider, useActivity] = createContextHook(() => {
   const enabled = !!myUserId && supabaseConfigured && !isGuest;
 
   const [available, setAvailable] = useState<boolean | null>(enabled ? null : false);
-  const [visibility, setVisibilityState] = useState<ActivityVisibility>('friends');
+  const [visibility, setVisibilityState] = useState<ActivityVisibility>('private');
 
   const friendIds = useMemo(() => friends.map((f) => f.id), [friends]);
   const currentStreak = stats?.currentStreak ?? 0;

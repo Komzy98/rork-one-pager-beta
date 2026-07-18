@@ -11,6 +11,7 @@ import {
   Modal,
   LayoutAnimation,
   Platform,
+  KeyboardAvoidingView,
   UIManager,
   ActionSheetIOS,
   ActivityIndicator,
@@ -122,6 +123,7 @@ import {
 } from '@/utils/socialAgeConsent';
 import { MOCK_CHALLENGES } from '@/mocks/socialData';
 import { ThemeSettings } from '@/components/ThemeSettings';
+import { KeyboardAwareScrollView } from '@/components/KeyboardAwareScrollView';
 import { GOOGLE_G_LOGO } from '@/constants/googleBrandAssets';
 
 import { UserTeam, UserCountry, NBAFavoriteTeam, UserNationality } from '@/types/habit';
@@ -768,7 +770,9 @@ export default function ProfileScreen() {
   const [dataBusy, setDataBusy] = useState(false);
 
   useEffect(() => {
-    setBirthYearDraft(profile?.birthYear ? String(profile.birthYear) : '');
+    if (profile?.birthYear != null) {
+      setBirthYearDraft(String(profile.birthYear));
+    }
   }, [profile?.birthYear]);
 
   useEffect(() => {
@@ -778,12 +782,14 @@ export default function ProfileScreen() {
       const remote = await fetchAgeConsentFromProfile(supabaseUser.id);
       if (cancelled || (!remote.birthYear && remote.parentalSocialConsent === undefined)) return;
       const patch: { birthYear?: number; parentalSocialConsent?: boolean } = {};
-      if (remote.birthYear != null && remote.birthYear !== profile?.birthYear) {
+      const localBirthYear = profile?.birthYear;
+      const localParental = profile?.parentalSocialConsent;
+      if (remote.birthYear != null && remote.birthYear !== localBirthYear) {
         patch.birthYear = remote.birthYear;
       }
       if (
         remote.parentalSocialConsent !== undefined &&
-        remote.parentalSocialConsent !== profile?.parentalSocialConsent
+        remote.parentalSocialConsent !== localParental
       ) {
         patch.parentalSocialConsent = remote.parentalSocialConsent;
       }
@@ -792,7 +798,7 @@ export default function ProfileScreen() {
     return () => {
       cancelled = true;
     };
-  }, [supabaseUser?.id, profile?.birthYear, profile?.parentalSocialConsent, updateProfile]);
+  }, [supabaseUser?.id, updateProfile]);
 
   const ageConsentEnsureInput = useCallback(() => {
     const avatarUrl = resolveDisplayAvatarUrl({
@@ -826,6 +832,7 @@ export default function ProfileScreen() {
       return;
     }
     setDataBusy(true);
+    updateProfile({ birthYear: year });
     try {
       if (supabaseUser?.id) {
         await syncAgeConsentToProfile(
@@ -835,18 +842,19 @@ export default function ProfileScreen() {
           ageConsentEnsureInput(),
         );
       }
-      updateProfile({ birthYear: year });
       void Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
     } catch (e) {
       const msg = (e as Error)?.message ?? '';
       const hint = msg.toLowerCase().includes('profile not found')
-        ? 'We tried to create your partner profile automatically. Check your connection and tap Save again.'
+        ? 'Saved on this device. Open Accountability Partners once, then tap Save again to sync.'
         : msg.toLowerCase().includes('birth_year') ||
             msg.toLowerCase().includes('schema cache') ||
             msg.toLowerCase().includes('could not find')
-          ? 'Run migrations 011_compliance and 014_age_consent_rpc in Supabase, then reload API schema (Settings → API).'
-          : msg || 'Run migration 014_age_consent_rpc.sql in Supabase, then try again.';
-      Alert.alert('Could not sync', hint);
+          ? 'Saved on this device. Run migrations 011 and 014 in Supabase, reload API schema, then Save again.'
+          : msg
+            ? `Saved on this device. ${msg}`
+            : 'Saved on this device. Partner sync failed — check your connection and try Save again.';
+      Alert.alert('Saved locally', hint);
     } finally {
       setDataBusy(false);
     }
@@ -860,6 +868,7 @@ export default function ProfileScreen() {
 
   const handleToggleParentalConsent = useCallback(
     async (value: boolean) => {
+      updateProfile({ parentalSocialConsent: value });
       if (supabaseUser?.id) {
         try {
           await syncAgeConsentToProfile(
@@ -868,12 +877,12 @@ export default function ProfileScreen() {
             value,
             ageConsentEnsureInput(),
           );
-          updateProfile({ parentalSocialConsent: value });
         } catch {
-          Alert.alert('Could not sync', 'Parental consent saved on this device only. Check Supabase migrations 011 and 014.');
+          Alert.alert(
+            'Saved locally',
+            'Parental consent saved on this device. Partner sync failed — check Supabase migrations 011 and 014.',
+          );
         }
-      } else {
-        updateProfile({ parentalSocialConsent: value });
       }
     },
     [profile?.birthYear, supabaseUser?.id, updateProfile, ageConsentEnsureInput],
@@ -928,8 +937,9 @@ export default function ProfileScreen() {
       <TabWalkthrough tabName="profile" />
       <CustomHeader title="Profile" subtitle="Your account & preferences" />
       <View style={[styles.container, { backgroundColor: colors.background }]}>
-        <ScrollView 
-          style={styles.scrollView} 
+        <KeyboardAwareScrollView
+          style={styles.scrollView}
+          headerHeight={64}
           showsVerticalScrollIndicator={false}
           contentContainerStyle={styles.scrollContent}
         >
@@ -2383,10 +2393,11 @@ export default function ProfileScreen() {
           )}
 
           <View style={styles.bottomSpacer} />
-        </ScrollView>
+        </KeyboardAwareScrollView>
 
         {/* Modals */}
         <Modal visible={showNBATeamModal} animationType="slide" presentationStyle="pageSheet">
+          <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
           <View style={[styles.modalContainer, { backgroundColor: colors.background }]}>
             <View style={[styles.modalHeader, { borderBottomColor: colors.border }]}>
               <Text style={[styles.modalTitle, { color: colors.text }]}>Add NBA Team</Text>
@@ -2426,9 +2437,11 @@ export default function ProfileScreen() {
               })}
             </ScrollView>
           </View>
+          </KeyboardAvoidingView>
         </Modal>
 
         <Modal visible={showTeamModal} animationType="slide" presentationStyle="pageSheet">
+          <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
           <View style={[styles.modalContainer, { backgroundColor: colors.background }]}>
             <View style={[styles.modalHeader, { borderBottomColor: colors.border }]}>
               <Text style={[styles.modalTitle, { color: colors.text }]}>Add Team</Text>
@@ -2477,9 +2490,11 @@ export default function ProfileScreen() {
               })}
             </ScrollView>
           </View>
+          </KeyboardAvoidingView>
         </Modal>
 
         <Modal visible={showCountryModal} animationType="slide" presentationStyle="pageSheet">
+          <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
           <View style={[styles.modalContainer, { backgroundColor: colors.background }]}>
             <View style={[styles.modalHeader, { borderBottomColor: colors.border }]}>
               <Text style={[styles.modalTitle, { color: colors.text }]}>Add Country</Text>
@@ -2517,9 +2532,11 @@ export default function ProfileScreen() {
               })}
             </ScrollView>
           </View>
+          </KeyboardAvoidingView>
         </Modal>
 
         <Modal visible={showNationalityModal} animationType="slide" presentationStyle="pageSheet">
+          <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
           <View style={[styles.modalContainer, { backgroundColor: colors.background }]}>
             <View style={[styles.modalHeader, { borderBottomColor: colors.border }]}>
               <Text style={[styles.modalTitle, { color: colors.text }]}>Follow National Team</Text>
@@ -2568,9 +2585,11 @@ export default function ProfileScreen() {
               })}
             </ScrollView>
           </View>
+          </KeyboardAvoidingView>
         </Modal>
 
         <Modal visible={showTabOrderModal} animationType="slide" presentationStyle="pageSheet">
+          <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
           <View style={[styles.modalContainer, { backgroundColor: colors.background }]}>
             <View style={[styles.modalHeader, { borderBottomColor: colors.border }]}>
               <Text style={[styles.modalTitle, { color: colors.text }]}>Tab Order</Text>
@@ -2663,9 +2682,11 @@ export default function ProfileScreen() {
               </TouchableOpacity>
             </View>
           </View>
+          </KeyboardAvoidingView>
         </Modal>
 
         <Modal visible={showInterestsModal} animationType="slide" presentationStyle="pageSheet">
+          <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
           <View style={[styles.modalContainer, { backgroundColor: colors.background }]}>
             <View style={[styles.modalHeader, { borderBottomColor: colors.border }]}>
               <Text style={[styles.modalTitle, { color: colors.text }]}>Manage Interests</Text>
@@ -2721,6 +2742,7 @@ export default function ProfileScreen() {
               </TouchableOpacity>
             </View>
           </View>
+          </KeyboardAvoidingView>
         </Modal>
 
         <ProgressShareSheet

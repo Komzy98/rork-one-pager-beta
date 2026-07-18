@@ -46,9 +46,9 @@ export function groupFriendsByEventId(
 
 export function getEventFriendProfiles(
   eventId: string,
-  friendsByEventId: Map<string, EventFriendProfile[]>,
+  friendsByEventId?: Map<string, EventFriendProfile[]> | null,
 ): EventFriendProfile[] {
-  return friendsByEventId.get(eventId) ?? [];
+  return friendsByEventId?.get(eventId) ?? [];
 }
 
 export function formatFriendsGoingLabel(profiles: EventFriendProfile[]): string | null {

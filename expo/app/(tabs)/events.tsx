@@ -33,6 +33,7 @@ import {
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useUserProfile } from '@/hooks/useUserProfile';
 import { useUserLocation } from '@/hooks/useUserLocation';
+import { KeyboardAwareScrollView } from '@/components/KeyboardAwareScrollView';
 import { usePerCategoryEvents } from '@/hooks/usePerCategoryEvents';
 import { useEventKit } from '@/hooks/useEventKit';
 import { useEventReminders } from '@/hooks/useEventReminders';
@@ -339,15 +340,6 @@ function EventsScreenInner() {
     return events.find(e => e.id === selectedMapEvent) ?? null;
   }, [selectedMapEvent, events]);
 
-  const selectedMapSocialProof = useMemo(() => {
-    if (!selectedMapEvent) return { label: null, friends: [] };
-    const profiles = getEventFriendProfiles(selectedMapEvent, friendsByEventId);
-    return {
-      label: formatFriendsGoingLabel(profiles),
-      friends: profiles,
-    };
-  }, [selectedMapEvent, friendsByEventId]);
-
   const featuredEvents = useMemo(() => events.filter(e => e.isFeatured), [events]);
 
   const handleOpenTickets = useCallback((event: Event) => {
@@ -435,6 +427,15 @@ function EventsScreenInner() {
     friendCountByEventId,
     friendsByEventId,
   } = useFriendsEventPicks(baseEvents);
+
+  const selectedMapSocialProof = useMemo(() => {
+    if (!selectedMapEvent) return { label: null, friends: [] };
+    const profiles = getEventFriendProfiles(selectedMapEvent, friendsByEventId);
+    return {
+      label: formatFriendsGoingLabel(profiles),
+      friends: profiles,
+    };
+  }, [selectedMapEvent, friendsByEventId]);
 
   const {
     inviteEvent,
@@ -731,7 +732,8 @@ function EventsScreenInner() {
     <View style={[styles.container, { backgroundColor: warmBg }]}>
       <Stack.Screen options={{ headerShown: false }} />
 
-      <ScrollView
+      <KeyboardAwareScrollView
+        headerHeight={0}
         showsVerticalScrollIndicator={false}
         contentContainerStyle={[
           styles.scrollContent,
@@ -1340,7 +1342,7 @@ function EventsScreenInner() {
           )}
         </>
       )}
-      </ScrollView>
+      </KeyboardAwareScrollView>
 
       <EventsSaveToast
         message={toastMessage}

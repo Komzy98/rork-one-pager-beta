@@ -749,7 +749,8 @@ export const [UserProfileProvider, useUserProfile] = createContextHook(() => {
         profile?.name?.trim() ||
         (user.email ? user.email.split('@')[0] : '') ||
         'there';
-      const merged = mergeProfilesFromCloud(profile, cloudPayload as UserProfile, {
+      const localProfile = profileRef.current ?? profile;
+      const merged = mergeProfilesFromCloud(localProfile, cloudPayload as UserProfile, {
         userId: user.id,
         email: user.email,
         displayName,

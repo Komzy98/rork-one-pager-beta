@@ -96,6 +96,7 @@
         "backgroundColor": "#ffffff"
       },
       "package": "app.rork.opbeta",
+      "softwareKeyboardLayoutMode": "resize",
       "permissions": [
         "android.permission.VIBRATE",
         "android.permission.RECORD_AUDIO",

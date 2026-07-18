@@ -9,6 +9,7 @@ import {
   Animated,
   RefreshControl,
   Image,
+  Platform,
 } from 'react-native';
 import {
   Search,
@@ -25,6 +26,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useTheme } from '@/hooks/useTheme';
 import * as Haptics from 'expo-haptics';
 import { Stack } from 'expo-router';
+import { KeyboardAvoidingScreen } from '@/components/KeyboardAvoidingScreen';
 
 
 
@@ -266,6 +268,7 @@ export default function LearningScreen() {
   const secondaryBg = isDark ? '#1A181E' : '#FAF6F0';
 
   return (
+    <KeyboardAvoidingScreen>
     <View style={[styles.container, { backgroundColor: bg }]}>
       <Stack.Screen options={{ headerShown: false }} />
 
@@ -314,6 +317,8 @@ export default function LearningScreen() {
           { useNativeDriver: false }
         )}
         scrollEventThrottle={16}
+        keyboardShouldPersistTaps="handled"
+        automaticallyAdjustKeyboardInsets={Platform.OS === 'ios'}
       >
         <View style={styles.statsRow}>
           {QUICK_STATS.map((stat, index) => (
@@ -618,6 +623,7 @@ export default function LearningScreen() {
         </View>
       </ScrollView>
     </View>
+    </KeyboardAvoidingScreen>
   );
 }
 
