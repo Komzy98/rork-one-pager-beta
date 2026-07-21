@@ -6,7 +6,7 @@ import type { NearbyEventsResult, NearbyEventsBatchResult, NearbyEventsSource } 
 import {
   EVENTS_PER_CATEGORY,
 } from '@/utils/eventDiscovery';
-import { BENTO_CATEGORY_IDS } from '@/utils/eventCategoryMeta';
+import { BENTO_CATEGORY_IDS } from '@/utils/eventCategories';
 import { mergeDiscoveryEvents } from '@/utils/mergeDiscoveryEvents';
 import { fetchMergedDiscoveryEvents } from '@/utils/eventDiscoveryFetch';
 
