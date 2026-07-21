@@ -1,4 +1,8 @@
 import { extractTmdbIdFromYounifyRow, type TmdbPosterSize } from "@/utils/aroundYouImages";
+import {
+  extractSeriesTitleFromYounifyRow,
+  inferYounifyRowMediaType,
+} from "@/utils/younifyRowMedia";
 import { tmdbApi, type TMDBMovie, type TMDBTVShow } from "@/utils/tmdbApi";
 
 /**
@@ -149,27 +153,7 @@ function pickTmdbPosterPathFromRow(row: Record<string, unknown>): string | null 
   return null;
 }
 
-/** Best-effort movie vs TV for a Younify row (SDK shapes vary). */
-export function extractTmdbMediaTypeFromYounifyRow(row: Record<string, unknown>): "movie" | "tv" | null {
-  const raw =
-    row.media_type ??
-    row.mediaType ??
-    row.contentType ??
-    row.type ??
-    row.kind ??
-    dig(row, ["metadata", "type"]) ??
-    dig(row, ["extensions", "content", "type"]);
-  const s = String(raw ?? "").toLowerCase();
-  if (s === "movie" || s === "feature" || s === "film") return "movie";
-  if (
-    s === "tv" ||
-    s === "show" ||
-    s === "series" ||
-    s === "episode" ||
-    s === "season"
-  ) return "tv";
-  return null;
-}
+export { extractTmdbMediaTypeFromYounifyRow } from "@/utils/younifyRowMedia";
 
 function extractYearFromYounifyRow(row: Record<string, unknown>): number | null {
   const candidates: unknown[] = [
@@ -303,7 +287,8 @@ async function tmdbPosterUrlFromId(
   if (preferred === "movie") {
     return (await tryMovie()) ?? (await tryTv());
   }
-  return (await tryMovie()) ?? (await tryTv());
+  // Same numeric id can exist on movie vs TV in TMDB; default to TV when unknown (common for continue-watching).
+  return (await tryTv()) ?? (await tryMovie());
 }
 
 /**
@@ -314,7 +299,9 @@ export async function resolveTmdbPosterUrlForYounifyRow(
   row: Record<string, unknown>,
   size: TmdbPosterSize = "w500",
 ): Promise<string | null> {
-  const stableKey = `${String(row.itemID ?? row.id ?? "")}|${String(row.title ?? row.name ?? "").trim()}|${size}`;
+  const stableKey = `${String(row.itemID ?? row.id ?? "")}|${String(
+    row.showTitle ?? row.series ?? row.title ?? row.name ?? "",
+  ).trim()}|${size}`;
   if (rowResolveCache.has(stableKey)) {
     return rowResolveCache.get(stableKey) ?? null;
   }
@@ -329,9 +316,23 @@ export async function resolveTmdbPosterUrlForYounifyRow(
   }
 
   const tmdbId = extractTmdbIdFromYounifyRow(row);
-  const mt = extractTmdbMediaTypeFromYounifyRow(row);
+  const mt = inferYounifyRowMediaType(row);
   const year = extractYearFromYounifyRow(row);
   const synopsis = extractSynopsisFromYounifyRow(row);
+  const seriesTitle = extractSeriesTitleFromYounifyRow(row);
+
+  if (mt === "tv" && seriesTitle) {
+    const fromSeries = await resolveTmdbPosterUrlForTitle(seriesTitle, size, {
+      preferredMediaType: "tv",
+      year,
+      synopsis,
+    });
+    if (fromSeries) {
+      rowResolveCacheSet(stableKey, fromSeries);
+      return fromSeries;
+    }
+  }
+
   if (tmdbId != null) {
     const fromId = await tmdbPosterUrlFromId(tmdbId, mt, size);
     if (fromId) {

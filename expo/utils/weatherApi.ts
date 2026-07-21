@@ -913,6 +913,35 @@ export function getHeroGradientColors(
   return pickByTime(HERO_GRADIENTS.clear, time);
 }
 
+function parseHexColor(hex: string): { r: number; g: number; b: number } | null {
+  const normalized = hex.replace('#', '').trim();
+  if (normalized.length === 3) {
+    return {
+      r: parseInt(normalized[0] + normalized[0], 16),
+      g: parseInt(normalized[1] + normalized[1], 16),
+      b: parseInt(normalized[2] + normalized[2], 16),
+    };
+  }
+  if (normalized.length === 6) {
+    return {
+      r: parseInt(normalized.slice(0, 2), 16),
+      g: parseInt(normalized.slice(2, 4), 16),
+      b: parseInt(normalized.slice(4, 6), 16),
+    };
+  }
+  return null;
+}
+
+/** Pick light vs dark hero typography from the actual sky gradient (avoids API day/night mismatches). */
+export function heroGradientNeedsLightText(gradient: readonly string[]): boolean {
+  const sample = gradient[0] ?? gradient[Math.floor(gradient.length / 2)];
+  if (!sample) return false;
+  const rgb = parseHexColor(sample);
+  if (!rgb) return false;
+  const luminance = (0.2126 * rgb.r + 0.7152 * rgb.g + 0.0722 * rgb.b) / 255;
+  return luminance < 0.42;
+}
+
 export function getWeatherIcon(condition: string, isDayTime: boolean = true): string {
   const cond = condition.toLowerCase();
   

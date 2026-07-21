@@ -38,6 +38,7 @@ import { useRouter } from 'expo-router';
 import { Platform } from 'react-native';
 import { useCommunity } from '@/hooks/useCommunity';
 import { LinearGradient } from 'expo-linear-gradient';
+import { HabitAccountabilitySection } from '@/components/social/HabitAccountabilitySection';
 
 
 
@@ -47,6 +48,8 @@ interface HabitDetailModalProps {
   onClose: () => void;
   onAdd: (habit: CommunityHabit) => void;
   isAdded: boolean;
+  /** Task habit id once saved from Discover — required for partner sharing. */
+  routineHabitId?: string | null;
 }
 
 const DAY_NAMES = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
@@ -155,12 +158,23 @@ const getFrequencyDescription = (days: number[]) => {
   return `${days.length} days per week`;
 };
 
+const accountabilityColors = {
+  text: COLORS.text,
+  textSecondary: COLORS.textSecondary,
+  textTertiary: COLORS.textTertiary,
+  card: COLORS.surfaceSecondary,
+  border: COLORS.border,
+  primary: COLORS.primary,
+  surfaceSecondary: COLORS.backgroundSecondary,
+};
+
 export default function HabitDetailModal({
   visible,
   habit,
   onClose,
   onAdd,
   isAdded,
+  routineHabitId,
 }: HabitDetailModalProps) {
   const scaleValue = React.useRef(new Animated.Value(1)).current;
   const [expandedWeeks, setExpandedWeeks] = useState<Record<number, boolean>>({});
@@ -245,7 +259,21 @@ export default function HabitDetailModal({
       },
     };
     onAdd(customizedHabit);
-    setTimeout(onClose, 300);
+  };
+
+  const runAddToRoutine = () => {
+    if (isAdded || !habit) return;
+    const customizedHabit: CommunityHabit = {
+      ...habit,
+      frequency: {
+        ...habit.frequency,
+        type: 'specific_days',
+        days: selectedDays,
+        timesPerWeek: selectedDays.length,
+      },
+    };
+    void Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+    onAdd(customizedHabit);
   };
 
   return (
@@ -408,6 +436,17 @@ export default function HabitDetailModal({
                   <Text style={styles.socialProofLabel}>doing this now</Text>
                 </View>
               </View>
+            </View>
+
+            <View style={styles.section}>
+              <HabitAccountabilitySection
+                habitId={isAdded ? routineHabitId ?? undefined : undefined}
+                habitName={habit.name}
+                colors={accountabilityColors}
+                locked={!isAdded || !routineHabitId}
+                routinePending={isAdded && !routineHabitId}
+                onAddToRoutine={!isAdded ? runAddToRoutine : undefined}
+              />
             </View>
 
             <View style={styles.dividerSection} />

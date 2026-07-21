@@ -14,6 +14,7 @@ import {
   signUpDirect,
   persistSupabaseSession,
   recoverSupabaseSession,
+  restoreSupabaseSessionWithRetries,
 } from '@/utils/supabaseClient';
 import * as Linking from 'expo-linking';
 import * as Crypto from 'expo-crypto';
@@ -103,6 +104,16 @@ interface StoredUser {
 }
 
 type BiometricType = 'FaceID' | 'TouchID' | 'Fingerprint' | 'Iris' | 'None';
+
+async function readCachedAuthUser(): Promise<AuthUser | null> {
+  try {
+    const cachedUser = await AsyncStorage.getItem(AUTH_STORAGE_KEY);
+    if (!cachedUser) return null;
+    return JSON.parse(cachedUser) as AuthUser;
+  } catch {
+    return null;
+  }
+}
 
 const getUsersDb = async (): Promise<StoredUser[]> => {
   try {
@@ -313,30 +324,44 @@ export const [AuthProvider, useAuth] = createContextHook(() => {
     const initialize = async () => {
       try {
         if (supabaseConfigured) {
-          let session = (await supabase.auth.getSession()).data.session;
-          if (!session?.user) {
-            session = await recoverSupabaseSession();
-          }
+          const session = await restoreSupabaseSessionWithRetries();
           if (session?.user && isMounted) {
             console.log('🔐 Restored Supabase session for:', session.user.email);
             await applySupabaseSession(session.user);
           } else {
-            const cachedUser = await AsyncStorage.getItem(AUTH_STORAGE_KEY);
-            if (cachedUser && isMounted) {
-              const parsedUser: AuthUser = JSON.parse(cachedUser);
-              if (!parsedUser.id?.startsWith('guest_')) {
-                console.log('📱 No Supabase session after recovery; clearing stale cached user:', parsedUser.email);
-                await AsyncStorage.removeItem(AUTH_STORAGE_KEY);
-              } else if (isMounted) {
+            const parsedUser = await readCachedAuthUser();
+            if (parsedUser && isMounted) {
+              if (parsedUser.id?.startsWith('guest_')) {
                 setUser(parsedUser);
                 setIsGuest(true);
+              } else if (parsedUser.isAuthenticated) {
+                console.log(
+                  '📱 Supabase session not ready yet — keeping cached sign-in for:',
+                  parsedUser.email,
+                );
+                setUser(parsedUser);
+                setIsGuest(false);
+                try {
+                  const newSync = new SupabaseUserSync(parsedUser.id);
+                  setSupabaseSync(newSync);
+                  setAutoSyncEnabled(true);
+                  void setSyncUserId(parsedUser.id);
+                } catch {
+                  // sync waits until session refresh succeeds
+                }
+                void (async () => {
+                  const recovered = await restoreSupabaseSessionWithRetries(5);
+                  if (recovered?.user && isMounted) {
+                    console.log('🔐 Background session refresh succeeded');
+                    await applySupabaseSession(recovered.user);
+                  }
+                })();
               }
             }
           }
         } else {
-          const cachedUser = await AsyncStorage.getItem(AUTH_STORAGE_KEY);
-          if (cachedUser && isMounted) {
-            const parsedUser: AuthUser = JSON.parse(cachedUser);
+          const parsedUser = await readCachedAuthUser();
+          if (parsedUser && isMounted) {
             console.log('📱 Found cached user (no Supabase):', parsedUser.email);
             setUser(parsedUser);
             setIsGuest(!!parsedUser.id?.startsWith('guest_'));
@@ -353,6 +378,11 @@ export const [AuthProvider, useAuth] = createContextHook(() => {
         }
       } catch (error) {
         console.error('💥 Error initializing auth:', error);
+        const parsedUser = await readCachedAuthUser();
+        if (parsedUser?.isAuthenticated && isMounted) {
+          setUser(parsedUser);
+          setIsGuest(!!parsedUser.id?.startsWith('guest_'));
+        }
       } finally {
         if (isMounted) {
           authBootstrapDoneRef.current = true;

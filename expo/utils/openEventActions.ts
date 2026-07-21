@@ -1,7 +1,9 @@
 import { Alert, Linking, Platform } from 'react-native';
 import type { LocalEvent } from '@/types/events';
+import { buildWazeEventUrl } from '@/utils/wazeEventLink';
 
 export { getEventCalendarRange } from '@/utils/eventDiscovery';
+export { buildWazeEventUrl } from '@/utils/wazeEventLink';
 
 export async function openEventTickets(event: LocalEvent): Promise<void> {
   const url = event.ticketUrl?.trim();
@@ -40,4 +42,13 @@ export async function openEventDirections(event: LocalEvent): Promise<void> {
     return;
   }
   await Linking.openURL(url);
+}
+
+export async function openEventInWaze(event: LocalEvent): Promise<void> {
+  const url = buildWazeEventUrl(event);
+  try {
+    await Linking.openURL(url);
+  } catch {
+    Alert.alert('Waze', 'Unable to open Waze on this device.');
+  }
 }

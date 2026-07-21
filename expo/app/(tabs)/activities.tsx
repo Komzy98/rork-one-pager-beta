@@ -1,6 +1,6 @@
 import React, { useMemo, useState, useEffect, useCallback, useRef } from 'react';
 import { StyleSheet, View, Text, ScrollView, TouchableOpacity, Image, Platform, RefreshControl, Animated, Alert, FlatList } from 'react-native';
-import { Play, ChevronRight, Sparkles, Calendar, CheckCircle2, Target, Flame, Tv, Radio, X, Clock, BarChart3, Volume2, VolumeX, BellRing, Brain, Share2, PartyPopper, Users } from 'lucide-react-native';
+import { Play, ChevronRight, Sparkles, Calendar, CheckCircle2, Target, Flame, Tv, Radio, X, Clock, BarChart3, BellRing, PartyPopper, Users } from 'lucide-react-native';
 import * as Speech from 'expo-speech';
 import * as Haptics from 'expo-haptics';
 import { setAudioModeAsync, useAudioPlayer, useAudioPlayerStatus } from 'expo-audio';
@@ -14,7 +14,7 @@ import { useUserProfile } from '@/hooks/useUserProfile';
 import { useAuth } from '@/hooks/useAuth';
 import { useTodayHabits } from '@/hooks/useTodayHabits';
 import { useTodayYmd } from '@/hooks/useTodayYmd';
-import { router, Stack } from 'expo-router';
+import { router, Stack, useLocalSearchParams } from 'expo-router';
 import { useFocusEffect } from '@react-navigation/native';
 import SwipeableTabContainer from '@/components/SwipeableTabContainer';
 import TabWalkthrough from '@/components/TabWalkthrough';
@@ -39,7 +39,7 @@ import {
   matchInvolvesNationalInterest,
 } from '@/utils/footballMatchPersonalization';
 import { usePinnedMatches } from '@/hooks/usePinnedMatches';
-import { getCurrentWeather, getHeroGradientColors } from '@/utils/weatherApi';
+import { getCurrentWeather, getHeroGradientColors, heroGradientNeedsLightText } from '@/utils/weatherApi';
 import { LiveFootballMatch, Show } from '@/types/habit';
 import { useCalendar } from '@/hooks/useCalendar';
 import { useSavedEvents } from '@/hooks/useSavedEvents';
@@ -64,24 +64,9 @@ import {
   buildTodayHabitEntries,
   buildSummaryHabitsFromEntries,
 } from '@/utils/todayHabits';
-import DailySummaryInsights from '@/components/DailySummaryInsights';
 import { ProgressShareSheet } from '@/components/ProgressShareSheet';
 import { useActivity } from '@/hooks/useActivity';
 import { useFriends } from '@/hooks/useFriends';
-import { useSocialUnread } from '@/hooks/useSocialUnread';
-import { usePartnerActivityActions } from '@/hooks/usePartnerActivityActions';
-import { PartnerActivityFeed } from '@/components/social/PartnerActivityFeed';
-import { AccountabilityInboxCard } from '@/components/social/AccountabilityInboxCard';
-import { AccountabilityCircleCard } from '@/components/social/AccountabilityCircleCard';
-import { PartnerInviteEmptyCard } from '@/components/social/PartnerInviteEmptyCard';
-import { PartnerListSyncCard } from '@/components/social/PartnerListSyncCard';
-import { confirmBeforeFirstPartner, isPartnerInviteOverviewDismissed, markPartnerInviteOverviewDismissed } from '@/utils/partnerPrivacy';
-import {
-  derivePartnersAtRisk,
-  getCircleProgress,
-  getHabitGapMotivation,
-} from '@/utils/socialAccountability';
-import type { ActivityRowActionKind } from '@/utils/socialAccountability';
 import { buildSummaryPayload, type SharePayload } from '@/utils/shareProgress';
 import {
   getTodayYmd,
@@ -109,6 +94,9 @@ import ActivitiesAIView from '@/components/activities/ActivitiesAIView';
 import FlyingBirds from '@/components/FlyingBirds';
 import TodaysRoutine from '@/components/TodaysRoutine';
 import AddInterestsLaterCard from '@/components/AddInterestsLaterCard';
+import DailyStackCard from '@/components/DailyStackCard';
+import TodayCoachCard from '@/components/TodayCoachCard';
+import DecisionMomentsCard from '@/components/DecisionMomentsCard';
 import PeakPerformanceScheduler from '@/components/PeakPerformanceScheduler';
 import HabitFormationCoach from '@/components/HabitFormationCoach';
 import RecoveryModePanel from '@/components/RecoveryModePanel';
@@ -116,7 +104,15 @@ import JoySourcesNudgeCard from '@/components/JoySourcesNudgeCard';
 import { useRecoveryMode } from '@/hooks/useRecoveryMode';
 import { resolveEffectiveJoySources } from '@/utils/joySources';
 import { detectRecoveryPatternInsight } from '@/utils/recoveryPatterns';
-import { getChronotypeInfo, getChronotypeGreetingTip } from '@/constants/chronotypes';
+import { getChronotypeInfo } from '@/constants/chronotypes';
+import { getLivingWellChronotypeTip } from '@/utils/todayCoach';
+import {
+  getHeroLivingWellTagline,
+  resolveTodayCoachPhase,
+  setDevCoachPhaseOverride,
+  type TodayCoachPhase,
+  getTodayCoachPhase,
+} from '@/utils/todayCoach';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import NBAUpcomingSection from '@/components/NBAUpcomingSection';
 import ShowInfoModal from '@/components/ShowInfoModal';
@@ -229,6 +225,25 @@ function buildSpeechSummaryText(summary: string): string {
 
 export default function ActivitiesScreen() {
   const { user } = useAuth();
+  const { coachPhase: devCoachPhaseParam } = useLocalSearchParams<{ coachPhase?: string }>();
+  const [coachPhase, setCoachPhase] = useState<TodayCoachPhase>(() => resolveTodayCoachPhase());
+
+  useEffect(() => {
+    if (!__DEV__) return;
+    const phase = devCoachPhaseParam;
+    if (phase === 'morning' || phase === 'afternoon' || phase === 'evening') {
+      setDevCoachPhaseOverride(phase as TodayCoachPhase);
+      setCoachPhase(phase as TodayCoachPhase);
+    } else {
+      setDevCoachPhaseOverride(null);
+      setCoachPhase(getTodayCoachPhase());
+    }
+  }, [devCoachPhaseParam]);
+
+  const heroLivingWellTagline = useMemo(
+    () => getHeroLivingWellTagline(coachPhase),
+    [coachPhase],
+  );
   const { colors, isDark } = useTheme();
   const appContext = useApp();
   const tasksContext = useTasks();
@@ -237,7 +252,6 @@ export default function ActivitiesScreen() {
   const { upcomingSaved, eventsNeedingFeedback, recordEventFeedback, dismissEventFeedback } =
     useSavedEvents();
   const eventRecommendationInput = useEventRecommendationInput();
-  const savedEventsCount = profile?.savedEvents?.length ?? 0;
   const [summarySharePayload, setSummarySharePayload] = useState<SharePayload | null>(null);
   const defaultFavoriteTeam = useCallback(() => false, []);
   const isFavoriteTeam = userProfileData?.isFavoriteTeam ?? defaultFavoriteTeam;
@@ -247,61 +261,17 @@ export default function ActivitiesScreen() {
   const {
     available: friendsAvailable,
     friends: partnerList,
-    friendshipCount,
-    myProfile,
-    incomingRequests,
-    unreadNudges,
-    socialAlertCount,
-    isLoading: friendsLoading,
-    isRefreshing: friendsRefreshing,
-    hasFriendsError,
     refresh: refreshFriends,
-    accept: acceptPartnerRequest,
-    nudge: nudgePartner,
   } = useFriends();
-  const {
-    unreadFeedCount,
-    unreadCheerCount,
-    unreadActivityCount,
-    markSocialSeen,
-  } = useSocialUnread(user?.id, partnerActivity.feed);
-  const totalSocialAlertCount = socialAlertCount + unreadFeedCount;
-  const partnerActions = usePartnerActivityActions({
-    onCheer: (eventId, on) => partnerActivity.cheer(eventId, on),
-  });
 
-  const accountabilityCircle = useMemo(
-    () => getCircleProgress(partnerList, partnerActivity.activeTodayCount),
-    [partnerList, partnerActivity.activeTodayCount],
-  );
-
-  const partnersAtRisk = useMemo(
-    () => derivePartnersAtRisk(partnerList, partnerActivity.activeTodayCount, partnerActivity.feed),
-    [partnerList, partnerActivity.activeTodayCount, partnerActivity.feed],
-  );
-
-  const handlePartnerRowAction = useCallback(
-    (event: import('@/utils/activityService').ActivityEvent, kind: ActivityRowActionKind) => {
-      void partnerActions.runAction(event, kind);
-    },
-    [partnerActions],
-  );
-
-  const handleAcceptPartnerRequest = useCallback(
-    async (requestId: string) => {
-      if (myProfile?.id) {
-        const ok = await confirmBeforeFirstPartner(myProfile.id);
-        if (!ok) return;
+  useFocusEffect(
+    useCallback(() => {
+      if (friendsAvailable === true) {
+        refreshFriends();
+        partnerActivity.refresh();
       }
-      try {
-        await acceptPartnerRequest(requestId);
-      } catch (e) {
-        Alert.alert('Could not accept', (e as Error)?.message || 'Please try again.');
-      }
-    },
-    [acceptPartnerRequest, myProfile?.id],
+    }, [friendsAvailable, refreshFriends, partnerActivity.refresh]),
   );
-  
   const calendarData = useCalendar();
   const getUpcomingCalendarEvents = calendarData?.getUpcomingCalendarEvents || (() => []);
   const getTodayCalendarEvents = calendarData?.getTodayCalendarEvents || (() => []);
@@ -319,7 +289,6 @@ export default function ActivitiesScreen() {
   const userId = user?.id || 'guest';
   const [autoSummaryScheduleLabel, setAutoSummaryScheduleLabel] = useState<string>('');
   const [autoSummaryHintDismissed, setAutoSummaryHintDismissed] = useState(true);
-  const [partnerInviteDismissed, setPartnerInviteDismissed] = useState(true);
   const [isSpeaking, setIsSpeaking] = useState<boolean>(false);
   const [showsWithThumbnails, setShowsWithThumbnails] = useState<(Show & { posterUrl?: string | null })[]>([]);
   const [younifyContinueItems, setYounifyContinueItems] = useState<Record<string, unknown>[]>([]);
@@ -337,18 +306,6 @@ export default function ActivitiesScreen() {
   const [dismissedEpisodes, setDismissedEpisodes] = useState<string[]>([]);
   const [dismissedContinueWatching, setDismissedContinueWatching] = useState<string[]>([]);
   const scopedStorageKey = useCallback((base: string) => `${base}_${user?.id || 'guest'}`, [user?.id]);
-
-  useFocusEffect(
-    useCallback(() => {
-      if (friendsAvailable === true) {
-        refreshFriends();
-        partnerActivity.refresh();
-      }
-      return () => {
-        void markSocialSeen();
-      };
-    }, [friendsAvailable, refreshFriends, partnerActivity.refresh, markSocialSeen]),
-  );
 
   useEffect(() => {
     AsyncStorage.getItem(scopedStorageKey('dismissed_new_episodes')).then(async (raw) => {
@@ -918,16 +875,6 @@ export default function ActivitiesScreen() {
   const todayYmd = useTodayYmd();
   const stats = todayHabitStats;
 
-  const habitGapMotivation = useMemo(
-    () =>
-      getHabitGapMotivation(
-        stats.completedHabits,
-        stats.totalHabits,
-        partnerActivity.feed,
-      ),
-    [stats.completedHabits, stats.totalHabits, partnerActivity.feed],
-  );
-  
   const trackedTVShows = useMemo(() => {
     return shows.filter((show: Show) => 
       show.tmdbId && show.mediaType === 'tv' && (show.status === 'Watching' || show.status === 'Plan to Watch')
@@ -1126,6 +1073,30 @@ export default function ActivitiesScreen() {
     return out.filter((item) => !dismissedContinueWatching.includes(getContinueWatchingDismissKey(item)));
   }, [younifyContinueItems, showsWithThumbnails, dismissedContinueWatching]);
 
+  const dailyStackContinueTitle = useMemo(() => {
+    const first = continueWatchingItems[0];
+    return first ? getContinueWatchingTitle(first) : null;
+  }, [continueWatchingItems]);
+
+  const dailyStackTonightMatch = useMemo(() => {
+    if (!hasSportsInterest || rawUpcomingMatches.length === 0) return null;
+    const tonight = rawUpcomingMatches.find((m) => {
+      const dateKey = m.date.includes('T') ? m.date.split('T')[0] : m.date;
+      return dateKey === todayYmd;
+    });
+    if (!tonight) return null;
+    return `${tonight.homeTeam} vs ${tonight.awayTeam} tonight`;
+  }, [hasSportsInterest, rawUpcomingMatches, todayYmd]);
+
+  const dailyStackMatchKickoff = useMemo(() => {
+    if (!hasSportsInterest || rawUpcomingMatches.length === 0) return null;
+    const tonight = rawUpcomingMatches.find((m) => {
+      const dateKey = m.date.includes('T') ? m.date.split('T')[0] : m.date;
+      return dateKey === todayYmd;
+    });
+    return tonight?.time?.trim() || null;
+  }, [hasSportsInterest, rawUpcomingMatches, todayYmd]);
+
   const younifyContinueByTmdbId = useMemo(() => {
     const map = new Map<number, Record<string, unknown>>();
     for (const row of younifyContinueItems) {
@@ -1279,35 +1250,25 @@ export default function ActivitiesScreen() {
 
   const recovery = useRecoveryMode(recoveryHopeInput);
 
-  const upcomingEventsPreview = useMemo(() => {
-    type PreviewEvent = { id: string; title: string; startDate: string; kind: 'calendar' | 'onepager' };
-
-    const fromCalendar: PreviewEvent[] = getUpcomingCalendarEvents(90).map((event) => ({
-      id: event.id,
-      title: event.title,
-      startDate: event.startDate,
-      kind: 'calendar' as const,
-    }));
-
-    const fromOnePager: PreviewEvent[] = upcomingSaved
-      .filter((event) => event.startIso)
+  const upcomingCalendarPreview = useMemo(() => {
+    return getUpcomingCalendarEvents(90)
       .map((event) => ({
         id: event.id,
         title: event.title,
-        startDate: event.startIso!,
-        kind: 'onepager' as const,
-      }));
-
-    const seen = new Set<string>();
-    return [...fromOnePager, ...fromCalendar]
-      .filter((event) => {
-        if (seen.has(event.id)) return false;
-        seen.add(event.id);
-        return true;
-      })
+        startDate: event.startDate,
+      }))
       .sort((a, b) => new Date(a.startDate).getTime() - new Date(b.startDate).getTime())
       .slice(0, 4);
-  }, [getUpcomingCalendarEvents, calendars.length, eventKit.hasPermission, upcomingSaved]);
+  }, [getUpcomingCalendarEvents, calendars.length, eventKit.hasPermission]);
+
+  const hasCalendarSource =
+    calendars.length > 0 || (eventKit.isEventKitAvailable && eventKit.hasPermission);
+
+  const showCalendarSection = true;
+  const eventTimeFormat =
+    profile?.displayPreferences?.timeFormat === '24h' ? '24h' : '12h';
+
+  const savedEventsCount = profile?.savedEvents?.length ?? 0;
 
   const handleStartWatching = useCallback(async (show: Show) => {
     if (Platform.OS !== 'web') {
@@ -1373,17 +1334,11 @@ export default function ActivitiesScreen() {
 
   useEffect(() => {
     void isAutoSummaryHintDismissed(userId).then(setAutoSummaryHintDismissed);
-    void isPartnerInviteOverviewDismissed(userId).then(setPartnerInviteDismissed);
   }, [userId]);
 
   const handleDismissAutoSummaryHint = useCallback(() => {
     setAutoSummaryHintDismissed(true);
     void dismissAutoSummaryHint(userId);
-  }, [userId]);
-
-  const handleDismissPartnerInvite = useCallback(() => {
-    setPartnerInviteDismissed(true);
-    void markPartnerInviteOverviewDismissed(userId);
   }, [userId]);
 
   useEffect(() => {
@@ -1637,7 +1592,7 @@ export default function ActivitiesScreen() {
     if (!profile?.chronotype) return null;
     const chronoInfo = getChronotypeInfo(profile.chronotype);
     if (!chronoInfo) return null;
-    const tip = getChronotypeGreetingTip(chronoInfo);
+    const tip = getLivingWellChronotypeTip(chronoInfo);
     return tip || null;
   };
 
@@ -1677,41 +1632,31 @@ export default function ActivitiesScreen() {
     return 'night';
   };
 
-  const getGradientColors = (): string[] => {
+  const getGradientColors = useCallback((): string[] => {
     const timeOfDay = getTimeOfDay();
+    const localIsDayTime = timeOfDay !== 'night';
     if (weather) {
       return [
-        ...getHeroGradientColors(weather.condition, weather.isDayTime, weather.cloudiness ?? 0, {
+        ...getHeroGradientColors(weather.condition, localIsDayTime, weather.cloudiness ?? 0, {
           description: weather.description,
           timeOfDay,
         }),
       ];
     }
-    return [...getHeroGradientColors('clear', timeOfDay !== 'night', 0, { timeOfDay })];
-  };
-  
-  const getHeroTextColor = (): string => {
-    const timeOfDay = getTimeOfDay();
-    const condition = weather?.condition?.toLowerCase() || '';
-    const hour = new Date().getHours();
-    const isDark = timeOfDay === 'night' || weather?.isStormy;
-    const isMuted = weather?.isRaining || (weather?.isCloudy && timeOfDay === 'evening');
-    const isFoggy = condition.includes('mist') || condition.includes('fog') || condition.includes('haze');
-    if (isDark || (isMuted && (hour < 5 || hour >= 21))) return '#F8FAFC';
-    if (isFoggy) return '#2D3748';
-    if (isMuted) return '#1E293B';
-    return '#1E293B';
-  };
-  
-  const getHeroSecondaryTextColor = (): string => {
-    const timeOfDay = getTimeOfDay();
-    const condition = weather?.condition?.toLowerCase() || '';
-    const isDark = timeOfDay === 'night' || weather?.isStormy;
-    const isFoggy = condition.includes('mist') || condition.includes('fog') || condition.includes('haze');
-    if (isDark) return 'rgba(248, 250, 252, 0.7)';
-    if (isFoggy) return 'rgba(45, 55, 72, 0.7)';
-    return 'rgba(30, 41, 59, 0.7)';
-  };
+    return [...getHeroGradientColors('clear', localIsDayTime, 0, { timeOfDay })];
+  }, [weather]);
+
+  const heroGradientColors = useMemo(() => getGradientColors(), [getGradientColors]);
+
+  const heroUsesLightText = useMemo(
+    () => heroGradientNeedsLightText(heroGradientColors),
+    [heroGradientColors],
+  );
+
+  const getHeroTextColor = (): string => (heroUsesLightText ? '#F8FAFC' : '#1E293B');
+
+  const getHeroSecondaryTextColor = (): string =>
+    heroUsesLightText ? 'rgba(248, 250, 252, 0.78)' : 'rgba(30, 41, 59, 0.75)';
   
   const getTodayDate = () => {
     return new Date().toLocaleDateString('en-GB', { 
@@ -2063,7 +2008,7 @@ export default function ActivitiesScreen() {
         {/* Hero Section with Gradient - Matching Morning Dashboard */}
         <View>
         <LinearGradient
-          colors={getGradientColors() as [string, string, ...string[]]}
+          colors={heroGradientColors as [string, string, ...string[]]}
           start={{ x: 0, y: 0 }}
           end={{ x: 1, y: 1 }}
           style={styles.heroSection}
@@ -2253,6 +2198,9 @@ export default function ActivitiesScreen() {
                 </Animated.Text>
                 <View style={styles.greetingTextContainer}>
                   <Text style={[styles.greetingText, { color: getHeroTextColor() }]}>{getGreeting()}</Text>
+                  <Text style={[styles.dailyFocusText, { color: getHeroSecondaryTextColor() }]}>
+                    {heroLivingWellTagline}
+                  </Text>
                   <Text style={[styles.dateText, { color: getHeroSecondaryTextColor() }]} numberOfLines={2}>
                     {getTodayDate()}{getHeroSubtitle() ? `  · ${getHeroSubtitle()}` : ''}
                   </Text>
@@ -2277,23 +2225,6 @@ export default function ActivitiesScreen() {
                     </Animated.View>
                   </TouchableOpacity>
                 )}
-                {friendsAvailable === true ? (
-                  <TouchableOpacity
-                    onPress={() => router.push('/friends' as any)}
-                    activeOpacity={0.8}
-                    accessibilityLabel={
-                      totalSocialAlertCount > 0
-                        ? `${totalSocialAlertCount} partner notifications`
-                        : 'Accountability partners'
-                    }
-                    style={styles.partnersHeroBtn}
-                  >
-                    <View style={[styles.partnersHeroIcon, { backgroundColor: 'rgba(255, 106, 61, 0.18)' }]}>
-                      <Users size={18} color="#FF6A3D" strokeWidth={2.4} />
-                      {totalSocialAlertCount > 0 ? <View style={styles.partnersHeroDot} /> : null}
-                    </View>
-                  </TouchableOpacity>
-                ) : null}
               </View>
             </Animated.View>
 
@@ -2312,7 +2243,7 @@ export default function ActivitiesScreen() {
                   <CheckCircle2 size={20} color="#10B981" strokeWidth={2.8} />
                 </View>
                 <Text style={[styles.quickStatValue, { color: getHeroTextColor() }]}>{stats.completedHabits}/{stats.totalHabits}</Text>
-                <Text style={[styles.quickStatLabel, { color: getHeroSecondaryTextColor() }]}>Habits</Text>
+                <Text style={[styles.quickStatLabel, { color: getHeroSecondaryTextColor() }]}>Show up</Text>
               </TouchableOpacity>
 
               <TouchableOpacity style={styles.quickStatCard} onPress={navigateToHabits}>
@@ -2320,7 +2251,7 @@ export default function ActivitiesScreen() {
                   <Flame size={20} color="#F59E0B" strokeWidth={2.8} />
                 </View>
                 <Text style={[styles.quickStatValue, { color: getHeroTextColor() }]}>{stats.currentStreak}</Text>
-                <Text style={[styles.quickStatLabel, { color: getHeroSecondaryTextColor() }]}>Day Streak</Text>
+                <Text style={[styles.quickStatLabel, { color: getHeroSecondaryTextColor() }]}>Streak</Text>
               </TouchableOpacity>
 
               <TouchableOpacity style={styles.quickStatCard} onPress={navigateToHabits}>
@@ -2328,7 +2259,7 @@ export default function ActivitiesScreen() {
                   <Target size={22} color="#A78BFA" strokeWidth={2.8} />
                 </View>
                 <Text style={[styles.quickStatValue, { color: getHeroTextColor() }]}>{stats.habitCompletionRate}%</Text>
-                <Text style={[styles.quickStatLabel, { color: getHeroSecondaryTextColor() }]}>Progress</Text>
+                <Text style={[styles.quickStatLabel, { color: getHeroSecondaryTextColor() }]}>On track</Text>
               </TouchableOpacity>
             </Animated.View>
 
@@ -2397,7 +2328,7 @@ export default function ActivitiesScreen() {
                 onPress={() => setShowUnifiedView(false)}
               >
                 <Text style={[styles.viewToggleText, { color: !showUnifiedView ? getHeroTextColor() : getHeroSecondaryTextColor() }]}>
-                  Dashboard
+                  Today
                 </Text>
               </TouchableOpacity>
               <TouchableOpacity 
@@ -2411,22 +2342,12 @@ export default function ActivitiesScreen() {
               </TouchableOpacity>
               <TouchableOpacity 
                 style={[styles.viewToggleBtn]}
-                onPress={() => router.push('/(root)/daily-agent' as any)}
-                testID="daily-agent-btn"
-              >
-                <Brain size={14} color={getHeroSecondaryTextColor()} />
-                <Text style={[styles.viewToggleText, { color: getHeroSecondaryTextColor() }]}>
-                  Pulse
-                </Text>
-              </TouchableOpacity>
-              <TouchableOpacity 
-                style={[styles.viewToggleBtn]}
                 onPress={() => router.push('/(root)/analytics' as any)}
                 testID="analytics-btn"
               >
                 <BarChart3 size={14} color={getHeroSecondaryTextColor()} />
                 <Text style={[styles.viewToggleText, { color: getHeroSecondaryTextColor() }]}>
-                  Analytics
+                  Insights
                 </Text>
               </TouchableOpacity>
             </View>
@@ -2439,6 +2360,25 @@ export default function ActivitiesScreen() {
         ) : (
           <View style={{ backgroundColor: colors.background }}>
             <AddInterestsLaterCard />
+            <DailyStackCard
+              habitCount={stats.totalHabits}
+              completedHabits={stats.completedHabits}
+              continueWatchingTitle={dailyStackContinueTitle}
+              tonightMatchLabel={dailyStackTonightMatch}
+              partnerCount={partnerList.length}
+            />
+            <DecisionMomentsCard
+              completedHabits={stats.completedHabits}
+              totalHabits={stats.totalHabits}
+              chronotypeId={profile?.chronotype}
+              tonightMatchLabel={dailyStackTonightMatch}
+              matchKickoffTime={dailyStackMatchKickoff}
+              weather={weather}
+              continueWatchingTitle={dailyStackContinueTitle}
+              partnerFeed={partnerActivity.feed}
+              currentUserId={user?.id}
+              onCheer={(eventId) => void partnerActivity.cheer(eventId, true)}
+            />
             <JoySourcesNudgeCard />
 
             {recovery.isActive ? (
@@ -2460,237 +2400,42 @@ export default function ActivitiesScreen() {
               />
             ) : null}
 
-            {/* Daily Summary Card */}
-            <View style={styles.summarySection}>
-              {dailySummary ? (
-                <View style={[styles.dailySummaryCard, { backgroundColor: colors.card }]}>
-                  <View style={styles.summaryHeader}>
-                    <View style={styles.summaryTitleRow}>
-                      <Sparkles size={18} color="#F59E0B" />
-                      <Text style={[styles.summaryTitle, { color: colors.text }]}>Today&#39;s Summary</Text>
-                    </View>
-                    <View style={styles.summaryHeaderRight}>
-                      <View style={[styles.sentimentBadge, { 
-                        backgroundColor: dailySummary.sentiment === 'positive' ? '#D1FAE5' : 
-                                         dailySummary.sentiment === 'negative' ? '#FEE2E2' : '#F3F4F6'
-                      }]}>
-                        <Text style={[styles.sentimentText, {
-                          color: dailySummary.sentiment === 'positive' ? '#059669' : 
-                                 dailySummary.sentiment === 'negative' ? '#DC2626' : '#6B7280'
-                        }]}>{dailySummary.sentiment}</Text>
-                      </View>
-                      <TouchableOpacity 
-                        style={styles.summaryCloseBtn}
-                        onPress={() => {
-                      void stopSummarySpeech();
-                      void markDailySummaryDismissed(userId, getTodayYmd());
-                      setDailySummary(null);
-                    }}
-                      >
-                        <X size={18} color={colors.textTertiary} />
-                      </TouchableOpacity>
-                    </View>
-                  </View>
-                  <Text style={[styles.summaryText, { color: colors.textSecondary }]}>{dailySummary.summary}</Text>
-                  <TouchableOpacity
-                    style={[
-                      styles.listenButton,
-                      isSpeaking && styles.listenButtonActive,
-                      generateVoiceMutation.isPending && styles.listenButtonLoading,
-                    ]}
-                    onPress={() => {
-                      if (isSpeaking) {
-                        void stopSummarySpeech();
-                      } else {
-                        void speakDailySummary(dailySummary.summary);
-                      }
-                    }}
-                    activeOpacity={0.7}
-                    disabled={generateVoiceMutation.isPending}
-                    testID="daily-summary-listen-button"
-                  >
-                    {isSpeaking ? (
-                      <VolumeX size={16} color="#fff" />
-                    ) : (
-                      <Volume2 size={16} color="#fff" />
-                    )}
-                    <Text style={styles.listenButtonText}>
-                      {generateVoiceMutation.isPending ? 'Generating ElevenLabs audio...' : isSpeaking ? 'Stop audio' : 'Listen with ElevenLabs'}
-                    </Text>
-                  </TouchableOpacity>
-                  <View style={styles.scoreBar}>
-                    {!recovery.isActive ? (
-                      <>
-                        <View style={styles.scoreTrack}>
-                          <View style={[styles.scoreFill, { width: `${dailySummary.score}%` }]} />
-                        </View>
-                        <Text style={[styles.scoreValue, { color: colors.text }]}>{dailySummary.score}/100</Text>
-                      </>
-                    ) : (
-                      <Text style={[styles.recoverySummaryNote, { color: colors.textSecondary }]}>
-                        Recovery mode — focus on wellbeing, not scores
-                      </Text>
-                    )}
-                  </View>
-                  <DailySummaryInsights
-                    summary={dailySummary}
-                    yesterdayDelta={recovery.isActive ? null : yesterdayDelta}
-                  />
-                  {!recovery.isActive ? (
-                  <TouchableOpacity
-                    style={styles.shareSummaryButton}
-                    onPress={() =>
-                      setSummarySharePayload(
-                        buildSummaryPayload(
-                          dailySummary.score,
-                          dailySummary.summary,
-                          (profile?.name || user?.email?.split('@')[0] || '').trim() || undefined,
-                        ),
-                      )
-                    }
-                    activeOpacity={0.8}
-                    testID="daily-summary-share-button"
-                  >
-                    <Share2 size={16} color="#fff" />
-                    <Text style={styles.shareSummaryText}>Share today’s score</Text>
-                  </TouchableOpacity>
-                  ) : null}
-                </View>
-              ) : (
-                <TouchableOpacity 
-                  style={styles.generateSummaryButton}
-                  onPress={generateDailySummary}
-                  disabled={isGeneratingSummary}
-                >
-                  <Sparkles size={20} color="#fff" />
-                  <Text style={styles.generateSummaryText}>
-                    {isGeneratingSummary ? 'Generating...' : 'Generate Daily Summary'}
-                  </Text>
-                </TouchableOpacity>
-              )}
-              {!dailySummary && !isGeneratingSummary && !autoSummaryHintDismissed ? (
-                <View
-                  style={[
-                    styles.autoSummaryHintCard,
-                    { backgroundColor: isDark ? colors.card : '#F1F5F9', borderColor: colors.border },
-                  ]}
-                >
-                  <Text style={[styles.autoSummaryHint, { color: colors.textSecondary }]}>
-                    {autoSummaryScheduleLabel
-                      ? `Auto-summary after ${autoSummaryScheduleLabel} when you open Overview (change in Profile)`
-                      : 'Auto-summary runs at your chosen time when you open Overview (set in Profile)'}
-                  </Text>
-                  <TouchableOpacity
-                    style={[styles.autoSummaryHintDismiss, { backgroundColor: isDark ? colors.background : '#E2E8F0' }]}
-                    onPress={handleDismissAutoSummaryHint}
-                    hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
-                    accessibilityLabel="Dismiss auto-summary message"
-                    testID="dismiss-auto-summary-hint"
-                  >
-                    <X size={14} color={colors.textTertiary} />
-                  </TouchableOpacity>
-                </View>
-              ) : null}
-            </View>
-
-            {friendsAvailable === true && !friendsLoading && !hasFriendsError && partnerList.length === 0 && friendshipCount === 0 && !partnerInviteDismissed ? (
-              <PartnerInviteEmptyCard
-                username={myProfile?.username}
-                colors={{
-                  text: colors.text,
-                  textSecondary: colors.textSecondary,
-                  textMuted: colors.textMuted,
-                  card: colors.card,
-                  border: colors.border,
-                  primary: colors.primary,
-                }}
-                onAddPartner={() => router.push('/friends' as any)}
-                onDismiss={handleDismissPartnerInvite}
-              />
-            ) : null}
-
-            {(friendsAvailable === true && !friendsLoading && partnerList.length === 0 && friendshipCount > 0) ||
-            (friendsAvailable === true && hasFriendsError) ? (
-              <PartnerListSyncCard
-                partnerCount={friendshipCount}
-                isRefreshing={friendsRefreshing}
-                colors={{
-                  text: colors.text,
-                  textSecondary: colors.textSecondary,
-                  card: colors.card,
-                  border: colors.border,
-                  primary: colors.primary,
-                }}
-                onRefresh={() => refreshFriends()}
-                onOpenPartners={() => router.push('/friends' as any)}
-              />
-            ) : null}
-
-            {friendsAvailable === true && partnerList.length > 0 ? (
-              <AccountabilityCircleCard
-                circle={accountabilityCircle}
-                partnersAtRisk={partnersAtRisk}
-                habitGap={habitGapMotivation}
-                onNudge={(userId) => void nudgePartner(userId)}
-                onOpenHabits={() => router.push('/(tabs)/tasks' as any)}
-                colors={{
-                  text: colors.text,
-                  textSecondary: colors.textSecondary,
-                  textMuted: colors.textMuted,
-                  card: colors.card,
-                  border: colors.border,
-                  primary: colors.primary,
-                  surfaceSecondary: colors.surfaceSecondary,
-                }}
-              />
-            ) : null}
-
-            {friendsAvailable === true && totalSocialAlertCount > 0 ? (
-              <AccountabilityInboxCard
-                incomingRequests={incomingRequests}
-                unreadNudges={unreadNudges}
-                unreadFeedCount={unreadActivityCount}
-                unreadCheerCount={unreadCheerCount}
-                onAccept={(id) => void handleAcceptPartnerRequest(id)}
-                onNudgeBack={(userId) => void nudgePartner(userId, 'You got this — keep the streak alive! 💪')}
-                onCheerLatest={() => router.push('/friends' as any)}
-                colors={{
-                  text: colors.text,
-                  textSecondary: colors.textSecondary,
-                  textMuted: colors.textMuted,
-                  card: colors.card,
-                  border: colors.border,
-                  primary: colors.primary,
-                  surfaceSecondary: colors.surfaceSecondary,
-                }}
-              />
-            ) : null}
-
-            {partnerActivity.available === true &&
-            (partnerActivity.feed.length > 0 ||
-              partnerActivity.activeTodayCount > 0 ||
-              totalSocialAlertCount > 0 ||
-              partnerList.length > 0) ? (
-              <PartnerActivityFeed
-                feed={partnerActivity.feed}
-                activeTodayCount={partnerActivity.activeTodayCount}
-                presenceLabel={partnerActivity.presenceLabel}
-                currentUserId={user?.id}
-                alertCount={totalSocialAlertCount}
-                actionOriented
-                onRowAction={handlePartnerRowAction}
-                colors={{
-                  text: colors.text,
-                  textSecondary: colors.textSecondary,
-                  textMuted: colors.textMuted,
-                  card: colors.card,
-                  border: colors.border,
-                  primary: colors.primary,
-                  surfaceSecondary: colors.surfaceSecondary,
-                }}
-                onCheer={(eventId, on) => void partnerActivity.cheer(eventId, on)}
-              />
-            ) : null}
+            <TodayCoachCard
+              coachPhase={coachPhase}
+              chronotypeId={profile?.chronotype}
+              dailySummary={dailySummary}
+              isGenerating={isGeneratingSummary}
+              isSpeaking={isSpeaking}
+              isVoicePending={generateVoiceMutation.isPending}
+              recoveryActive={recovery.isActive}
+              autoSummaryHintDismissed={autoSummaryHintDismissed}
+              autoSummaryScheduleLabel={autoSummaryScheduleLabel || null}
+              yesterdayDelta={yesterdayDelta}
+              onGenerate={generateDailySummary}
+              onDismissSummary={() => {
+                void stopSummarySpeech();
+                void markDailySummaryDismissed(userId, getTodayYmd());
+                setDailySummary(null);
+              }}
+              onToggleListen={() => {
+                if (isSpeaking) {
+                  void stopSummarySpeech();
+                } else if (dailySummary) {
+                  void speakDailySummary(dailySummary.summary);
+                }
+              }}
+              onShareSummary={() => {
+                if (!dailySummary) return;
+                setSummarySharePayload(
+                  buildSummaryPayload(
+                    dailySummary.score,
+                    dailySummary.summary,
+                    (profile?.name || user?.email?.split('@')[0] || '').trim() || undefined,
+                  ),
+                );
+              }}
+              onDismissAutoSummaryHint={handleDismissAutoSummaryHint}
+            />
 
             {eventsNeedingFeedback[0] ? (
               <EventFeedbackPrompt
@@ -2728,6 +2473,7 @@ export default function ActivitiesScreen() {
             <OnePagerSavedFitSection
               events={upcomingSaved}
               recommendationInput={eventRecommendationInput}
+              timeFormat={eventTimeFormat}
               colors={{
                 text: colors.text,
                 textSecondary: colors.textSecondary,
@@ -2739,14 +2485,25 @@ export default function ActivitiesScreen() {
               }}
             />
 
-            {/* Calendar Events */}
+            {showCalendarSection ? (
             <View style={styles.section}>
               <View style={styles.sectionHeaderRow}>
-                <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
-                  <Calendar size={20} color={colors.text} strokeWidth={2} />
-                  <Text style={[styles.sectionTitle, { color: colors.text }]}>Upcoming Events</Text>
+                <View style={{ flex: 1, paddingRight: 8 }}>
+                  <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+                    <Calendar size={20} color={colors.text} strokeWidth={2} />
+                    <Text style={[styles.sectionTitle, { color: colors.text }]}>
+                      {hasCalendarSource ? 'From your calendar' : 'Calendar'}
+                    </Text>
+                  </View>
+                  <Text style={[styles.sectionSubtitle, { color: colors.textSecondary }]}>
+                    {hasCalendarSource
+                      ? savedEventsCount > 0
+                        ? 'Device calendar — saved Events live in One Pager above'
+                        : 'Your imported or Apple Calendar schedule'
+                      : 'Connect Apple Calendar or import a file to see events here'}
+                  </Text>
                 </View>
-                {eventKit.isEventKitAvailable && (
+                {eventKit.isEventKitAvailable && hasCalendarSource && (
                   <TouchableOpacity 
                     onPress={() => setShowEventKitManager(true)}
                     style={styles.viewAllBtn}
@@ -2757,89 +2514,68 @@ export default function ActivitiesScreen() {
                 )}
               </View>
 
-              {(() => {
-                const hasCalendarSource =
-                  calendars.length > 0 || (eventKit.isEventKitAvailable && eventKit.hasPermission);
-
-                if (!hasCalendarSource && savedEventsCount === 0) {
-                  return (
-                    <View style={[styles.emptyCalendarCard, { backgroundColor: colors.card, borderColor: colors.border }]}>
-                      <Calendar size={40} color={colors.textMuted} />
-                      <Text style={[styles.emptyCalendarTitle, { color: colors.text }]}>No Calendar</Text>
-                      <Text style={[styles.emptyCalendarText, { color: colors.textSecondary }]}>
-                        Connect your calendar or add events from the Events tab
-                      </Text>
-                      <View style={styles.calendarActions}>
-                        {eventKit.isEventKitAvailable && (
-                          <TouchableOpacity 
-                            style={styles.primaryBtn}
-                            onPress={() => setShowEventKitManager(true)}
-                          >
-                            <Text style={styles.primaryBtnText}>Connect Calendar</Text>
-                          </TouchableOpacity>
-                        )}
-                        <TouchableOpacity 
-                          style={styles.secondaryBtn}
-                          onPress={() => setShowCalendarImporter(true)}
-                        >
-                          <Text style={styles.secondaryBtnText}>Import File</Text>
-                        </TouchableOpacity>
-                      </View>
-                    </View>
-                  );
-                }
-                
-                return (
-                  <View style={styles.eventsContainer}>
-                    {upcomingEventsPreview.length === 0 ? (
-                      <View style={[styles.emptyCalendarCard, { backgroundColor: colors.card, borderColor: colors.border }]}>
-                        <Calendar size={32} color={colors.textMuted} />
-                        <Text style={[styles.emptyCalendarText, { color: colors.textSecondary }]}>
-                          No upcoming events — add some from the Events tab
+              {!hasCalendarSource ? (
+                <View style={[styles.emptyCalendarCard, { backgroundColor: colors.card, borderColor: colors.border }]}>
+                  <Calendar size={40} color={colors.textMuted} />
+                  <Text style={[styles.emptyCalendarTitle, { color: colors.text }]}>No calendar connected</Text>
+                  <Text style={[styles.emptyCalendarText, { color: colors.textSecondary }]}>
+                    {savedEventsCount > 0
+                      ? 'You still have saved events under “On your One Pager” above. Connect a calendar for work and personal plans too.'
+                      : 'Connect your calendar or add events from the Events tab'}
+                  </Text>
+                  <View style={styles.calendarActions}>
+                    {eventKit.isEventKitAvailable && (
+                      <TouchableOpacity 
+                        style={styles.primaryBtn}
+                        onPress={() => setShowEventKitManager(true)}
+                      >
+                        <Text style={styles.primaryBtnText}>Connect Calendar</Text>
+                      </TouchableOpacity>
+                    )}
+                    <TouchableOpacity 
+                      style={styles.secondaryBtn}
+                      onPress={() => setShowCalendarImporter(true)}
+                    >
+                      <Text style={styles.secondaryBtnText}>Import File</Text>
+                    </TouchableOpacity>
+                  </View>
+                </View>
+              ) : (
+              <View style={styles.eventsContainer}>
+                {upcomingCalendarPreview.length === 0 ? (
+                  <View style={[styles.emptyCalendarCard, { backgroundColor: colors.card, borderColor: colors.border }]}>
+                    <Calendar size={32} color={colors.textMuted} />
+                    <Text style={[styles.emptyCalendarText, { color: colors.textSecondary }]}>
+                      No calendar events in the next 90 days
+                    </Text>
+                  </View>
+                ) : (
+                  upcomingCalendarPreview.map((event, index) => (
+                    <View
+                      key={`${event.id}-${index}`}
+                      style={[styles.eventCard, { backgroundColor: colors.card, borderColor: colors.border }]}
+                    >
+                      <View style={[styles.eventIndicator, { backgroundColor: colors.textMuted }]} />
+                      <View style={styles.eventInfo}>
+                        <Text style={[styles.eventTitle, { color: colors.text }]}>{event.title}</Text>
+                        <Text style={[styles.eventTime, { color: colors.textSecondary }]}>
+                          {new Date(event.startDate).toLocaleDateString('en-GB', {
+                            weekday: 'short',
+                            month: 'short',
+                            day: 'numeric',
+                            hour: 'numeric',
+                            minute: '2-digit',
+                            hour12: eventTimeFormat !== '24h',
+                          })}
                         </Text>
                       </View>
-                    ) : upcomingEventsPreview.map((event, index) => {
-                      const CardWrapper = event.kind === 'onepager' ? TouchableOpacity : View;
-                      const cardProps =
-                        event.kind === 'onepager'
-                          ? {
-                              activeOpacity: 0.85,
-                              onPress: () => router.push(`/(root)/event/${event.id}` as any),
-                            }
-                          : {};
-
-                      return (
-                      <CardWrapper
-                        key={`${event.id}-${index}`}
-                        {...cardProps}
-                        style={[styles.eventCard, { backgroundColor: colors.card, borderColor: colors.border }]}
-                      >
-                        <View style={[styles.eventIndicator, { 
-                          backgroundColor: event.kind === 'onepager' ? colors.primary : colors.textMuted
-                        }]} />
-                        <View style={styles.eventInfo}>
-                          <Text style={[styles.eventTitle, { color: colors.text }]}>{event.title}</Text>
-                          <Text style={[styles.eventTime, { color: colors.textSecondary }]}>
-                            {new Date(event.startDate).toLocaleDateString('en-GB', { 
-                              weekday: 'short', 
-                              month: 'short', 
-                              day: 'numeric',
-                              hour: 'numeric',
-                              minute: '2-digit'
-                            })}
-                            {event.kind === 'onepager' ? ' · One Pager' : ''}
-                          </Text>
-                        </View>
-                        {event.kind === 'onepager' ? (
-                          <ChevronRight size={16} color={colors.textMuted} />
-                        ) : null}
-                      </CardWrapper>
-                      );
-                    })}
-                  </View>
-                );
-              })()}
+                    </View>
+                  ))
+                )}
+              </View>
+              )}
             </View>
+            ) : null}
 
             {/* New Episode Releases for Tracked Shows */}
             {hasShowsInterest && (() => {
@@ -3223,6 +2959,13 @@ const styles = StyleSheet.create({
     letterSpacing: -0.6,
     flex: 1,
     flexShrink: 1,
+  },
+  dailyFocusText: {
+    fontSize: 13,
+    fontWeight: '600' as const,
+    marginTop: 2,
+    letterSpacing: -0.1,
+    opacity: 0.92,
   },
   dateText: {
     fontSize: 13,
@@ -3638,6 +3381,13 @@ const styles = StyleSheet.create({
     fontWeight: '800' as const,
     color: '#0F172A',
     letterSpacing: -0.5,
+  },
+  sectionSubtitle: {
+    fontSize: 12,
+    fontWeight: '500',
+    marginTop: 4,
+    marginLeft: 28,
+    lineHeight: 16,
   },
   viewAllBtn: {
     flexDirection: 'row',
@@ -4164,30 +3914,6 @@ const styles = StyleSheet.create({
     textTransform: 'uppercase' as const,
     marginTop: 2,
     letterSpacing: 0.5,
-  },
-  partnersHeroBtn: {
-    marginLeft: 8,
-  },
-  partnersHeroIcon: {
-    width: 44,
-    height: 44,
-    borderRadius: 14,
-    alignItems: 'center' as const,
-    justifyContent: 'center' as const,
-    position: 'relative' as const,
-    borderWidth: 1,
-    borderColor: 'rgba(255, 255, 255, 0.12)',
-  },
-  partnersHeroDot: {
-    position: 'absolute' as const,
-    top: 6,
-    right: 6,
-    width: 10,
-    height: 10,
-    borderRadius: 5,
-    backgroundColor: '#FF3B30',
-    borderWidth: 2,
-    borderColor: '#FFFFFF',
   },
 
   newEpisodesSection: {

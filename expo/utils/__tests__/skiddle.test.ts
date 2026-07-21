@@ -25,6 +25,18 @@ describe('skiddleQuery', () => {
     assert.match(url, /order=date/);
   });
 
+  it('includes keyword for global artist search', () => {
+    const url = buildSkiddleEventsSearchUrl({
+      apiKey: 'test-key',
+      latitude: 51.5074,
+      longitude: -0.1278,
+      radiusMiles: 100,
+      limit: 40,
+      keyword: 'Bill Burr',
+    });
+    assert.match(url, /keyword=Bill\+Burr|keyword=Bill%20Burr/);
+  });
+
   it('parses Skiddle error payloads', () => {
     assert.equal(parseSkiddleError({ error: 1, errormessage: 'Invalid API key' }), 'Invalid API key');
     assert.equal(parseSkiddleError({ error: 0 }), null);

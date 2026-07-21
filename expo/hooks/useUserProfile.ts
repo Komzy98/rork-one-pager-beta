@@ -674,11 +674,11 @@ export const [UserProfileProvider, useUserProfile] = createContextHook(() => {
       'f1': ['sports'],
       'ufc': ['sports'],
       'nba': ['sports'],
-      'fitness': ['habits', 'tasks'],
+      'fitness': ['discover', 'tasks'],
       'movies': ['shows'],
       'cooking': ['cooking'],
 
-      'learning': ['learning', 'tasks'],
+      'learning': ['tasks'],
 
       'events': ['events'],
       'productivity': ['tasks'],

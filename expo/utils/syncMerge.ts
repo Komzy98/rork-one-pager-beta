@@ -1,5 +1,6 @@
 import { mergeJoySourcesForSync } from '@/utils/joySources';
 import { mergeTabVisitCounts } from '@/utils/tabUsage';
+import { pickPublishedAvatarUrl } from '@/utils/avatarUtils';
 import type { Habit, RecoveryWellbeingLog, UserProfile, UserTeam } from '@/types/habit';
 import type { SavedEventSnapshot } from '@/types/events';
 import type { Task, TaskProject, TaskTimeEntry } from '@/types/task';
@@ -284,6 +285,7 @@ export function mergeProfilesFromCloud(
       ...(older.socialPrivacy ?? {}),
       ...(newer.socialPrivacy ?? {}),
     },
+    avatar: pickPublishedAvatarUrl(older.avatar, newer.avatar) ?? pickPublishedAvatarUrl(newer.avatar, older.avatar) ?? undefined,
     lastLoginAt:
       localTs >= cloudTs ? localProfile.lastLoginAt : cloudProfile.lastLoginAt,
   };

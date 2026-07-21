@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import {
   pickPublishedAvatarUrl,
   resolveDisplayAvatarUrl,
+  collectAvatarUrlCandidates,
   isRemoteAvatarUrl,
 } from '@/utils/avatarUtils';
 
@@ -29,6 +30,17 @@ describe('avatarService', () => {
         socialAvatar: 'https://supabase.co/storage/a.jpg',
       }),
       'https://supabase.co/storage/a.jpg',
+    );
+  });
+
+  it('collects avatar candidates with remotes before locals', () => {
+    assert.deepEqual(
+      collectAvatarUrlCandidates({
+        profileAvatar: 'file:///local.jpg',
+        authAvatar: 'https://google.com/p.jpg',
+        socialAvatar: 'https://supabase.co/storage/a.jpg',
+      }),
+      ['https://supabase.co/storage/a.jpg', 'https://google.com/p.jpg', 'file:///local.jpg'],
     );
   });
 

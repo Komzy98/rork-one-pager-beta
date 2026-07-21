@@ -231,8 +231,25 @@ export const STREAMING_PLATFORMS: Record<number, StreamingPlatform> = {
   },
 };
 
+/** TMDB lists multiple Prime rows (9, 119, 2100 with Ads) — treat as one platform for deep links. */
+const TMDB_PROVIDER_ALIASES: Record<number, number> = {
+  119: 9,
+  2100: 9,
+};
+
+export function normalizeTmdbWatchProviderId(providerId: number): number {
+  return TMDB_PROVIDER_ALIASES[providerId] ?? providerId;
+}
+
+export function isTmdbOrJustWatchAggregatorUrl(url: string | null | undefined): boolean {
+  if (!url?.trim()) return false;
+  const lower = url.toLowerCase();
+  return lower.includes('themoviedb.org') || lower.includes('justwatch.com');
+}
+
 export function getStreamingPlatform(providerId: number): StreamingPlatform | null {
-  return STREAMING_PLATFORMS[providerId] || null;
+  const canonicalId = normalizeTmdbWatchProviderId(providerId);
+  return STREAMING_PLATFORMS[canonicalId] || null;
 }
 
 export { buildPrimeVideoSearchUrl, normalizePrimeVideoWatchUrl } from '@/utils/primeVideoLinks';
@@ -263,7 +280,7 @@ export async function openStreamingTitleSearch(
   /** Appended to the title for catalog search (e.g. `S1E6`) so results skew toward the specific episode. */
   episodeSearchHint?: string,
 ): Promise<boolean> {
-  const platform = STREAMING_PLATFORMS[providerId];
+  const platform = STREAMING_PLATFORMS[normalizeTmdbWatchProviderId(providerId)];
   if (!platform) return false;
   const t = title.trim();
   const hint = episodeSearchHint?.trim();
@@ -376,10 +393,17 @@ export function pickWatchNowUrlFromRow(row: Record<string, unknown>): string | n
     "prime_video_url",
   ];
   const direct = pickFirstString(row, keys);
-  if (direct) return direct;
+  if (direct) {
+    if (isTmdbOrJustWatchAggregatorUrl(direct)) return null;
+    return direct;
+  }
   for (const k of keys) {
     const v = row[k];
-    if (typeof v === "string" && /^https?:\/\//i.test(v.trim())) return v.trim();
+    if (typeof v === "string" && /^https?:\/\//i.test(v.trim())) {
+      const trimmed = v.trim();
+      if (isTmdbOrJustWatchAggregatorUrl(trimmed)) continue;
+      return trimmed;
+    }
   }
   return null;
 }
@@ -948,11 +972,12 @@ export async function openStreamingApp(
   year?: number,
   fallbackUrl?: string
 ): Promise<boolean> {
-  const platform = STREAMING_PLATFORMS[providerId];
+  const canonicalId = normalizeTmdbWatchProviderId(providerId);
+  const platform = STREAMING_PLATFORMS[canonicalId];
 
   if (!platform) {
     console.log(`Unknown streaming provider: ${providerId}`);
-    if (fallbackUrl) {
+    if (fallbackUrl && !isTmdbOrJustWatchAggregatorUrl(fallbackUrl)) {
       try {
         await Linking.openURL(fallbackUrl);
         return true;
@@ -960,17 +985,22 @@ export async function openStreamingApp(
         return false;
       }
     }
-    return false;
+    return openStreamingTitleSearch(canonicalId, title, year);
   }
 
+  const safeFallbackUrl =
+    fallbackUrl && !isTmdbOrJustWatchAggregatorUrl(fallbackUrl) ? fallbackUrl : undefined;
+
   const tryFallback = async (): Promise<boolean> => {
-    if (!fallbackUrl) return false;
-    try {
-      await Linking.openURL(normalizeStreamingWatchUrl(fallbackUrl));
-      return true;
-    } catch {
-      return false;
+    if (safeFallbackUrl) {
+      try {
+        await Linking.openURL(normalizeStreamingWatchUrl(safeFallbackUrl));
+        return true;
+      } catch {
+        /* fall through to title search */
+      }
     }
+    return openStreamingTitleSearch(canonicalId, title, year);
   };
 
   try {
@@ -978,7 +1008,7 @@ export async function openStreamingApp(
       platform.searchUrl?.(title, year) || platform.webUrl,
     );
 
-    if (isPrimeVideoProviderId(providerId)) {
+    if (isPrimeVideoProviderId(canonicalId)) {
       const opened = await openWatchUrlWithProviderFallbacks(searchUrl, primeVideoRowStub());
       if (opened) return true;
       return await tryFallback();

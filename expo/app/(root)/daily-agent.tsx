@@ -421,6 +421,9 @@ export default function DailyAgentScreen() {
         <View style={styles.headerTitleWrap}>
           <Text style={[styles.headerEyebrow, { color: colors.textTertiary }]}>{dateLabel}</Text>
           <Text style={[styles.headerTitle, { color: colors.text }]}>Pulse</Text>
+          <Text style={[styles.headerSubtitle, { color: colors.textSecondary }]}>
+            Go deeper on how to live today well
+          </Text>
         </View>
         <TouchableOpacity
           style={[styles.iconBtn, { backgroundColor: colors.card, borderColor: colors.border }]}
@@ -726,6 +729,7 @@ const styles = StyleSheet.create({
   headerTitleWrap: { flex: 1, alignItems: 'center' },
   headerEyebrow: { fontSize: 11, letterSpacing: 1.4, textTransform: 'uppercase' as const, fontWeight: '600' as const },
   headerTitle: { fontSize: 22, fontWeight: '800' as const, letterSpacing: -0.5, marginTop: 2 },
+  headerSubtitle: { fontSize: 12, fontWeight: '500' as const, marginTop: 2, textAlign: 'center' as const },
   scroll: { flex: 1 },
   scrollContent: { paddingHorizontal: 16, paddingTop: 8 },
   heroRow: { alignItems: 'flex-start', marginBottom: 12 },

@@ -116,10 +116,36 @@ export async function recoverSupabaseSession(): Promise<Session | null> {
       refresh_token: stored.refresh_token,
     });
     if (!refreshError && refreshed.session?.user) return refreshed.session;
+
+    if (refreshError) {
+      const msg = refreshError.message || '';
+      if (/invalid refresh token|refresh token not found|invalid_grant|session not found/i.test(msg)) {
+        if (__DEV__) console.warn('Supabase refresh token rejected:', msg);
+        try {
+          const storageKey = getSupabaseAuthStorageKey();
+          if (storageKey) await AsyncStorage.removeItem(storageKey);
+        } catch {
+          // ignore
+        }
+      }
+    }
   } catch (error) {
     if (__DEV__) console.warn('recoverSupabaseSession failed:', error);
   }
 
+  return null;
+}
+
+/** Cold start: Metro/simulator networking often needs a few attempts before auth health is reachable. */
+export async function restoreSupabaseSessionWithRetries(maxAttempts = 4): Promise<Session | null> {
+  if (!supabaseConfigured) return null;
+  for (let attempt = 0; attempt < maxAttempts; attempt++) {
+    const session = await recoverSupabaseSession();
+    if (session?.user) return session;
+    if (attempt < maxAttempts - 1) {
+      await new Promise((resolve) => setTimeout(resolve, 400 * (attempt + 1)));
+    }
+  }
   return null;
 }
 

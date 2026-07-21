@@ -175,5 +175,6 @@ export function normalizePrimeVideoWatchUrl(url: string): string {
 }
 
 export function isPrimeVideoProviderId(providerId: number | null | undefined): boolean {
-  return providerId === 9 || providerId === 10;
+  if (providerId == null) return false;
+  return providerId === 9 || providerId === 10 || providerId === 119 || providerId === 2100;
 }

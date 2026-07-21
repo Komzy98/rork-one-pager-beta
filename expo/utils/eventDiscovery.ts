@@ -136,6 +136,37 @@ export function getEventCountdownShort(event: LocalEvent): string {
   return `${days} days to go`;
 }
 
+/** Overview / profile: concrete date + time instead of a long day countdown. */
+export function formatEventOverviewWhen(
+  event: LocalEvent,
+  timeFormat: '12h' | '24h' = '12h',
+): string {
+  let start: Date | null = null;
+  const iso = event.startIso?.trim();
+  if (iso) {
+    const parsed = new Date(iso);
+    if (!Number.isNaN(parsed.getTime())) start = parsed;
+  }
+  if (!start && event.date) {
+    const timePart = event.time?.trim() || '12:00';
+    const parsed = new Date(`${event.date}T${timePart}`);
+    if (!Number.isNaN(parsed.getTime())) start = parsed;
+  }
+  if (!start) return getEventCountdownLabel(event);
+
+  const datePart = start.toLocaleDateString('en-GB', {
+    weekday: 'short',
+    month: 'short',
+    day: 'numeric',
+  });
+  const timePart = start.toLocaleTimeString('en-GB', {
+    hour: 'numeric',
+    minute: '2-digit',
+    hour12: timeFormat !== '24h',
+  });
+  return `${datePart} · ${timePart}`;
+}
+
 function shortenTeamName(name: string): string {
   const parts = name.trim().split(/\s+/);
   if (parts.length <= 2) return name.trim();

@@ -19,7 +19,7 @@ import { EventSocialProofRow } from '@/components/events/EventSocialProofRow';
 import type { EventFriendProfile } from '@/utils/eventSocialProof';
 
 const { height: SCREEN_HEIGHT } = Dimensions.get('window');
-const PEEK_HEIGHT = 210;
+const PEEK_HEIGHT = 168;
 const EXPANDED_HEIGHT = Math.min(SCREEN_HEIGHT * 0.52, 440);
 
 interface EventsMapBottomSheetProps {
@@ -262,8 +262,8 @@ const styles = StyleSheet.create({
   },
   handleArea: {
     alignItems: 'center',
-    paddingTop: 8,
-    paddingBottom: 4,
+    paddingTop: 6,
+    paddingBottom: 2,
   },
   handle: {
     width: 36,
@@ -284,23 +284,25 @@ const styles = StyleSheet.create({
   previewRow: {
     flexDirection: 'row',
     paddingHorizontal: 14,
-    paddingBottom: 12,
-    gap: 12,
+    paddingBottom: 10,
+    gap: 10,
+    alignItems: 'flex-start',
   },
   poster: {
-    width: 88,
-    height: 110,
-    borderRadius: 14,
+    width: 80,
+    height: 96,
+    borderRadius: 12,
   },
   previewInfo: {
     flex: 1,
-    gap: 5,
-    justifyContent: 'center',
+    gap: 4,
+    paddingTop: 2,
   },
   title: {
-    fontSize: 17,
+    fontSize: 16,
     fontWeight: '800',
     letterSpacing: -0.3,
+    lineHeight: 20,
   },
   metaRow: {
     flexDirection: 'row',
@@ -315,7 +317,7 @@ const styles = StyleSheet.create({
   swipeHint: {
     fontSize: 11,
     fontWeight: '700',
-    marginTop: 4,
+    marginTop: 2,
   },
   expandedBody: {
     paddingHorizontal: 14,

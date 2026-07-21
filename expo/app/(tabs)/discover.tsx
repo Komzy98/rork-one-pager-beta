@@ -92,6 +92,7 @@ import { router } from 'expo-router';
 import { useApp } from '@/hooks/useHabitsStore';
 import HabitDetailModal from '@/components/HabitDetailModal';
 import * as Haptics from 'expo-haptics';
+import { floatingTabBarScrollPadding } from '@/constants/tabBarLayout';
 import TabWalkthrough from '@/components/TabWalkthrough';
 import { KeyboardAvoidingScreen } from '@/components/KeyboardAvoidingScreen';
 
@@ -933,6 +934,7 @@ export default function DiscoverScreen() {
   const showHomeContent = !isShowingFiltered;
   const showTrending = searchFocused && searchQuery.length === 0;
 
+  const listBottomPad = floatingTabBarScrollPadding(insets.bottom);
   const bgColor = colors.background;
 
   return (
@@ -1079,7 +1081,7 @@ export default function DiscoverScreen() {
       {showSavedList && (
         <ScrollView
           style={{ flex: 1 }}
-          contentContainerStyle={{ paddingHorizontal: 20, paddingTop: 16, paddingBottom: 40 }}
+          contentContainerStyle={{ paddingHorizontal: 20, paddingTop: 16, paddingBottom: listBottomPad }}
           showsVerticalScrollIndicator={false}
           keyboardShouldPersistTaps="handled"
           automaticallyAdjustKeyboardInsets={Platform.OS === 'ios'}
@@ -1237,6 +1239,7 @@ export default function DiscoverScreen() {
 
       {!showSavedList && <Animated.ScrollView
         style={styles.content}
+        contentContainerStyle={{ paddingBottom: listBottomPad }}
         showsVerticalScrollIndicator={false}
         onScroll={Animated.event(
           [{ nativeEvent: { contentOffset: { y: scrollY } } }],
@@ -1409,7 +1412,6 @@ export default function DiscoverScreen() {
             ))
           )}
 
-          <View style={{ height: 120 }} />
         </View>
       </Animated.ScrollView>}
 
@@ -1419,6 +1421,11 @@ export default function DiscoverScreen() {
         onClose={handleCloseModal}
         onAdd={handleToggleHabit}
         isAdded={selectedHabit ? isHabitSaved(selectedHabit.id) : false}
+        routineHabitId={
+          selectedHabit
+            ? savedHabits.find((sh) => sh.communityHabitId === selectedHabit.id)?.habitId
+            : undefined
+        }
       />
     </View>
     </KeyboardAvoidingScreen>

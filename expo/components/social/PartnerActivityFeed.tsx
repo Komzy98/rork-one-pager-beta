@@ -73,7 +73,7 @@ export const PartnerActivityFeed = React.memo(function PartnerActivityFeed({
     [feed, currentUserId, maxItems],
   );
 
-  if (preview.length === 0 && activeTodayCount <= 0 && alertCount <= 0) {
+  if (preview.length === 0) {
     return null;
   }
 
@@ -91,7 +91,7 @@ export const PartnerActivityFeed = React.memo(function PartnerActivityFeed({
       <View style={styles.headerRow}>
         <View style={styles.titleRow}>
           <Users size={18} color={colors.text} strokeWidth={2.2} />
-          <Text style={[styles.sectionTitle, { color: colors.text }]}>Partner Activity</Text>
+          <Text style={[styles.sectionTitle, { color: colors.text }]}>Your people</Text>
           {alertCount > 0 ? <View style={styles.headerAlertDot} /> : null}
         </View>
         <TouchableOpacity style={styles.viewAllBtn} onPress={() => router.push('/friends' as any)}>
@@ -108,9 +108,8 @@ export const PartnerActivityFeed = React.memo(function PartnerActivityFeed({
         </View>
       ) : null}
 
-      {preview.length > 0 ? (
-        <View style={[styles.digestCard, { backgroundColor: colors.card, borderColor: colors.border }]}>
-          {preview.map((event, index) => {
+      <View style={[styles.digestCard, { backgroundColor: colors.card, borderColor: colors.border }]}>
+        {preview.map((event, index) => {
             const visual = getActivityCategoryVisual(event.type);
             const TypeIcon = getActivityTypeIcon(event.type);
             const { line, detail } = actionOriented
@@ -212,14 +211,6 @@ export const PartnerActivityFeed = React.memo(function PartnerActivityFeed({
             );
           })}
         </View>
-      ) : (
-        <View style={[styles.emptyCard, { backgroundColor: colors.card, borderColor: colors.border }]}>
-          <Text style={[styles.emptyTitle, { color: colors.text }]}>Partners are quiet right now</Text>
-          <Text style={[styles.emptyBody, { color: colors.textMuted }]}>
-            When friends save events, hit streaks, or pin matches, you&apos;ll see it here.
-          </Text>
-        </View>
-      )}
     </View>
   );
 });
@@ -377,20 +368,5 @@ const styles = StyleSheet.create({
   actionLabel: {
     fontSize: 12,
     fontWeight: '800',
-  },
-  emptyCard: {
-    borderRadius: 16,
-    borderWidth: 1,
-    paddingHorizontal: 14,
-    paddingVertical: 14,
-    gap: 4,
-  },
-  emptyTitle: {
-    fontSize: 14,
-    fontWeight: '700',
-  },
-  emptyBody: {
-    fontSize: 13,
-    lineHeight: 18,
   },
 });

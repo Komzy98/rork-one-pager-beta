@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   View,
   Text,
@@ -626,11 +626,11 @@ export default function FriendsScreen() {
       ) : backendReady === false ? (
         <View style={styles.center}>
           <Clock size={40} color={colors.textTertiary} />
-          <Text style={[styles.emptyTitle, { color: colors.text }]}>Backend setup needed</Text>
+          <Text style={[styles.emptyTitle, { color: colors.text }]}>Partners unavailable</Text>
           <Text style={[styles.emptyBody, { color: colors.textTertiary }]}>
             {initError
               ? initError
-              : 'Apply Supabase migrations 002_social through 015_partner_habit_shares (at least 011_compliance, 013_friend_profiles_rpc, 014_age_consent_rpc), then Supabase → Settings → API → Reload schema, and reopen this screen.'}
+              : 'Accountability partners need a quick server update. Pull to refresh in a moment, or check your connection and try again.'}
           </Text>
           <TouchableOpacity
             style={[styles.primaryBtn, { backgroundColor: colors.primary }]}
@@ -707,7 +707,8 @@ export default function FriendsScreen() {
               </View>
 
               {results.map((p) => {
-                const requested = requestedIds.has(p.id);
+                const isPartner = friendList.some((f) => f.id === p.id);
+                const pending = pendingUserIds.has(p.id);
                 return (
                   <View key={p.id} style={[styles.row, { backgroundColor: colors.card, borderColor: colors.border }]}>
                     <Avatar profile={p} />
@@ -718,14 +719,22 @@ export default function FriendsScreen() {
                       <Text style={[styles.rowSub, { color: colors.textTertiary }]}>@{p.username}</Text>
                     </View>
                     <TouchableOpacity
-                      style={[styles.addBtn, { backgroundColor: requested ? colors.surfaceSecondary : colors.primary }]}
-                      disabled={requested || busyId === p.id}
-                      onPress={() => handleAdd(p)}
+                      style={[
+                        styles.addBtn,
+                        {
+                          backgroundColor:
+                            isPartner || pending ? colors.surfaceSecondary : colors.primary,
+                        },
+                      ]}
+                      disabled={isPartner || pending || busyId === p.id}
+                      onPress={() => void handleAdd(p)}
                     >
                       {busyId === p.id ? (
-                        <ActivityIndicator size="small" color={colors.textInverse} />
-                      ) : requested ? (
-                        <Text style={[styles.addBtnText, { color: colors.textTertiary }]}>Requested</Text>
+                        <ActivityIndicator size="small" color={colors.textTertiary} />
+                      ) : isPartner ? (
+                        <Text style={[styles.addBtnText, { color: colors.textTertiary }]}>Partners</Text>
+                      ) : pending ? (
+                        <Text style={[styles.addBtnText, { color: colors.textTertiary }]}>Pending</Text>
                       ) : (
                         <>
                           <UserPlus size={15} color={colors.textInverse} />

@@ -9,6 +9,7 @@ import { SavedCommunityHabit, CommunityHabit, HabitSource } from '@/types/habit'
 import { Task } from '@/types/task';
 import { HABIT_COLORS } from '@/constants/colors';
 import { COMMUNITY_HABITS } from '@/mocks/communityHabits';
+import { getLastGuestUserId } from '@/utils/localToSupabaseMigration';
 import {
   Badge,
   Achievement,
@@ -243,10 +244,8 @@ export const [HabitsEnhancementProvider, useHabitsEnhancement] = createContextHo
   // === SAVED HABITS LOGIC ===
   const savedHabits = useMemo<SavedCommunityHabit[]>(() => savedHabitsQuery.data || [], [savedHabitsQuery.data]);
 
-  // Self-heal: older builds (and the guest->account migration) didn't move the
-  // saved-habits ledger to the user-scoped key, so a signed-in user could see
-  // their habits on the dashboard while Discover showed "0 saved". If the current
-  // ledger is empty, adopt the most complete orphaned ledger we can find.
+  // Self-heal: guest/default ledgers may not have been copied on sign-up. Only adopt
+  // from the anonymous guest keys — never from other signed-in users on the same device.
   const reconciledForRef = useRef<string | null>(null);
   useEffect(() => {
     if (!userId || savedHabitsQuery.isLoading) return;
@@ -256,10 +255,14 @@ export const [HabitsEnhancementProvider, useHabitsEnhancement] = createContextHo
 
     (async () => {
       try {
-        const allKeys = await unifiedStorage.getAllKeys();
-        const candidateKeys = allKeys.filter(
-          (k) => k.startsWith(`${SAVED_HABITS_BASE_KEY}_`) && k !== SAVED_HABITS_KEY,
-        );
+        const guestId = await getLastGuestUserId();
+        const candidateKeys = [
+          getStorageKey(SAVED_HABITS_BASE_KEY, undefined),
+          ...(guestId && guestId !== userId
+            ? [getStorageKey(SAVED_HABITS_BASE_KEY, guestId)]
+            : []),
+        ].filter((key) => key !== SAVED_HABITS_KEY);
+
         let best: SavedCommunityHabit[] = [];
         for (const key of candidateKeys) {
           const raw = await unifiedStorage.getItem(key);
@@ -274,7 +277,7 @@ export const [HabitsEnhancementProvider, useHabitsEnhancement] = createContextHo
           }
         }
         if (best.length > 0) {
-          console.log('🩹 Recovered orphaned saved-habits ledger:', best.length, 'entries');
+          console.log('🩹 Recovered guest saved-habits ledger:', best.length, 'entries');
           saveSavedHabits(best);
         }
       } catch (err) {
@@ -725,6 +728,14 @@ export const [HabitsEnhancementProvider, useHabitsEnhancement] = createContextHo
       ...challenge,
       participants: [...challenge.participants, participant],
     };
+
+    const existingIndex = challenges.findIndex((c) => c.id === challenge.id);
+    if (existingIndex >= 0) {
+      const next = [...challenges];
+      next[existingIndex] = updatedChallenge;
+      saveChallenges(next);
+      return;
+    }
 
     saveChallenges([...challenges, updatedChallenge]);
   }, [challengesQuery.data, userId, user, saveChallenges]);

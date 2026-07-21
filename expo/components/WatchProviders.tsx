@@ -37,8 +37,8 @@ export default function WatchProviders({
     }
     
     console.log(`Opening ${provider.provider_name} for "${title}"`);
-    await openStreamingApp(provider.provider_id, title, year, link);
-  }, [title, year, link]);
+    await openStreamingApp(provider.provider_id, title, year);
+  }, [title, year]);
 
   const renderProvider = useCallback((provider: WatchProvider, showLabel: boolean = true) => {
     const platform = getStreamingPlatform(provider.provider_id);
@@ -219,7 +219,7 @@ export function QuickWatchButton({
     if (Platform.OS !== 'web') {
       Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
     }
-    await openStreamingApp(primaryProvider.provider_id, title, year, link);
+    await openStreamingApp(primaryProvider.provider_id, title, year);
   };
 
   return (

@@ -116,18 +116,17 @@ export default function AddInterestsLaterCard() {
           </View>
         </View>
 
-        <Text style={[styles.title, { color: colors.text }]}>Add interests later</Text>
+        <Text style={[styles.title, { color: colors.text }]}>Make it yours</Text>
         <Text style={[styles.body, { color: colors.textSecondary }]}>
-          You skipped setup — unlock Sports, Shows, and streaming tabs on your Overview when you&apos;re ready.
-          Takes about 2 minutes.
+          You skipped setup — add sports, shows, and the things you love. Overview gets smarter in about 2 minutes.
         </Text>
 
         <View style={styles.chipRow}>
           <View style={[styles.chip, { backgroundColor: isDark ? colors.surfaceSecondary : '#F2F4F8' }]}>
-            <Text style={[styles.chipText, { color: colors.textSecondary }]}>Sports scores</Text>
+            <Text style={[styles.chipText, { color: colors.textSecondary }]}>Match day</Text>
           </View>
           <View style={[styles.chip, { backgroundColor: isDark ? colors.surfaceSecondary : '#F2F4F8' }]}>
-            <Text style={[styles.chipText, { color: colors.textSecondary }]}>Continue watching</Text>
+            <Text style={[styles.chipText, { color: colors.textSecondary }]}>Guilt-free downtime</Text>
           </View>
         </View>
 
@@ -138,7 +137,7 @@ export default function AddInterestsLaterCard() {
           testID="add-interests-later-primary"
         >
           <Sparkles size={16} color="#fff" strokeWidth={2.5} />
-          <Text style={styles.primaryBtnText}>Personalize now</Text>
+          <Text style={styles.primaryBtnText}>Personalize my day</Text>
           <ChevronRight size={16} color="#fff" />
         </TouchableOpacity>
 

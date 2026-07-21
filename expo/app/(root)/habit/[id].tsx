@@ -4,6 +4,8 @@ import { useLocalSearchParams, useRouter, Stack } from 'expo-router';
 import * as Haptics from 'expo-haptics';
 import { Trash2, Check, Flame, Calendar, Clock, TrendingUp, Target, Edit2, X, Snowflake, Shield, Repeat, Zap, Gift, BarChart3 } from 'lucide-react-native';
 import { useHabit, useHabits } from '@/hooks/useHabitsStore';
+import { useTasks } from '@/hooks/useTasksStore';
+import { TaskHabitPartnerScreen } from '@/components/habit/TaskHabitPartnerScreen';
 import { COLORS } from '@/constants/colors';
 import HabitIcon from '@/components/HabitIcon';
 import ProgressCircle from '@/components/ProgressCircle';
@@ -16,10 +18,16 @@ const DAY_NAMES = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
 const FULL_DAY_NAMES = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
 
 export default function HabitDetailScreen() {
-  const { id } = useLocalSearchParams<{ id: string }>();
+  const { id: rawId } = useLocalSearchParams<{ id: string }>();
+  const id = Array.isArray(rawId) ? rawId[0] : rawId;
   const router = useRouter();
   const { colors } = useTheme();
-  const habit = useHabit(id);
+  const habit = useHabit(id ?? '');
+  const tasksContext = useTasks();
+  const taskHabit = useMemo(() => {
+    if (!id) return undefined;
+    return (tasksContext?.allTasks ?? []).find((t) => t.id === id && t.isHabit);
+  }, [tasksContext?.allTasks, id]);
   const { toggleHabitCompletion, deleteHabit, getHabitStats, updateHabit, useStreakFreeze, getStreakFreezeInfo, getPartialCreditStats } = useHabits();
   
   const [showEditModal, setShowEditModal] = useState(false);
@@ -180,6 +188,10 @@ export default function HabitDetailScreen() {
     return days.map(d => FULL_DAY_NAMES[d]).join(', ');
   }, [habit]);
   
+  if (!habit && taskHabit) {
+    return <TaskHabitPartnerScreen task={taskHabit} />;
+  }
+
   if (!habit) {
     return (
       <View style={styles.notFoundContainer}>

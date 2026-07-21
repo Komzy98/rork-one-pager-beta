@@ -5,30 +5,10 @@ import { getTicketmasterApiKeyFromEnv } from '@/backend/utils/ticketmasterApiKey
 import type { NearbyEventsResult, NearbyEventsBatchResult, NearbyEventsSource } from '@/types/events';
 import {
   EVENTS_PER_CATEGORY,
-  filterUpcomingEvents,
-  sortEventsByStartDate,
 } from '@/utils/eventDiscovery';
 import { BENTO_CATEGORY_IDS } from '@/utils/eventCategoryMeta';
-import { eventMatchesBentoCategory } from '@/utils/eventCategories';
 import { mergeDiscoveryEvents } from '@/utils/mergeDiscoveryEvents';
-import {
-  buildSkiddleEventsSearchUrl,
-  parseSkiddleError,
-} from '@/utils/skiddleQuery';
-import {
-  filterSkiddleEventsByCategory,
-  mapSkiddleResponse,
-  SKIDDLE_EVENT_CODES_BY_CATEGORY,
-} from '@/utils/skiddleTransform';
-import {
-  buildTicketmasterEventsSearchUrl,
-  inferTicketmasterCountryCode,
-  parseTicketmasterFault,
-} from '@/utils/ticketmasterQuery';
-import {
-  mapTicketmasterResponse,
-  TICKETMASTER_CATEGORY_FILTER,
-} from '@/utils/ticketmasterTransform';
+import { fetchMergedDiscoveryEvents } from '@/utils/eventDiscoveryFetch';
 
 const CACHE_TTL_MS = 5 * 60 * 1000;
 
@@ -99,135 +79,6 @@ type FetchInput = {
 
 type LocalEventPayload = NearbyEventsResult['events'][number];
 
-async function fetchJsonWithTimeout(url: string, label: string): Promise<unknown | null> {
-  const controller = new AbortController();
-  const timeoutId = setTimeout(() => controller.abort(), 15000);
-
-  try {
-    const response = await fetch(url, { signal: controller.signal });
-    clearTimeout(timeoutId);
-    const payload = await response.json().catch(() => null);
-
-    if (!response.ok) {
-      console.error(`❌ ${label} HTTP ${response.status}`);
-      return null;
-    }
-
-    return payload;
-  } catch (error) {
-    clearTimeout(timeoutId);
-    console.error(`💥 ${label} fetch error:`, error);
-    return null;
-  }
-}
-
-async function fetchTicketmasterEvents(
-  apiKey: string,
-  input: FetchInput,
-): Promise<LocalEventPayload[]> {
-  if (input.category && input.category !== 'all') {
-    const classification = TICKETMASTER_CATEGORY_FILTER[input.category];
-    if (!classification) return [];
-  }
-
-  const classification = input.category
-    ? TICKETMASTER_CATEGORY_FILTER[input.category]
-    : undefined;
-
-  const url = buildTicketmasterEventsSearchUrl({
-    apiKey,
-    latitude: input.latitude,
-    longitude: input.longitude,
-    radiusMiles: input.radiusMiles,
-    size: input.size,
-    classificationName: classification,
-    daysAhead: 90,
-  });
-
-  const country = inferTicketmasterCountryCode(input.latitude, input.longitude);
-  console.log(
-    `🎟️ Ticketmaster Discovery v2: country=${country} radius=${input.radiusMiles}mi size=${input.size}`,
-  );
-
-  const payload = await fetchJsonWithTimeout(url, 'Ticketmaster');
-  if (!payload) return [];
-
-  const fault = parseTicketmasterFault(payload);
-  if (fault) {
-    console.error(`❌ Ticketmaster: ${fault}`);
-    return [];
-  }
-
-  const mapped = mapTicketmasterResponse(payload);
-  const events = sortEventsByStartDate(filterUpcomingEvents(mapped));
-  console.log(`✅ Ticketmaster: ${events.length} upcoming events (${mapped.length} raw)`);
-  return events;
-}
-
-async function fetchSkiddleEventsForCode(
-  apiKey: string,
-  input: FetchInput,
-  eventCode: string | undefined,
-  limit: number,
-): Promise<LocalEventPayload[]> {
-  const url = buildSkiddleEventsSearchUrl({
-    apiKey,
-    latitude: input.latitude,
-    longitude: input.longitude,
-    radiusMiles: input.radiusMiles,
-    limit,
-    eventCode,
-    daysAhead: 90,
-  });
-
-  const payload = await fetchJsonWithTimeout(
-    url,
-    eventCode ? `Skiddle (${eventCode})` : 'Skiddle',
-  );
-  if (!payload) return [];
-
-  const error = parseSkiddleError(payload);
-  if (error) {
-    console.error(`❌ Skiddle: ${error}`);
-    return [];
-  }
-
-  const mapped = mapSkiddleResponse(payload);
-  const filtered = filterSkiddleEventsByCategory(mapped, input.category);
-  return sortEventsByStartDate(filterUpcomingEvents(filtered));
-}
-
-async function fetchSkiddleEvents(
-  apiKey: string,
-  input: FetchInput,
-): Promise<LocalEventPayload[]> {
-  const codes = input.category ? SKIDDLE_EVENT_CODES_BY_CATEGORY[input.category] : undefined;
-
-  console.log(
-    `🎶 Skiddle: radius=${input.radiusMiles}mi size=${input.size} category=${input.category ?? 'all'}`,
-  );
-
-  if (!codes || codes.length === 0) {
-    const events = await fetchSkiddleEventsForCode(apiKey, input, undefined, input.size);
-    console.log(`✅ Skiddle: ${events.length} upcoming events`);
-    return events;
-  }
-
-  if (codes.length === 1) {
-    const events = await fetchSkiddleEventsForCode(apiKey, input, codes[0], input.size);
-    console.log(`✅ Skiddle: ${events.length} upcoming events (${codes[0]})`);
-    return events;
-  }
-
-  const perCode = Math.max(5, Math.ceil(input.size / codes.length));
-  const batches = await Promise.all(
-    codes.map((code) => fetchSkiddleEventsForCode(apiKey, input, code, perCode)),
-  );
-  const events = mergeDiscoveryEvents(batches, input.size);
-  console.log(`✅ Skiddle: ${events.length} upcoming events (${codes.join('+')})`);
-  return events;
-}
-
 function resolveSource(
   ticketmasterCount: number,
   skiddleCount: number,
@@ -259,19 +110,14 @@ async function resolveNearbyEvents(input: FetchInput): Promise<NearbyEventsResul
     return { events: [], source: 'none' };
   }
 
-  const [ticketmasterEvents, skiddleEvents] = await Promise.all([
-    ticketmasterKey ? fetchTicketmasterEvents(ticketmasterKey, input) : Promise.resolve([]),
-    skiddleKey ? fetchSkiddleEvents(skiddleKey, input) : Promise.resolve([]),
-  ]);
+  const { events, ticketmasterCount, skiddleCount } = await fetchMergedDiscoveryEvents(
+    input,
+    { ticketmaster: ticketmasterKey, skiddle: skiddleKey },
+  );
 
-  const merged = mergeDiscoveryEvents([ticketmasterEvents, skiddleEvents], input.size);
-  const events =
-    input.category && input.category !== 'all'
-      ? merged.filter((event) => eventMatchesBentoCategory(event, input.category!))
-      : merged;
   const result: NearbyEventsResult = {
     events,
-    source: resolveSource(ticketmasterEvents.length, skiddleEvents.length),
+    source: resolveSource(ticketmasterCount, skiddleCount),
   };
 
   setCached(cacheKey, result);
@@ -439,13 +285,11 @@ export async function runEventsDiscoverySmokeCheck(): Promise<{
     size: 20,
   };
 
-  const [ticketmasterEvents, skiddleEvents] = await Promise.all([
-    ticketmasterKey ? fetchTicketmasterEvents(ticketmasterKey, input) : Promise.resolve([]),
-    skiddleKey ? fetchSkiddleEvents(skiddleKey, input) : Promise.resolve([]),
-  ]);
-
-  const events = mergeDiscoveryEvents([ticketmasterEvents, skiddleEvents], input.size);
-  const source = resolveSource(ticketmasterEvents.length, skiddleEvents.length);
+  const { events, ticketmasterCount, skiddleCount } = await fetchMergedDiscoveryEvents(
+    input,
+    { ticketmaster: ticketmasterKey, skiddle: skiddleKey },
+  );
+  const source = resolveSource(ticketmasterCount, skiddleCount);
   const skiddle = events.filter((e) => e.id.startsWith('sk-')).length;
   const ticketmaster = events.filter((e) => e.id.startsWith('tm-')).length;
 

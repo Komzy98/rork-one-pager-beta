@@ -9,6 +9,7 @@ import {
   AccessibilityInfo,
   Platform,
   Easing,
+  ScrollView,
 } from 'react-native';
 import { useRouter } from 'expo-router';
 import { CheckCircle, Sparkles, ArrowRight, Zap } from 'lucide-react-native';
@@ -20,6 +21,11 @@ import { useUserProfile } from '@/hooks/useUserProfile';
 import { getChronotypeInfo, getChronotypePeakLabel } from '@/constants/chronotypes';
 import { COLORS } from '@/constants/colors';
 import { ONBOARDING_PREMIUM } from '@/constants/onboardingTheme';
+import { buildDailyStackItems, formatDailyStackHeadline } from '@/utils/dailyStack';
+import {
+  formatInterestsSummary,
+  polishDailyStackHeadline,
+} from '@/utils/onboardingDisplay';
 
 const { width, height } = Dimensions.get('window');
 
@@ -231,8 +237,30 @@ export default function CompleteScreen() {
   const selectedInterests = profile?.interests || [];
   const hasFootball = selectedInterests.includes('football');
 
+  const dailyStackHeadline = useMemo(() => {
+    const items = buildDailyStackItems({ profile });
+    return polishDailyStackHeadline(formatDailyStackHeadline(items));
+  }, [profile]);
+
   const summaryRows = useMemo(() => {
     const rows: { key: string; node: React.ReactNode }[] = [];
+
+    if (dailyStackHeadline) {
+      rows.push({
+        key: 'daily-stack',
+        node: (
+          <View style={[styles.summaryItem, styles.dailyStackRow]}>
+            <View style={styles.summaryIconWrap}>
+              <Text style={styles.summaryEmoji}>☀️</Text>
+            </View>
+            <View style={styles.summaryTextWrap}>
+              <Text style={styles.summaryLabel}>Your day at a glance</Text>
+              <Text style={styles.summaryValue}>{dailyStackHeadline}</Text>
+            </View>
+          </View>
+        ),
+      });
+    }
 
     rows.push({
       key: 'interests',
@@ -249,9 +277,7 @@ export default function CompleteScreen() {
           <View style={styles.summaryTextWrap}>
             <Text style={styles.summaryLabel}>Interests</Text>
             <Text style={styles.summaryValue}>
-              {selectedInterests.length > 0
-                ? `${selectedInterests.slice(0, 3).join(', ')}${selectedInterests.length > 3 ? ` +${selectedInterests.length - 3}` : ''}`
-                : 'None selected'}
+              {formatInterestsSummary(selectedInterests)}
             </Text>
           </View>
         </View>
@@ -385,14 +411,14 @@ export default function CompleteScreen() {
                 activeOpacity={0.8}
                 onPress={() => router.push('/(onboarding)/football-favorites' as any)}
               >
-                <Text style={styles.feedEditBtnText}>Edit football</Text>
+                <Text style={styles.feedEditBtnText}>Edit Football</Text>
               </TouchableOpacity>
               <TouchableOpacity
                 style={styles.feedEditBtn}
                 activeOpacity={0.8}
                 onPress={() => router.push('/(onboarding)/feed-tuning' as any)}
               >
-                <Text style={styles.feedEditBtnText}>Edit tuning</Text>
+                <Text style={styles.feedEditBtnText}>Edit Tuning</Text>
               </TouchableOpacity>
             </View>
           </View>
@@ -401,7 +427,7 @@ export default function CompleteScreen() {
     });
 
     return rows;
-  }, [profile, selectedInterests, hasFootball, router]);
+  }, [profile, selectedInterests, hasFootball, router, dailyStackHeadline]);
 
   const staggerBase = reduceMotion ? 0 : 920;
 
@@ -446,7 +472,15 @@ export default function CompleteScreen() {
           />
         ))}
 
-      <View style={[styles.content, { paddingTop: insets.top + 44, paddingBottom: insets.bottom + 24 }]}>
+      <ScrollView
+        style={styles.scroll}
+        contentContainerStyle={[
+          styles.scrollContent,
+          { paddingTop: insets.top + 20, paddingBottom: 12 },
+        ]}
+        showsVerticalScrollIndicator={false}
+        keyboardShouldPersistTaps="handled"
+      >
         <View style={styles.celebrationWrap}>
           <View style={styles.checkArea}>
             <Animated.View
@@ -476,13 +510,13 @@ export default function CompleteScreen() {
           </View>
 
           <Animated.View style={{ opacity: kickerOpacity }}>
-            <Text style={[styles.kicker, ONBOARDING_PREMIUM.kicker]}>Setup complete</Text>
+            <Text style={[styles.kicker, ONBOARDING_PREMIUM.kicker]}>You&apos;re ready</Text>
           </Animated.View>
 
           <Animated.View style={{ opacity: titleOpacity, transform: [{ translateY: titleSlide }] }}>
-            <Text style={[styles.title, ONBOARDING_PREMIUM.displayLarge]}>You&apos;re All Set!</Text>
+            <Text style={[styles.title, ONBOARDING_PREMIUM.displayLarge]}>Live well, one day at a time</Text>
             <Text style={[styles.subtitle, ONBOARDING_PREMIUM.titleMedium]}>
-              Your personalised experience is ready
+              One Pager knows what matters to you — habits, people, plans, and downtime
             </Text>
           </Animated.View>
         </View>
@@ -507,7 +541,7 @@ export default function CompleteScreen() {
                 >
                   <Sparkles size={15} color={COLORS.primary} strokeWidth={2.2} />
                 </LinearGradient>
-                <Text style={styles.summaryTitle}>Your Setup</Text>
+                <Text style={styles.summaryTitle}>What we&apos;ll help with</Text>
               </View>
 
               <LinearGradient
@@ -531,7 +565,9 @@ export default function CompleteScreen() {
             </View>
           </View>
         </Animated.View>
+      </ScrollView>
 
+      <View style={[styles.footer, { paddingBottom: insets.bottom + 16, paddingHorizontal: 28 }]}>
         <Animated.View
           style={[
             styles.bottomWrap,
@@ -575,7 +611,7 @@ export default function CompleteScreen() {
                     </Animated.View>
                   )}
                   <View style={styles.startBtnInner}>
-                    <Text style={styles.startText}>Start exploring</Text>
+                    <Text style={styles.startText}>Start my day</Text>
                     <View style={styles.startArrow}>
                       <ArrowRight size={16} color="#FFFFFF" strokeWidth={2.5} />
                     </View>
@@ -584,7 +620,7 @@ export default function CompleteScreen() {
               </View>
             </TouchableOpacity>
           </Animated.View>
-          <Text style={styles.editHint}>You can always change these in Settings</Text>
+          <Text style={styles.editHint}>You can always refine this in Profile</Text>
         </Animated.View>
       </View>
     </View>
@@ -601,25 +637,35 @@ const styles = StyleSheet.create({
     top: -24,
     zIndex: 0,
   },
-  content: {
+  scroll: {
     flex: 1,
-    paddingHorizontal: 28,
-    justifyContent: 'space-between',
     zIndex: 1,
+  },
+  scrollContent: {
+    paddingHorizontal: 28,
+    flexGrow: 1,
+  },
+  footer: {
+    zIndex: 2,
+    paddingTop: 10,
+    backgroundColor: 'rgba(247, 248, 252, 0.94)',
+    borderTopWidth: StyleSheet.hairlineWidth,
+    borderTopColor: ONBOARDING_PREMIUM.hairlineBorder,
   },
   celebrationWrap: {
     alignItems: 'center',
+    marginBottom: 8,
   },
   kicker: {
     marginBottom: 10,
     textAlign: 'center',
   },
   checkArea: {
-    width: 124,
-    height: 124,
+    width: 104,
+    height: 104,
     justifyContent: 'center',
     alignItems: 'center',
-    marginBottom: 18,
+    marginBottom: 14,
   },
   pulseRing: {
     position: 'absolute',
@@ -713,6 +759,13 @@ const styles = StyleSheet.create({
   summaryItem: {
     flexDirection: 'row',
     alignItems: 'center',
+  },
+  dailyStackRow: {
+    padding: 10,
+    borderRadius: 12,
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: ONBOARDING_PREMIUM.hairlineBorder,
+    backgroundColor: 'rgba(0,122,255,0.05)',
   },
   feedPriorityCard: {
     marginTop: 2,

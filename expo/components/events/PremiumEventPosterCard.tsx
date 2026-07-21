@@ -1,12 +1,12 @@
-import React, { useCallback, useRef } from 'react';
+import React, { useCallback, useMemo, useRef, useState } from 'react';
 import {
   Animated,
-  Image,
   StyleSheet,
   Text,
   TouchableOpacity,
   View,
 } from 'react-native';
+import { Image } from 'expo-image';
 import { Calendar, Heart, MapPin, Sparkles, TrendingUp, UserPlus } from 'lucide-react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import * as Haptics from 'expo-haptics';
@@ -17,6 +17,7 @@ import type { EventsPalette } from '@/utils/eventsPalette';
 import { EventRecommendationBadge } from '@/components/events/EventRecommendationBadge';
 import { EventSocialProofRow } from '@/components/events/EventSocialProofRow';
 import type { EventFriendProfile } from '@/utils/eventSocialProof';
+import { resolveEventPosterUrl } from '@/utils/eventPosterImage';
 
 type PosterVariant = 'vertical' | 'horizontal' | 'feed';
 
@@ -62,6 +63,9 @@ export const PremiumEventPosterCard = React.memo(function PremiumEventPosterCard
   const priceBg = isFree ? palette.successLight : palette.primaryLight;
   const priceColor = isFree ? palette.success : palette.primary;
   const distanceText = formatDistanceKm(event.distanceKm ?? 0);
+  const posterUri = useMemo(() => resolveEventPosterUrl(event.image), [event.image]);
+  const [posterFailed, setPosterFailed] = useState(false);
+  const displayPosterUri = posterFailed ? resolveEventPosterUrl(null) : posterUri;
 
   const handlePressIn = useCallback(() => {
     Animated.spring(scaleAnim, { toValue: 0.98, useNativeDriver: true, tension: 220, friction: 16 }).start();
@@ -109,9 +113,11 @@ export const PremiumEventPosterCard = React.memo(function PremiumEventPosterCard
       >
         <View style={isFeed ? styles.feedImageWrap : isHorizontal ? styles.horizontalImageWrap : styles.verticalImageWrap}>
           <Image
-            source={{ uri: event.image }}
+            source={{ uri: displayPosterUri }}
             style={isFeed ? styles.feedImage : isHorizontal ? styles.horizontalImage : styles.verticalImage}
-            resizeMode="cover"
+            contentFit="cover"
+            recyclingKey={`${event.id}-${displayPosterUri}`}
+            onError={() => setPosterFailed(true)}
           />
           <LinearGradient
             colors={['transparent', 'rgba(0,0,0,0.55)']}
@@ -275,6 +281,8 @@ export const PremiumEventPosterCard = React.memo(function PremiumEventPosterCard
 
 const CARD_WIDTH = 168;
 const HORIZONTAL_WIDTH = 280;
+/** Image + body padding for horizontal poster cards (nested carousel height). */
+export const POSTER_HORIZONTAL_CARD_MIN_HEIGHT = 252;
 
 const styles = StyleSheet.create({
   feedWrap: {

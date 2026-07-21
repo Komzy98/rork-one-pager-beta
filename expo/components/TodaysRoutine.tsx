@@ -28,6 +28,7 @@ import {
   BookOpen,
   AlertTriangle,
   Check,
+  Users,
 } from 'lucide-react-native';
 import { COLORS, HABIT_COLORS } from '@/constants/colors';
 import { useTheme } from '@/hooks/useTheme';
@@ -51,6 +52,7 @@ import {
 import * as Haptics from 'expo-haptics';
 import { router } from 'expo-router';
 import HabitAddToTodayPicker from '@/components/HabitAddToTodayPicker';
+import { HabitAccountabilitySection } from '@/components/social/HabitAccountabilitySection';
 
 
 interface ConvertedHabit {
@@ -439,6 +441,21 @@ const RoutineItem = ({
     void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
     setIsExpanded(!isExpanded);
   };
+
+  const openHabitPartners = () => {
+    void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+    router.push(`/(root)/habit/${habit.id}` as any);
+  };
+
+  const partnerColors = {
+    text: colors.text,
+    textSecondary: colors.textSecondary,
+    textTertiary: colors.textTertiary,
+    card: colors.card,
+    border: colors.border,
+    primary: colors.primary,
+    surfaceSecondary: colors.surfaceSecondary,
+  };
   
   const handleLongPress = () => {
     void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
@@ -606,6 +623,15 @@ const RoutineItem = ({
             <Text style={styles.doneText}>Done</Text>
           </View>
         )}
+
+        <TouchableOpacity
+          onPress={openHabitPartners}
+          style={[styles.partnerIconBtn, { backgroundColor: colors.primary + '14', borderColor: colors.primary + '30' }]}
+          hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+          accessibilityLabel={`Accountability partners for ${habit.title}`}
+        >
+          <Users size={15} color={colors.primary} />
+        </TouchableOpacity>
         
         {programInfo.hasProgram && (
           <TouchableOpacity 
@@ -710,6 +736,13 @@ const RoutineItem = ({
                   <Text style={styles.completeWorkoutBtnText}>Mark as Complete</Text>
                 )}
               </TouchableOpacity>
+
+              <HabitAccountabilitySection
+                habitId={habit.id}
+                habitName={habit.title}
+                colors={partnerColors}
+                compact
+              />
             </>
           ) : null}
         </View>
@@ -1506,6 +1539,15 @@ const styles = StyleSheet.create({
     fontWeight: '700' as const,
     letterSpacing: -0.1,
     color: '#FFFFFF',
+  },
+  partnerIconBtn: {
+    width: 34,
+    height: 34,
+    borderRadius: 10,
+    borderWidth: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginLeft: 6,
   },
   doneIndicator: {
     paddingHorizontal: 12,

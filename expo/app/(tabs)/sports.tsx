@@ -1878,6 +1878,13 @@ function SportsScreenInner() {
     if (includeResultsTab) requestIncludeResults();
   }, [includeResultsTab, requestIncludeResults]);
 
+  useEffect(() => {
+    if (sportMode !== 'football' || activeTab !== 'results' || !isSportsScreenFocused) return;
+    void footballBundleQuery.refetch();
+    const intervalId = setInterval(() => void footballBundleQuery.refetch(), 90 * 1000);
+    return () => clearInterval(intervalId);
+  }, [sportMode, activeTab, isSportsScreenFocused, footballBundleQuery]);
+
   const liveMatches = useMemo(() => {
     const data = footballBundleQuery.data?.live?.response;
     if (!data || !Array.isArray(data)) return [];
@@ -2504,6 +2511,11 @@ function SportsScreenInner() {
       default:
         base = [];
     }
+    if (activeTab === 'results') {
+      return [...base].sort(
+        (a, b) => new Date(b.date).getTime() - new Date(a.date).getTime(),
+      );
+    }
     return sortMatchesForDisplayLocal(base);
   }, [
     activeTab,
@@ -2525,7 +2537,9 @@ function SportsScreenInner() {
         groups.push({ date: dateKey, matches: [match] });
       }
     });
-    groups.sort((a, b) => a.date.localeCompare(b.date));
+    groups.sort((a, b) =>
+      activeTab === 'results' ? b.date.localeCompare(a.date) : a.date.localeCompare(b.date),
+    );
     return groups;
   }, [displayMatches, activeTab]);
 

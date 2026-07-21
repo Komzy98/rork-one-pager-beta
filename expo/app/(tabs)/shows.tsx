@@ -67,7 +67,7 @@ import { Show, NewShowFormData } from '@/types/habit';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { tmdbApi, TMDBMovie, TMDBTVShow, TMDBTVShowDetails, TMDBEpisode, getGenreNames, formatReleaseDate, formatRating } from '@/utils/tmdbApi';
 import { navigateToShow, showNavigationAlert } from '@/utils/streamingNavigation';
-import { openStreamingApp, getStreamingPlatform, openStreamingTitleSearch, openYounifyBrowseItemOnPlatform, younifySourceToTmdbProviderId, tryOpenDisneyPlusFromHomepage } from '@/utils/streamingLinks';
+import { openStreamingApp, getStreamingPlatform, openStreamingTitleSearch, openYounifyBrowseItemOnPlatform, younifySourceToTmdbProviderId, tryOpenDisneyPlusFromHomepage, normalizeTmdbWatchProviderId } from '@/utils/streamingLinks';
 import { WatchProvider } from '@/utils/tmdbApi';
 import { buildYounifyProviderIndex, pickBestYounifyRowForEpisode, readSeasonEpisodeFromYounifyRow, type YounifyProviderIndex } from '@/utils/younifyProviderIndex';
 import { formatShowEpisodeLabel } from '@/utils/showEpisodeLabel';
@@ -332,11 +332,13 @@ function DetailModal({
       const candidatesByTitle = younifyProviderIndex.rowsByTitle.get(normalizedTitle) ?? [];
       const candidates = [...candidatesById, ...candidatesByTitle];
 
+      const targetProviderId = normalizeTmdbWatchProviderId(provider.provider_id);
       const exactProviderRow = candidates.find((row) => {
         const pid = younifySourceToTmdbProviderId(
           row.younifySourceService as { id?: string; name?: string } | undefined,
         );
-        return pid === provider.provider_id;
+        if (pid == null) return false;
+        return normalizeTmdbWatchProviderId(pid) === targetProviderId;
       });
 
       if (exactProviderRow) {
@@ -357,7 +359,6 @@ function DetailModal({
         provider.provider_id,
         itemTitle,
         releaseYear || undefined,
-        modalWatchProviders?.link
       );
     } finally {
       setOpeningApp(false);
@@ -365,7 +366,6 @@ function DetailModal({
   }, [
     item,
     mediaType,
-    modalWatchProviders?.link,
     younifyProviderIndex,
     tvShowDetails?.homepage,
     movieDetails?.homepage,

@@ -7,6 +7,8 @@ export interface BuildSkiddleEventsSearchInput {
   /** Skiddle eventcode — LIVE, CLUB, COMEDY, etc. */
   eventCode?: string;
   daysAhead?: number;
+  /** Artist, venue, or event name (Skiddle `keyword`). */
+  keyword?: string;
 }
 
 const SKIDDLE_SEARCH_BASE = 'https://www.skiddle.com/api/v1/events/search/';
@@ -27,6 +29,7 @@ export function buildSkiddleEventsSearchUrl(input: BuildSkiddleEventsSearchInput
     limit,
     eventCode,
     daysAhead = 90,
+    keyword,
   } = input;
 
   const minDate = new Date();
@@ -50,6 +53,11 @@ export function buildSkiddleEventsSearchUrl(input: BuildSkiddleEventsSearchInput
 
   if (eventCode) {
     params.set('eventcode', eventCode.toUpperCase());
+  }
+
+  const trimmedKeyword = keyword?.trim();
+  if (trimmedKeyword) {
+    params.set('keyword', trimmedKeyword);
   }
 
   return `${SKIDDLE_SEARCH_BASE}?${params.toString()}`;

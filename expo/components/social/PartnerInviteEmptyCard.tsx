@@ -31,7 +31,7 @@ export function PartnerInviteEmptyCard({
     const link = buildUserLink(username);
     try {
       await Share.share({
-        message: `Be my accountability partner on One Pager 💪 We'll keep each other's streaks alive.\n${link}`,
+        message: `Live well together on One Pager — habits, plans, and the stuff you care about.\n${link}`,
         ...(Platform.OS === 'ios' ? { url: link } : {}),
       });
     } catch {
@@ -55,9 +55,9 @@ export function PartnerInviteEmptyCard({
       <View style={[styles.iconCircle, { backgroundColor: `${colors.primary}14` }]}>
         <Users size={22} color={colors.primary} strokeWidth={2.2} />
       </View>
-      <Text style={[styles.title, { color: colors.text }]}>Add an accountability partner</Text>
+      <Text style={[styles.title, { color: colors.text }]}>Share the journey with someone</Text>
       <Text style={[styles.body, { color: colors.textSecondary }]}>
-        Optional — connect with someone to share streaks and cheer each other on. You can set this up anytime from Profile.
+        Optional — connect with someone who helps you show up. Cheer each other on when it counts.
       </Text>
       <View style={styles.actions}>
         <TouchableOpacity

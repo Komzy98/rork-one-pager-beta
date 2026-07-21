@@ -63,4 +63,37 @@ describe('eventNightOutPlanner', () => {
     );
     assert.ok(steps.some((s) => s.kind === 'pre'));
   });
+
+  it('orders pre-show before doors and leaves early enough to arrive', () => {
+    const steps = buildNightOutPlan(
+      theatreEvent({
+        category: 'music',
+        time: '19:00',
+        location: 'Manchester',
+        distanceKm: undefined,
+      }),
+    );
+
+    const toMinutes = (label: string) => {
+      const [h, m] = label.split(':').map(Number);
+      return h * 60 + m;
+    };
+
+    const leave = steps.find((s) => s.kind === 'leave')!;
+    const pre = steps.find((s) => s.kind === 'pre')!;
+    const arrive = steps.find((s) => s.kind === 'arrive')!;
+    const doors = steps.find((s) => s.kind === 'doors')!;
+
+    assert.equal(doors.timeLabel, '19:00');
+    assert.equal(pre.timeLabel, '18:10');
+    assert.ok(toMinutes(leave.timeLabel) < toMinutes(pre.timeLabel));
+    assert.ok(toMinutes(arrive.timeLabel) < toMinutes(pre.timeLabel));
+    assert.ok(toMinutes(pre.timeLabel) < toMinutes(doors.timeLabel));
+
+    const leaveIndex = steps.findIndex((s) => s.kind === 'leave');
+    const preIndex = steps.findIndex((s) => s.kind === 'pre');
+    const doorsIndex = steps.findIndex((s) => s.kind === 'doors');
+    assert.ok(leaveIndex < preIndex);
+    assert.ok(preIndex < doorsIndex);
+  });
 });

@@ -165,12 +165,32 @@ const DEFAULT_PROFILE: CategoryNightProfile = {
   },
 };
 
+const PRE_EVENT_ARRIVE_BUFFER_MINUTES = 10;
+
 function formatPlanTime(date: Date): string {
   return date.toLocaleTimeString('en-GB', {
     hour: '2-digit',
     minute: '2-digit',
     hour12: false,
   });
+}
+
+/** Same calendar day as anchor; handles plan steps that roll past midnight. */
+function planTimeSortKey(timeLabel: string, anchor: Date): number {
+  const [h, m] = timeLabel.split(':').map((part) => Number(part));
+  if (!Number.isFinite(h) || !Number.isFinite(m)) return 0;
+  const d = new Date(anchor);
+  d.setHours(h, m, 0, 0);
+  if (d.getTime() < anchor.getTime() - 12 * 60 * 60 * 1000) {
+    d.setDate(d.getDate() + 1);
+  }
+  return d.getTime();
+}
+
+function sortStepsChronologically(steps: NightOutStep[], anchor: Date): NightOutStep[] {
+  return [...steps].sort(
+    (a, b) => planTimeSortKey(a.timeLabel, anchor) - planTimeSortKey(b.timeLabel, anchor),
+  );
 }
 
 function estimateTravelMinutes(distanceKm?: number): number {
@@ -259,28 +279,24 @@ export function buildNightOutPlan(event: LocalEvent, areaLabel?: string): NightO
   const profile = getCategoryProfile(event.category);
   const travelMinutes = estimateTravelMinutes(event.distanceKm);
   const endAt = resolveEventEnd(start, event, profile);
-  const arriveAt = new Date(start.getTime() - profile.arriveEarlyMinutes * 60 * 1000);
+  let arriveAt = new Date(start.getTime() - profile.arriveEarlyMinutes * 60 * 1000);
+  let preAt: Date | null = null;
+
+  if (profile.preEvent && start.getHours() >= profile.preEvent.minStartHour) {
+    preAt = new Date(start.getTime() - profile.preEvent.leadMinutes * 60 * 1000);
+    const arriveForPre = new Date(
+      preAt.getTime() - PRE_EVENT_ARRIVE_BUFFER_MINUTES * 60 * 1000,
+    );
+    if (arriveForPre.getTime() < arriveAt.getTime()) {
+      arriveAt = arriveForPre;
+    }
+  }
+
   const leaveAt = new Date(arriveAt.getTime() - travelMinutes * 60 * 1000);
   const city = cityLabel(event, areaLabel);
   const returnLeg = planReturnLeg(endAt, travelMinutes);
 
   const steps: NightOutStep[] = [];
-
-  if (
-    profile.preEvent &&
-    start.getHours() >= profile.preEvent.minStartHour
-  ) {
-    const preAt = new Date(start.getTime() - profile.preEvent.leadMinutes * 60 * 1000);
-    if (preAt > leaveAt && preAt < arriveAt) {
-      steps.push({
-        id: 'pre',
-        timeLabel: formatPlanTime(preAt),
-        title: profile.preEvent.title,
-        subtitle: profile.preEvent.subtitle,
-        kind: 'pre',
-      });
-    }
-  }
 
   steps.push(
     {
@@ -294,7 +310,9 @@ export function buildNightOutPlan(event: LocalEvent, areaLabel?: string): NightO
       id: 'arrive',
       timeLabel: formatPlanTime(arriveAt),
       title: 'Arrive at venue',
-      subtitle: `${profile.arriveEarlyMinutes} min before ${profile.doorsTitle.toLowerCase()}`,
+      subtitle: preAt
+        ? `Get settled before ${profile.preEvent!.title.toLowerCase()}`
+        : `${profile.arriveEarlyMinutes} min before ${profile.doorsTitle.toLowerCase()}`,
       kind: 'arrive',
     },
     {
@@ -305,6 +323,16 @@ export function buildNightOutPlan(event: LocalEvent, areaLabel?: string): NightO
       kind: 'doors',
     },
   );
+
+  if (preAt && preAt.getTime() < start.getTime()) {
+    steps.push({
+      id: 'pre',
+      timeLabel: formatPlanTime(preAt),
+      title: profile.preEvent!.title,
+      subtitle: profile.preEvent!.subtitle,
+      kind: 'pre',
+    });
+  }
 
   if (profile.includeInterval) {
     const durationMs = endAt.getTime() - start.getTime();
@@ -345,7 +373,7 @@ export function buildNightOutPlan(event: LocalEvent, areaLabel?: string): NightO
     },
   );
 
-  return steps;
+  return sortStepsChronologically(steps, start);
 }
 
 export function mergeGroupMeetStep(

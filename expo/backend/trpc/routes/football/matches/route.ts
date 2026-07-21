@@ -56,7 +56,7 @@ export const CACHE_TTL: Record<string, number> = {
   live: 20 * 1000,
   upcoming: 30 * 60 * 1000,
   today: 5 * 60 * 1000,
-  results: 2 * 60 * 60 * 1000,
+  results: 10 * 60 * 1000,
   standings: 60 * 60 * 1000,
   /** Standings while this league has a live fixture — aligns with live score refresh cadence. */
   standingsLive: 45 * 1000,
@@ -261,7 +261,7 @@ async function fetchMatchesByType(input: GetMatchesInput) {
       teamIds,
       nationalTeamIds,
       includeAfcon,
-      _filterRev: 'intl-season-v6-wc-for-you-worldwide',
+      _filterRev: 'intl-season-v7-results-date-cutoff',
     });
     const topLevelTtl = CACHE_TTL[type] || 60000;
     const cachedResult = getFromCache(topLevelCacheKey, topLevelTtl);
@@ -321,7 +321,8 @@ async function fetchMatchesByType(input: GetMatchesInput) {
       futureDate.setDate(futureDate.getDate() + days);
       toDate = futureDate.toLocaleDateString('en-CA', { timeZone: 'Europe/London' });
     } else if (type === 'results') {
-      fromDate = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toLocaleDateString('en-CA', { timeZone: 'Europe/London' });
+      const lookbackDays = Math.min(Math.max(days, 7), 30);
+      fromDate = new Date(Date.now() - lookbackDays * 24 * 60 * 60 * 1000).toLocaleDateString('en-CA', { timeZone: 'Europe/London' });
       toDate = today;
     }
 
@@ -375,12 +376,22 @@ async function fetchMatchesByType(input: GetMatchesInput) {
         return matches;
       }
       if (type === 'results') {
-        const url = `${BASE_URL}/fixtures?team=${teamId}&last=20`;
-        const ck = `team:${teamId}:results:last20`;
+        const url = `${BASE_URL}/fixtures?team=${teamId}&season=${season}&from=${fromDate}&to=${toDate}&status=FT-AET-PEN`;
+        const ck = `team:${teamId}:results:${fromDate}:${toDate}:${season}`;
         const data = await cachedFetch(url, headers, ck, topLevelTtl);
         noteFetchErrors(data);
-        const matches = data.response || [];
-        console.log(`⚽ Team ${teamId} results: ${matches.length} matches`);
+        let matches = data.response || [];
+        if (matches.length === 0) {
+          const altSeason = getAlternateSeason();
+          if (altSeason !== season) {
+            const altUrl = `${BASE_URL}/fixtures?team=${teamId}&season=${altSeason}&from=${fromDate}&to=${toDate}&status=FT-AET-PEN`;
+            const altCk = `team:${teamId}:results:${fromDate}:${toDate}:${altSeason}`;
+            const altData = await cachedFetch(altUrl, headers, altCk, topLevelTtl);
+            noteFetchErrors(altData);
+            matches = altData.response || [];
+          }
+        }
+        console.log(`⚽ Team ${teamId} results: ${matches.length} matches (${fromDate} → ${toDate})`);
         return matches;
       }
       // upcoming: API-Football requires `season` when using from/to with team.
@@ -401,8 +412,8 @@ async function fetchMatchesByType(input: GetMatchesInput) {
         url = `${BASE_URL}/fixtures?date=${today}&team=${teamId}`;
         ck = `national:${teamId}:today:${today}`;
       } else if (type === 'results') {
-        url = `${BASE_URL}/fixtures?team=${teamId}&last=15`;
-        ck = `national:${teamId}:results:last15`;
+        url = `${BASE_URL}/fixtures?team=${teamId}&season=${season}&from=${fromDate}&to=${toDate}&status=FT-AET-PEN`;
+        ck = `national:${teamId}:results:${fromDate}:${toDate}:${season}`;
       } else {
         url = `${BASE_URL}/fixtures?team=${teamId}&next=10`;
         ck = `national:${teamId}:upcoming:next10`;
@@ -577,6 +588,11 @@ async function fetchMatchesByType(input: GetMatchesInput) {
     } else if (type === 'results') {
       const finishedStatuses = new Set(['FT', 'AET', 'PEN', 'AWD', 'WO']);
       filteredMatches = allMatches.filter((match) => finishedStatuses.has(statusShort(match)));
+      const lookbackDays = Math.min(Math.max(days, 7), 30);
+      const cutoffMs = Date.now() - lookbackDays * 24 * 60 * 60 * 1000;
+      filteredMatches = filteredMatches.filter(
+        (match) => new Date(match.fixture?.date || 0).getTime() >= cutoffMs,
+      );
     }
 
     filteredMatches.sort((a, b) => {

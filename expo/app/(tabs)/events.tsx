@@ -35,6 +35,7 @@ import { useUserProfile } from '@/hooks/useUserProfile';
 import { useUserLocation } from '@/hooks/useUserLocation';
 import { KeyboardAwareScrollView } from '@/components/KeyboardAwareScrollView';
 import { usePerCategoryEvents } from '@/hooks/usePerCategoryEvents';
+import { useGlobalEventSearch } from '@/hooks/useGlobalEventSearch';
 import { useEventKit } from '@/hooks/useEventKit';
 import { useEventReminders } from '@/hooks/useEventReminders';
 import { useSocialActivity } from '@/hooks/useSocialActivity';
@@ -94,7 +95,8 @@ import {
   openEventDirections,
   openEventTickets,
 } from '@/utils/openEventActions';
-import type { LocalEvent } from '@/types/events';
+import type { LocalEvent, NearbyEventsSource } from '@/types/events';
+import { eventMatchesLocalSearch, rankEventsBySearchKeyword } from '@/utils/eventSearch';
 import * as Haptics from 'expo-haptics';
 import { Stack, useRouter } from 'expo-router';
 import MapView, { Marker } from 'react-native-maps';
@@ -112,6 +114,21 @@ import {
 import { ErrorBoundary } from '@/components/ErrorBoundary';
 
 const { width: SCREEN_WIDTH } = Dimensions.get('window');
+
+function formatGlobalSearchSourceLabel(source: NearbyEventsSource): string {
+  switch (source) {
+    case 'mixed':
+      return 'Ticketmaster & Skiddle';
+    case 'ticketmaster':
+      return 'Ticketmaster';
+    case 'skiddle':
+      return 'Skiddle';
+    case 'fallback':
+      return 'sample listings';
+    default:
+      return 'ticketing partners';
+  }
+}
 
 type ViewMode = 'list' | 'map';
 type EventsMainTab = 'discover' | 'myEvents';
@@ -196,20 +213,47 @@ function EventsScreenInner() {
     enabled: mainTab === 'discover',
   });
 
+  const globalSearch = useGlobalEventSearch(
+    searchQuery,
+    eventQueryCenter,
+    mainTab === 'discover',
+  );
+  const {
+    events: globalSearchEvents,
+    source: globalSearchSource,
+    isSearching: isGlobalSearching,
+    isActive: isGlobalSearchActive,
+    debouncedKeyword: globalSearchKeyword,
+    refetch: refetchGlobalSearch,
+  } = globalSearch;
+
+  const inSearchMode = searchQuery.trim().length >= 2;
+
   const nearbyEvents = useMemo(
     () => getEventsForCategory(selectedCategory),
     [getEventsForCategory, selectedCategory],
   );
 
-  const events = useMemo(
+  const browseEvents = useMemo(
     () => nearbyEvents.map((e) => ({ ...e, isSaved: isSaved(e.id) })),
-    [nearbyEvents, isSaved]
+    [nearbyEvents, isSaved],
   );
 
+  const events = useMemo(() => {
+    if (isGlobalSearchActive) {
+      return globalSearchEvents.map((e) => ({ ...e, isSaved: isSaved(e.id) }));
+    }
+    return browseEvents;
+  }, [isGlobalSearchActive, globalSearchEvents, browseEvents, isSaved]);
+
   useEffect(() => {
-    registerDiscoveryEvents(nearbyEvents);
+    const discoveryPool =
+      isGlobalSearchActive && globalSearchEvents.length > 0
+        ? [...nearbyEvents, ...globalSearchEvents]
+        : nearbyEvents;
+    registerDiscoveryEvents(discoveryPool);
     registerSavedEvents(savedSnapshots);
-  }, [nearbyEvents, savedSnapshots]);
+  }, [nearbyEvents, isGlobalSearchActive, globalSearchEvents, savedSnapshots]);
 
   const openEventDetail = useCallback(
     (eventId: string) => {
@@ -300,13 +344,7 @@ function EventsScreenInner() {
       filtered = filtered.filter((event) => eventMatchesBentoCategory(event, selectedCategory));
     }
     if (searchQuery.trim()) {
-      const q = searchQuery.toLowerCase();
-      filtered = filtered.filter(e =>
-        e.title.toLowerCase().includes(q) ||
-        e.venue.toLowerCase().includes(q) ||
-        e.location.toLowerCase().includes(q) ||
-        (e.tags ?? []).some(t => t.includes(q))
-      );
+      filtered = filtered.filter((e) => eventMatchesLocalSearch(e, searchQuery));
     }
     return filtered;
   }, [events, selectedCategory, searchQuery]);
@@ -454,12 +492,23 @@ function EventsScreenInner() {
       if (mainTab === 'myEvents') {
         await savedEventsSocial.refresh();
       } else {
-        await Promise.all([refetchPerCategory(), refreshLocation()]);
+        const refetches: Promise<unknown>[] = [refetchPerCategory(), refreshLocation()];
+        if (isGlobalSearchActive) {
+          refetches.push(refetchGlobalSearch());
+        }
+        await Promise.all(refetches);
       }
     } finally {
       setRefreshing(false);
     }
-  }, [mainTab, refetchPerCategory, refreshLocation, savedEventsSocial]);
+  }, [
+    mainTab,
+    refetchPerCategory,
+    refreshLocation,
+    savedEventsSocial,
+    isGlobalSearchActive,
+    refetchGlobalSearch,
+  ]);
 
   const handleSavedEventRsvp = useCallback(
     async (event: Event, status: PlanRsvpStatus) => {
@@ -685,6 +734,10 @@ function EventsScreenInner() {
   const heroEventIdSet = useMemo(() => new Set(heroEvents.map((e) => e.id)), [heroEvents]);
 
   const verticalFeedEvents = useMemo(() => {
+    if (isGlobalSearchActive) {
+      return rankEventsBySearchKeyword(filteredEvents, globalSearchKeyword);
+    }
+
     const excludeHeroAndRail = (event: LocalEvent) =>
       !smartDiscoveryEventIds.has(event.id) && !heroEventIdSet.has(event.id);
 
@@ -700,6 +753,8 @@ function EventsScreenInner() {
     );
     return rankEventsForConciergeFeed(pool, recommendationInput, conciergeContext);
   }, [
+    isGlobalSearchActive,
+    globalSearchKeyword,
     filteredEvents,
     selectedCategory,
     smartDiscoveryEventIds,
@@ -710,7 +765,8 @@ function EventsScreenInner() {
     conciergeContext,
   ]);
 
-  const showCinematicHero = mainTab === 'discover' && viewMode === 'list';
+  const showCinematicHero =
+    mainTab === 'discover' && viewMode === 'list' && !inSearchMode;
 
   const discoveryRailTitle =
     discoveryTab === 'now'
@@ -908,11 +964,23 @@ function EventsScreenInner() {
         </View>
       )}
 
+      {mainTab === 'discover' && inSearchMode ? (
+        <View style={[styles.liveBanner, { backgroundColor: secondaryBg, borderColor: cardBorder }]}>
+          <Text style={[styles.liveBannerText, { color: subtleText }]}>
+            {isGlobalSearching
+              ? `Searching ${formatGlobalSearchSourceLabel('mixed')}…`
+              : globalSearchSource === 'none'
+                ? 'No live results — add ticketing API keys on your server, or try a different search.'
+                : `${verticalFeedEvents.length} worldwide from ${formatGlobalSearchSourceLabel(globalSearchSource)}`}
+          </Text>
+        </View>
+      ) : null}
+
       {mainTab === 'myEvents' && savedEvents.length > 0 ? (
         <EventsStatsRow stats={eventStats} palette={palette} />
       ) : null}
 
-      {mainTab === 'discover' && viewMode === 'list' && (
+      {mainTab === 'discover' && viewMode === 'list' && !inSearchMode && (
       <View style={styles.smartDiscoveryWrap}>
         {showCinematicHero ? (
           <View style={[styles.railHeader, styles.railHeaderFirst]}>
@@ -1209,22 +1277,32 @@ function EventsScreenInner() {
                 <Star size={14} color={palette.primary} />
               </View>
               <Text style={[styles.sectionTitle, { color: mainText }]}>
-                {filteredCategoryLabel ?? 'All events'}
+                {inSearchMode
+                  ? `Results for “${globalSearchKeyword || searchQuery.trim()}”`
+                  : filteredCategoryLabel ?? 'All events'}
               </Text>
             </View>
             <Text style={[styles.resultCount, { color: subtleText }]}>
-              {verticalFeedEvents.length} {verticalFeedEvents.length === 1 ? 'event' : 'events'}
+              {isGlobalSearching && inSearchMode
+                ? 'Searching…'
+                : `${verticalFeedEvents.length} ${verticalFeedEvents.length === 1 ? 'event' : 'events'}`}
             </Text>
           </View>
 
           {verticalFeedEvents.length === 0 ? (
             <View style={[styles.emptyState, { backgroundColor: cardBg, borderColor: cardBorder }]}>
               <Sparkles size={28} color={palette.primary} />
-              <Text style={[styles.emptyTitle, { color: mainText }]}>You’re all caught up</Text>
+              <Text style={[styles.emptyTitle, { color: mainText }]}>
+                {inSearchMode ? 'No matches' : 'You’re all caught up'}
+              </Text>
               <Text style={[styles.emptyText, { color: subtleText }]}>
-                {selectedCategory !== 'all'
-                  ? `No ${filteredCategoryLabel?.toLowerCase() ?? 'matching'} events right now`
-                  : 'Try another category or pill above'}
+                {inSearchMode
+                  ? isGlobalSearching
+                    ? 'Looking across Ticketmaster, Skiddle, and other connected sources…'
+                    : `Nothing for “${globalSearchKeyword || searchQuery.trim()}” yet. Try another spelling — we search Ticketmaster markets (US, UK, and more) and Skiddle.`
+                  : selectedCategory !== 'all'
+                    ? `No ${filteredCategoryLabel?.toLowerCase() ?? 'matching'} events right now`
+                    : 'Try another category or pill above'}
               </Text>
             </View>
           ) : (

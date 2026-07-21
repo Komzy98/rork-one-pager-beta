@@ -454,7 +454,7 @@ const styles = StyleSheet.create({
     backgroundColor: COLORS.primary,
   },
   continueBtnInnerDisabled: {
-    backgroundColor: COLORS.surfaceSecondary,
+    backgroundColor: COLORS.disabled,
   },
   continueText: {
     fontSize: 16,

@@ -304,9 +304,9 @@ const styles = StyleSheet.create({
   connectBtnText: { color: '#FFFFFF', fontSize: 15, fontWeight: '800' },
   footer: { paddingHorizontal: 20, paddingTop: 8 },
   continueBtn: {
-    backgroundColor: COLORS.text,
     borderRadius: 16,
     overflow: 'hidden',
+    backgroundColor: COLORS.primary,
   },
   continueBtnInner: {
     flexDirection: 'row',

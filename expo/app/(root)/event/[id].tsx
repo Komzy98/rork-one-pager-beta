@@ -53,20 +53,28 @@ import {
 import {
   getEventCalendarRange,
   openEventDirections,
+  openEventInWaze,
   openEventTickets,
 } from '@/utils/openEventActions';
 import { useTheme } from '@/hooks/useTheme';
 import { eventsFixedPalette } from '@/utils/eventsPalette';
 import { getEventCategoryMeta } from '@/utils/eventCategoryMeta';
 import { EventNightOutPlanner } from '@/components/events/EventNightOutPlanner';
-import { PremiumEventPosterCard } from '@/components/events/PremiumEventPosterCard';
+import { WazeLogoMark, WAZE_BRAND_CYAN } from '@/components/WazeLogoMark';
+import { PremiumEventPosterCard, POSTER_HORIZONTAL_CARD_MIN_HEIGHT } from '@/components/events/PremiumEventPosterCard';
 import { buildEventLink } from '@/utils/deepLinks';
+import { pickEventPosterUrl } from '@/utils/eventPosterImage';
 import type { OnePagerEvent } from '@/types/events';
 import type { PlanRsvpStatus } from '@/utils/sharedPlansService';
 import type { SocialProfile } from '@/utils/friendsService';
 
 const { width: SCREEN_WIDTH, height: SCREEN_HEIGHT } = Dimensions.get('window');
 const HERO_HEIGHT = Math.round(SCREEN_HEIGHT * 0.6);
+
+/** Fixed bottom bar: padding + icon + label + safe area — keep scroll content above it. */
+function eventDetailScrollPadding(bottomInset: number): number {
+  return bottomInset + 10 + 46 + 6 + 14 + 10 + 48;
+}
 
 export default function EventDetailScreen() {
   const { id, ptoken } = useLocalSearchParams<{ id: string; ptoken?: string }>();
@@ -110,11 +118,33 @@ export default function EventDetailScreen() {
   const saved = id ? isSaved(id) : false;
 
   const catalogPool = useMemo(() => listCatalogEvents(), [id, event?.id]);
-  const needsSimilarFallback = catalogPool.length < 4;
   const { events: nearbyPool } = useNearbyEvents({
     category: localEvent?.category ?? 'all',
-    enabled: needsSimilarFallback && !!localEvent,
+    enabled: !!localEvent,
   });
+
+  const similarEvents = useMemo(() => {
+    if (!localEvent) return [];
+    const catalogAsLocal = catalogPool.map((e) =>
+      onePagerToLocalEvent({ ...e, isSaved: isSaved(e.id) }),
+    );
+    const mergedPool = [
+      ...catalogAsLocal,
+      ...nearbyPool
+        .filter((e) => !catalogAsLocal.some((c) => c.id === e.id))
+        .map((e) => ({ ...e, isSaved: isSaved(e.id) })),
+    ];
+    const posterById = new Map<string, string>();
+    for (const e of mergedPool) {
+      const url = e.image?.trim();
+      if (url) posterById.set(e.id, url);
+    }
+
+    return getSimilarEvents(localEvent, mergedPool, profile, 8).map((similar) => ({
+      ...similar,
+      image: pickEventPosterUrl(similar.image, posterById.get(similar.id), getCatalogEvent(similar.id)?.imageUrl),
+    }));
+  }, [localEvent, profile, isSaved, catalogPool, nearbyPool]);
 
   const whyForYou = useMemo(() => {
     if (!localEvent) return null;
@@ -152,23 +182,6 @@ export default function EventDetailScreen() {
       goingNames,
     });
   }, [localEvent, eventSocial.goingRsvps, eventSocial.friendsSaved, eventSocial.plan?.meetAt]);
-
-  const similarEvents = useMemo(() => {
-    if (!localEvent) return [];
-    const catalogAsLocal = catalogPool.map((e) =>
-      onePagerToLocalEvent({ ...e, isSaved: isSaved(e.id) })
-    );
-    const fromCatalog = getSimilarEvents(localEvent, catalogAsLocal, profile, 8);
-    if (fromCatalog.length >= 3) return fromCatalog;
-
-    const mergedPool = [
-      ...catalogAsLocal,
-      ...nearbyPool
-        .filter((e) => !catalogAsLocal.some((c) => c.id === e.id))
-        .map((e) => ({ ...e, isSaved: isSaved(e.id) })),
-    ];
-    return getSimilarEvents(localEvent, mergedPool, profile, 8);
-  }, [localEvent, profile, isSaved, catalogPool, nearbyPool]);
 
   const categoryMeta = localEvent ? getEventCategoryMeta(localEvent.category) : null;
   const CategoryIcon = categoryMeta?.icon;
@@ -285,6 +298,12 @@ export default function EventDetailScreen() {
     void openEventDirections(localEvent);
   }, [localEvent]);
 
+  const handleWaze = useCallback(() => {
+    if (!localEvent) return;
+    void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+    void openEventInWaze(localEvent);
+  }, [localEvent]);
+
   const openSimilar = useCallback(
     (eventId: string) => {
       void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
@@ -373,7 +392,7 @@ export default function EventDetailScreen() {
 
       <Animated.ScrollView
         showsVerticalScrollIndicator={false}
-        contentContainerStyle={{ paddingBottom: insets.bottom + 120 }}
+        contentContainerStyle={{ paddingBottom: eventDetailScrollPadding(insets.bottom) }}
         onScroll={Animated.event([{ nativeEvent: { contentOffset: { y: scrollY } } }], {
           useNativeDriver: false,
         })}
@@ -501,13 +520,30 @@ export default function EventDetailScreen() {
                   </View>
                 ) : null}
               </View>
+            </View>
+            <View style={styles.venueNavRow}>
               <TouchableOpacity
-                style={[styles.mapsBtn, { backgroundColor: palette.primary }]}
+                style={[styles.mapsBtn, styles.venueNavBtn, { backgroundColor: palette.primary }]}
                 onPress={handleDirections}
                 activeOpacity={0.85}
               >
                 <Navigation size={14} color={palette.textInverse} />
                 <Text style={[styles.mapsBtnText, { color: palette.textInverse }]}>Open in Maps</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={[
+                  styles.mapsBtn,
+                  styles.venueNavBtn,
+                  styles.wazeBtn,
+                  { backgroundColor: WAZE_BRAND_CYAN, borderColor: 'rgba(0, 0, 0, 0.08)' },
+                ]}
+                onPress={handleWaze}
+                activeOpacity={0.85}
+              >
+                <WazeLogoMark layoutSize={14} />
+                <Text style={[styles.mapsBtnText, styles.wazeBtnText, { color: '#FFFFFF' }]}>
+                  Add to Waze
+                </Text>
               </TouchableOpacity>
             </View>
 
@@ -557,7 +593,9 @@ export default function EventDetailScreen() {
               <Text style={[styles.sectionLabel, { color: palette.textSecondary }]}>Similar events</Text>
               <ScrollView
                 horizontal
+                nestedScrollEnabled
                 showsHorizontalScrollIndicator={false}
+                style={[styles.similarCarousel, { minHeight: POSTER_HORIZONTAL_CARD_MIN_HEIGHT }]}
                 contentContainerStyle={styles.similarScroll}
               >
                 {similarEvents.map((similar) => (
@@ -840,6 +878,23 @@ const styles = StyleSheet.create({
     alignItems: 'flex-start',
     gap: 12,
   },
+  venueNavRow: {
+    flexDirection: 'row',
+    gap: 8,
+  },
+  venueNavBtn: {
+    flex: 1,
+    justifyContent: 'center',
+    minHeight: 34,
+    maxHeight: 34,
+    paddingVertical: 0,
+  },
+  wazeBtn: {
+    borderWidth: 1,
+  },
+  wazeBtnText: {
+    fontSize: 11,
+  },
   venueCopy: {
     flex: 1,
     gap: 4,
@@ -898,11 +953,17 @@ const styles = StyleSheet.create({
   },
   similarSection: {
     gap: 12,
+    paddingBottom: 4,
+  },
+  similarCarousel: {
+    flexGrow: 0,
     marginHorizontal: -20,
   },
   similarScroll: {
     paddingHorizontal: 20,
+    paddingRight: 28,
     gap: 12,
+    alignItems: 'flex-start',
   },
   actionBar: {
     position: 'absolute',

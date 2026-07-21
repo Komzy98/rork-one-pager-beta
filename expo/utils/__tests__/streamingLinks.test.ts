@@ -5,9 +5,15 @@ import {
   buildPrimeVideoSearchUrl,
   convertAivSchemeToPrimeVideoHttps,
   normalizePrimeVideoWatchUrl,
+  isPrimeVideoProviderId,
 } from '@/utils/primeVideoLinks';
 
 describe('Prime Video deep links', () => {
+  it('treats Prime Video with Ads (2100) as Prime', () => {
+    assert.equal(isPrimeVideoProviderId(2100), true);
+    assert.equal(isPrimeVideoProviderId(119), true);
+  });
+
   it('buildPrimeVideoSearchUrl uses app.primevideo.com', () => {
     const url = buildPrimeVideoSearchUrl('The Boys');
     assert.ok(url.includes('app.primevideo.com'));

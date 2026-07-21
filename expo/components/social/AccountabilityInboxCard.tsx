@@ -1,18 +1,29 @@
 import React, { useMemo } from 'react';
 import { StyleSheet, Text, TouchableOpacity, View } from 'react-native';
-import { Check, ChevronRight, Hand, PartyPopper, UserPlus, Users } from 'lucide-react-native';
+import { ChevronRight, Hand, PartyPopper, Sparkles, UserPlus, Users } from 'lucide-react-native';
 import { useRouter } from 'expo-router';
 import type { ActivityEvent } from '@/utils/activityService';
 import type { FriendNudge, IncomingRequest } from '@/utils/friendsService';
+import type { ActivityRowActionKind } from '@/utils/socialAccountability';
+import {
+  buildPartnerInboxItems,
+  countPartnerInboxTotal,
+  type PartnerInboxAction,
+  type PartnerInboxItem,
+} from '@/utils/partnerInbox';
 
 interface AccountabilityInboxCardProps {
   incomingRequests: IncomingRequest[];
   unreadNudges: FriendNudge[];
-  unreadFeedCount: number;
+  partnerFeed: ActivityEvent[];
+  lastSeenAt: string | null;
   unreadCheerCount: number;
+  currentUserId?: string;
   onAccept: (requestId: string) => void | Promise<void>;
   onNudgeBack: (userId: string) => void | Promise<void>;
-  onCheerLatest?: () => void;
+  onOpenTasks?: () => void;
+  onPartnerActivityAction?: (event: ActivityEvent, kind: ActivityRowActionKind) => void;
+  onOpenPartners?: () => void;
   colors: {
     text: string;
     textSecondary: string;
@@ -24,47 +35,103 @@ interface AccountabilityInboxCardProps {
   };
 }
 
+function rowIcon(kind: PartnerInboxItem['kind']) {
+  switch (kind) {
+    case 'partner_request':
+      return UserPlus;
+    case 'nudge':
+      return Hand;
+    case 'cheers_received':
+      return PartyPopper;
+    default:
+      return Sparkles;
+  }
+}
+
+function rowIconColor(kind: PartnerInboxItem['kind'], primary: string): string {
+  if (kind === 'cheers_received') return '#F59E0B';
+  return primary;
+}
+
 export function AccountabilityInboxCard({
   incomingRequests,
   unreadNudges,
-  unreadFeedCount,
+  partnerFeed,
+  lastSeenAt,
   unreadCheerCount,
+  currentUserId,
   onAccept,
   onNudgeBack,
-  onCheerLatest,
+  onOpenTasks,
+  onPartnerActivityAction,
+  onOpenPartners,
   colors,
 }: AccountabilityInboxCardProps) {
   const router = useRouter();
 
-  const alertCount =
-    incomingRequests.length + unreadNudges.length + unreadFeedCount + unreadCheerCount;
+  const totalCount = useMemo(
+    () =>
+      countPartnerInboxTotal({
+        incomingRequests,
+        unreadNudges,
+        feed: partnerFeed,
+        lastSeenAt,
+        currentUserId,
+        unreadCheerCount,
+      }),
+    [incomingRequests, unreadNudges, partnerFeed, lastSeenAt, currentUserId, unreadCheerCount],
+  );
 
-  const feedSummary = useMemo(() => {
-    const parts: string[] = [];
-    if (unreadFeedCount > 0) {
-      parts.push(
-        `${unreadFeedCount} new partner update${unreadFeedCount === 1 ? '' : 's'}`,
-      );
+  const items = useMemo(
+    () =>
+      buildPartnerInboxItems({
+        incomingRequests,
+        unreadNudges,
+        feed: partnerFeed,
+        lastSeenAt,
+        currentUserId,
+        unreadCheerCount,
+        maxItems: 4,
+      }),
+    [incomingRequests, unreadNudges, partnerFeed, lastSeenAt, currentUserId, unreadCheerCount],
+  );
+
+  const overflow = Math.max(0, totalCount - items.length);
+
+  const runAction = (action: PartnerInboxAction) => {
+    switch (action.type) {
+      case 'accept_request':
+        void onAccept(action.requestId);
+        break;
+      case 'nudge_back':
+        void onNudgeBack(action.userId);
+        break;
+      case 'open_tasks':
+        if (onOpenTasks) onOpenTasks();
+        else router.push('/(tabs)/tasks' as any);
+        break;
+      case 'activity_action':
+        onPartnerActivityAction?.(action.event, action.kind);
+        break;
+      case 'open_partners':
+        if (onOpenPartners) onOpenPartners();
+        else router.push('/friends' as any);
+        break;
     }
-    if (unreadCheerCount > 0) {
-      parts.push(`${unreadCheerCount} cheer${unreadCheerCount === 1 ? '' : 's'} on your progress`);
-    }
-    return parts.join(' · ');
-  }, [unreadFeedCount, unreadCheerCount]);
+  };
 
-  if (alertCount <= 0) return null;
+  if (totalCount <= 0) return null;
 
-  const firstRequest = incomingRequests[0];
-  const firstNudge = unreadNudges[0];
+  const badgeLabel = totalCount > 9 ? '9+' : String(totalCount);
 
   return (
     <View style={[styles.card, { backgroundColor: colors.card, borderColor: colors.border }]}>
       <View style={styles.header}>
         <View style={styles.titleRow}>
           <Users size={16} color={colors.primary} strokeWidth={2.4} />
-          <Text style={[styles.title, { color: colors.text }]}>Partner inbox</Text>
+          <Text style={[styles.title, { color: colors.text }]}>From your circle</Text>
           <View style={styles.countPill}>
-            <Text style={styles.countText}>{alertCount}</Text>
+            <Text style={styles.countText}>{badgeLabel}</Text>
           </View>
         </View>
         <TouchableOpacity onPress={() => router.push('/friends' as any)} hitSlop={8}>
@@ -72,62 +139,73 @@ export function AccountabilityInboxCard({
         </TouchableOpacity>
       </View>
 
-      {!!feedSummary && (
-        <Text style={[styles.summary, { color: colors.textSecondary }]}>{feedSummary}</Text>
-      )}
+      <Text style={[styles.summary, { color: colors.textSecondary }]}>
+        Requests, nudges, and updates from people who help you show up
+      </Text>
 
-      {firstRequest ? (
-        <View style={[styles.row, { backgroundColor: colors.surfaceSecondary ?? colors.border + '33' }]}>
-          <UserPlus size={16} color={colors.primary} />
-          <View style={styles.rowCopy}>
-            <Text style={[styles.rowTitle, { color: colors.text }]} numberOfLines={1}>
-              {firstRequest.from.displayName || firstRequest.from.username}
-            </Text>
-            <Text style={[styles.rowSub, { color: colors.textMuted }]}>Wants to be your partner</Text>
-          </View>
-          <TouchableOpacity
-            style={[styles.actionBtn, { backgroundColor: colors.primary }]}
-            onPress={() => void onAccept(firstRequest.id)}
-          >
-            <Check size={14} color="#fff" />
-            <Text style={styles.actionBtnText}>Accept</Text>
-          </TouchableOpacity>
-        </View>
-      ) : null}
+      <View style={styles.list}>
+        {items.map((item) => {
+          const Icon = rowIcon(item.kind);
+          const iconColor = rowIconColor(item.kind, colors.primary);
+          const isPrimaryFilled = item.kind === 'partner_request';
 
-      {firstNudge ? (
-        <View style={[styles.row, { backgroundColor: colors.surfaceSecondary ?? colors.border + '33' }]}>
-          <Hand size={16} color={colors.primary} />
-          <View style={styles.rowCopy}>
-            <Text style={[styles.rowTitle, { color: colors.text }]} numberOfLines={1}>
-              {firstNudge.from?.displayName || firstNudge.from?.username || 'A partner'}
-            </Text>
-            <Text style={[styles.rowSub, { color: colors.textMuted }]} numberOfLines={2}>
-              {firstNudge.message?.trim() || 'Nudged you to keep your streak going'}
-            </Text>
-          </View>
-          <TouchableOpacity
-            style={[styles.actionBtnOutline, { borderColor: colors.primary }]}
-            onPress={() => firstNudge.fromUserId && void onNudgeBack(firstNudge.fromUserId)}
-          >
-            <Text style={[styles.actionBtnOutlineText, { color: colors.primary }]}>Nudge back</Text>
-          </TouchableOpacity>
-        </View>
-      ) : null}
+          return (
+            <View
+              key={item.id}
+              style={[styles.row, { backgroundColor: colors.surfaceSecondary ?? colors.border + '33' }]}
+            >
+              <Icon size={16} color={iconColor} strokeWidth={2.3} />
+              <View style={styles.rowCopy}>
+                <Text style={[styles.rowTitle, { color: colors.text }]} numberOfLines={1}>
+                  {item.title}
+                </Text>
+                <Text style={[styles.rowSub, { color: colors.textMuted }]} numberOfLines={2}>
+                  {item.subtitle}
+                </Text>
+                {item.timeLabel ? (
+                  <Text style={[styles.rowTime, { color: colors.textMuted }]}>{item.timeLabel}</Text>
+                ) : null}
+              </View>
+              <View style={styles.actionsCol}>
+                <TouchableOpacity
+                  style={[
+                    isPrimaryFilled ? styles.actionBtn : styles.actionBtnOutline,
+                    !isPrimaryFilled && { borderColor: colors.primary },
+                  ]}
+                  onPress={() => runAction(item.primaryAction.action)}
+                  activeOpacity={0.85}
+                >
+                  <Text
+                    style={[
+                      isPrimaryFilled ? styles.actionBtnText : styles.actionBtnOutlineText,
+                      !isPrimaryFilled && { color: colors.primary },
+                    ]}
+                  >
+                    {item.primaryAction.label}
+                  </Text>
+                </TouchableOpacity>
+                {item.secondaryAction ? (
+                  <TouchableOpacity
+                    onPress={() => runAction(item.secondaryAction!.action)}
+                    hitSlop={6}
+                  >
+                    <Text style={[styles.secondaryLink, { color: colors.primary }]}>
+                      {item.secondaryAction.label}
+                    </Text>
+                  </TouchableOpacity>
+                ) : null}
+              </View>
+            </View>
+          );
+        })}
+      </View>
 
-      {unreadCheerCount > 0 && onCheerLatest ? (
-        <TouchableOpacity
-          style={[styles.row, { backgroundColor: colors.surfaceSecondary ?? colors.border + '33' }]}
-          onPress={onCheerLatest}
-        >
-          <PartyPopper size={16} color="#F59E0B" />
-          <View style={styles.rowCopy}>
-            <Text style={[styles.rowTitle, { color: colors.text }]}>
-              {unreadCheerCount} new cheer{unreadCheerCount === 1 ? '' : 's'}
-            </Text>
-            <Text style={[styles.rowSub, { color: colors.textMuted }]}>Friends are hyping your progress</Text>
-          </View>
-          <ChevronRight size={16} color={colors.textMuted} />
+      {overflow > 0 ? (
+        <TouchableOpacity style={styles.overflowRow} onPress={() => router.push('/friends' as any)}>
+          <Text style={[styles.overflowText, { color: colors.textSecondary }]}>
+            {overflow} more update{overflow === 1 ? '' : 's'} in Partners
+          </Text>
+          <ChevronRight size={14} color={colors.textMuted} />
         </TouchableOpacity>
       ) : null}
     </View>
@@ -151,6 +229,7 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     gap: 6,
+    flex: 1,
   },
   title: {
     fontSize: 15,
@@ -175,12 +254,16 @@ const styles = StyleSheet.create({
     fontWeight: '600',
   },
   summary: {
-    fontSize: 13,
-    lineHeight: 18,
+    fontSize: 12,
+    lineHeight: 17,
+    marginTop: -2,
+  },
+  list: {
+    gap: 8,
   },
   row: {
     flexDirection: 'row',
-    alignItems: 'center',
+    alignItems: 'flex-start',
     gap: 10,
     borderRadius: 12,
     paddingHorizontal: 12,
@@ -189,6 +272,7 @@ const styles = StyleSheet.create({
   rowCopy: {
     flex: 1,
     gap: 2,
+    minWidth: 0,
   },
   rowTitle: {
     fontSize: 14,
@@ -198,13 +282,20 @@ const styles = StyleSheet.create({
     fontSize: 12,
     lineHeight: 16,
   },
-  actionBtn: {
-    flexDirection: 'row',
-    alignItems: 'center',
+  rowTime: {
+    fontSize: 11,
+    marginTop: 2,
+  },
+  actionsCol: {
+    alignItems: 'flex-end',
     gap: 4,
+    maxWidth: 108,
+  },
+  actionBtn: {
     paddingHorizontal: 10,
     paddingVertical: 8,
     borderRadius: 10,
+    backgroundColor: '#007AFF',
   },
   actionBtnText: {
     color: '#fff',
@@ -220,5 +311,20 @@ const styles = StyleSheet.create({
   actionBtnOutlineText: {
     fontSize: 12,
     fontWeight: '700',
+  },
+  secondaryLink: {
+    fontSize: 11,
+    fontWeight: '600',
+  },
+  overflowRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 2,
+    paddingTop: 2,
+  },
+  overflowText: {
+    fontSize: 12,
+    fontWeight: '600',
   },
 });

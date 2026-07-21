@@ -9,7 +9,7 @@ import {
   getPrimaryEventRecommendationReason,
   type EventRecommendationInput,
 } from '@/utils/eventPersonalization';
-import { getEventCountdownLabel } from '@/utils/eventDiscovery';
+import { formatEventOverviewWhen } from '@/utils/eventDiscovery';
 import { getEventCategoryMeta } from '@/utils/eventCategoryMeta';
 
 interface ThemeColors {
@@ -27,6 +27,7 @@ interface OnePagerSavedFitSectionProps {
   recommendationInput: EventRecommendationInput;
   colors: ThemeColors;
   maxItems?: number;
+  timeFormat?: '12h' | '24h';
 }
 
 export function OnePagerSavedFitSection({
@@ -34,6 +35,7 @@ export function OnePagerSavedFitSection({
   recommendationInput,
   colors,
   maxItems = 3,
+  timeFormat = '12h',
 }: OnePagerSavedFitSectionProps) {
   const visibleEvents = useMemo(() => events.slice(0, maxItems), [events, maxItems]);
   if (visibleEvents.length === 0) return null;
@@ -52,7 +54,12 @@ export function OnePagerSavedFitSection({
       <View style={styles.headerRow}>
         <View style={styles.headerLeft}>
           <Sparkles size={18} color={colors.primary} />
-          <Text style={[styles.sectionTitle, { color: colors.text }]}>On your One Pager</Text>
+          <View style={styles.headerTextBlock}>
+            <Text style={[styles.sectionTitle, { color: colors.text }]}>On your One Pager</Text>
+            <Text style={[styles.sectionSubtitle, { color: colors.textSecondary }]}>
+              Saved plans & picks that fit you
+            </Text>
+          </View>
         </View>
         {events.length > maxItems ? (
           <TouchableOpacity onPress={handleViewAll} style={styles.viewAllBtn}>
@@ -66,7 +73,7 @@ export function OnePagerSavedFitSection({
         {visibleEvents.map((event) => {
           const reason = getPrimaryEventRecommendationReason(event, recommendationInput);
           const chipLabel = getOverviewFitChipLabel(reason, event);
-          const countdown = getEventCountdownLabel(event);
+          const whenLabel = formatEventOverviewWhen(event, timeFormat);
           const categoryMeta = getEventCategoryMeta(event.category);
           const CategoryIcon = categoryMeta.icon;
 
@@ -85,7 +92,7 @@ export function OnePagerSavedFitSection({
                   {event.title}
                 </Text>
                 <Text style={[styles.meta, { color: colors.textSecondary }]} numberOfLines={1}>
-                  {event.venue} · {countdown}
+                  {event.venue} · {whenLabel}
                 </Text>
                 <View style={[styles.chip, { backgroundColor: colors.primaryLight }]}>
                   <Text style={[styles.chipText, { color: colors.primary }]}>{chipLabel}</Text>
@@ -113,12 +120,22 @@ const styles = StyleSheet.create({
   },
   headerLeft: {
     flexDirection: 'row',
-    alignItems: 'center',
+    alignItems: 'flex-start',
     gap: 8,
+    flex: 1,
+  },
+  headerTextBlock: {
+    flex: 1,
+    gap: 2,
   },
   sectionTitle: {
     fontSize: 17,
     fontWeight: '700',
+  },
+  sectionSubtitle: {
+    fontSize: 12,
+    fontWeight: '500',
+    lineHeight: 16,
   },
   viewAllBtn: {
     flexDirection: 'row',

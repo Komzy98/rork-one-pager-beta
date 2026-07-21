@@ -1,7 +1,12 @@
 import { Tabs } from "expo-router";
-import { LayoutDashboard, Clapperboard, Medal, ListChecks, Search, CircleUser, CookingPot, CalendarDays, GraduationCap } from "lucide-react-native";
-import React, { useRef, useEffect, useCallback } from "react";
+import { LayoutDashboard, Clapperboard, Medal, ListChecks, Search, CircleUser, CookingPot, CalendarDays, GraduationCap, ChevronRight } from "lucide-react-native";
+import React, { useRef, useEffect, useCallback, useState } from "react";
 import { View, StyleSheet, Platform, TouchableOpacity, Text, Animated, Image, ScrollView } from "react-native";
+import { useSafeAreaInsets } from "react-native-safe-area-context";
+import {
+  FLOATING_TAB_BAR_BOTTOM_GAP,
+  FLOATING_TAB_BAR_HEIGHT,
+} from "@/constants/tabBarLayout";
 import { useAuth } from "@/hooks/useAuth";
 import { BlurView } from "expo-blur";
 import type { BottomTabBarProps, BottomTabNavigationOptions } from "@react-navigation/bottom-tabs";
@@ -9,7 +14,8 @@ import * as Haptics from 'expo-haptics';
 
 import { useUserProfile } from "@/hooks/useUserProfile";
 import { useFriends } from "@/hooks/useFriends";
-import { resolveDisplayAvatarUrl } from "@/utils/avatarUtils";
+import { resolveDisplayAvatarUrl, collectAvatarUrlCandidates } from "@/utils/avatarUtils";
+import { AvatarWithFallback } from "@/components/AvatarWithFallback";
 import { useTheme } from "@/hooks/useTheme";
 import type { ThemeColors } from "@/types/theme";
 import { FootballBundleProvider } from "@/contexts/FootballBundleContext";
@@ -65,6 +71,7 @@ interface AnimatedTabItemProps {
   colors: ThemeColors;
   isShowsTabActive?: boolean;
   avatarUrl?: string;
+  avatarCandidates?: string[];
   variant?: 'pinned' | 'scroll';
   onLayout?: (event: { nativeEvent: { layout: { x: number; width: number } } }) => void;
 }
@@ -77,6 +84,7 @@ const AnimatedTabItem = React.memo(({
   colors, 
   isShowsTabActive,
   avatarUrl,
+  avatarCandidates,
   variant = 'scroll',
   onLayout,
 }: AnimatedTabItemProps) => {
@@ -128,7 +136,11 @@ const AnimatedTabItem = React.memo(({
   const label = getTabTitle(route.name);
 
   const activeColor = isShowsTabActive ? '#FF4444' : colors.primary;
-  const inactiveColor = isFocused ? activeColor : colors.textSecondary;
+  const inactiveColor = isFocused
+    ? activeColor
+    : isShowsTabActive
+      ? 'rgba(255, 255, 255, 0.68)'
+      : colors.textSecondary;
 
   return (
     <View
@@ -156,13 +168,20 @@ const AnimatedTabItem = React.memo(({
             shadowOpacity: glowOpacity,
             shadowRadius: 8,
           }}>
-            {route.name === 'profile' && avatarUrl ? (
-              <Image
-                source={{ uri: avatarUrl }}
+            {route.name === 'profile' && (avatarCandidates?.length ?? 0) > 0 ? (
+              <AvatarWithFallback
+                candidates={avatarCandidates ?? []}
                 style={[
                   styles.profileAvatar,
                   { borderColor: isFocused ? activeColor : 'transparent' },
                 ]}
+                contentFit="cover"
+                fallback={
+                  <IconComponent
+                    color={isFocused ? activeColor : inactiveColor}
+                    size={22}
+                  />
+                }
               />
             ) : (
               <IconComponent 
@@ -193,6 +212,7 @@ const AnimatedTabItem = React.memo(({
 AnimatedTabItem.displayName = 'AnimatedTabItem';
 
 function CustomTabBar({ state, descriptors, navigation }: BottomTabBarProps) {
+  const insets = useSafeAreaInsets();
   const { getPersonalizedTabs, profile, recordTabVisit } = useUserProfile();
   const { myProfile } = useFriends();
   const { colors, isDark } = useTheme();
@@ -202,10 +222,25 @@ function CustomTabBar({ state, descriptors, navigation }: BottomTabBarProps) {
     authAvatar: user?.avatar,
     socialAvatar: myProfile?.avatarUrl,
   });
+  const tabAvatarCandidates = collectAvatarUrlCandidates({
+    profileAvatar: profile?.avatar,
+    authAvatar: user?.avatar,
+    socialAvatar: myProfile?.avatarUrl,
+  });
   const personalizedTabs = getPersonalizedTabs();
   const containerOpacity = useRef(new Animated.Value(0)).current;
   const middleScrollRef = useRef<ScrollView>(null);
   const middleTabLayouts = useRef<Record<string, { x: number; width: number }>>({});
+  const middleScrollMetrics = useRef({ offsetX: 0, layoutWidth: 0, contentWidth: 0 });
+  const [showMiddleScrollHint, setShowMiddleScrollHint] = useState(false);
+
+  const updateMiddleScrollHint = useCallback((offsetX: number, layoutWidth: number, contentWidth: number) => {
+    middleScrollMetrics.current = { offsetX, layoutWidth, contentWidth };
+    const threshold = 6;
+    const hasOverflow = contentWidth > layoutWidth + threshold;
+    const canScrollRight = hasOverflow && offsetX + layoutWidth < contentWidth - threshold;
+    setShowMiddleScrollHint(canScrollRight);
+  }, []);
 
   const visibleRoutes = state.routes.filter((route) => 
     personalizedTabs.includes(route.name)
@@ -259,6 +294,13 @@ function CustomTabBar({ state, descriptors, navigation }: BottomTabBarProps) {
     scrollMiddleTabIntoView(currentRouteName, true);
   }, [currentRouteName, scrollableTabNames, scrollMiddleTabIntoView]);
 
+  useEffect(() => {
+    const { offsetX, layoutWidth, contentWidth } = middleScrollMetrics.current;
+    if (layoutWidth > 0 && contentWidth > 0) {
+      updateMiddleScrollHint(offsetX, layoutWidth, contentWidth);
+    }
+  }, [scrollableTabNames, updateMiddleScrollHint]);
+
   const renderTab = (route: (typeof state.routes)[number], variant: 'pinned' | 'scroll') => {
     const routeIndex = state.routes.findIndex((r) => r.name === route.name);
     const isFocused = state.index === routeIndex;
@@ -286,6 +328,7 @@ function CustomTabBar({ state, descriptors, navigation }: BottomTabBarProps) {
         colors={colors}
         isShowsTabActive={isShowsTabActive}
         avatarUrl={tabAvatarUrl ?? undefined}
+        avatarCandidates={tabAvatarCandidates}
         variant={variant}
         onLayout={
           variant === 'scroll'
@@ -305,14 +348,40 @@ function CustomTabBar({ state, descriptors, navigation }: BottomTabBarProps) {
     );
   };
 
+  const tabBarBottom = Math.max(insets.bottom, 12) + FLOATING_TAB_BAR_BOTTOM_GAP;
+  const dockScrimColor = isShowsTabActive
+    ? 'rgba(13, 14, 18, 0.96)'
+    : isDark
+      ? 'rgba(13, 14, 18, 0.96)'
+      : 'rgba(247, 248, 252, 0.96)';
+
   return (
+    <>
+      <View
+        pointerEvents="none"
+        style={[
+          styles.tabBarDockScrim,
+          {
+            height: tabBarBottom + FLOATING_TAB_BAR_HEIGHT,
+            backgroundColor: dockScrimColor,
+          },
+        ]}
+      />
     <Animated.View style={[styles.tabBarContainer, {
+      bottom: tabBarBottom,
       shadowColor: colors.shadow,
       opacity: containerOpacity,
     }]}>
-      <BlurView intensity={isShowsTabActive ? 88 : 72} tint={isDark ? 'dark' : 'light'} style={[styles.blurContainer, {
+      <BlurView
+        intensity={isShowsTabActive ? 88 : 72}
+        tint={isShowsTabActive || isDark ? 'dark' : 'light'}
+        style={[styles.blurContainer, {
         backgroundColor: isShowsTabActive ? 'rgba(13, 14, 18, 0.72)' : (isDark ? 'rgba(13, 14, 18, 0.58)' : 'rgba(255, 255, 255, 0.72)'),
-        borderColor: isDark ? 'rgba(110, 150, 251, 0.12)' : 'rgba(36, 64, 211, 0.08)',
+        borderColor: isShowsTabActive
+          ? 'rgba(255, 255, 255, 0.14)'
+          : isDark
+            ? 'rgba(110, 150, 251, 0.12)'
+            : 'rgba(36, 64, 211, 0.08)',
       }]}>
         <View style={styles.tabBarInner}>
           {pinnedStartRoute ? renderTab(pinnedStartRoute, 'pinned') : null}
@@ -325,6 +394,24 @@ function CustomTabBar({ state, descriptors, navigation }: BottomTabBarProps) {
               style={styles.scrollableTabs}
               contentContainerStyle={styles.scrollableTabsContent}
               keyboardShouldPersistTaps="handled"
+              onScroll={(event) => {
+                const { contentOffset, layoutMeasurement, contentSize } = event.nativeEvent;
+                updateMiddleScrollHint(
+                  contentOffset.x,
+                  layoutMeasurement.width,
+                  contentSize.width,
+                );
+              }}
+              scrollEventThrottle={16}
+              onContentSizeChange={(contentWidth) => {
+                const { offsetX, layoutWidth } = middleScrollMetrics.current;
+                updateMiddleScrollHint(offsetX, layoutWidth, contentWidth);
+              }}
+              onLayout={(event) => {
+                const layoutWidth = event.nativeEvent.layout.width;
+                const { offsetX, contentWidth } = middleScrollMetrics.current;
+                updateMiddleScrollHint(offsetX, layoutWidth, contentWidth);
+              }}
             >
               {scrollableRoutes.map((route) => renderTab(route, 'scroll'))}
             </ScrollView>
@@ -332,10 +419,26 @@ function CustomTabBar({ state, descriptors, navigation }: BottomTabBarProps) {
             <View style={styles.scrollableTabs} />
           )}
 
+          {showMiddleScrollHint && pinnedEndRoute ? (
+            <View
+              style={styles.scrollHint}
+              pointerEvents="none"
+              accessibilityElementsHidden
+              importantForAccessibility="no-hide-descendants"
+            >
+              <ChevronRight
+                size={15}
+                color={isShowsTabActive ? 'rgba(255, 255, 255, 0.55)' : colors.textMuted}
+                strokeWidth={2.4}
+              />
+            </View>
+          ) : null}
+
           {pinnedEndRoute ? renderTab(pinnedEndRoute, 'pinned') : null}
         </View>
       </BlurView>
     </Animated.View>
+    </>
   );
 }
 
@@ -399,14 +502,20 @@ export default function TabLayout() {
 }
 
 const styles = StyleSheet.create({
+  tabBarDockScrim: {
+    position: 'absolute',
+    left: 0,
+    right: 0,
+    bottom: 0,
+    zIndex: 0,
+  },
   tabBarContainer: {
     position: 'absolute',
-    bottom: 30,
     left: 20,
     right: 20,
-    height: 62,
+    height: FLOATING_TAB_BAR_HEIGHT,
     borderRadius: 30,
-    overflow: 'visible',
+    zIndex: 2,
     ...Platform.select({
       ios: {
         shadowColor: '#000',
@@ -455,6 +564,14 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     paddingHorizontal: 4,
     gap: 2,
+  },
+  scrollHint: {
+    width: 12,
+    alignItems: 'center',
+    justifyContent: 'center',
+    flexShrink: 0,
+    marginRight: -2,
+    opacity: 0.72,
   },
   tabTouchable: {
     alignItems: 'center',

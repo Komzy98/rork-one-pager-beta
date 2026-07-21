@@ -24,7 +24,7 @@
     "ios": {
       "supportsTablet": true,
       "bundleIdentifier": "app.rork.OPbeta",
-      "buildNumber": "82",
+      "buildNumber": "86",
       "associatedDomains": [
         "applinks:join.onepagerapp.co.uk"
       ],
@@ -53,7 +53,8 @@
           "youtube",
           "videos",
           "peacock",
-          "paramountplus"
+          "paramountplus",
+          "waze"
         ]
       },
       "config": {

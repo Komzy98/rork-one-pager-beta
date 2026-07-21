@@ -422,10 +422,16 @@ Rules:
       {habitStats.atRisk.length > 0 && !allDone && !recoveryMode && (
         <View style={styles.alertSection}>
           <View style={styles.alertHeader}>
-            <AlertTriangle size={14} color="#DC2626" strokeWidth={2.5} />
+            <View style={styles.alertHeaderIcon}>
+              <AlertTriangle size={14} color="#DC2626" strokeWidth={2.5} />
+            </View>
             <Text style={styles.alertTitle}>Streaks at risk</Text>
           </View>
-          <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.alertScroll}>
+          <ScrollView
+            horizontal
+            showsHorizontalScrollIndicator={false}
+            contentContainerStyle={styles.alertScrollContent}
+          >
             {habitStats.atRisk.slice(0, 4).map((habit) => (
               <TouchableOpacity
                 key={habit.id}
@@ -664,22 +670,32 @@ const styles = StyleSheet.create({
     fontWeight: '500' as const,
   },
   alertSection: {
-    paddingHorizontal: 18,
     paddingTop: 14,
+    paddingBottom: 4,
   },
   alertHeader: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: 6,
     marginBottom: 10,
+    paddingHorizontal: 18,
+  },
+  alertHeaderIcon: {
+    width: 14,
+    alignItems: 'center',
+    justifyContent: 'center',
   },
   alertTitle: {
     fontSize: 13,
     fontWeight: '600' as const,
     color: '#DC2626',
+    lineHeight: 18,
   },
-  alertScroll: {
+  alertScrollContent: {
     flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    paddingHorizontal: 18,
   },
   atRiskChip: {
     flexDirection: 'row',
@@ -689,9 +705,9 @@ const styles = StyleSheet.create({
     paddingHorizontal: 12,
     paddingVertical: 9,
     borderRadius: 12,
-    marginRight: 8,
     borderWidth: 1,
     borderColor: 'rgba(220, 38, 38, 0.12)',
+    minHeight: 36,
   },
   atRiskName: {
     fontSize: 13,

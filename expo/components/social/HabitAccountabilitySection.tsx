@@ -1,15 +1,18 @@
 import React, { useCallback, useMemo } from 'react';
 import { Alert, Platform, Share, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
-import { Share2, Users } from 'lucide-react-native';
+import { Plus, Share2, Users } from 'lucide-react-native';
 import * as Haptics from 'expo-haptics';
 import { router } from 'expo-router';
 import { useFriends } from '@/hooks/useFriends';
+import { useUserProfile } from '@/hooks/useUserProfile';
 import { usePartnerHabitShares } from '@/hooks/usePartnerHabitShares';
 import { buildHabitPartnerInviteLink } from '@/utils/deepLinks';
+import { formatPartnerHabitShareError } from '@/utils/partnerHabitShares';
+import { socialRestrictionMessage } from '@/utils/socialAgeConsent';
 import type { SocialProfile } from '@/utils/friendsService';
 
 interface HabitAccountabilitySectionProps {
-  habitId: string;
+  habitId?: string;
   habitName: string;
   colors: {
     text: string;
@@ -20,23 +23,39 @@ interface HabitAccountabilitySectionProps {
     primary: string;
     surfaceSecondary: string;
   };
+  /** Habit not in routine yet — show add-first CTA (Discover). */
+  locked?: boolean;
+  /** Routine saved but task id not linked yet. */
+  routinePending?: boolean;
+  onAddToRoutine?: () => void;
+  /** Shorter layout for Overview routine cards. */
+  compact?: boolean;
 }
 
 export function HabitAccountabilitySection({
   habitId,
   habitName,
   colors,
+  locked = false,
+  routinePending = false,
+  onAddToRoutine,
+  compact = false,
 }: HabitAccountabilitySectionProps) {
-  const { available, myProfile, friends, isSignedIn } = useFriends();
+  const { available, myProfile, friends, isSignedIn, isInitializing, initError, hasFriendsError } =
+    useFriends();
+  const { profile } = useUserProfile();
+  const socialRestriction = socialRestrictionMessage(profile);
   const { sharesFor, updatePartnerHabits, refresh } = usePartnerHabitShares();
 
   const partnersWithHabit = useMemo(() => {
+    if (!habitId) return [];
     return friends.filter((f) =>
       sharesFor(f.id).some((s) => s.habitId === habitId),
     );
   }, [friends, sharesFor, habitId]);
 
   const handleShareInvite = useCallback(async () => {
+    if (!habitId) return;
     if (!myProfile?.username?.trim()) {
       Alert.alert('Almost ready', 'Your partner handle is still being set up. Try again in a moment.');
       return;
@@ -54,6 +73,7 @@ export function HabitAccountabilitySection({
 
   const togglePartner = useCallback(
     async (partner: SocialProfile) => {
+      if (!habitId) return;
       if (Platform.OS !== 'web') {
         void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
       }
@@ -63,12 +83,19 @@ export function HabitAccountabilitySection({
         ? current.filter((s) => s.habitId !== habitId)
         : [...current, { habitId, habitName }];
       try {
-        await updatePartnerHabits(
+        const result = await updatePartnerHabits(
           partner.id,
           next.map((s) => ({ habitId: s.habitId, habitName: s.habitName ?? habitName })),
         );
+        void refresh();
+        if (result?.usedLocalFallback) {
+          Alert.alert(
+            'Saved on this device',
+            'Partner sharing is stored locally until Supabase migration 015 is applied on your project. Your partner may not see this habit on another device yet.',
+          );
+        }
       } catch (e) {
-        Alert.alert('Could not update', (e as Error)?.message || 'Try again.');
+        Alert.alert('Could not update', formatPartnerHabitShareError(e));
       }
     },
     [sharesFor, habitId, habitName, updatePartnerHabits],
@@ -76,27 +103,90 @@ export function HabitAccountabilitySection({
 
   if (!isSignedIn) {
     return (
-      <View style={[styles.card, { backgroundColor: colors.card, borderColor: colors.border }]}>
-        <Text style={[styles.title, { color: colors.text }]}>Accountability partners</Text>
+      <View style={[styles.card, compact && styles.cardCompact, { backgroundColor: colors.card, borderColor: colors.border }]}>
+        <View style={styles.headerRow}>
+          <Users size={18} color={colors.primary} />
+          <Text style={[styles.title, { color: colors.text }]}>Accountability partners</Text>
+        </View>
         <Text style={[styles.body, { color: colors.textSecondary }]}>
-          Sign in to invite someone to this habit only — not your whole account.
+          Sign in to invite someone to “{habitName}” only — not your whole account.
         </Text>
+        <TouchableOpacity
+          style={[styles.primaryBtn, { backgroundColor: colors.primary }]}
+          onPress={() => router.push('/(tabs)/profile' as any)}
+        >
+          <Text style={styles.primaryBtnText}>Sign in from Profile</Text>
+        </TouchableOpacity>
       </View>
     );
   }
 
   if (available !== true) {
-    return null;
+    const unavailableBody = socialRestriction
+      ? socialRestriction
+      : isInitializing
+        ? 'Connecting to accountability partners…'
+        : initError || hasFriendsError
+          ? 'Partners could not load. Open Accountability Partners to retry.'
+          : 'Finish setup in Profile, then invite someone for this habit.';
+
+    return (
+      <View style={[styles.card, compact && styles.cardCompact, { backgroundColor: colors.card, borderColor: colors.border }]}>
+        <View style={styles.headerRow}>
+          <Users size={18} color={colors.primary} />
+          <Text style={[styles.title, { color: colors.text }]}>Accountability partners</Text>
+        </View>
+        <Text style={[styles.body, { color: colors.textSecondary }]}>{unavailableBody}</Text>
+        <TouchableOpacity
+          style={[styles.primaryBtn, { backgroundColor: colors.primary }]}
+          onPress={() => router.push('/friends' as any)}
+        >
+          <Text style={styles.primaryBtnText}>Open Accountability Partners</Text>
+        </TouchableOpacity>
+        {socialRestriction ? (
+          <TouchableOpacity onPress={() => router.push('/(tabs)/profile' as any)} hitSlop={8}>
+            <Text style={[styles.link, { color: colors.primary }]}>Update birth year in Profile →</Text>
+          </TouchableOpacity>
+        ) : null}
+      </View>
+    );
+  }
+
+  if (locked || !habitId) {
+    return (
+      <View style={[styles.card, compact && styles.cardCompact, { backgroundColor: colors.card, borderColor: colors.border }]}>
+        <View style={styles.headerRow}>
+          <Users size={18} color={colors.primary} />
+          <Text style={[styles.title, { color: colors.text }]}>Accountability partners</Text>
+        </View>
+        <Text style={[styles.body, { color: colors.textSecondary }]}>
+          {routinePending
+            ? 'Finishing setup — partner invites will appear in a moment.'
+            : `Add “${habitName}” to your routine, then invite someone to see check-ins for this habit only — not your whole account.`}
+        </Text>
+        {onAddToRoutine ? (
+          <TouchableOpacity
+            style={[styles.primaryBtn, { backgroundColor: colors.primary }]}
+            onPress={onAddToRoutine}
+          >
+            <Plus size={16} color="#fff" />
+            <Text style={styles.primaryBtnText}>Add to My Routine</Text>
+          </TouchableOpacity>
+        ) : null}
+      </View>
+    );
   }
 
   return (
-    <View style={[styles.card, { backgroundColor: colors.card, borderColor: colors.border }]}>
+    <View style={[styles.card, compact && styles.cardCompact, { backgroundColor: colors.card, borderColor: colors.border }]}>
       <View style={styles.headerRow}>
         <Users size={18} color={colors.primary} />
         <Text style={[styles.title, { color: colors.text }]}>Accountability for this habit</Text>
       </View>
       <Text style={[styles.body, { color: colors.textSecondary }]}>
-        Partners only see activity for habits you choose. Events, shows, and other tabs stay separate unless you share them elsewhere.
+        {compact
+          ? 'Partners see check-ins for this habit only.'
+          : 'Partners only see activity for habits you choose. Events, shows, and other tabs stay separate unless you share them elsewhere.'}
       </Text>
 
       <TouchableOpacity
@@ -154,6 +244,10 @@ const styles = StyleSheet.create({
     padding: 16,
     marginTop: 16,
     gap: 10,
+  },
+  cardCompact: {
+    marginTop: 12,
+    padding: 14,
   },
   headerRow: {
     flexDirection: 'row',

@@ -6,6 +6,8 @@ import { supabaseConfigured } from '@/utils/supabaseClient';
 import {
   listMyHabitShares,
   setPartnerHabitShares,
+  savePartnerHabitSharesLocally,
+  describeSupabaseError,
   sharesForPartner,
   type HabitInvitePayload,
   type PartnerHabitShareRow,
@@ -32,10 +34,25 @@ export function usePartnerHabitShares() {
 
   const updatePartnerHabits = useCallback(
     async (partnerId: string, habits: HabitInvitePayload[]) => {
-      await setPartnerHabitShares(partnerId, habits);
-      refresh();
+      try {
+        const result = await setPartnerHabitShares(partnerId, habits);
+        await queryClient.refetchQueries({ queryKey: ['social', 'habit-shares', myUserId] });
+        return result;
+      } catch (e) {
+        const msg = describeSupabaseError(e).toLowerCase();
+        if (
+          myUserId &&
+          !msg.includes('not signed in') &&
+          !msg.includes('sign in to share')
+        ) {
+          await savePartnerHabitSharesLocally(myUserId, partnerId, habits);
+          await queryClient.refetchQueries({ queryKey: ['social', 'habit-shares', myUserId] });
+          return { usedLocalFallback: true };
+        }
+        throw e;
+      }
     },
-    [refresh],
+    [queryClient, myUserId],
   );
 
   const sharesFor = useCallback(

@@ -1,4 +1,4 @@
-import React, { useState, useCallback, useEffect } from 'react';
+import React, { useState, useCallback, useEffect, useMemo } from 'react';
 import {
   StyleSheet,
   View,
@@ -105,8 +105,10 @@ import {
 } from '@/utils/shareProgress';
 import { buildChallengeLink } from '@/utils/deepLinks';
 import type { Achievement, Challenge } from '@/types/gamification';
+import { AccountabilityPartnersSection } from '@/components/social/AccountabilityPartnersSection';
 import { useFriends } from '@/hooks/useFriends';
-import { resolveDisplayAvatarUrl } from '@/utils/avatarUtils';
+import { resolveDisplayAvatarUrl, collectAvatarUrlCandidates, isLocalAvatarUri, isRemoteAvatarUrl } from '@/utils/avatarUtils';
+import { AvatarWithFallback } from '@/components/AvatarWithFallback';
 import { uploadProfileAvatar } from '@/utils/avatarService';
 import { updateProfileAvatar } from '@/utils/friendsService';
 import {
@@ -121,7 +123,7 @@ import {
   isValidBirthYear,
   MIN_SOCIAL_AGE,
 } from '@/utils/socialAgeConsent';
-import { MOCK_CHALLENGES } from '@/mocks/socialData';
+import { mergeCatalogWithUserChallenges } from '@/constants/challengeCatalog';
 import { ThemeSettings } from '@/components/ThemeSettings';
 import { KeyboardAwareScrollView } from '@/components/KeyboardAwareScrollView';
 import { GOOGLE_G_LOGO } from '@/constants/googleBrandAssets';
@@ -359,6 +361,15 @@ export default function ProfileScreen() {
   const hasSportsInterest = hasInterest('football');
   const hasNBAInterest = hasInterest('nba');
   const unlockedBadgesCount = badges.filter(b => b.unlockedAt).length;
+
+  const displayChallenges = useMemo(
+    () => mergeCatalogWithUserChallenges(challenges),
+    [challenges],
+  );
+  const activeChallengeCount = useMemo(
+    () => displayChallenges.filter((c) => c.status === 'active').length,
+    [displayChallenges],
+  );
   const googleProvider = supabaseUser?.app_metadata?.provider;
   const googleProviders = Array.isArray(supabaseUser?.app_metadata?.providers)
     ? (supabaseUser.app_metadata.providers as string[])
@@ -366,27 +377,34 @@ export default function ProfileScreen() {
   const isGoogleSignedIn =
     !isGuest && (googleProvider === 'google' || googleProviders.includes('google') || user?.id?.startsWith('google_'));
   const {
-    friends: socialFriends,
-    incomingRequests: socialIncoming,
-    unreadNudges: socialUnreadNudges,
     friendsLeaderboard: socialLeaderboard,
     myProfile: socialProfile,
   } = useFriends();
-  const partnerBadgeCount = socialIncoming.length + socialUnreadNudges.length;
 
-  const profileAvatarUri = resolveDisplayAvatarUrl({
+  const profileAvatarCandidates = collectAvatarUrlCandidates({
     profileAvatar: profile?.avatar,
-    authAvatar: user?.avatar,
+    authAvatar: user?.avatar ?? supabaseUser?.user_metadata?.avatar_url ?? supabaseUser?.user_metadata?.picture,
     socialAvatar: socialProfile?.avatarUrl,
   });
 
   useEffect(() => {
     if (isGuest) return;
-    if (!user?.avatar) return;
-    if (!profile?.avatar) {
-      updateProfile({ avatar: user.avatar });
+    const authAvatar =
+      user?.avatar ??
+      (typeof supabaseUser?.user_metadata?.avatar_url === 'string'
+        ? supabaseUser.user_metadata.avatar_url
+        : null) ??
+      (typeof supabaseUser?.user_metadata?.picture === 'string'
+        ? supabaseUser.user_metadata.picture
+        : null);
+    if (!isRemoteAvatarUrl(authAvatar)) return;
+    const current = profile?.avatar;
+    if (!current || isLocalAvatarUri(current)) {
+      if (current !== authAvatar) {
+        updateProfile({ avatar: authAvatar });
+      }
     }
-  }, [isGuest, user?.avatar, profile?.avatar, updateProfile]);
+  }, [isGuest, user?.avatar, supabaseUser?.user_metadata, profile?.avatar, updateProfile]);
 
   const [sharePayload, setSharePayload] = useState<SharePayload | null>(null);
   const shareUsername =
@@ -598,6 +616,168 @@ export default function ProfileScreen() {
     }
   }, [pickImage, profile?.avatar, updateProfile, user?.id]);
 
+  const [birthYearDraft, setBirthYearDraft] = useState(
+    () => (profile?.birthYear ? String(profile.birthYear) : ''),
+  );
+  const [dataBusy, setDataBusy] = useState(false);
+
+  useEffect(() => {
+    if (profile?.birthYear != null) {
+      setBirthYearDraft(String(profile.birthYear));
+    }
+  }, [profile?.birthYear]);
+
+  useEffect(() => {
+    if (!supabaseUser?.id) return;
+    let cancelled = false;
+    void (async () => {
+      const remote = await fetchAgeConsentFromProfile(supabaseUser.id);
+      if (cancelled || (!remote.birthYear && remote.parentalSocialConsent === undefined)) return;
+      const patch: { birthYear?: number; parentalSocialConsent?: boolean } = {};
+      const localBirthYear = profile?.birthYear;
+      const localParental = profile?.parentalSocialConsent;
+      if (remote.birthYear != null && remote.birthYear !== localBirthYear) {
+        patch.birthYear = remote.birthYear;
+      }
+      if (
+        remote.parentalSocialConsent !== undefined &&
+        remote.parentalSocialConsent !== localParental
+      ) {
+        patch.parentalSocialConsent = remote.parentalSocialConsent;
+      }
+      if (Object.keys(patch).length > 0) updateProfile(patch);
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [supabaseUser?.id, profile?.birthYear, profile?.parentalSocialConsent, updateProfile]);
+
+  const ageConsentEnsureInput = useCallback(() => {
+    const avatarUrl = resolveDisplayAvatarUrl({
+      profileAvatar: profile?.avatar,
+      authAvatar: user?.avatar,
+      socialAvatar: null,
+    });
+    return {
+      displayName: user?.name?.trim() || profile?.name?.trim() || null,
+      email: user?.email ?? null,
+      avatarUrl,
+      currentStreak: gamificationStats?.currentStreak ?? 0,
+      totalCompletions: gamificationStats?.totalCompletions ?? 0,
+      level: gamificationStats?.level ?? 1,
+    };
+  }, [
+    profile?.avatar,
+    profile?.name,
+    user?.avatar,
+    user?.email,
+    user?.name,
+    gamificationStats?.currentStreak,
+    gamificationStats?.totalCompletions,
+    gamificationStats?.level,
+  ]);
+
+  const handleSaveBirthYear = useCallback(async () => {
+    const year = parseInt(birthYearDraft.trim(), 10);
+    if (!isValidBirthYear(year)) {
+      Alert.alert('Invalid year', 'Enter a valid birth year.');
+      return;
+    }
+    setDataBusy(true);
+    updateProfile({ birthYear: year });
+    try {
+      if (supabaseUser?.id) {
+        await syncAgeConsentToProfile(
+          supabaseUser.id,
+          year,
+          profile?.parentalSocialConsent,
+          ageConsentEnsureInput(),
+        );
+      }
+      void Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+    } catch (e) {
+      const msg = (e as Error)?.message ?? '';
+      const hint = msg.toLowerCase().includes('profile not found')
+        ? 'Saved on this device. Open Accountability Partners once, then tap Save again to sync.'
+        : msg.toLowerCase().includes('birth_year') ||
+            msg.toLowerCase().includes('schema cache') ||
+            msg.toLowerCase().includes('could not find')
+          ? 'Saved on this device. Run migrations 011 and 014 in Supabase, reload API schema, then Save again.'
+          : msg
+            ? `Saved on this device. ${msg}`
+            : 'Saved on this device. Partner sync failed — check your connection and try Save again.';
+      Alert.alert('Saved locally', hint);
+    } finally {
+      setDataBusy(false);
+    }
+  }, [
+    birthYearDraft,
+    profile?.parentalSocialConsent,
+    supabaseUser?.id,
+    updateProfile,
+    ageConsentEnsureInput,
+  ]);
+
+  const handleToggleParentalConsent = useCallback(
+    async (value: boolean) => {
+      updateProfile({ parentalSocialConsent: value });
+      if (supabaseUser?.id) {
+        try {
+          await syncAgeConsentToProfile(
+            supabaseUser.id,
+            profile?.birthYear ?? null,
+            value,
+            ageConsentEnsureInput(),
+          );
+        } catch {
+          Alert.alert(
+            'Saved locally',
+            'Parental consent saved on this device. Partner sync failed — check Supabase migrations 011 and 014.',
+          );
+        }
+      }
+    },
+    [profile?.birthYear, supabaseUser?.id, updateProfile, ageConsentEnsureInput],
+  );
+
+  const handleExportSocialData = useCallback(async () => {
+    if (!supabaseUser?.id) return;
+    setDataBusy(true);
+    try {
+      const json = await exportSocialData(supabaseUser.id);
+      await Share.share({ message: json });
+    } catch (e) {
+      Alert.alert('Export failed', (e as Error)?.message || 'Could not export social data.');
+    } finally {
+      setDataBusy(false);
+    }
+  }, [supabaseUser?.id]);
+
+  const handleDeleteActivityHistory = useCallback(() => {
+    Alert.alert(
+      'Delete activity history?',
+      'This removes your activity feed posts and partner-visible event saves from the server. Your habits, streak, and partners are kept.',
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Delete history',
+          style: 'destructive',
+          onPress: async () => {
+            setDataBusy(true);
+            try {
+              const removed = await deleteMyActivityHistory();
+              Alert.alert('Done', `Removed ${removed} activity post${removed === 1 ? '' : 's'} from your feed.`);
+            } catch (e) {
+              Alert.alert('Could not delete', (e as Error)?.message || 'Please try again.');
+            } finally {
+              setDataBusy(false);
+            }
+          },
+        },
+      ],
+    );
+  }, []);
+
   if (!user) {
     return (
       <SwipeableTabContainer>
@@ -764,168 +944,6 @@ export default function ProfileScreen() {
     );
   };
 
-  const [birthYearDraft, setBirthYearDraft] = useState(
-    () => (profile?.birthYear ? String(profile.birthYear) : ''),
-  );
-  const [dataBusy, setDataBusy] = useState(false);
-
-  useEffect(() => {
-    if (profile?.birthYear != null) {
-      setBirthYearDraft(String(profile.birthYear));
-    }
-  }, [profile?.birthYear]);
-
-  useEffect(() => {
-    if (!supabaseUser?.id) return;
-    let cancelled = false;
-    void (async () => {
-      const remote = await fetchAgeConsentFromProfile(supabaseUser.id);
-      if (cancelled || (!remote.birthYear && remote.parentalSocialConsent === undefined)) return;
-      const patch: { birthYear?: number; parentalSocialConsent?: boolean } = {};
-      const localBirthYear = profile?.birthYear;
-      const localParental = profile?.parentalSocialConsent;
-      if (remote.birthYear != null && remote.birthYear !== localBirthYear) {
-        patch.birthYear = remote.birthYear;
-      }
-      if (
-        remote.parentalSocialConsent !== undefined &&
-        remote.parentalSocialConsent !== localParental
-      ) {
-        patch.parentalSocialConsent = remote.parentalSocialConsent;
-      }
-      if (Object.keys(patch).length > 0) updateProfile(patch);
-    })();
-    return () => {
-      cancelled = true;
-    };
-  }, [supabaseUser?.id, updateProfile]);
-
-  const ageConsentEnsureInput = useCallback(() => {
-    const avatarUrl = resolveDisplayAvatarUrl({
-      profileAvatar: profile?.avatar,
-      authAvatar: user?.avatar,
-      socialAvatar: null,
-    });
-    return {
-      displayName: user?.name?.trim() || profile?.name?.trim() || null,
-      email: user?.email ?? null,
-      avatarUrl,
-      currentStreak: gamificationStats?.currentStreak ?? 0,
-      totalCompletions: gamificationStats?.totalCompletions ?? 0,
-      level: gamificationStats?.level ?? 1,
-    };
-  }, [
-    profile?.avatar,
-    profile?.name,
-    user?.avatar,
-    user?.email,
-    user?.name,
-    gamificationStats?.currentStreak,
-    gamificationStats?.totalCompletions,
-    gamificationStats?.level,
-  ]);
-
-  const handleSaveBirthYear = useCallback(async () => {
-    const year = parseInt(birthYearDraft.trim(), 10);
-    if (!isValidBirthYear(year)) {
-      Alert.alert('Invalid year', 'Enter a valid birth year.');
-      return;
-    }
-    setDataBusy(true);
-    updateProfile({ birthYear: year });
-    try {
-      if (supabaseUser?.id) {
-        await syncAgeConsentToProfile(
-          supabaseUser.id,
-          year,
-          profile?.parentalSocialConsent,
-          ageConsentEnsureInput(),
-        );
-      }
-      void Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
-    } catch (e) {
-      const msg = (e as Error)?.message ?? '';
-      const hint = msg.toLowerCase().includes('profile not found')
-        ? 'Saved on this device. Open Accountability Partners once, then tap Save again to sync.'
-        : msg.toLowerCase().includes('birth_year') ||
-            msg.toLowerCase().includes('schema cache') ||
-            msg.toLowerCase().includes('could not find')
-          ? 'Saved on this device. Run migrations 011 and 014 in Supabase, reload API schema, then Save again.'
-          : msg
-            ? `Saved on this device. ${msg}`
-            : 'Saved on this device. Partner sync failed — check your connection and try Save again.';
-      Alert.alert('Saved locally', hint);
-    } finally {
-      setDataBusy(false);
-    }
-  }, [
-    birthYearDraft,
-    profile?.parentalSocialConsent,
-    supabaseUser?.id,
-    updateProfile,
-    ageConsentEnsureInput,
-  ]);
-
-  const handleToggleParentalConsent = useCallback(
-    async (value: boolean) => {
-      updateProfile({ parentalSocialConsent: value });
-      if (supabaseUser?.id) {
-        try {
-          await syncAgeConsentToProfile(
-            supabaseUser.id,
-            profile?.birthYear ?? null,
-            value,
-            ageConsentEnsureInput(),
-          );
-        } catch {
-          Alert.alert(
-            'Saved locally',
-            'Parental consent saved on this device. Partner sync failed — check Supabase migrations 011 and 014.',
-          );
-        }
-      }
-    },
-    [profile?.birthYear, supabaseUser?.id, updateProfile, ageConsentEnsureInput],
-  );
-
-  const handleExportSocialData = useCallback(async () => {
-    if (!supabaseUser?.id) return;
-    setDataBusy(true);
-    try {
-      const json = await exportSocialData(supabaseUser.id);
-      await Share.share({ message: json });
-    } catch (e) {
-      Alert.alert('Export failed', (e as Error)?.message || 'Could not export social data.');
-    } finally {
-      setDataBusy(false);
-    }
-  }, [supabaseUser?.id]);
-
-  const handleDeleteActivityHistory = useCallback(() => {
-    Alert.alert(
-      'Delete activity history?',
-      'This removes your activity feed posts and partner-visible event saves from the server. Your habits, streak, and partners are kept.',
-      [
-        { text: 'Cancel', style: 'cancel' },
-        {
-          text: 'Delete history',
-          style: 'destructive',
-          onPress: async () => {
-            setDataBusy(true);
-            try {
-              const removed = await deleteMyActivityHistory();
-              Alert.alert('Done', `Removed ${removed} activity post${removed === 1 ? '' : 's'} from your feed.`);
-            } catch (e) {
-              Alert.alert('Could not delete', (e as Error)?.message || 'Please try again.');
-            } finally {
-              setDataBusy(false);
-            }
-          },
-        },
-      ],
-    );
-  }, []);
-
   const socialAgeOk = canUseSocialFeatures(profile);
   const showParentalConsent =
     !!profile?.birthYear &&
@@ -971,8 +989,14 @@ export default function ProfileScreen() {
               >
                 {isUploadingImage ? (
                   <ActivityIndicator size="small" color={colors.primary} />
-                ) : profileAvatarUri ? (
-                  <Image source={{ uri: profileAvatarUri }} style={styles.avatarImage} contentFit="cover" transition={200} />
+                ) : profileAvatarCandidates.length > 0 ? (
+                  <AvatarWithFallback
+                    candidates={profileAvatarCandidates}
+                    style={styles.avatarImage}
+                    contentFit="cover"
+                    transition={200}
+                    fallback={<User size={36} color={colors.primary} />}
+                  />
                 ) : (
                   <User size={36} color={colors.primary} />
                 )}
@@ -1070,6 +1094,55 @@ export default function ProfileScreen() {
                 <Text style={[styles.statLabel, { color: colors.textTertiary }]}>Badges</Text>
               </View>
             </View>
+          </View>
+
+          <AccountabilityPartnersSection />
+
+          {/* Achievements — top of profile for quick access */}
+          <View style={styles.sectionWrapper}>
+            <Text style={[styles.sectionTitle, { color: colors.text }]}>Achievements</Text>
+            <TouchableOpacity
+              style={[styles.settingsItem, { backgroundColor: colors.card, borderColor: colors.border }]}
+              onPress={() => toggleSection('achievements')}
+              activeOpacity={0.7}
+            >
+              <View style={[styles.settingsIconBg, { backgroundColor: '#FFD700' + '15' }]}>
+                <Trophy size={18} color="#FFD700" />
+              </View>
+              <View style={styles.settingsItemContent}>
+                <Text style={[styles.settingsItemTitle, { color: colors.text }]}>Badges & Achievements</Text>
+                <Text style={[styles.settingsItemSubtitle, { color: colors.textTertiary }]}>
+                  {unlockedBadgesCount} badges unlocked
+                </Text>
+              </View>
+              {expandedSection === 'achievements' ? (
+                <ChevronUp size={20} color={colors.textTertiary} />
+              ) : (
+                <ChevronDown size={20} color={colors.textTertiary} />
+              )}
+            </TouchableOpacity>
+
+            {expandedSection === 'achievements' && (
+              <View style={[styles.expandedContent, { backgroundColor: colors.surfaceSecondary }]}>
+                <TouchableOpacity
+                  style={styles.shareStreakBtn}
+                  onPress={handleShareStreak}
+                  activeOpacity={0.85}
+                >
+                  <Flame size={16} color="#FFFFFF" />
+                  <Text style={styles.shareStreakBtnText}>
+                    Share my {gamificationStats?.currentStreak ?? 0}-day streak
+                  </Text>
+                </TouchableOpacity>
+                <AchievementsBadges
+                  badges={badges}
+                  achievements={achievements}
+                  stats={gamificationStats}
+                  onAchievementPress={handleShareAchievement}
+                  compact
+                />
+              </View>
+            )}
           </View>
 
           {/* Interests Section */}
@@ -2231,79 +2304,11 @@ export default function ProfileScreen() {
             </View>
           </View>
 
-          {/* Achievements Section */}
+          {/* Challenges */}
           <View style={styles.sectionWrapper}>
-            <Text style={[styles.sectionTitle, { color: colors.text }]}>Achievements</Text>
-            <TouchableOpacity 
-              style={[styles.settingsItem, { backgroundColor: colors.card, borderColor: colors.border }]}
-              onPress={() => toggleSection('achievements')}
-              activeOpacity={0.7}
-            >
-              <View style={[styles.settingsIconBg, { backgroundColor: '#FFD700' + '15' }]}>
-                <Trophy size={18} color="#FFD700" />
-              </View>
-              <View style={styles.settingsItemContent}>
-                <Text style={[styles.settingsItemTitle, { color: colors.text }]}>Badges & Achievements</Text>
-                <Text style={[styles.settingsItemSubtitle, { color: colors.textTertiary }]}>
-                  {unlockedBadgesCount} badges unlocked
-                </Text>
-              </View>
-              {expandedSection === 'achievements' ? (
-                <ChevronUp size={20} color={colors.textTertiary} />
-              ) : (
-                <ChevronDown size={20} color={colors.textTertiary} />
-              )}
-            </TouchableOpacity>
+            <Text style={[styles.sectionTitle, { color: colors.text }]}>Challenges</Text>
 
-            {expandedSection === 'achievements' && (
-              <View style={[styles.expandedContent, { backgroundColor: colors.surfaceSecondary }]}>
-                <TouchableOpacity
-                  style={styles.shareStreakBtn}
-                  onPress={handleShareStreak}
-                  activeOpacity={0.85}
-                >
-                  <Flame size={16} color="#FFFFFF" />
-                  <Text style={styles.shareStreakBtnText}>
-                    Share my {gamificationStats?.currentStreak ?? 0}-day streak
-                  </Text>
-                </TouchableOpacity>
-                <AchievementsBadges
-                  badges={badges}
-                  achievements={achievements}
-                  stats={gamificationStats}
-                  onAchievementPress={handleShareAchievement}
-                  compact
-                />
-              </View>
-            )}
-
-            {/* Accountability Partners */}
             <TouchableOpacity
-              style={[styles.settingsItem, { backgroundColor: colors.card, borderColor: colors.border }]}
-              onPress={() => router.push('/friends' as any)}
-              activeOpacity={0.7}
-            >
-              <View style={[styles.settingsIconBg, { backgroundColor: '#FF6A3D' + '15' }]}>
-                <Users size={18} color="#FF6A3D" />
-              </View>
-              <View style={styles.settingsItemContent}>
-                <Text style={[styles.settingsItemTitle, { color: colors.text }]}>Accountability Partners</Text>
-                <Text style={[styles.settingsItemSubtitle, { color: colors.textTertiary }]}>
-                  {socialFriends.length > 0
-                    ? `${socialFriends.length} partner${socialFriends.length === 1 ? '' : 's'}`
-                    : 'Add friends to keep each other on track'}
-                </Text>
-              </View>
-              {partnerBadgeCount > 0 && (
-                <View style={styles.partnerBadge}>
-                  <Text style={styles.partnerBadgeText}>{partnerBadgeCount}</Text>
-                </View>
-              )}
-              <ChevronRight size={20} color={colors.textTertiary} />
-            </TouchableOpacity>
-
-            {/* Challenges */}
-            <TouchableOpacity 
               style={[styles.settingsItem, { backgroundColor: colors.card, borderColor: colors.border }]}
               onPress={() => toggleSection('challenges')}
               activeOpacity={0.7}
@@ -2314,7 +2319,7 @@ export default function ProfileScreen() {
               <View style={styles.settingsItemContent}>
                 <Text style={[styles.settingsItemTitle, { color: colors.text }]}>Challenges</Text>
                 <Text style={[styles.settingsItemSubtitle, { color: colors.textTertiary }]}>
-                  {[...challenges, ...MOCK_CHALLENGES].filter(c => c.status === 'active').length} active
+                  {activeChallengeCount} active
                 </Text>
               </View>
               {expandedSection === 'challenges' ? (
@@ -2327,9 +2332,9 @@ export default function ProfileScreen() {
             {expandedSection === 'challenges' && (
               <View style={[styles.expandedContent, { backgroundColor: colors.surfaceSecondary }]}>
                 <ChallengeLeaderboard
-                  challenges={[...challenges, ...MOCK_CHALLENGES]}
+                  challenges={displayChallenges}
                   leaderboard={socialLeaderboard ?? getLeaderboard('friends')}
-                  currentUserId="current_user"
+                  currentUserId={user?.id}
                   onJoinChallenge={joinChallenge}
                   onLeaveChallenge={leaveChallenge}
                   onShareChallenge={handleShareChallenge}

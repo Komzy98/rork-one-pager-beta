@@ -89,9 +89,9 @@ export default function JoySourcesNudgeCard() {
             <Sparkles size={18} color={COLORS.primary} />
           </View>
           <View style={styles.textWrap}>
-            <Text style={[styles.title, { color: colors.text }]}>What makes you happy?</Text>
+            <Text style={[styles.title, { color: colors.text }]}>What lifts you up?</Text>
             <Text style={[styles.body, { color: colors.textSecondary }]}>
-              Add shows, football, music, and more — we&apos;ll surface a Daily Hope when you need it most.
+              Add shows, football, music, and more — we&apos;ll remind you what to look forward to on hard days.
             </Text>
           </View>
         </View>

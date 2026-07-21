@@ -31,6 +31,36 @@ describe('ticketmasterQuery', () => {
     assert.match(url, /classificationName=Music/);
   });
 
+  it('includes keyword when searching by artist or title', () => {
+    const url = buildTicketmasterEventsSearchUrl({
+      apiKey: 'test-key',
+      latitude: 40.7128,
+      longitude: -74.006,
+      radiusMiles: 100,
+      size: 40,
+      keyword: 'Bill Burr',
+    });
+    assert.match(url, /keyword=Bill\+Burr|keyword=Bill%20Burr/);
+    assert.match(url, /latlong=/);
+  });
+
+  it('builds market-wide keyword URL without geo radius', () => {
+    const url = buildTicketmasterEventsSearchUrl({
+      apiKey: 'test-key',
+      latitude: 51.5074,
+      longitude: -0.1278,
+      radiusMiles: 25,
+      size: 20,
+      keyword: 'Bill Burr',
+      keywordMarketwide: true,
+      marketCountryCode: 'US',
+    });
+    assert.match(url, /countryCode=US/);
+    assert.match(url, /keyword=Bill/);
+    assert.doesNotMatch(url, /latlong=/);
+    assert.doesNotMatch(url, /radius=/);
+  });
+
   it('parses Ticketmaster fault payloads', () => {
     const msg = parseTicketmasterFault({
       fault: {

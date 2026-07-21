@@ -18,7 +18,9 @@ export default function TmdbStreamingPosterImage({ younifyRow, width, style }: P
   const size = useMemo(() => tmdbPosterSizeForContainerWidth(width), [width]);
   const recycleKey = useMemo(
     () =>
-      `${String(younifyRow.itemID ?? younifyRow.id ?? "")}|${String(younifyRow.title ?? younifyRow.name ?? "").trim()}|${size}`,
+      `${String(younifyRow.itemID ?? younifyRow.id ?? "")}|${String(
+        younifyRow.showTitle ?? younifyRow.series ?? younifyRow.title ?? younifyRow.name ?? "",
+      ).trim()}|${size}`,
     [younifyRow, size],
   );
 

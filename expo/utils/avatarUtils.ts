@@ -28,12 +28,30 @@ export function resolveDisplayAvatarUrl(options: {
   authAvatar?: string | null;
   socialAvatar?: string | null;
 }): string | null {
-  const candidates = [options.profileAvatar, options.socialAvatar, options.authAvatar];
-  const remote = candidates.find((url) => isRemoteAvatarUrl(url));
-  if (remote) return remote.trim();
-  const local = candidates.find((url) => isLocalAvatarUri(url));
-  if (local) return local.trim();
-  return null;
+  const candidates = collectAvatarUrlCandidates(options);
+  return candidates[0] ?? null;
+}
+
+/** Ordered fallbacks for `<Image onError />` when the primary URL fails to load. */
+export function collectAvatarUrlCandidates(options: {
+  profileAvatar?: string | null;
+  authAvatar?: string | null;
+  socialAvatar?: string | null;
+}): string[] {
+  const ordered = [options.profileAvatar, options.socialAvatar, options.authAvatar];
+  const seen = new Set<string>();
+  const remotes: string[] = [];
+  const locals: string[] = [];
+
+  for (const url of ordered) {
+    const trimmed = url?.trim();
+    if (!trimmed || seen.has(trimmed)) continue;
+    seen.add(trimmed);
+    if (isRemoteAvatarUrl(trimmed)) remotes.push(trimmed);
+    else if (isLocalAvatarUri(trimmed)) locals.push(trimmed);
+  }
+
+  return [...remotes, ...locals];
 }
 
 const AVATAR_FILE_PATTERN = /^[0-9a-f-]{36}\/avatar\.(jpg|jpeg|png|webp)$/i;

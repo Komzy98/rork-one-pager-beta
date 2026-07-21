@@ -2,6 +2,17 @@
 
 export type TicketmasterCountryCode = 'GB' | 'IE' | 'US' | 'CA' | 'AU' | 'NZ' | 'MX';
 
+/** Markets queried for worldwide keyword search (no geo radius). */
+export const TICKETMASTER_KEYWORD_MARKETS: TicketmasterCountryCode[] = [
+  'US',
+  'GB',
+  'CA',
+  'IE',
+  'AU',
+  'NZ',
+  'MX',
+];
+
 export type BuildTicketmasterEventsQueryInput = {
   apiKey: string;
   latitude: number;
@@ -11,6 +22,12 @@ export type BuildTicketmasterEventsQueryInput = {
   classificationName?: string;
   /** Days ahead to search (default 90). */
   daysAhead?: number;
+  /** Artist, venue, or event title (Discovery API `keyword`). */
+  keyword?: string;
+  /** Keyword search across an entire TM market (omit lat/long + radius). */
+  keywordMarketwide?: boolean;
+  /** TM market when `keywordMarketwide` is true. */
+  marketCountryCode?: TicketmasterCountryCode;
 };
 
 export function formatTicketmasterDateTime(date: Date): string {
@@ -62,20 +79,24 @@ export function buildTicketmasterEventsSearchUrl(input: BuildTicketmasterEventsQ
     size,
     classificationName,
     daysAhead = 90,
+    keyword,
+    keywordMarketwide = false,
+    marketCountryCode,
   } = input;
 
   const now = new Date();
   const end = new Date(now);
   end.setDate(end.getDate() + daysAhead);
 
-  const countryCode = inferTicketmasterCountryCode(latitude, longitude);
+  const countryCode =
+    marketCountryCode ?? inferTicketmasterCountryCode(latitude, longitude);
   const locale = ticketmasterLocaleForCountry(countryCode);
+
+  const trimmedKeyword = keyword?.trim();
+  const marketwideKeyword = Boolean(trimmedKeyword && keywordMarketwide);
 
   const params = new URLSearchParams({
     apikey: apiKey,
-    latlong: `${latitude},${longitude}`,
-    radius: String(Math.min(Math.max(radiusMiles, 1), 100)),
-    unit: 'miles',
     size: String(Math.min(Math.max(size, 1), 50)),
     sort: 'date,asc',
     startDateTime: formatTicketmasterDateTime(now),
@@ -86,8 +107,18 @@ export function buildTicketmasterEventsSearchUrl(input: BuildTicketmasterEventsQ
     includeTBD: 'no',
   });
 
+  if (!marketwideKeyword) {
+    params.set('latlong', `${latitude},${longitude}`);
+    params.set('radius', String(Math.min(Math.max(radiusMiles, 1), 100)));
+    params.set('unit', 'miles');
+  }
+
   if (classificationName) {
     params.set('classificationName', classificationName);
+  }
+
+  if (trimmedKeyword) {
+    params.set('keyword', trimmedKeyword);
   }
 
   return `https://app.ticketmaster.com/discovery/v2/events.json?${params.toString()}`;
