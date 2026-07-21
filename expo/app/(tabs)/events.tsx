@@ -130,6 +130,47 @@ function formatGlobalSearchSourceLabel(source: NearbyEventsSource): string {
   }
 }
 
+function globalSearchErrorMessage(error: unknown): string | null {
+  if (!error) return null;
+  const message =
+    error instanceof Error
+      ? error.message
+      : typeof error === 'object' && error !== null && 'message' in error
+        ? String((error as { message: unknown }).message)
+        : String(error);
+  if (/no procedure found|not_found|404/i.test(message)) {
+    return 'Search is temporarily unavailable. Try again in a few minutes.';
+  }
+  return 'We couldn’t load search results. Check your connection and try again.';
+}
+
+function globalSearchBannerMessage(options: {
+  isSearching: boolean;
+  source: NearbyEventsSource;
+  resultCount: number;
+  error: unknown;
+}): string {
+  const { isSearching, source, resultCount, error } = options;
+  if (isSearching) {
+    return `Searching ${formatGlobalSearchSourceLabel('mixed')}…`;
+  }
+  const searchError = globalSearchErrorMessage(error);
+  if (searchError) return searchError;
+  if (source === 'none' && resultCount === 0) {
+    return 'No listings for that search. Try another spelling or artist name.';
+  }
+  return `${resultCount} worldwide from ${formatGlobalSearchSourceLabel(source)}`;
+}
+
+function sampleEventsBannerMessage(): string {
+  if (__DEV__) {
+    return process.env.EXPO_PUBLIC_RORK_API_BASE_URL?.trim()
+      ? 'Showing sample events — add TICKETMASTER_API_KEY and/or SKIDDLE_API_KEY to your Railway API service, redeploy, then pull to refresh.'
+      : 'Showing sample events — add TICKETMASTER_API_KEY and/or SKIDDLE_API_KEY to expo/.env and restart Metro for live listings.';
+  }
+  return 'Showing sample events — live listings from Ticketmaster and Skiddle will appear when available.';
+}
+
 type ViewMode = 'list' | 'map';
 type EventsMainTab = 'discover' | 'myEvents';
 type Event = LocalEvent;
@@ -224,6 +265,7 @@ function EventsScreenInner() {
     isSearching: isGlobalSearching,
     isActive: isGlobalSearchActive,
     debouncedKeyword: globalSearchKeyword,
+    error: globalSearchError,
     refetch: refetchGlobalSearch,
   } = globalSearch;
 
@@ -949,9 +991,7 @@ function EventsScreenInner() {
       {mainTab === 'discover' && eventsSource === 'fallback' && (
         <View style={[styles.liveBanner, { backgroundColor: secondaryBg, borderColor: cardBorder }]}>
           <Text style={[styles.liveBannerText, { color: subtleText }]}>
-            {process.env.EXPO_PUBLIC_RORK_API_BASE_URL?.trim()
-              ? 'Showing sample events — add TICKETMASTER_API_KEY and/or SKIDDLE_API_KEY to your Railway API service, redeploy, then pull to refresh.'
-              : 'Showing sample events — add TICKETMASTER_API_KEY and/or SKIDDLE_API_KEY to expo/.env and restart Metro for live listings.'}
+            {sampleEventsBannerMessage()}
           </Text>
         </View>
       )}
@@ -967,11 +1007,12 @@ function EventsScreenInner() {
       {mainTab === 'discover' && inSearchMode ? (
         <View style={[styles.liveBanner, { backgroundColor: secondaryBg, borderColor: cardBorder }]}>
           <Text style={[styles.liveBannerText, { color: subtleText }]}>
-            {isGlobalSearching
-              ? `Searching ${formatGlobalSearchSourceLabel('mixed')}…`
-              : globalSearchSource === 'none'
-                ? 'No live results — add ticketing API keys on your server, or try a different search.'
-                : `${verticalFeedEvents.length} worldwide from ${formatGlobalSearchSourceLabel(globalSearchSource)}`}
+            {globalSearchBannerMessage({
+              isSearching: isGlobalSearching,
+              source: globalSearchSource,
+              resultCount: verticalFeedEvents.length,
+              error: globalSearchError,
+            })}
           </Text>
         </View>
       ) : null}
@@ -1293,13 +1334,18 @@ function EventsScreenInner() {
             <View style={[styles.emptyState, { backgroundColor: cardBg, borderColor: cardBorder }]}>
               <Sparkles size={28} color={palette.primary} />
               <Text style={[styles.emptyTitle, { color: mainText }]}>
-                {inSearchMode ? 'No matches' : 'You’re all caught up'}
+                {inSearchMode
+                  ? globalSearchErrorMessage(globalSearchError)
+                    ? 'Search unavailable'
+                    : 'No matches'
+                  : 'You’re all caught up'}
               </Text>
               <Text style={[styles.emptyText, { color: subtleText }]}>
                 {inSearchMode
                   ? isGlobalSearching
                     ? 'Looking across Ticketmaster, Skiddle, and other connected sources…'
-                    : `Nothing for “${globalSearchKeyword || searchQuery.trim()}” yet. Try another spelling — we search Ticketmaster markets (US, UK, and more) and Skiddle.`
+                    : globalSearchErrorMessage(globalSearchError) ??
+                      `Nothing for “${globalSearchKeyword || searchQuery.trim()}” yet. Try another spelling — we search Ticketmaster markets (US, UK, and more) and Skiddle.`
                   : selectedCategory !== 'all'
                     ? `No ${filteredCategoryLabel?.toLowerCase() ?? 'matching'} events right now`
                     : 'Try another category or pill above'}
