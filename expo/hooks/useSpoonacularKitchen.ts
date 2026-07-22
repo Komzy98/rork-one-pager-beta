@@ -25,22 +25,26 @@ export function useSpoonacularKitchen(options: {
     return () => clearTimeout(t);
   }, [trimmed]);
 
-  const shouldSearch =
+  const shouldFetchSpoonacular =
     enabled &&
-    (debouncedQuery.length >= 2 || (selectedCategory !== 'all' && !debouncedQuery));
+    configQuery.data?.configured === true &&
+    (debouncedQuery.length >= 2 ||
+      selectedCategory !== 'all' ||
+      (selectedCategory === 'all' && debouncedQuery.length < 2));
 
   const searchQueryInput = useMemo(
     () => ({
       query: debouncedQuery.length >= 2 ? debouncedQuery : undefined,
       category: selectedCategory !== 'all' ? selectedCategory : undefined,
-      number: 16,
+      number:
+        selectedCategory === 'all' && debouncedQuery.length < 2 ? 12 : 16,
       offset: 0,
     }),
     [debouncedQuery, selectedCategory],
   );
 
   const searchResults = trpc.cooking.searchRecipes.useQuery(searchQueryInput, {
-    enabled: shouldSearch,
+    enabled: shouldFetchSpoonacular,
     staleTime: 5 * 60 * 1000,
   });
 

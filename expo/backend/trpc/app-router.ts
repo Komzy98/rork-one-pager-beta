@@ -19,6 +19,7 @@ import {
   getKitchenRecipeRoute,
   randomKitchenRecipesRoute,
   spoonacularConfiguredRoute,
+  getKitchenBundleRoute,
 } from "./routes/cooking/spoonacular";
 import { signInWithPasswordRoute } from "./routes/auth/signIn/route";
 
@@ -64,6 +65,7 @@ export const appRouter = createTRPCRouter({
     getRecipe: getKitchenRecipeRoute,
     randomRecipes: randomKitchenRecipesRoute,
     isConfigured: spoonacularConfiguredRoute,
+    getBundle: getKitchenBundleRoute,
   }),
 });
 

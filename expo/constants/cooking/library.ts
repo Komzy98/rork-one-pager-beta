@@ -5,6 +5,7 @@ import { LEGACY_PART_A } from './legacyPartA';
 import { LEGACY_PART_B } from './legacyPartB';
 import { LEGACY_PART_C } from './legacyPartC';
 import { MEXICAN_RECIPES } from './mexicanRecipes';
+import { BRITISH_ENGLISH_RECIPES } from './britishEnglishRecipes';
 import { TAB_RECIPES } from './tabRecipes';
 
 /**
@@ -17,6 +18,7 @@ export const COOKING_RECIPES: CookingRecipe[] = applyRecipeHeroImages([
   ...LEGACY_PART_C,
   ...AFRO_CARIBBEAN_EXTRA,
   ...MEXICAN_RECIPES,
+  ...BRITISH_ENGLISH_RECIPES,
   ...TAB_RECIPES,
 ]);
 
