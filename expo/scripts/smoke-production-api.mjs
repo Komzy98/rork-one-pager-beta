@@ -16,6 +16,16 @@ config();
 const apiBase = (process.env.EVENTS_API_BASE_URL || process.env.PRODUCTION_API_BASE_URL || 'https://join.onepagerapp.co.uk').replace(/\/+$/, '');
 const tmdbKey = process.env.TMDB_API_KEY || process.env.EXPO_PUBLIC_TMDB_API_KEY || '9c4ca7924ae21a581e065517c106f1cc';
 const timeoutMs = Number(process.env.SMOKE_TIMEOUT_MS ?? 25_000);
+/**
+ * Post-deploy smoke runs right as a new deploy is going live, so the backend
+ * may be cold-starting. Retry each check a few times before declaring failure
+ * so a transient cold-start / provider blip doesn't fail CI. Retries exhaust
+ * → a genuinely broken endpoint still fails the run.
+ */
+const maxAttempts = Math.max(1, Number(process.env.SMOKE_RETRIES ?? 3));
+const retryDelayMs = Number(process.env.SMOKE_RETRY_DELAY_MS ?? 4_000);
+
+const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
 function trpcGetUrl(procedure, inputObj) {
   const input = encodeURIComponent(JSON.stringify(inputObj));
@@ -54,14 +64,24 @@ function assertTrpcData(body, label) {
 const failures = [];
 
 async function check(name, fn) {
-  try {
-    await fn();
-    console.log(`✓ ${name}`);
-  } catch (e) {
-    const msg = e instanceof Error ? e.message : String(e);
-    console.error(`✗ ${name}: ${msg}`);
-    failures.push(name);
+  let lastErr;
+  for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+    try {
+      await fn();
+      console.log(`✓ ${name}${attempt > 1 ? ` (attempt ${attempt})` : ''}`);
+      return;
+    } catch (e) {
+      lastErr = e;
+      const msg = e instanceof Error ? e.message : String(e);
+      if (attempt < maxAttempts) {
+        console.warn(`… ${name} attempt ${attempt}/${maxAttempts} failed: ${msg} — retrying in ${retryDelayMs}ms`);
+        await sleep(retryDelayMs);
+      }
+    }
   }
+  const finalMsg = lastErr instanceof Error ? lastErr.message : String(lastErr);
+  console.error(`✗ ${name}: ${finalMsg} (after ${maxAttempts} attempts)`);
+  failures.push(name);
 }
 
 await check('health', async () => {
