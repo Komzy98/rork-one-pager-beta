@@ -25,6 +25,8 @@ type Props = {
   onRefresh?: () => void | Promise<void>;
   header?: React.ReactNode;
   onBrowseItemOpenDetails?: (row: Record<string, unknown>) => void | Promise<void>;
+  /** Movies tab: hide a title from Continue watching (shared with Overview). */
+  onDismissContinueWatching?: (row: Record<string, unknown>, fallbackKey: string) => void;
 };
 
 export default function StreamingServicesBrowseTab({
@@ -37,6 +39,7 @@ export default function StreamingServicesBrowseTab({
   onRefresh,
   header,
   onBrowseItemOpenDetails,
+  onDismissContinueWatching,
 }: Props) {
   const router = useRouter();
   const streamingScrollY = React.useRef(new RNAnimated.Value(0)).current;
@@ -206,6 +209,7 @@ export default function StreamingServicesBrowseTab({
           section={section}
           linkedStreamingCount={linkedStreamingCount}
           onItemOpenDetails={onBrowseItemOpenDetails}
+          onDismissContinueWatching={onDismissContinueWatching}
         />
       ))}
       <View style={{ height: 100 }} />

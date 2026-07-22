@@ -19,6 +19,7 @@ import {
   normalizeNetflixWatchUrl,
 } from '@/utils/netflixLinks';
 import { PRIME_VIDEO_APP_ORIGIN } from '@/utils/primeVideoLinks';
+import { readSeasonEpisodeFromYounifyRow } from '@/utils/younifyProviderIndex';
 
 export {
   normalizeDisneyPlusWatchUrl,
@@ -1027,18 +1028,22 @@ export function augmentWatchUrlWithResume(url: string, resumeSeconds: number | n
 
 /** Subtitle for Continue watching tiles: episode + approximate time left. */
 export function formatContinueWatchingMeta(row: Record<string, unknown>): string | null {
-  const season = row.season != null ? String(row.season).trim() : "";
-  const episode = row.episode != null ? String(row.episode).trim() : "";
-  const series = row.series != null ? String(row.series).trim() : "";
-
   const bits: string[] = [];
-  if (season || episode) {
-    const s = season ? `S${season}` : "";
-    const e = episode ? `E${episode}` : "";
-    if (s && e) bits.push(`${s} ${e}`);
-    else bits.push(s || e);
-  } else if (series && series.length > 0 && series.length < 40) {
-    bits.push(series);
+  const fromProvider = readSeasonEpisodeFromYounifyRow(row);
+  if (fromProvider) {
+    bits.push(`S${fromProvider.season} E${fromProvider.episode}`);
+  } else {
+    const season = row.season != null ? String(row.season).trim() : "";
+    const episode = row.episode != null ? String(row.episode).trim() : "";
+    const series = row.series != null ? String(row.series).trim() : "";
+    if (season || episode) {
+      const s = season ? `S${season}` : "";
+      const e = episode ? `E${episode}` : "";
+      if (s && e) bits.push(`${s} ${e}`);
+      else bits.push(s || e);
+    } else if (series && series.length > 0 && series.length < 40) {
+      bits.push(series);
+    }
   }
 
   const durationMs = Number(row.duration);

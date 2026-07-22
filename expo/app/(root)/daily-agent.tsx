@@ -49,6 +49,7 @@ import {
 } from '@/utils/dailyAgent';
 import { useMutation } from '@tanstack/react-query';
 import type { ThemeColors } from '@/types/theme';
+import { calendarEventOnLocalDay, getLocalDateStr } from '@/utils/dateUtils';
 
 const todayStr = (): string => {
   const d = new Date();
@@ -317,11 +318,15 @@ export default function DailyAgentScreen() {
     }));
 
     const upcomingEvents = getUpcomingCalendarEvents(7);
-    const eventsToday = upcomingEvents.filter(e => e.startDate.startsWith(today)).length;
+    const eventsToday = upcomingEvents.filter((e) =>
+      calendarEventOnLocalDay(e.startDate, today, e.isAllDay),
+    ).length;
     const tomorrow = new Date();
     tomorrow.setDate(tomorrow.getDate() + 1);
-    const tomorrowStr = `${tomorrow.getFullYear()}-${String(tomorrow.getMonth() + 1).padStart(2, '0')}-${String(tomorrow.getDate()).padStart(2, '0')}`;
-    const eventsTomorrow = upcomingEvents.filter(e => e.startDate.startsWith(tomorrowStr)).length;
+    const tomorrowStr = getLocalDateStr(tomorrow);
+    const eventsTomorrow = upcomingEvents.filter((e) =>
+      calendarEventOnLocalDay(e.startDate, tomorrowStr, e.isAllDay),
+    ).length;
 
     const habitsCompletedToday = habits.filter(h => h.completedToday).length;
     const tasksCompletedToday = tasks.filter(t => t.completedToday).length;

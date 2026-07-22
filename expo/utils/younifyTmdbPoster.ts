@@ -4,6 +4,17 @@ import {
   inferYounifyRowMediaType,
 } from "@/utils/younifyRowMedia";
 import { tmdbApi, type TMDBMovie, type TMDBTVShow } from "@/utils/tmdbApi";
+import {
+  normalizeComparableYounifyTitle,
+  scoreYounifyRowTitleMatch,
+  YOUNIFY_TMDB_ID_MIN_TITLE_MATCH,
+  younifyRowTitleCandidates,
+} from "@/utils/younifyRowTitleMatch";
+
+export {
+  scoreYounifyRowTitleMatch,
+  YOUNIFY_TMDB_ID_MIN_TITLE_MATCH,
+} from "@/utils/younifyRowTitleMatch";
 
 /**
  * Younify suggests supplementing provider artwork with TMDB (free, with attribution).
@@ -46,13 +57,7 @@ function dig(obj: unknown, path: string[]): unknown {
 }
 
 function normalizeComparableTitle(title: string): string {
-  return normalizeTitleKey(
-    title
-      .replace(/\([^)]*\)/g, " ")
-      .replace(/\[[^\]]*\]/g, " ")
-      .replace(/[^\w\s]/g, " ")
-      .replace(/\s+/g, " "),
-  );
+  return normalizeComparableYounifyTitle(title);
 }
 
 /**
@@ -224,71 +229,53 @@ function overlapRatio(a: Set<string>, b: Set<string>): number {
   return common / Math.max(1, Math.min(a.size, b.size));
 }
 
-function titleSearchCandidates(rawTitle: string): string[] {
-  const base = rawTitle.trim();
-  if (base.length < 2) return [];
-  const out = new Set<string>();
-  const push = (v: string) => {
-    const s = v.trim().replace(/\s+/g, " ");
-    if (s.length >= 2) out.add(s);
-  };
-  push(base);
-  push(base.replace(/\([^)]*\)/g, " "));
-  push(base.replace(/\[[^\]]*\]/g, " "));
-  // Prefer canonical title when rows include episode/program suffixes.
-  push(base.split(":")[0] ?? base);
-  push(base.split(" - ")[0] ?? base);
-  push(base.split("|")[0] ?? base);
-  push(base.replace(/\b(S\d+|E\d+|Season\s*\d+|Episode\s*\d+)\b/gi, " "));
-  return [...out];
-}
-
-function rowTitleCandidates(row: Record<string, unknown>): string[] {
-  const out = new Set<string>();
-  const pushAll = (v: unknown) => {
-    const s = String(v ?? "").trim();
-    if (!s) return;
-    for (const c of titleSearchCandidates(s)) out.add(c);
-  };
-  pushAll(row.series);
-  pushAll(row.showTitle);
-  pushAll(row.programTitle);
-  pushAll(row.title);
-  pushAll(row.name);
-  pushAll(dig(row, ["metadata", "title"]));
-  pushAll(dig(row, ["metadata", "series"]));
-  return [...out];
-}
+type IdPosterCandidate = { url: string; score: number; order: number };
 
 async function tmdbPosterUrlFromId(
   id: number,
   preferred: "movie" | "tv" | null,
   size: TmdbPosterSize,
+  row: Record<string, unknown>,
 ): Promise<string | null> {
-  const tryMovie = async (): Promise<string | null> => {
+  const rowTitles = younifyRowTitleCandidates(row);
+  const requireTitleMatch = rowTitles.length > 0;
+
+  const order: ("movie" | "tv")[] =
+    preferred === "tv"
+      ? ["tv", "movie"]
+      : preferred === "movie"
+        ? ["movie", "tv"]
+        : ["movie", "tv"];
+
+  const candidates: IdPosterCandidate[] = [];
+  for (let i = 0; i < order.length; i++) {
+    const kind = order[i]!;
     try {
-      const d = await tmdbApi.getMovieDetails(id);
-      return tmdbApi.getImageUrl(d.poster_path, size);
+      if (kind === "movie") {
+        const d = await tmdbApi.getMovieDetails(id);
+        const url = tmdbApi.getImageUrl(d.poster_path, size);
+        if (!url) continue;
+        const score = scoreYounifyRowTitleMatch(String(d.title ?? ""), row);
+        candidates.push({ url, score, order: i });
+        if (score >= 100) return url;
+      } else {
+        const d = await tmdbApi.getTVShowDetails(id);
+        const url = tmdbApi.getImageUrl(d.poster_path, size);
+        if (!url) continue;
+        const score = scoreYounifyRowTitleMatch(String(d.name ?? ""), row);
+        candidates.push({ url, score, order: i });
+        if (score >= 100) return url;
+      }
     } catch {
-      return null;
+      /* try next kind */
     }
-  };
-  const tryTv = async (): Promise<string | null> => {
-    try {
-      const d = await tmdbApi.getTVShowDetails(id);
-      return tmdbApi.getImageUrl(d.poster_path, size);
-    } catch {
-      return null;
-    }
-  };
-  if (preferred === "tv") {
-    return (await tryTv()) ?? (await tryMovie());
   }
-  if (preferred === "movie") {
-    return (await tryMovie()) ?? (await tryTv());
-  }
-  // Same numeric id can exist on movie vs TV in TMDB; default to TV when unknown (common for continue-watching).
-  return (await tryTv()) ?? (await tryMovie());
+
+  if (!candidates.length) return null;
+  candidates.sort((a, b) => b.score - a.score || a.order - b.order);
+  const best = candidates[0]!;
+  if (requireTitleMatch && best.score < YOUNIFY_TMDB_ID_MIN_TITLE_MATCH) return null;
+  return best.url;
 }
 
 /**
@@ -334,14 +321,14 @@ export async function resolveTmdbPosterUrlForYounifyRow(
   }
 
   if (tmdbId != null) {
-    const fromId = await tmdbPosterUrlFromId(tmdbId, mt, size);
+    const fromId = await tmdbPosterUrlFromId(tmdbId, mt, size, row);
     if (fromId) {
       rowResolveCacheSet(stableKey, fromId);
       return fromId;
     }
   }
 
-  const titles = rowTitleCandidates(row);
+  const titles = younifyRowTitleCandidates(row);
   if (titles.length > 0) {
     for (const candidate of titles) {
       const fromTitle = await resolveTmdbPosterUrlForTitle(candidate, size, {
@@ -369,4 +356,116 @@ export function isTmdbImageHostUrl(url: string): boolean {
   } catch {
     return false;
   }
+}
+
+type ResolvedYounifyTmdbDetails =
+  | { mediaType: "movie"; details: TMDBMovie }
+  | { mediaType: "tv"; details: TMDBTVShow };
+
+/**
+ * TMDB record for a Younify row — validates id lookups against row titles so movie/TV id collisions
+ * do not open the wrong franchise (e.g. Young Justice poster for Diary of a Wimpy Kid).
+ */
+export async function resolveTmdbDetailsForYounifyRow(
+  row: Record<string, unknown>,
+): Promise<ResolvedYounifyTmdbDetails | null> {
+  const tmdbId = extractTmdbIdFromYounifyRow(row);
+  const mt = inferYounifyRowMediaType(row);
+  const year = extractYearFromYounifyRow(row);
+  const synopsis = extractSynopsisFromYounifyRow(row);
+  const rowTitles = younifyRowTitleCandidates(row);
+  const requireTitleMatch = rowTitles.length > 0;
+
+  if (tmdbId != null) {
+    const order: ("movie" | "tv")[] =
+      mt === "tv" ? ["tv", "movie"] : mt === "movie" ? ["movie", "tv"] : ["movie", "tv"];
+    type Scored = ResolvedYounifyTmdbDetails & { score: number; order: number };
+    const scored: Scored[] = [];
+
+    for (let i = 0; i < order.length; i++) {
+      const kind = order[i]!;
+      try {
+        if (kind === "movie") {
+          const details = await tmdbApi.getMovieDetails(tmdbId);
+          const score = scoreYounifyRowTitleMatch(String(details.title ?? ""), row);
+          scored.push({ mediaType: "movie", details, score, order: i });
+          if (score >= 100) return { mediaType: "movie", details };
+        } else {
+          const details = await tmdbApi.getTVShowDetails(tmdbId);
+          const score = scoreYounifyRowTitleMatch(String(details.name ?? ""), row);
+          scored.push({ mediaType: "tv", details, score, order: i });
+          if (score >= 100) return { mediaType: "tv", details };
+        }
+      } catch {
+        /* try next */
+      }
+    }
+
+    scored.sort((a, b) => b.score - a.score || a.order - b.order);
+    const best = scored[0];
+    if (best && (!requireTitleMatch || best.score >= YOUNIFY_TMDB_ID_MIN_TITLE_MATCH)) {
+      return { mediaType: best.mediaType, details: best.details };
+    }
+  }
+
+  for (const candidate of rowTitles) {
+    const preferred = mt;
+    const rows: Array<(TMDBMovie | TMDBTVShow) & { media_type: "movie" | "tv" }> = [];
+    if (preferred === "tv") {
+      const tvRes = await tmdbApi.searchTVShows(candidate, 1);
+      rows.push(...(tvRes?.results ?? []).map((r) => ({ ...r, media_type: "tv" as const })));
+    } else if (preferred === "movie") {
+      const mvRes = await tmdbApi.searchMovies(candidate, 1);
+      rows.push(...(mvRes?.results ?? []).map((r) => ({ ...r, media_type: "movie" as const })));
+    }
+    if (rows.length === 0) {
+      const res = await tmdbApi.searchMulti(candidate, 1);
+      for (const r of res?.results ?? []) {
+        if (r.media_type === "movie" || r.media_type === "tv") rows.push(r as any);
+      }
+    }
+
+    let bestHit: { id: number; mediaType: "movie" | "tv"; score: number } | null = null;
+    const wantedTitle = normalizeComparableTitle(candidate);
+    for (const hit of rows) {
+      const rawName =
+        hit.media_type === "movie"
+          ? String((hit as TMDBMovie).title ?? "")
+          : String((hit as TMDBTVShow).name ?? "");
+      let score = scoreYounifyRowTitleMatch(rawName, row);
+      if (normalizeComparableTitle(rawName) === wantedTitle) score += 20;
+      if (preferred && hit.media_type === preferred) score += 10;
+      if (year != null) {
+        const candYearRaw =
+          hit.media_type === "movie"
+            ? String((hit as TMDBMovie).release_date ?? "")
+            : String((hit as TMDBTVShow).first_air_date ?? "");
+        const candYear = Number(candYearRaw.slice(0, 4));
+        if (Number.isFinite(candYear)) {
+          const d = Math.abs(candYear - year);
+          if (d === 0) score += 16;
+          else if (d === 1) score += 8;
+          else if (d > 4) score -= 12;
+        }
+      }
+      if (synopsis) {
+        const overlap = overlapRatio(tokenizeSynopsis(synopsis), tokenizeSynopsis(String((hit as any).overview ?? "")));
+        score += overlap * 45;
+      }
+      if (!bestHit || score > bestHit.score) {
+        bestHit = { id: hit.id, mediaType: hit.media_type, score };
+      }
+    }
+
+    if (bestHit && bestHit.score >= YOUNIFY_TMDB_ID_MIN_TITLE_MATCH) {
+      if (bestHit.mediaType === "movie") {
+        const details = await tmdbApi.getMovieDetails(bestHit.id);
+        return { mediaType: "movie", details };
+      }
+      const details = await tmdbApi.getTVShowDetails(bestHit.id);
+      return { mediaType: "tv", details };
+    }
+  }
+
+  return null;
 }

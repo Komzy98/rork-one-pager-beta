@@ -102,7 +102,6 @@ import FootballTeamSearchModal, {
   type FootballClubProfilePreset,
 } from '@/components/FootballTeamSearchModal';
 import { getFootballTeamLogoUrl } from '@/constants/footballData';
-import FootballFeedMetaBanner from '@/components/FootballFeedMetaBanner';
 import { getFootballMatchPersonalizationChip } from '@/utils/footballMatchReasons';
 import { PremiumSportsMatchCard } from '@/components/PremiumSportsMatchCard';
 import { sportsFixedPalette, ufcFixedPalette, UFC_BRAND } from '@/utils/sportsPalette';
@@ -3180,16 +3179,6 @@ function SportsScreenInner() {
           </Text>
         ) : null}
 
-        <FootballFeedMetaBanner
-          textColor={sf.text}
-          mutedColor={sf.textMuted}
-          backgroundColor={sf.surfaceSecondary}
-          borderColor={sf.border}
-          updatedAtMs={footballBundleQuery.dataUpdatedAt}
-          sortMode={footballSortMode}
-          pollLive={activeTab === 'live' && isSportsScreenFocused}
-        />
-
         <TouchableOpacity
           accessibilityRole="button"
           accessibilityLabel="League tables and stats"
@@ -4868,12 +4857,14 @@ const styles = StyleSheet.create({
     flexDirection: 'row' as const,
     alignItems: 'center' as const,
     gap: 6,
+    width: '100%' as const,
   },
   footballSmartPillsRowCompact: {
     flex: 1,
     flexDirection: 'row' as const,
     gap: 6,
     minWidth: 0,
+    flexShrink: 1,
   },
   footballOptionsIconBtn: {
     width: 36,
@@ -4882,17 +4873,20 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     alignItems: 'center' as const,
     justifyContent: 'center' as const,
+    flexShrink: 0,
   },
   strictFollowingRowCompact: {
-    width: 46,
+    width: 52,
     height: 36,
     borderRadius: 11,
     borderWidth: 1,
     alignItems: 'center' as const,
     justifyContent: 'center' as const,
+    flexShrink: 0,
+    overflow: 'hidden' as const,
   },
   strictSwitchCompact: {
-    transform: [{ scaleX: 0.78 }, { scaleY: 0.78 }],
+    transform: [{ scaleX: 0.72 }, { scaleY: 0.72 }],
   },
   footballSmartSectionLabel: {
     fontSize: 11,

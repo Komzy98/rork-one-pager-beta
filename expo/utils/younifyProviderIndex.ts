@@ -90,6 +90,17 @@ function sortedRows(rows: YounifyRow[], linkedProviderOrder: number[]): YounifyR
   return dedupeRows(rows).sort((a, b) => rankRow(a, linkedProviderOrder) - rankRow(b, linkedProviderOrder));
 }
 
+/** Prefer linked-provider rows with episode metadata when multiple Continue watching rows share a TMDB id. */
+export function pickBestYounifyContinueRow(
+  rows: YounifyRow[],
+  linkedProviderOrder: number[],
+): YounifyRow | null {
+  if (!rows.length) return null;
+  const withEpisode = rows.filter((r) => readSeasonEpisodeFromYounifyRow(r) != null);
+  const pool = withEpisode.length ? withEpisode : rows;
+  return sortedRows(pool, linkedProviderOrder)[0] ?? rows[0] ?? null;
+}
+
 export function buildYounifyProviderIndex(
   sections: Array<{ items?: unknown[] }> | null | undefined,
   linkedProviderOrder: number[],

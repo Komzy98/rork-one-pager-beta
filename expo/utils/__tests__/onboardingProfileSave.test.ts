@@ -2,6 +2,7 @@ import { describe, it } from 'node:test';
 import assert from 'node:assert/strict';
 import {
   pickOnboardingTeams,
+  profilePatchForInterestsUpdate,
   shouldApplyNationalities,
 } from '../onboardingProfileSave.ts';
 
@@ -53,5 +54,24 @@ describe('shouldApplyNationalities', () => {
       shouldApplyNationalities({ dirty: false, selectedCount: 1, existingCount: 1 }),
       false,
     );
+  });
+});
+
+describe('profilePatchForInterestsUpdate', () => {
+  it('clears football profile fields when football is not selected', () => {
+    const patch = profilePatchForInterestsUpdate(['movies']);
+    assert.deepEqual(patch.interests, ['movies']);
+    assert.deepEqual(patch.favoriteLeagues, []);
+    assert.deepEqual(patch.favoriteTeams, []);
+    assert.deepEqual(patch.favoriteCountries, []);
+    assert.deepEqual(patch.nationalities, []);
+    assert.equal(patch.sportsFeedPrefs, undefined);
+  });
+
+  it('does not clear football fields when football is selected', () => {
+    const patch = profilePatchForInterestsUpdate(['football', 'movies']);
+    assert.deepEqual(patch.interests, ['football', 'movies']);
+    assert.equal(patch.favoriteLeagues, undefined);
+    assert.equal(patch.favoriteTeams, undefined);
   });
 });

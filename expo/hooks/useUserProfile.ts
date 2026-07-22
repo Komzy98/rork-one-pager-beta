@@ -22,6 +22,7 @@ import {
   type CloudPullPayload,
 } from '@/utils/syncMerge';
 import { sortMiddleTabsByUsage } from '@/utils/tabUsage';
+import { profilePatchForInterestsUpdate } from '@/utils/onboardingProfileSave';
 
 const PROFILE_LOAD_TIMEOUT_MS = 12_000;
 
@@ -642,7 +643,7 @@ export const [UserProfileProvider, useUserProfile] = createContextHook(() => {
   };
 
   const updateInterests = (interests: string[]) => {
-    updateProfile({ interests });
+    updateProfile(profilePatchForInterestsUpdate(interests));
   };
 
   const updateChronotype = useCallback((chronotype: Chronotype) => {

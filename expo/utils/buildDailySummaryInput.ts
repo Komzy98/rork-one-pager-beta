@@ -2,7 +2,11 @@ import type { CalendarEvent, Show } from '@/types/habit';
 import type { Task } from '@/types/task';
 import type { HabitWithStats } from '@/types/habit';
 import type { SavedEventSnapshot } from '@/types/events';
-import { shouldDoHabitToday } from '@/utils/dateUtils';
+import {
+  calendarEventOnLocalDay,
+  getLocalDateStr,
+  shouldDoHabitToday,
+} from '@/utils/dateUtils';
 import { parseSavedEventStartMs } from '@/utils/eventDiscovery';
 import { buildTodayHabitEntries, buildSummaryHabitsFromEntries } from '@/utils/todayHabits';
 import type {
@@ -39,16 +43,7 @@ export type ContinueWatchingItem =
 function eventStartsOnDate(event: CalendarEvent, dateYmd: string): boolean {
   const start = event.startDate;
   if (!start) return false;
-  if (start.startsWith(dateYmd)) return true;
-  try {
-    const d = new Date(start);
-    const y = d.getFullYear();
-    const m = String(d.getMonth() + 1).padStart(2, '0');
-    const day = String(d.getDate()).padStart(2, '0');
-    return `${y}-${m}-${day}` === dateYmd;
-  } catch {
-    return false;
-  }
+  return calendarEventOnLocalDay(start, dateYmd, event.isAllDay);
 }
 
 export type DailySummaryEventHighlight = {
@@ -62,11 +57,7 @@ export type DailySummaryEventHighlight = {
 };
 
 function ymdFromMs(ms: number): string {
-  const d = new Date(ms);
-  const y = d.getFullYear();
-  const m = String(d.getMonth() + 1).padStart(2, '0');
-  const day = String(d.getDate()).padStart(2, '0');
-  return `${y}-${m}-${day}`;
+  return getLocalDateStr(new Date(ms));
 }
 
 function eventTimingForSummary(startMs: number, todayYmd: string): 'past' | 'today' | 'upcoming' {

@@ -8,6 +8,28 @@ export function getLocalDateStr(date?: Date): string {
   return `${year}-${month}-${day}`;
 }
 
+/**
+ * Calendar day (Y-M-D) for an event start in the **device local timezone**.
+ * Do not use ISO string prefix checks — UTC midnight shifts the date for all-day EventKit rows.
+ */
+export function getLocalYmdFromCalendarStart(startIso: string, isAllDay?: boolean): string | null {
+  const s = startIso?.trim();
+  if (!s) return null;
+  if (isAllDay && /^\d{4}-\d{2}-\d{2}$/.test(s)) return s;
+  const ms = Date.parse(s);
+  if (!Number.isFinite(ms)) return null;
+  return getLocalDateStr(new Date(ms));
+}
+
+export function calendarEventOnLocalDay(
+  startIso: string,
+  dayYmd: string,
+  isAllDay?: boolean,
+): boolean {
+  const local = getLocalYmdFromCalendarStart(startIso, isAllDay);
+  return local === dayYmd;
+}
+
 export function getLocalDateStrCompact(date?: Date): string {
   const d = date || new Date();
   const year = d.getFullYear();

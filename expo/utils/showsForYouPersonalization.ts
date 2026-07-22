@@ -174,6 +174,42 @@ export function sortForYouRailItems<T extends ForYouMediaItem>(
   });
 }
 
+export function forYouMediaKey(mediaType: ForYouMediaType, id: number): string {
+  return `${mediaType}:${id}`;
+}
+
+export function forYouItemKey(item: Pick<ForYouMediaItem, 'id' | 'media_type'>): string {
+  const mediaType = item.media_type ?? 'movie';
+  return forYouMediaKey(mediaType, item.id);
+}
+
+/**
+ * Personalized rail order, skipping titles already used in the hero or an earlier For You row.
+ */
+export function takeUniqueForYouRailItems<T extends { id: number }>(
+  items: readonly T[],
+  mediaType: ForYouMediaType,
+  source: ForYouCandidateSource,
+  ctx: ForYouPersonalizationContext,
+  usedKeys: Set<string>,
+  limit = 15,
+): T[] {
+  if (!items.length) return [];
+  const sorted = sortForYouRailItems(
+    items.map((item) => toForYouMediaItem(item, mediaType, source)),
+    ctx,
+  );
+  const out: T[] = [];
+  for (const entry of sorted) {
+    const key = forYouItemKey(entry);
+    if (usedKeys.has(key)) continue;
+    usedKeys.add(key);
+    out.push(entry as unknown as T);
+    if (out.length >= limit) break;
+  }
+  return out;
+}
+
 export function buildForYouPersonalizationContext(input: {
   savedTmdbIds: Iterable<number>;
   continueWatchingTmdbIds: Iterable<number>;

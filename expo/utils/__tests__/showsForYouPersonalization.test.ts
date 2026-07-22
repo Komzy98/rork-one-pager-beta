@@ -6,6 +6,7 @@ import {
   pickForYouHeroItems,
   scoreForYouItem,
   sortForYouRailItems,
+  takeUniqueForYouRailItems,
   toForYouMediaItem,
 } from '../showsForYouPersonalization.ts';
 
@@ -57,6 +58,21 @@ describe('pickForYouHeroItems', () => {
     assert.equal(hero.length, 2);
     assert.equal(hero[0].id, 50);
     assert.equal((hero[0] as { _forYouSource?: string })._forYouSource, 'region');
+  });
+});
+
+describe('takeUniqueForYouRailItems', () => {
+  it('skips titles already reserved for hero or earlier rails', () => {
+    const used = new Set<string>(['movie:1', 'movie:2']);
+    const items = [
+      { id: 1, title: 'A' },
+      { id: 2, title: 'B' },
+      { id: 3, title: 'C' },
+      { id: 4, title: 'D' },
+    ];
+    const out = takeUniqueForYouRailItems(items, 'movie', 'now-playing', baseCtx, used, 10);
+    assert.deepEqual(out.map((m) => m.id).sort(), [3, 4]);
+    assert.ok(used.has('movie:3'));
   });
 });
 

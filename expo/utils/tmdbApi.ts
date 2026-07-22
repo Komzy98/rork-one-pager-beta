@@ -1,4 +1,7 @@
-const TMDB_API_KEY = '9c4ca7924ae21a581e065517c106f1cc';
+const TMDB_API_KEY =
+  (typeof process !== 'undefined' &&
+    process.env?.EXPO_PUBLIC_TMDB_API_KEY?.trim()) ||
+  '9c4ca7924ae21a581e065517c106f1cc';
 const TMDB_BASE_URL = 'https://api.themoviedb.org/3';
 
 
@@ -196,7 +199,7 @@ class TMDBApi {
     for (let attempt = 0; attempt <= retries; attempt++) {
       try {
         const controller = new AbortController();
-        const timeoutId = setTimeout(() => controller.abort(), 20000);
+        const timeoutId = setTimeout(() => controller.abort(), 18000);
         const response = await fetch(url, { signal: controller.signal });
         clearTimeout(timeoutId);
         if (!response.ok) {
@@ -227,10 +230,9 @@ class TMDBApi {
       }
     }
     if (isTmdbFetchAbortError(lastError)) {
-      if (__DEV__) {
-        console.warn("TMDB request timed out (20s) or was aborted; using best-effort fallback:", endpoint);
-      }
-      return this.build404Fallback<T>(endpoint);
+      throw lastError instanceof Error
+        ? lastError
+        : new Error('TMDB request timed out');
     }
     if (lastError instanceof TypeError) {
       console.warn("TMDB API network unavailable:", (lastError as Error).message);

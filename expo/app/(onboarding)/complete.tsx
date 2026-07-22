@@ -26,6 +26,11 @@ import {
   formatInterestsSummary,
   polishDailyStackHeadline,
 } from '@/utils/onboardingDisplay';
+import {
+  HABIT_ONBOARDING_INTERESTS,
+  hasFootballOnboarding,
+  hasMoviesOnboarding,
+} from '@/utils/onboardingFlow';
 
 const { width, height } = Dimensions.get('window');
 
@@ -235,7 +240,11 @@ export default function CompleteScreen() {
   }, [completeOnboarding, router]);
 
   const selectedInterests = profile?.interests || [];
-  const hasFootball = selectedInterests.includes('football');
+  const hasFootball = hasFootballOnboarding(selectedInterests);
+  const hasMovies = hasMoviesOnboarding(selectedInterests);
+  const hasHabitSetup = selectedInterests.some((id) =>
+    (HABIT_ONBOARDING_INTERESTS as readonly string[]).includes(id),
+  );
 
   const dailyStackHeadline = useMemo(() => {
     const items = buildDailyStackItems({ profile });
@@ -324,7 +333,7 @@ export default function CompleteScreen() {
       });
     }
 
-    if (profile?.chronotype) {
+    if (hasHabitSetup && profile?.chronotype) {
       const chrono = getChronotypeInfo(profile.chronotype);
       if (chrono) {
         rows.push({
@@ -346,7 +355,7 @@ export default function CompleteScreen() {
       }
     }
 
-    if (profile?.favoriteCountries && profile.favoriteCountries.length > 0) {
+    if (hasFootball && profile?.favoriteCountries && profile.favoriteCountries.length > 0) {
       rows.push({
         key: 'domestic-countries',
         node: (
@@ -366,7 +375,7 @@ export default function CompleteScreen() {
       });
     }
 
-    if (profile?.favoriteLeagues && profile.favoriteLeagues.length > 0) {
+    if (hasFootball && profile?.favoriteLeagues && profile.favoriteLeagues.length > 0) {
       rows.push({
         key: 'favorite-leagues',
         node: (
@@ -385,49 +394,79 @@ export default function CompleteScreen() {
       });
     }
 
-    const hasFollowedTeams = Boolean(profile?.favoriteTeams?.length);
-    const hasLeagues = Boolean(profile?.favoriteLeagues?.length);
-    const priorityBlurb = hasFollowedTeams
-      ? hasLeagues
-        ? 'Following clubs first, then your selected leagues.'
-        : 'Following clubs first, with broad match discovery.'
-      : hasLeagues
-        ? 'Your selected leagues first, then relevant discovery picks.'
-        : 'Balanced discovery feed until you add clubs or leagues.';
+    if (hasFootball) {
+      const hasFollowedTeams = Boolean(profile?.favoriteTeams?.length);
+      const hasLeagues = Boolean(profile?.favoriteLeagues?.length);
+      const priorityBlurb = hasFollowedTeams
+        ? hasLeagues
+          ? 'Following clubs first, then your selected leagues.'
+          : 'Following clubs first, with broad match discovery.'
+        : hasLeagues
+          ? 'Your selected leagues first, then relevant discovery picks.'
+          : 'Add clubs or leagues anytime from Sports to tune your feed.';
 
-    rows.push({
-      key: 'feed-priorities',
-      node: (
-        <View style={[styles.summaryItem, styles.feedPriorityCard]}>
-          <View style={styles.summaryIconWrap}>
-            <Sparkles size={14} color={COLORS.primary} strokeWidth={2.2} />
-          </View>
-          <View style={styles.summaryTextWrap}>
-            <Text style={styles.summaryLabel}>Feed priorities</Text>
-            <Text style={styles.summaryValue}>{priorityBlurb}</Text>
-            <View style={styles.feedEditRow}>
-              <TouchableOpacity
-                style={styles.feedEditBtn}
-                activeOpacity={0.8}
-                onPress={() => router.push('/(onboarding)/football-favorites' as any)}
-              >
-                <Text style={styles.feedEditBtnText}>Edit Football</Text>
-              </TouchableOpacity>
-              <TouchableOpacity
-                style={styles.feedEditBtn}
-                activeOpacity={0.8}
-                onPress={() => router.push('/(onboarding)/feed-tuning' as any)}
-              >
-                <Text style={styles.feedEditBtnText}>Edit Tuning</Text>
-              </TouchableOpacity>
+      rows.push({
+        key: 'feed-priorities',
+        node: (
+          <View style={[styles.summaryItem, styles.summaryItemTopAlign, styles.feedPriorityCard]}>
+            <View style={styles.summaryIconWrap}>
+              <Sparkles size={14} color={COLORS.primary} strokeWidth={2.2} />
+            </View>
+            <View style={styles.summaryTextWrap}>
+              <Text style={styles.summaryLabel}>Sports feed</Text>
+              <Text style={styles.summaryValue}>{priorityBlurb}</Text>
+              <View style={styles.feedEditRow}>
+                <TouchableOpacity
+                  style={styles.feedEditBtn}
+                  activeOpacity={0.8}
+                  onPress={() => router.push('/(onboarding)/football-favorites' as any)}
+                >
+                  <Text style={styles.feedEditBtnText}>Edit Football</Text>
+                </TouchableOpacity>
+                <TouchableOpacity
+                  style={styles.feedEditBtn}
+                  activeOpacity={0.8}
+                  onPress={() => router.push('/(onboarding)/feed-tuning' as any)}
+                >
+                  <Text style={styles.feedEditBtnText}>Edit Tuning</Text>
+                </TouchableOpacity>
+              </View>
             </View>
           </View>
-        </View>
-      ),
-    });
+        ),
+      });
+    }
+
+    if (hasMovies) {
+      rows.push({
+        key: 'streaming',
+        node: (
+          <View style={[styles.summaryItem, styles.summaryItemTopAlign, styles.feedPriorityCard]}>
+            <View style={styles.summaryIconWrap}>
+              <Text style={styles.summaryEmoji}>🎬</Text>
+            </View>
+            <View style={styles.summaryTextWrap}>
+              <Text style={styles.summaryLabel}>Shows & streaming</Text>
+              <Text style={styles.summaryValue}>
+                For You and linked-service picks live in the Shows tab once you connect Netflix, Disney+, and others.
+              </Text>
+              <View style={styles.feedEditRow}>
+                <TouchableOpacity
+                  style={styles.feedEditBtn}
+                  activeOpacity={0.8}
+                  onPress={() => router.push('/(onboarding)/streaming' as any)}
+                >
+                  <Text style={styles.feedEditBtnText}>Edit Streaming</Text>
+                </TouchableOpacity>
+              </View>
+            </View>
+          </View>
+        ),
+      });
+    }
 
     return rows;
-  }, [profile, selectedInterests, hasFootball, router, dailyStackHeadline]);
+  }, [profile, selectedInterests, hasFootball, hasMovies, hasHabitSetup, router, dailyStackHeadline]);
 
   const staggerBase = reduceMotion ? 0 : 920;
 
@@ -476,10 +515,13 @@ export default function CompleteScreen() {
         style={styles.scroll}
         contentContainerStyle={[
           styles.scrollContent,
-          { paddingTop: insets.top + 20, paddingBottom: 12 },
+          { paddingTop: insets.top + 20, paddingBottom: insets.bottom + 28 },
         ]}
         showsVerticalScrollIndicator={false}
         keyboardShouldPersistTaps="handled"
+        nestedScrollEnabled
+        bounces
+        alwaysBounceVertical={Platform.OS === 'ios'}
       >
         <View style={styles.celebrationWrap}>
           <View style={styles.checkArea}>
@@ -565,12 +607,11 @@ export default function CompleteScreen() {
             </View>
           </View>
         </Animated.View>
-      </ScrollView>
 
-      <View style={[styles.footer, { paddingBottom: insets.bottom + 16, paddingHorizontal: 28 }]}>
         <Animated.View
           style={[
             styles.bottomWrap,
+            styles.bottomInScroll,
             {
               opacity: buttonOpacity,
               transform: [{ translateY: buttonSlide }],
@@ -622,7 +663,7 @@ export default function CompleteScreen() {
           </Animated.View>
           <Text style={styles.editHint}>You can always refine this in Profile</Text>
         </Animated.View>
-      </View>
+      </ScrollView>
     </View>
   );
 }
@@ -643,14 +684,10 @@ const styles = StyleSheet.create({
   },
   scrollContent: {
     paddingHorizontal: 28,
-    flexGrow: 1,
   },
-  footer: {
-    zIndex: 2,
-    paddingTop: 10,
-    backgroundColor: 'rgba(247, 248, 252, 0.94)',
-    borderTopWidth: StyleSheet.hairlineWidth,
-    borderTopColor: ONBOARDING_PREMIUM.hairlineBorder,
+  bottomInScroll: {
+    marginTop: 24,
+    width: '100%',
   },
   celebrationWrap: {
     alignItems: 'center',
@@ -760,6 +797,9 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
   },
+  summaryItemTopAlign: {
+    alignItems: 'flex-start',
+  },
   dailyStackRow: {
     padding: 10,
     borderRadius: 12,
@@ -829,9 +869,11 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   startBtn: {
-    width: width - 56,
+    width: '100%',
+    maxWidth: width - 56,
     borderRadius: 16,
     overflow: 'hidden',
+    alignSelf: 'center',
   },
   startGradient: {
     borderRadius: 16,

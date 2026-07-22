@@ -89,6 +89,34 @@ export function pickOnboardingNbaTeams<T extends { id: string }>(params: {
   return undefined;
 }
 
+/** Drop stale onboarding data when interests no longer include that vertical. */
+export function profilePatchForInterestsUpdate(interests: readonly string[]): {
+  interests: string[];
+  favoriteLeagues?: number[];
+  favoriteTeams?: [];
+  favoriteCountries?: [];
+  nationalities?: [];
+  favoriteNBATeams?: [];
+  favoriteEventCategories?: [];
+  sportsFeedPrefs?: undefined;
+} {
+  const next = { interests: [...interests] } as ReturnType<typeof profilePatchForInterestsUpdate>;
+  if (!interests.includes('football')) {
+    next.favoriteLeagues = [];
+    next.favoriteTeams = [];
+    next.favoriteCountries = [];
+    next.nationalities = [];
+    next.sportsFeedPrefs = undefined;
+  }
+  if (!interests.includes('nba')) {
+    next.favoriteNBATeams = [];
+  }
+  if (!interests.includes('events')) {
+    next.favoriteEventCategories = [];
+  }
+  return next;
+}
+
 /** User-facing streaming step — auth server down, missing SDK key, or no signed-in user yet. */
 export function isYounifyAuthUnreachableError(message: string): boolean {
   const m = message.toLowerCase();
