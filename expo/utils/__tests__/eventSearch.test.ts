@@ -41,4 +41,12 @@ describe('eventSearch', () => {
     assert.equal(eventMatchesLocalSearch(event, 'bill burr'), true);
     assert.equal(eventMatchesLocalSearch(event, 'jazz'), false);
   });
+
+  it('matches multi-word queries when tokens appear across fields', () => {
+    const event = mockEvent({
+      id: '1',
+      title: 'Romesh Ranganathan: Work in Progress',
+    });
+    assert.equal(eventMatchesLocalSearch(event, 'Romesh Ranganathan'), true);
+  });
 });

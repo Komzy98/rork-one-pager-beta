@@ -1,11 +1,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import { trpc } from '@/lib/trpc';
 import type { LocalEvent, NearbyEventsSource } from '@/types/events';
-import {
-  attachDistanceKm,
-  filterUpcomingEvents,
-  sortEventsByStartDate,
-} from '@/utils/eventDiscovery';
+import { attachDistanceKm, sortEventsByStartDate } from '@/utils/eventDiscovery';
 
 const MIN_QUERY_LENGTH = 2;
 const DEBOUNCE_MS = 400;
@@ -52,9 +48,8 @@ export function useGlobalEventSearch(
       price: event.price ?? 'See tickets',
       description: event.description ?? '',
     }));
-    return sortEventsByStartDate(
-      filterUpcomingEvents(attachDistanceKm(normalized, coords)),
-    );
+    // API already returns upcoming-only; skip client date filter (Hermes can parse labels differently than Node).
+    return sortEventsByStartDate(attachDistanceKm(normalized, coords));
   }, [active, query.data?.events, coords]);
 
   const source: NearbyEventsSource = query.data?.source ?? 'none';

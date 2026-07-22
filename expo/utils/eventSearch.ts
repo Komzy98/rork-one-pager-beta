@@ -29,14 +29,26 @@ export function rankEventsBySearchKeyword(events: LocalEvent[], keyword: string)
   return [...events].sort((a, b) => score(b) - score(a));
 }
 
+function eventSearchHaystack(event: LocalEvent): string {
+  return [
+    event.title,
+    event.venue,
+    event.location,
+    event.description ?? '',
+    ...(event.tags ?? []),
+  ]
+    .join(' ')
+    .toLowerCase();
+}
+
 export function eventMatchesLocalSearch(event: LocalEvent, query: string): boolean {
   const q = query.trim().toLowerCase();
   if (!q) return true;
-  return (
-    event.title.toLowerCase().includes(q) ||
-    event.venue.toLowerCase().includes(q) ||
-    event.location.toLowerCase().includes(q) ||
-    (event.description ?? '').toLowerCase().includes(q) ||
-    (event.tags ?? []).some((t) => t.toLowerCase().includes(q))
-  );
+  const haystack = eventSearchHaystack(event);
+  if (haystack.includes(q)) return true;
+  const tokens = q.split(/\s+/).filter((t) => t.length >= 2);
+  if (tokens.length > 1) {
+    return tokens.every((t) => haystack.includes(t));
+  }
+  return false;
 }

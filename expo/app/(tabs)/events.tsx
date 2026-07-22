@@ -282,11 +282,11 @@ function EventsScreenInner() {
   );
 
   const events = useMemo(() => {
-    if (isGlobalSearchActive) {
+    if (inSearchMode) {
       return globalSearchEvents.map((e) => ({ ...e, isSaved: isSaved(e.id) }));
     }
     return browseEvents;
-  }, [isGlobalSearchActive, globalSearchEvents, browseEvents, isSaved]);
+  }, [inSearchMode, globalSearchEvents, browseEvents, isSaved]);
 
   useEffect(() => {
     const discoveryPool =
@@ -381,6 +381,9 @@ function EventsScreenInner() {
   }, []);
 
   const filteredEvents = useMemo(() => {
+    if (inSearchMode) {
+      return events;
+    }
     let filtered = events;
     if (selectedCategory !== 'all') {
       filtered = filtered.filter((event) => eventMatchesBentoCategory(event, selectedCategory));
@@ -389,7 +392,7 @@ function EventsScreenInner() {
       filtered = filtered.filter((e) => eventMatchesLocalSearch(e, searchQuery));
     }
     return filtered;
-  }, [events, selectedCategory, searchQuery]);
+  }, [events, selectedCategory, searchQuery, inSearchMode]);
 
   const mapRegion = useMemo(() => {
     const evts = filteredEvents.length > 0 ? filteredEvents : events;
@@ -776,8 +779,9 @@ function EventsScreenInner() {
   const heroEventIdSet = useMemo(() => new Set(heroEvents.map((e) => e.id)), [heroEvents]);
 
   const verticalFeedEvents = useMemo(() => {
-    if (isGlobalSearchActive) {
-      return rankEventsBySearchKeyword(filteredEvents, globalSearchKeyword);
+    if (inSearchMode) {
+      const keyword = globalSearchKeyword || searchQuery.trim();
+      return rankEventsBySearchKeyword(events, keyword);
     }
 
     const excludeHeroAndRail = (event: LocalEvent) =>
@@ -795,8 +799,10 @@ function EventsScreenInner() {
     );
     return rankEventsForConciergeFeed(pool, recommendationInput, conciergeContext);
   }, [
-    isGlobalSearchActive,
+    inSearchMode,
     globalSearchKeyword,
+    searchQuery,
+    events,
     filteredEvents,
     selectedCategory,
     smartDiscoveryEventIds,
