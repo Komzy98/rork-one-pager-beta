@@ -59,7 +59,7 @@ export function enrichLiveFootballMatchLogos(match: LiveFootballMatch): LiveFoot
 
 export function mergePinnedWithLiveData(
   records: readonly PinnedMatchRecord[],
-  pools: readonly LiveFootballMatch[][],
+  pools: readonly (readonly LiveFootballMatch[])[],
   refreshedById?: ReadonlyMap<string, LiveFootballMatch>,
 ): LiveFootballMatch[] {
   const byId = new Map<string, LiveFootballMatch>();

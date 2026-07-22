@@ -104,6 +104,7 @@ import {
   fetchForYouTrendingPopular,
   forYouDiscoveryHasItems,
 } from '@/utils/forYouTmdbFeed';
+import { applyReleaseAwareWatchProviders } from '@/utils/watchProviderAvailability';
 
 import { episodeNotificationService, TrackedShow } from '@/utils/episodeNotificationService';
 import { useUserProfile } from '@/hooks/useUserProfile';
@@ -262,14 +263,22 @@ function DetailModal({
     rent: WatchProvider[];
     buy: WatchProvider[];
     link?: string;
+    suppressDigitalReason?: 'recent_or_upcoming_release' | null;
   } | null>(null);
   const [loadingProviders, setLoadingProviders] = useState(false);
   const [openingApp, setOpeningApp] = useState(false);
   const heartScale = useRef(new RNAnimated.Value(1)).current;
+  const rawModalWatchProvidersRef = useRef<{
+    streaming: WatchProvider[];
+    rent: WatchProvider[];
+    buy: WatchProvider[];
+    link?: string;
+  } | null>(null);
 
   const itemId = item?.id;
   useEffect(() => {
     if (visible && itemId) {
+      rawModalWatchProvidersRef.current = null;
       setTrailerKey(null);
       setShowTrailer(false);
       setLoadingTrailer(true);
@@ -303,6 +312,10 @@ function DetailModal({
       if (mediaType === 'movie') {
         tmdbApi.getMovieDetails(itemId).then((details) => {
           setMovieDetails(details);
+          const raw = rawModalWatchProvidersRef.current;
+          if (raw) {
+            setModalWatchProviders(applyReleaseAwareWatchProviders(raw, details.release_date));
+          }
         }).catch((err) => {
           if (__DEV__) console.error('Failed to fetch movie details:', err);
         });
@@ -313,12 +326,20 @@ function DetailModal({
         const usProviders = res.results?.US;
         const countryProviders = gbProviders || usProviders;
         if (countryProviders) {
-          setModalWatchProviders({
+          const raw = {
             streaming: countryProviders.flatrate || [],
             rent: countryProviders.rent || [],
             buy: countryProviders.buy || [],
             link: countryProviders.link,
-          });
+          };
+          rawModalWatchProvidersRef.current = raw;
+          const releaseYmd =
+            mediaType === 'movie' ? (item as TMDBMovie | undefined)?.release_date : undefined;
+          setModalWatchProviders(
+            mediaType === 'movie'
+              ? applyReleaseAwareWatchProviders(raw, releaseYmd)
+              : { ...raw, suppressDigitalReason: null },
+          );
           if (__DEV__) console.log('📺 Detail modal watch providers loaded');
         }
       }).catch((err) => {
@@ -531,7 +552,18 @@ function DetailModal({
               </View>
             )}
 
+            {!loadingProviders && modalWatchProviders?.suppressDigitalReason === 'recent_or_upcoming_release' && (
+              <View style={styles.inCinemasWatchCard}>
+                <Text style={styles.inCinemasWatchTitle}>In cinemas</Text>
+                <Text style={styles.inCinemasWatchText}>
+                  Streaming and rent/buy links are hidden for now. JustWatch often lists older films with the
+                  same title (for example a different year on Prime Video) until this release is on digital stores.
+                </Text>
+              </View>
+            )}
+
             {!loadingProviders && modalWatchProviders && modalWatchProviders.streaming.length === 0 && (
+              !modalWatchProviders.suppressDigitalReason &&
               (modalWatchProviders.rent.length > 0 || modalWatchProviders.buy.length > 0) && (
                 <View style={styles.watchNowSection}>
                   <Text style={styles.watchNowLabel}>
@@ -571,7 +603,7 @@ function DetailModal({
               </View>
             )}
 
-            {modalWatchProviders?.link && (
+            {modalWatchProviders?.link && !modalWatchProviders.suppressDigitalReason && (
               <TouchableOpacity
                 style={styles.justWatchLink}
                 onPress={handleOpenJustWatch}
@@ -2207,12 +2239,26 @@ export default function ShowsScreen() {
         const countryProviders = ukProviders || usProviders;
         
         if (countryProviders) {
-          setWatchProviders({
+          const raw = {
             streaming: countryProviders.flatrate || [],
             rent: countryProviders.rent || [],
             buy: countryProviders.buy || [],
             link: countryProviders.link,
-          });
+          };
+          let releaseYmd: string | undefined;
+          if (show.mediaType === 'movie' && show.tmdbId) {
+            try {
+              const details = await tmdbApi.getMovieDetails(show.tmdbId);
+              releaseYmd = details.release_date;
+            } catch {
+              /* use unfiltered if details fail */
+            }
+          }
+          setWatchProviders(
+            show.mediaType === 'movie'
+              ? applyReleaseAwareWatchProviders(raw, releaseYmd)
+              : raw,
+          );
           if (__DEV__) console.log('📺 Watch providers loaded');
         } else {
           setWatchProviders(null);
@@ -4555,6 +4601,25 @@ const styles = StyleSheet.create({
     fontWeight: '700' as const,
     color: '#04121A',
     letterSpacing: 0.2,
+  },
+  inCinemasWatchCard: {
+    marginBottom: 16,
+    padding: 14,
+    borderRadius: 14,
+    borderWidth: 1,
+    borderColor: 'rgba(255, 255, 255, 0.1)',
+    backgroundColor: 'rgba(255, 255, 255, 0.05)',
+  },
+  inCinemasWatchTitle: {
+    fontSize: 14,
+    fontWeight: '700' as const,
+    color: THEME.text,
+    marginBottom: 6,
+  },
+  inCinemasWatchText: {
+    fontSize: 13,
+    color: THEME.textSecondary,
+    lineHeight: 18,
   },
   watchNowLabel: {
     fontSize: 15,

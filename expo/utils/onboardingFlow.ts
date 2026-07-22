@@ -105,7 +105,9 @@ export function getOnboardingProgressMeta(
   screen: OnboardingScreenId,
   interests: readonly string[],
 ): { currentStep: number; totalSteps: number } {
-  const path = buildOnboardingPath(interests).filter((s) => s !== 'complete');
+  const path: OnboardingScreenId[] = buildOnboardingPath(interests).filter(
+    (s) => s !== 'complete',
+  );
   const idx = path.indexOf(screen);
   return {
     currentStep: idx >= 0 ? idx + 1 : 1,

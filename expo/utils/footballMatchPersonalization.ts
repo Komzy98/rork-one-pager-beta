@@ -13,8 +13,9 @@ export type FootballPersonalizationMatch = {
   awayScore?: number | null;
   status: 'Live' | 'Upcoming' | 'Completed';
   league: string;
-  leagueId: number;
+  leagueId?: number;
   leagueCountry?: string;
+  round?: string | null;
   date: string;
   time?: string;
   homeTeamLogo?: string;
@@ -137,8 +138,8 @@ export function scoreMatchForYou(
   else if (hours >= 0 && hours < 24) score += 15;
 
   if (national) score += 20;
-  if (ctx.selectedProfileLeagueIds.has(match.leagueId)) score += 25;
-  if (ctx.manualFilterLeagueIds.includes(match.leagueId)) score += 20;
+  if (match.leagueId != null && ctx.selectedProfileLeagueIds.has(match.leagueId)) score += 25;
+  if (match.leagueId != null && ctx.manualFilterLeagueIds.includes(match.leagueId)) score += 20;
 
   score -= getCompetitionQualityPenalty(match);
 

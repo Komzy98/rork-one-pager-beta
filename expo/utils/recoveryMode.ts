@@ -209,7 +209,12 @@ export function resolveRecoveryContent(
 
   return {
     dailyHope: hopeHeadline
-      ? { id: 'resolved', headline: hopeHeadline, kind: pickedHope?.kind ?? 'interest' }
+      ? {
+          id: 'resolved',
+          headline: hopeHeadline,
+          kind: pickedHope?.kind ?? 'interest',
+          priority: pickedHope?.priority ?? 0,
+        }
       : null,
     dailyWin,
     identityReminder: pickIdentityReminder(profile, habitTasks, todayYmd),

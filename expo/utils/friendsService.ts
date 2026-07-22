@@ -1,5 +1,5 @@
 import { supabase, supabaseConfigured } from '@/utils/supabaseClient';
-import { pickPublishedAvatarUrl, resolveDisplayAvatarUrl } from '@/utils/avatarUtils';
+import { pickPublishedAvatarUrl, resolveDisplayAvatarUrl, avatarPublicUrlMatchesUser } from '@/utils/avatarUtils';
 
 export type ActivityVisibility = 'public' | 'friends' | 'private';
 
@@ -148,11 +148,14 @@ export function enrichSocialProfile(
     authEmail?: string | null;
     profileAvatar?: string | null;
     authAvatar?: string | null;
+    /** When false, never overlay local profile avatar (prevents cross-account bleed). */
+    mergeLocalProfileMedia?: boolean;
   },
 ): SocialProfile | null {
   if (!social) return null;
+  const mergeLocal = sources.mergeLocalProfileMedia !== false;
   const avatarUrl = resolveDisplayAvatarUrl({
-    profileAvatar: sources.profileAvatar,
+    profileAvatar: mergeLocal ? sources.profileAvatar : null,
     authAvatar: sources.authAvatar,
     socialAvatar: social.avatarUrl,
   });
@@ -206,6 +209,9 @@ export interface MyProfileInput {
  */
 export async function ensureMyProfile(input: MyProfileInput): Promise<SocialProfile> {
   ensureConfigured();
+  if (!input.userId?.trim()) {
+    throw Object.assign(new Error('Account isolation: missing userId'), { code: 'ACCOUNT_ISOLATION' });
+  }
 
   const { data: existing, error: selErr } = await supabase
     .from('profiles')
@@ -215,10 +221,16 @@ export async function ensureMyProfile(input: MyProfileInput): Promise<SocialProf
   if (selErr && !isSocialUnavailableError(selErr)) throw selErr;
   if (selErr && isSocialUnavailableError(selErr)) throw selErr;
 
-  const avatar_url = pickPublishedAvatarUrl(
-    (existing as ProfileRow | null)?.avatar_url,
-    input.avatarUrl,
-  );
+  const avatar_url = (() => {
+    let next = pickPublishedAvatarUrl(
+      (existing as ProfileRow | null)?.avatar_url,
+      input.avatarUrl,
+    );
+    if (!avatarPublicUrlMatchesUser(input.userId, next)) {
+      next = pickPublishedAvatarUrl(null, input.avatarUrl);
+    }
+    return next;
+  })();
 
   const display_name =
     input.displayName?.trim() ||
@@ -315,6 +327,9 @@ export async function updateProfileAvatar(
   avatarUrl: string | null,
 ): Promise<SocialProfile | null> {
   ensureConfigured();
+  if (!userId?.trim()) {
+    throw Object.assign(new Error('Account isolation: missing userId'), { code: 'ACCOUNT_ISOLATION' });
+  }
   const { data: existing, error: selErr } = await supabase
     .from('profiles')
     .select('*')
@@ -323,7 +338,13 @@ export async function updateProfileAvatar(
   if (selErr && !isSocialUnavailableError(selErr)) throw selErr;
   if (!existing) return null;
 
-  const nextAvatar = pickPublishedAvatarUrl((existing as ProfileRow).avatar_url, avatarUrl);
+  const nextAvatar = (() => {
+    let next = pickPublishedAvatarUrl((existing as ProfileRow).avatar_url, avatarUrl);
+    if (!avatarPublicUrlMatchesUser(userId, next)) {
+      next = pickPublishedAvatarUrl(null, avatarUrl);
+    }
+    return next;
+  })();
   const { data, error } = await supabase
     .from('profiles')
     .update({

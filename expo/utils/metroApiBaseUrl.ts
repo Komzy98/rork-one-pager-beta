@@ -84,7 +84,9 @@ export function getMetroApiBaseUrl(): string {
   }
 
   try {
-    const hostUri = Constants.expoConfig?.hostUri ?? Constants.expoGoConfig?.hostUri;
+    const hostUri =
+      Constants.expoConfig?.hostUri ??
+      (Constants.expoGoConfig as { hostUri?: string } | null | undefined)?.hostUri;
     if (hostUri) {
       const [host] = hostUri.split("/");
       const [normalizedHost, hostPort] = host?.split(":") ?? [];

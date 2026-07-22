@@ -37,6 +37,7 @@ import { blockPartner, reportPartner, type PartnerReportReason } from '@/utils/s
 import { mergeSocialPrivacy } from '@/utils/socialPrivacy';
 import { preferLocalActivityVisibility } from '@/utils/visibilityWriteGuard';
 import { canUseSocialFeatures } from '@/utils/socialAgeConsent';
+import { isProfileForUser } from '@/utils/accountIsolation';
 import type { Leaderboard } from '@/types/gamification';
 import {
   getInviteRsvpNotificationContent,
@@ -64,15 +65,26 @@ export const [FriendsProvider, useFriends] = createContextHook(() => {
   const myUserId: string | undefined = supabaseUser?.id;
   const enabled = !!myUserId && supabaseConfigured && !isGuest;
   const socialAllowed = canUseSocialFeatures(profile);
+  const profileMatchesSession = isProfileForUser(profile, myUserId);
   const socialNotifsEnabled = profile?.notificationSettings?.socialNotifications !== false;
   const socialNotifsRef = useRef(socialNotifsEnabled);
   socialNotifsRef.current = socialNotifsEnabled;
 
   const publishedAvatarUrl = resolveDisplayAvatarUrl({
-    profileAvatar: profile?.avatar,
+    profileAvatar: profileMatchesSession ? profile?.avatar : null,
     authAvatar: user?.avatar,
     socialAvatar: null,
   });
+
+  // Drop cached social row when the signed-in user changes (prevents showing the prior account's avatar).
+  useEffect(() => {
+    setMyProfile(null);
+    if (enabled) {
+      setBackendReady(null);
+    } else {
+      setBackendReady(false);
+    }
+  }, [myUserId, enabled]);
 
   // null = initializing, true = social tables ready, false = migrations missing
   const [backendReady, setBackendReady] = useState<boolean | null>(enabled ? null : false);
@@ -153,18 +165,27 @@ export const [FriendsProvider, useFriends] = createContextHook(() => {
   const myProfileForUi = useMemo(
     () =>
       enrichSocialProfile(myProfile, {
-        profileName: profile?.name,
+        profileName: profileMatchesSession ? profile?.name : null,
         authName: user?.name,
         authEmail: user?.email,
-        profileAvatar: profile?.avatar,
+        profileAvatar: profileMatchesSession ? profile?.avatar : null,
         authAvatar: user?.avatar,
+        mergeLocalProfileMedia: profileMatchesSession,
       }),
-    [myProfile, profile?.name, profile?.avatar, user?.name, user?.email, user?.avatar],
+    [
+      myProfile,
+      profileMatchesSession,
+      profile?.name,
+      profile?.avatar,
+      user?.name,
+      user?.email,
+      user?.avatar,
+    ],
   );
 
   // Publish avatar to Supabase so partners can see it (local file → Storage, or auth photo URL).
   useEffect(() => {
-    if (!enabled || !myUserId || backendReady !== true) return;
+    if (!enabled || !myUserId || backendReady !== true || !profileMatchesSession) return;
     const sourceUrl = profile?.avatar ?? user?.avatar ?? null;
     if (!sourceUrl?.trim()) return;
 
@@ -207,6 +228,7 @@ export const [FriendsProvider, useFriends] = createContextHook(() => {
     profile?.avatar,
     user?.avatar,
     myProfile?.avatarUrl,
+    profileMatchesSession,
     queryClient,
     updateProfile,
   ]);

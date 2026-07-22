@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import { View, StyleSheet, type ViewStyle, type StyleProp } from 'react-native';
-import { Image } from 'expo-image';
+import { Image, type ImageStyle } from 'expo-image';
 import { UtensilsCrossed } from 'lucide-react-native';
 
 const PLACEHOLDER = require('@/assets/images/icon.png');
@@ -46,7 +46,7 @@ export function KitchenRecipeImage({ uri, style, borderRadius = 14, fill }: Prop
     <Image
       key={uri.trim()}
       source={{ uri: uri.trim() }}
-      style={imageStyle}
+      style={imageStyle as StyleProp<ImageStyle>}
       contentFit="cover"
       transition={200}
       cachePolicy="memory-disk"

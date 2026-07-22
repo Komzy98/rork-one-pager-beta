@@ -335,6 +335,8 @@ export interface LiveFootballMatch {
 export interface UserTeam {
   id: string;
   name: string;
+  /** Optional short/abbreviated club name used for keyword matching. */
+  shortName?: string;
   logo?: string;
   league: string;
   country?: string;
@@ -435,6 +437,8 @@ export interface UserProfile {
   id: string;
   email: string;
   name: string;
+  /** Optional handle used for share links and invites (e.g. "?from=<username>"). */
+  username?: string;
   avatar?: string;
   favoriteTeams: UserTeam[];
   favoriteNBATeams?: NBAFavoriteTeam[];

@@ -497,7 +497,7 @@ export default function LeagueStandingsModal({
         <Text style={[styles.leadersHint, { color: colors.textSecondary }]}>
           Goals in domestic league matches (season {String(leagueSeason ?? '')}).
         </Text>
-        {topScorers.map((row, index) =>
+        {topScorers.map((row: { playerName: string; photo?: string | null; teamLogo?: string | null; goals: number }, index: number) =>
           renderLeaderRow(index + 1, row.playerName, row.photo, row.teamLogo, 'goals', row.goals),
         )}
       </ScrollView>
@@ -527,7 +527,7 @@ export default function LeagueStandingsModal({
         <Text style={[styles.leadersHint, { color: colors.textSecondary }]}>
           Assists in domestic league matches (season {String(leagueSeason ?? '')}).
         </Text>
-        {topAssists.map((row, index) =>
+        {topAssists.map((row: { playerName: string; photo?: string | null; teamLogo?: string | null; assists: number }, index: number) =>
           renderLeaderRow(index + 1, row.playerName, row.photo, row.teamLogo, 'assists', row.assists),
         )}
       </ScrollView>

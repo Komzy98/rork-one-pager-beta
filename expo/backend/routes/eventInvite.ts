@@ -485,7 +485,7 @@ export function registerEventInviteRoutes(app: Hono): void {
     if (!bytes) {
       return c.text('Logo not found', 404);
     }
-    return c.body(bytes, 200, {
+    return c.body(new Uint8Array(bytes), 200, {
       'Content-Type': 'image/png',
       'Cache-Control': 'public, max-age=86400, immutable',
     });

@@ -25,6 +25,10 @@ export function useSpoonacularKitchen(options: {
     return () => clearTimeout(t);
   }, [trimmed]);
 
+  const configQuery = trpc.cooking.isConfigured.useQuery(undefined, {
+    staleTime: 60 * 60 * 1000,
+  });
+
   const shouldFetchSpoonacular =
     enabled &&
     configQuery.data?.configured === true &&
@@ -46,10 +50,6 @@ export function useSpoonacularKitchen(options: {
   const searchResults = trpc.cooking.searchRecipes.useQuery(searchQueryInput, {
     enabled: shouldFetchSpoonacular,
     staleTime: 5 * 60 * 1000,
-  });
-
-  const configQuery = trpc.cooking.isConfigured.useQuery(undefined, {
-    staleTime: 60 * 60 * 1000,
   });
 
   const heroQuery = trpc.cooking.randomRecipes.useQuery(

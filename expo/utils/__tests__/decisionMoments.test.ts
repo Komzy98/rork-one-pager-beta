@@ -42,6 +42,8 @@ describe('decisionMoments', () => {
         isSnowing: false,
         isStormy: false,
         windSpeed: 4,
+        humidity: 60,
+        cloudiness: 10,
         city: 'London',
         isTimeBased: false,
       },

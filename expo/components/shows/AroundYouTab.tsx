@@ -244,8 +244,6 @@ export default function AroundYouTab({
             onPress={() => onPressMedia(bundle.hiddenGem.tmdb, 'movie')}
           >
             <HiddenGemPoster
-              tmdbId={bundle.hiddenGem.tmdb.id}
-              title={bundle.hiddenGem.title}
               posterPath={bundle.hiddenGem.posterPath}
               tmdb={bundle.hiddenGem.tmdb}
               logicalWidth={hiddenPosterLogicalW}

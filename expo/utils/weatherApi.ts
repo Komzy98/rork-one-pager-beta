@@ -65,7 +65,7 @@ interface WeatherData {
   name: string;
 }
 
-interface ProcessedWeatherData {
+export interface ProcessedWeatherData {
   condition: string;
   description: string;
   temp: number;

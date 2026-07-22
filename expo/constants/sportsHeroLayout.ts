@@ -153,7 +153,7 @@ export function getSportsHeroImageStyle(
   }
 
   const scale = getSportsHeroImageScale(windowWidth, heroMinHeightPx);
-  const transform: NonNullable<ImageStyle['transform']> = [];
+  const transform: ({ translateY: number } | { scale: number })[] = [];
   if (bottomCropPx > 0) transform.push({ translateY: -bottomCropPx });
   if (scale < 1) transform.push({ scale });
 

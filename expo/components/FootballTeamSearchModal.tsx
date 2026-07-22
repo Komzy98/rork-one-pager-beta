@@ -445,7 +445,7 @@ export default function FootballTeamSearchModal({
                         key={team.id}
                         onPress={() => {
                           if (apiId != null && apiId > 0) {
-                            onPickTeam({ id: apiId, name: team.name, logo: logoUri });
+                            onPickTeam({ id: apiId, name: team.name, logo: logoUri ?? '' });
                           }
                         }}
                         style={({ pressed }) => [

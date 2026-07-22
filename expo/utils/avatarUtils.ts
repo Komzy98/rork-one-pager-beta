@@ -69,3 +69,16 @@ export function isValidAvatarStoragePath(userId: string, path: string): boolean 
   if (!userId || !path) return false;
   return AVATAR_FILE_PATTERN.test(path) && path.startsWith(`${userId}/`);
 }
+
+/** Parse `{userId}` from a public Supabase avatars bucket URL, if present. */
+export function avatarOwnerIdFromPublicUrl(url: string | null | undefined): string | null {
+  if (!url?.trim()) return null;
+  const match = url.trim().match(/\/avatars\/([0-9a-f-]{36})\/avatar\./i);
+  return match?.[1] ?? null;
+}
+
+export function avatarPublicUrlMatchesUser(userId: string, url: string | null | undefined): boolean {
+  const owner = avatarOwnerIdFromPublicUrl(url);
+  if (!owner) return true;
+  return owner === userId;
+}

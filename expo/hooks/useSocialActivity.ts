@@ -148,7 +148,7 @@ export function useSocialActivity() {
         match.homeTeam,
         match.awayTeam,
         match.id,
-        match.leagueId,
+        match.leagueId != null ? String(match.leagueId) : undefined,
         match.league ?? match.time,
         publishContext(),
       );

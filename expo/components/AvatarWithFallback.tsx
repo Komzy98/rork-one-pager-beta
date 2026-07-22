@@ -1,5 +1,6 @@
 import React, { useMemo, useState } from 'react';
-import { Image, type ImageStyle, type StyleProp } from 'expo-image';
+import { Image, type ImageStyle } from 'expo-image';
+import { type StyleProp } from 'react-native';
 
 interface AvatarWithFallbackProps {
   candidates: readonly string[];

@@ -2,6 +2,7 @@ import { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import { Platform } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import createContextHook from '@nkzw/create-context-hook';
+import type { User } from '@supabase/supabase-js';
 import * as WebBrowser from 'expo-web-browser';
 import { AuthUser, LoginCredentials, SignupCredentials } from '@/types/habit';
 import { SupabaseUserSync } from '@/utils/supabaseUserSync';
@@ -27,7 +28,7 @@ import {
   getLastGuestUserId,
 } from '@/utils/localToSupabaseMigration';
 import { resetYounifySession, setYounifyExternalUserId } from '@/services/younify';
-import { clearUserScopedQueries } from '@/utils/queryClientRef';
+import { purgeAccountSessionState } from '@/utils/accountIsolation';
 import { likedContentService } from '@/utils/likedContentService';
 import { episodeNotificationService } from '@/utils/episodeNotificationService';
 import notificationService from '@/utils/notificationService';
@@ -169,7 +170,9 @@ export const [AuthProvider, useAuth] = createContextHook(() => {
         .replace(/\/api\/trpc$/i, '')
         .replace(/\/trpc$/i, '');
     }
-    const hostUri = Constants.expoConfig?.hostUri ?? Constants.expoGoConfig?.hostUri;
+    const hostUri =
+      Constants.expoConfig?.hostUri ??
+      (Constants.expoGoConfig as { hostUri?: string } | null | undefined)?.hostUri;
     if (hostUri) {
       const [host] = hostUri.split('/');
       if (host) return `http://${host.replace(/\/+$/, '')}`;
@@ -226,6 +229,18 @@ export const [AuthProvider, useAuth] = createContextHook(() => {
   const [mfaEnabled, setMfaEnabled] = useState<boolean>(false);
   const [mfaLoading, setMfaLoading] = useState<boolean>(false);
   const authBootstrapDoneRef = useRef(false);
+  const priorSignedInUserIdRef = useRef<string | null>(null);
+
+  /** Purge caches + SDK state whenever the signed-in user id changes (including sign-out). */
+  useEffect(() => {
+    if (!isInitialized) return;
+    const previous = priorSignedInUserIdRef.current;
+    const next = user?.id ?? null;
+    if (previous !== null && previous !== next) {
+      void purgeAccountSessionState(next ? 'switch' : 'logout');
+    }
+    priorSignedInUserIdRef.current = next;
+  }, [isInitialized, user?.id]);
 
   useEffect(() => {
     const checkBiometricAvailability = async () => {
@@ -278,7 +293,7 @@ export const [AuthProvider, useAuth] = createContextHook(() => {
 
   const applySupabaseSession = useCallback(async (sessionUser: any) => {
     if (!sessionUser) return;
-    clearUserScopedQueries();
+    await purgeAccountSessionState('sign_in');
     const meta = sessionUser.user_metadata || {};
     const firstName: string = meta.firstName || (meta.full_name ? String(meta.full_name).split(' ')[0] : '') || '';
     const lastName: string = meta.lastName || (meta.full_name ? String(meta.full_name).split(' ').slice(1).join(' ') : '') || '';
@@ -402,7 +417,7 @@ export const [AuthProvider, useAuth] = createContextHook(() => {
             return;
           }
 
-          if (event === 'TOKEN_REFRESH_FAILED') {
+          if ((event as string) === 'TOKEN_REFRESH_FAILED') {
             void (async () => {
               const recovered = await recoverSupabaseSession();
               if (recovered?.user && isMounted) {
@@ -655,7 +670,7 @@ export const [AuthProvider, useAuth] = createContextHook(() => {
           await persistSupabaseSession(
             authUserRecord.session.access_token,
             authUserRecord.session.refresh_token,
-            { user: authUserRecord.user },
+            { user: authUserRecord.user as unknown as User },
           );
 
           try {
@@ -883,6 +898,7 @@ export const [AuthProvider, useAuth] = createContextHook(() => {
   const logout = useCallback(async () => {
     try {
       const currentUserId = user?.id;
+      await purgeAccountSessionState('logout');
       const scopedCalendarKeys = [
         `imported_calendars_${currentUserId || 'guest'}`,
         `selected_eventkit_calendars_${currentUserId || 'guest'}`,
@@ -917,7 +933,6 @@ export const [AuthProvider, useAuth] = createContextHook(() => {
       setUser(null);
       setSupabaseUser(null);
       setIsGuest(false);
-      clearUserScopedQueries();
       console.log('✅ Logout successful');
     } catch (error) {
       console.error('💥 Logout error:', error);

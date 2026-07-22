@@ -25,7 +25,34 @@ export {
 
 let nativeGoogleConfigured = false;
 
-type GoogleSigninModule = typeof import('@react-native-google-signin/google-signin');
+/**
+ * Minimal hand-written shape for the optional native module
+ * `@react-native-google-signin/google-signin`. It is lazily required only in
+ * native builds where the package is installed, so we avoid a hard type
+ * dependency on it here (it is not part of package.json).
+ */
+interface GoogleSigninStatic {
+  configure(options: {
+    webClientId?: string;
+    iosClientId?: string;
+    offlineAccess?: boolean;
+    scopes?: string[];
+  }): void;
+  hasPlayServices(options?: { showPlayServicesUpdateDialog?: boolean }): Promise<boolean>;
+  signIn(): Promise<unknown>;
+  getTokens(): Promise<{ idToken?: string; accessToken?: string }>;
+}
+
+interface GoogleSigninModule {
+  GoogleSignin: GoogleSigninStatic;
+  isErrorWithCode(error: unknown): error is { code: string };
+  isSuccessResponse(response: unknown): response is { data: { idToken?: string | null } };
+  statusCodes: {
+    SIGN_IN_CANCELLED: string;
+    IN_PROGRESS: string;
+    PLAY_SERVICES_NOT_AVAILABLE: string;
+  };
+}
 
 function loadGoogleSigninModule(): GoogleSigninModule | null {
   if (Platform.OS === 'web') return null;

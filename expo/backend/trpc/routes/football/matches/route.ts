@@ -654,9 +654,9 @@ export const getMatchesBundleRoute = publicProcedure
 export const FOOTBALL_FOR_YOU_SMOKE_BUNDLE_INPUT = {
   days: 14,
   teamIds: [] as number[],
-  leagueIds: [FIFA_WORLD_CUP_LEAGUE_ID],
+  leagueIds: [FIFA_WORLD_CUP_LEAGUE_ID] as number[],
   includeResults: false,
-} as const;
+};
 
 export type FootballSmokeCheckResult = {
   ok: boolean;

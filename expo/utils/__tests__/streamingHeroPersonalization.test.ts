@@ -19,8 +19,7 @@ describe('buildStreamingHeroWhyLabel', () => {
         continueWatchingTmdbIds: new Set(),
         younifyLinkedTmdbIds: new Set(),
         regionalTmdbIds: new Set(),
-        genreWeights: new Map(),
-        favoriteCountryCodes: [],
+        preferredGenreIds: new Set(),
       },
     );
     assert.match(label, /Recommended on Netflix/);

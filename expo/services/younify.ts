@@ -66,6 +66,16 @@ export async function resetYounifySession(): Promise<void> {
   younifyExternalUserId = null;
 }
 
+/**
+ * Clear the previous account's Younify SDK tokens + cached user data WITHOUT
+ * dropping the external user id. Use when switching accounts, where the caller
+ * immediately sets the new user's external id — prevents streaming links from
+ * bleeding across accounts while keeping a valid app user for the SDK.
+ */
+export async function clearYounifyTokensKeepingUser(): Promise<void> {
+  await clearYounifyInternalState();
+}
+
 function setYounifyRuntimeIssue(message: string | null) {
   younifyRuntimeIssue = message;
 }

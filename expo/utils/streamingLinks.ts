@@ -21,6 +21,8 @@ import {
 import { PRIME_VIDEO_APP_ORIGIN } from '@/utils/primeVideoLinks';
 import { readSeasonEpisodeFromYounifyRow } from '@/utils/younifyProviderIndex';
 
+export { isPrimeVideoProviderId } from '@/utils/primeVideoLinks';
+
 export {
   normalizeDisneyPlusWatchUrl,
   isDisneyPlusSearchOrGenericUrl,

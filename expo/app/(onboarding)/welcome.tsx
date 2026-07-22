@@ -313,7 +313,7 @@ const styles = StyleSheet.create({
     borderColor: ONBOARDING_PREMIUM.hairlineBorder,
     paddingVertical: 9,
     paddingHorizontal: 12,
-    backgroundColor: ONBOARDING_PREMIUM.cardBg,
+    backgroundColor: COLORS.surface,
   },
   securityHintCardText: {
     fontSize: 12,

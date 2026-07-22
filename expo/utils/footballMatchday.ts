@@ -66,10 +66,10 @@ export function buildTodayMatchdayEntries(input: {
       if (seen.has(key)) continue;
       seen.add(key);
       entries.push({
-        matchId: match.id,
+        matchId: match.id ?? '',
         teamName: side.name,
         logoUri: side.logo,
-        time: match.status === 'Live' ? 'Live' : match.time,
+        time: match.status === 'Live' ? 'Live' : (match.time ?? ''),
         opponent: side.opponent,
       });
     }

@@ -57,6 +57,7 @@ describe('eventSportMatching', () => {
         location: 'San Francisco',
         category: 'sports',
         tags: ['mlb', 'baseball'],
+        description: '',
       }),
       'baseball',
     );
@@ -71,6 +72,7 @@ describe('eventSportMatching', () => {
           location: 'San Francisco',
           category: 'sports',
           tags: ['mlb', 'baseball'],
+          description: '',
         },
         { name: 'Cleveland Cavaliers', abbreviation: 'CLE' },
       ),

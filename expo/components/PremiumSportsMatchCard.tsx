@@ -22,6 +22,7 @@ import {
 import * as Haptics from 'expo-haptics';
 import { LinearGradient } from 'expo-linear-gradient';
 import { useTheme } from '@/hooks/useTheme';
+import type { LiveFootballMatch } from '@/types/habit';
 import { sportsFixedPalette } from '@/utils/sportsPalette';
 import { formatMatchRoundLabel, isKnockoutRoundLabel } from '@/utils/matchRoundLabel';
 import { resolveLeagueLogoSource } from '@/utils/footballLeagueLabel';

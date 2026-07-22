@@ -1,4 +1,5 @@
 import { ApiFootballResponse, ApiFootballFixture, LiveFootballMatch } from '@/types/habit';
+import type { TeamLeagueEntry, SquadPlayerLite, CoachLite } from '@/utils/footballClubProfileShared';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { getLocalDateStr } from '@/utils/dateUtils';
 import { formatFootballLeagueLabel } from '@/utils/footballLeagueLabel';

@@ -30,11 +30,11 @@ export function getFootballMatchPersonalizationChip(
     return 'Your team';
   }
 
-  if (ctx.selectedProfileLeagueIds.has(match.leagueId)) {
+  if (match.leagueId != null && ctx.selectedProfileLeagueIds.has(match.leagueId)) {
     return `${match.league} · your league`;
   }
 
-  if (ctx.manualFilterLeagueIds.includes(match.leagueId)) {
+  if (match.leagueId != null && ctx.manualFilterLeagueIds.includes(match.leagueId)) {
     return `${match.league} · in your filter`;
   }
 

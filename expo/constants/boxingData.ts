@@ -253,7 +253,7 @@ export const BOXING_UPCOMING_FIGHTS: BoxingFight[] = [
     },
     fighter2: {
       name: 'Dmitry Bivol',
-      nickname: null,
+      nickname: undefined,
       record: '23-1-0',
       country: 'Russia',
       countryFlag: '🇷🇺',

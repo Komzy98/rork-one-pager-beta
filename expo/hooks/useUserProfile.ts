@@ -23,6 +23,10 @@ import {
 } from '@/utils/syncMerge';
 import { sortMiddleTabsByUsage } from '@/utils/tabUsage';
 import { profilePatchForInterestsUpdate } from '@/utils/onboardingProfileSave';
+import {
+  dataOwnedBySession,
+  sanitizeUserProfileForSession,
+} from '@/utils/accountIsolation';
 
 const PROFILE_LOAD_TIMEOUT_MS = 12_000;
 
@@ -59,6 +63,8 @@ export const [UserProfileProvider, useUserProfile] = createContextHook(() => {
     try {
       const storageKey = `@user_profile_${userId}`;
       console.log('📱 [Profile] Checking storage key:', storageKey, 'on platform:', Platform.OS);
+
+      const stillActive = () => loadInFlightRef.current === userId;
       
       let stored: string | null = await unifiedStorage.getItem(storageKey);
       const hadLocalProfile = !!stored;
@@ -67,6 +73,7 @@ export const [UserProfileProvider, useUserProfile] = createContextHook(() => {
       // New signups: unblock onboarding UI immediately; cloud merge runs afterward.
       if (!hadLocalProfile) {
         const seeded = createDefaultUserProfile(userId, email, name);
+        if (!stillActive()) return;
         setProfile(seeded);
         loadedUserIdRef.current = userId;
         setIsLoading(false);
@@ -78,10 +85,17 @@ export const [UserProfileProvider, useUserProfile] = createContextHook(() => {
           console.log('☁️ [Profile] Loading from Supabase...');
           const cloudData = await supabaseSync.loadFromCloud();
           if (cloudData?.userProfile) {
-            console.log('✅ [Profile] Loaded profile from Supabase');
-            stored = JSON.stringify(cloudData.userProfile);
-            loadedFromSupabase = true;
-            await unifiedStorage.setItem(storageKey, stored);
+            if (!dataOwnedBySession(userId, cloudData.userProfile.id)) {
+              console.error('❌ [Profile] Supabase returned another user’s profile — ignored', {
+                expected: userId,
+                got: cloudData.userProfile.id,
+              });
+            } else {
+              console.log('✅ [Profile] Loaded profile from Supabase');
+              stored = JSON.stringify(cloudData.userProfile);
+              loadedFromSupabase = true;
+              await unifiedStorage.setItem(storageKey, stored);
+            }
           } else {
             console.log('📝 [Profile] No profile in Supabase yet');
           }
@@ -96,7 +110,17 @@ export const [UserProfileProvider, useUserProfile] = createContextHook(() => {
       
       if (stored) {
         console.log('✅ [Profile] Found existing profile');
-        const parsedProfile = JSON.parse(stored) as UserProfile;
+        let parsedProfile = JSON.parse(stored) as UserProfile;
+        if (!dataOwnedBySession(userId, parsedProfile.id)) {
+          console.error('❌ [Profile] Storage contained another user’s profile — discarding', {
+            expected: userId,
+            got: parsedProfile.id,
+          });
+          await unifiedStorage.removeItem(storageKey).catch(() => {});
+          parsedProfile = createDefaultUserProfile(userId, email, name);
+          stored = JSON.stringify(parsedProfile);
+          await unifiedStorage.setItem(storageKey, stored);
+        }
         console.log('📊 [Profile] Parsed profile:', {
           platform: Platform.OS,
           source: loadedFromSupabase ? 'Supabase' : 'Local Storage',
@@ -139,6 +163,7 @@ export const [UserProfileProvider, useUserProfile] = createContextHook(() => {
             eventReminderLeadMinutes: parsedProfile.notificationSettings?.eventReminderLeadMinutes ?? 30,
           },
         };
+        if (!stillActive()) return;
         setProfile(updatedProfile);
         console.log('✅ [Profile] Profile loaded successfully on', Platform.OS, ':', updatedProfile.name, 'Teams:', updatedProfile.favoriteTeams?.length, 'Source:', loadedFromSupabase ? 'Supabase' : 'Local');
         if (sessionReconciled) {
@@ -174,8 +199,10 @@ export const [UserProfileProvider, useUserProfile] = createContextHook(() => {
     } catch (error) {
       console.error('❌ [Profile] Error loading user profile on', Platform.OS, ':', error);
       const defaultProfile = createDefaultUserProfile(userId, email, name);
-      setProfile(defaultProfile);
-      loadedUserIdRef.current = userId;
+      if (loadInFlightRef.current === userId) {
+        setProfile(defaultProfile);
+        loadedUserIdRef.current = userId;
+      }
       console.log('🔄 [Profile] Using fallback default profile on', Platform.OS);
     }
     };
@@ -402,9 +429,18 @@ export const [UserProfileProvider, useUserProfile] = createContextHook(() => {
 
   const saveProfile = async (newProfile: UserProfile) => {
     if (!user) return;
+    if (!dataOwnedBySession(user.id, newProfile.id)) {
+      console.error('❌ [Profile] Refusing to save — profile id does not match signed-in user');
+      return;
+    }
+    const toSave: UserProfile = {
+      ...sanitizeUserProfileForSession(user.id, newProfile),
+      id: user.id,
+      email: user.email,
+    };
 
-    profileRef.current = newProfile;
-    setProfile(newProfile);
+    profileRef.current = toSave;
+    setProfile(toSave);
     console.log('✅ [Profile] Profile state updated optimistically');
     
     try {
@@ -412,16 +448,16 @@ export const [UserProfileProvider, useUserProfile] = createContextHook(() => {
       console.log('💾 [Profile] Saving profile:', {
         platform: Platform.OS,
         userId: user.id,
-        favoriteTeamsCount: newProfile.favoriteTeams?.length || 0,
-        favoriteTeams: newProfile.favoriteTeams?.map(t => t.name) || []
+        favoriteTeamsCount: toSave.favoriteTeams?.length || 0,
+        favoriteTeams: toSave.favoriteTeams?.map(t => t.name) || []
       });
       
-      await unifiedStorage.setItem(storageKey, JSON.stringify(newProfile));
+      await unifiedStorage.setItem(storageKey, JSON.stringify(toSave));
       console.log('✅ [Profile] Profile saved to storage on', Platform.OS);
       
       if (userId && supabaseSync.saveToCloud) {
         try {
-          await supabaseSync.saveToCloud({ userProfile: newProfile });
+          await supabaseSync.saveToCloud({ userProfile: toSave });
           console.log('✅ [Profile] User profile synced to Supabase');
         } catch (syncError) {
           console.warn('⚠️ [Profile] Supabase sync failed for user profile, data saved locally:', syncError);
@@ -434,8 +470,12 @@ export const [UserProfileProvider, useUserProfile] = createContextHook(() => {
 
   const updateProfile = (updates: Partial<UserProfile>) => {
     const current = profileRef.current ?? profile;
-    if (!current) return;
-    const updatedProfile = { ...current, ...updates };
+    if (!current || !user?.id) return;
+    if (!dataOwnedBySession(user.id, current.id)) {
+      console.error('❌ [Profile] Refusing to update — loaded profile belongs to another user');
+      return;
+    }
+    const updatedProfile = { ...current, ...updates, id: user.id, email: user.email };
     void saveProfile(updatedProfile);
   };
 

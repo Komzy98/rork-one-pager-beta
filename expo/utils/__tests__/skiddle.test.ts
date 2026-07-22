@@ -123,12 +123,12 @@ describe('mergeDiscoveryEvents', () => {
       isSaved: false,
       attendees: 0,
       rating: 4.5,
-      tags: [],
+      tags: [] as string[],
       description: '',
       latitude: 51.5,
       longitude: -0.1,
       startIso: '2026-07-12T20:00:00',
-    } as const;
+    };
 
     const merged = mergeDiscoveryEvents(
       [

@@ -4876,17 +4876,19 @@ const styles = StyleSheet.create({
     flexShrink: 0,
   },
   strictFollowingRowCompact: {
-    width: 52,
+    // Wide enough to fully contain the native iOS Switch layout box (~51pt)
+    // even if the visual transform below is not applied, so it never clips.
+    width: 56,
     height: 36,
     borderRadius: 11,
     borderWidth: 1,
     alignItems: 'center' as const,
     justifyContent: 'center' as const,
     flexShrink: 0,
-    overflow: 'hidden' as const,
+    overflow: 'visible' as const,
   },
   strictSwitchCompact: {
-    transform: [{ scaleX: 0.72 }, { scaleY: 0.72 }],
+    transform: [{ scale: 0.68 }],
   },
   footballSmartSectionLabel: {
     fontSize: 11,

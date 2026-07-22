@@ -107,6 +107,7 @@ import { buildChallengeLink } from '@/utils/deepLinks';
 import type { Achievement, Challenge } from '@/types/gamification';
 import { AccountabilityPartnersSection } from '@/components/social/AccountabilityPartnersSection';
 import { useFriends } from '@/hooks/useFriends';
+import { isProfileForUser } from '@/utils/accountIsolation';
 import { resolveDisplayAvatarUrl, collectAvatarUrlCandidates, isLocalAvatarUri, isRemoteAvatarUrl } from '@/utils/avatarUtils';
 import { AvatarWithFallback } from '@/components/AvatarWithFallback';
 import { uploadProfileAvatar } from '@/utils/avatarService';
@@ -220,6 +221,7 @@ export default function ProfileScreen() {
     resetTabOrder,
     resetOnboarding,
   } = useUserProfile();
+  const profileMatchesSession = isProfileForUser(profile, user?.id);
   const { resetAllWalkthroughs } = useWalkthrough();
   const { dashboardSummary, shows } = useApp();
   const { allTasks } = useTasks();
@@ -382,13 +384,13 @@ export default function ProfileScreen() {
   } = useFriends();
 
   const profileAvatarCandidates = collectAvatarUrlCandidates({
-    profileAvatar: profile?.avatar,
+    profileAvatar: profileMatchesSession ? profile?.avatar : null,
     authAvatar: user?.avatar ?? supabaseUser?.user_metadata?.avatar_url ?? supabaseUser?.user_metadata?.picture,
     socialAvatar: socialProfile?.avatarUrl,
   });
 
   useEffect(() => {
-    if (isGuest) return;
+    if (isGuest || !profileMatchesSession) return;
     const authAvatar =
       user?.avatar ??
       (typeof supabaseUser?.user_metadata?.avatar_url === 'string'
@@ -404,7 +406,7 @@ export default function ProfileScreen() {
         updateProfile({ avatar: authAvatar });
       }
     }
-  }, [isGuest, user?.avatar, supabaseUser?.user_metadata, profile?.avatar, updateProfile]);
+  }, [isGuest, profileMatchesSession, user?.avatar, supabaseUser?.user_metadata, profile?.avatar, updateProfile]);
 
   const [sharePayload, setSharePayload] = useState<SharePayload | null>(null);
   const shareUsername =
@@ -654,7 +656,7 @@ export default function ProfileScreen() {
 
   const ageConsentEnsureInput = useCallback(() => {
     const avatarUrl = resolveDisplayAvatarUrl({
-      profileAvatar: profile?.avatar,
+      profileAvatar: profileMatchesSession ? profile?.avatar : null,
       authAvatar: user?.avatar,
       socialAvatar: null,
     });
@@ -667,6 +669,7 @@ export default function ProfileScreen() {
       level: gamificationStats?.level ?? 1,
     };
   }, [
+    profileMatchesSession,
     profile?.avatar,
     profile?.name,
     user?.avatar,

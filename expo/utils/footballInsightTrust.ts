@@ -40,6 +40,7 @@ function isFollowedNationalTeamMatch(
 }
 
 function isFollowedLeagueMatch(match: FootballPersonalizationMatch, ctx: InsightTrustContext): boolean {
+  if (match.leagueId == null) return false;
   return (
     ctx.selectedProfileLeagueIds.has(match.leagueId) ||
     ctx.manualFilterLeagueIds.includes(match.leagueId)

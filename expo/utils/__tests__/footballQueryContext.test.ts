@@ -32,10 +32,15 @@ describe('mergeFollowedClubTeamIds', () => {
 
 describe('mergeFollowedNationalTeamIds', () => {
   it('merges followed national teams and sets includeAfcon', () => {
-    const merged = mergeFollowedNationalTeamIds(
-      { days: 14, teamIds: [], leagueIds: [1], includeResults: false },
-      [2, 13],
-    );
+    const nationalInput: {
+      days: number;
+      teamIds: number[];
+      leagueIds: number[];
+      includeResults: boolean;
+      nationalTeamIds?: number[];
+      includeAfcon?: boolean;
+    } = { days: 14, teamIds: [], leagueIds: [1], includeResults: false };
+    const merged = mergeFollowedNationalTeamIds(nationalInput, [2, 13]);
     assert.deepEqual(merged.nationalTeamIds, [2, 13]);
     assert.equal(merged.includeAfcon, true);
   });

@@ -367,7 +367,7 @@ function sessionFromGrant(json: PasswordGrantJson): Session | null {
     refresh_token: json.refresh_token,
     expires_in: expiresIn,
     expires_at: Math.floor(Date.now() / 1000) + expiresIn,
-    token_type: json.token_type ?? 'bearer',
+    token_type: (json.token_type ?? 'bearer') as 'bearer',
     user: json.user,
   };
 }
@@ -411,12 +411,12 @@ export async function signInWithPasswordDirect(
         refresh_token: result.refresh_token,
         expires_in: result.expires_in,
         token_type: result.token_type,
-        user: result.user as User,
+        user: result.user as unknown as User,
       });
       if (!session) {
         return { data: null, error: new Error('Invalid auth response from server') };
       }
-      return { data: { user: result.user as User, session }, error: null };
+      return { data: { user: result.user as unknown as User, session }, error: null };
     } catch (e) {
       const msg = e instanceof Error ? e.message : String(e);
       return { data: null, error: new Error(msg) };

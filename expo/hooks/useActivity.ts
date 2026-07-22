@@ -135,7 +135,7 @@ export const [ActivityProvider, useActivity] = createContextHook(() => {
           ...input,
           genericCopy: profile?.displayPreferences?.genericSocialActivity ?? true,
         });
-        await logEvent({ ...sanitized, userId: myUserId });
+        await logEvent({ type: input.type, ...sanitized, userId: myUserId });
         invalidate();
       } catch {
         // best effort
@@ -167,6 +167,7 @@ export const [ActivityProvider, useActivity] = createContextHook(() => {
           genericCopy: profile?.displayPreferences?.genericSocialActivity ?? true,
         });
         await logEvent({
+          type: 'streak_milestone',
           userId: myUserId,
           ...sanitized,
         });

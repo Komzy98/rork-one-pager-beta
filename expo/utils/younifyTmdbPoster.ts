@@ -404,7 +404,9 @@ export async function resolveTmdbDetailsForYounifyRow(
     scored.sort((a, b) => b.score - a.score || a.order - b.order);
     const best = scored[0];
     if (best && (!requireTitleMatch || best.score >= YOUNIFY_TMDB_ID_MIN_TITLE_MATCH)) {
-      return { mediaType: best.mediaType, details: best.details };
+      return best.mediaType === 'movie'
+        ? { mediaType: 'movie', details: best.details as TMDBMovie }
+        : { mediaType: 'tv', details: best.details as TMDBTVShow };
     }
   }
 

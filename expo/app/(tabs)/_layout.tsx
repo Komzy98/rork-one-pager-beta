@@ -15,6 +15,7 @@ import * as Haptics from 'expo-haptics';
 import { useUserProfile } from "@/hooks/useUserProfile";
 import { useFriends } from "@/hooks/useFriends";
 import { resolveDisplayAvatarUrl, collectAvatarUrlCandidates } from "@/utils/avatarUtils";
+import { isProfileForUser } from "@/utils/accountIsolation";
 import { AvatarWithFallback } from "@/components/AvatarWithFallback";
 import { useTheme } from "@/hooks/useTheme";
 import type { ThemeColors } from "@/types/theme";
@@ -226,13 +227,14 @@ function CustomTabBar({ state, descriptors, navigation }: BottomTabBarProps) {
   const { myProfile } = useFriends();
   const { colors, isDark } = useTheme();
   const { user } = useAuth();
+  const profileMatchesSession = isProfileForUser(profile, user?.id);
   const tabAvatarUrl = resolveDisplayAvatarUrl({
-    profileAvatar: profile?.avatar,
+    profileAvatar: profileMatchesSession ? profile?.avatar : null,
     authAvatar: user?.avatar,
     socialAvatar: myProfile?.avatarUrl,
   });
   const tabAvatarCandidates = collectAvatarUrlCandidates({
-    profileAvatar: profile?.avatar,
+    profileAvatar: profileMatchesSession ? profile?.avatar : null,
     authAvatar: user?.avatar,
     socialAvatar: myProfile?.avatarUrl,
   });
