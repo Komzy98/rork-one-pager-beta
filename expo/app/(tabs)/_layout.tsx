@@ -73,6 +73,8 @@ interface AnimatedTabItemProps {
   avatarUrl?: string;
   avatarCandidates?: string[];
   variant?: 'pinned' | 'scroll';
+  /** Even width in the middle strip when the user has few interest tabs. */
+  uniformMiddle?: boolean;
   onLayout?: (event: { nativeEvent: { layout: { x: number; width: number } } }) => void;
 }
 
@@ -86,6 +88,7 @@ const AnimatedTabItem = React.memo(({
   avatarUrl,
   avatarCandidates,
   variant = 'scroll',
+  uniformMiddle = false,
   onLayout,
 }: AnimatedTabItemProps) => {
   const scaleAnim = useRef(new Animated.Value(1)).current;
@@ -144,7 +147,13 @@ const AnimatedTabItem = React.memo(({
 
   return (
     <View
-      style={variant === 'pinned' ? styles.tabButtonPinned : styles.tabButtonScroll}
+      style={
+        variant === 'pinned'
+          ? styles.tabButtonPinned
+          : uniformMiddle
+            ? styles.tabButtonScrollUniform
+            : styles.tabButtonScroll
+      }
       onLayout={onLayout}
     >
       <TouchableOpacity
@@ -252,6 +261,11 @@ function CustomTabBar({ state, descriptors, navigation }: BottomTabBarProps) {
     (route) => route.name !== PINNED_START_TAB && route.name !== PINNED_END_TAB,
   );
 
+  /** Few interest-driven tabs: fill the middle strip evenly instead of clustering left. */
+  const UNIFORM_MIDDLE_TAB_MAX = 4;
+  const useUniformMiddleTabs =
+    scrollableRoutes.length > 0 && scrollableRoutes.length <= UNIFORM_MIDDLE_TAB_MAX;
+
   useEffect(() => {
     Animated.timing(containerOpacity, {
       toValue: 1,
@@ -301,7 +315,7 @@ function CustomTabBar({ state, descriptors, navigation }: BottomTabBarProps) {
     }
   }, [scrollableTabNames, updateMiddleScrollHint]);
 
-  const renderTab = (route: (typeof state.routes)[number], variant: 'pinned' | 'scroll') => {
+  const renderTab = (route: (typeof state.routes)[number], variant: 'pinned' | 'scroll', uniformMiddle?: boolean) => {
     const routeIndex = state.routes.findIndex((r) => r.name === route.name);
     const isFocused = state.index === routeIndex;
     const { options } = descriptors[route.key];
@@ -330,6 +344,7 @@ function CustomTabBar({ state, descriptors, navigation }: BottomTabBarProps) {
         avatarUrl={tabAvatarUrl ?? undefined}
         avatarCandidates={tabAvatarCandidates}
         variant={variant}
+        uniformMiddle={uniformMiddle}
         onLayout={
           variant === 'scroll'
             ? (event) => {
@@ -387,6 +402,11 @@ function CustomTabBar({ state, descriptors, navigation }: BottomTabBarProps) {
           {pinnedStartRoute ? renderTab(pinnedStartRoute, 'pinned') : null}
 
           {scrollableRoutes.length > 0 ? (
+            useUniformMiddleTabs ? (
+              <View style={[styles.scrollableTabs, styles.scrollableTabsUniform]}>
+                {scrollableRoutes.map((route) => renderTab(route, 'scroll', true))}
+              </View>
+            ) : (
             <ScrollView
               ref={middleScrollRef}
               horizontal
@@ -415,11 +435,12 @@ function CustomTabBar({ state, descriptors, navigation }: BottomTabBarProps) {
             >
               {scrollableRoutes.map((route) => renderTab(route, 'scroll'))}
             </ScrollView>
+            )
           ) : (
             <View style={styles.scrollableTabs} />
           )}
 
-          {showMiddleScrollHint && pinnedEndRoute ? (
+          {showMiddleScrollHint && pinnedEndRoute && !useUniformMiddleTabs ? (
             <View
               style={styles.scrollHint}
               pointerEvents="none"
@@ -564,6 +585,18 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     paddingHorizontal: 4,
     gap: 2,
+  },
+  scrollableTabsUniform: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-evenly',
+    paddingHorizontal: 2,
+  },
+  tabButtonScrollUniform: {
+    flex: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+    minWidth: 0,
   },
   scrollHint: {
     width: 12,

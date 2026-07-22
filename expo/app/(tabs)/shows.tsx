@@ -58,6 +58,7 @@ import {
   Clock,
   Clapperboard,
   Flame,
+  Link2,
 } from 'lucide-react-native';
 import * as Linking from 'expo-linking';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
@@ -67,7 +68,7 @@ import { Show, NewShowFormData } from '@/types/habit';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { tmdbApi, TMDBMovie, TMDBTVShow, TMDBTVShowDetails, TMDBEpisode, getGenreNames, formatReleaseDate, formatRating } from '@/utils/tmdbApi';
 import { navigateToShow, showNavigationAlert } from '@/utils/streamingNavigation';
-import { openStreamingApp, getStreamingPlatform, openStreamingTitleSearch, openYounifyBrowseItemOnPlatform, younifySourceToTmdbProviderId, tryOpenDisneyPlusFromHomepage, normalizeTmdbWatchProviderId } from '@/utils/streamingLinks';
+import { openStreamingApp, getStreamingPlatform, openStreamingTitleSearch, openYounifyBrowseItemOnPlatform, younifySourceToTmdbProviderId, tryOpenDisneyPlusFromHomepage, openDisneyPlusForTmdbItem, normalizeTmdbWatchProviderId } from '@/utils/streamingLinks';
 import { WatchProvider } from '@/utils/tmdbApi';
 import { buildYounifyProviderIndex, pickBestYounifyRowForEpisode, readSeasonEpisodeFromYounifyRow, type YounifyProviderIndex } from '@/utils/younifyProviderIndex';
 import { formatShowEpisodeLabel } from '@/utils/showEpisodeLabel';
@@ -81,6 +82,21 @@ import {
   toForYouMediaItem,
   type ForYouCandidateSource,
 } from '@/utils/showsForYouPersonalization';
+import {
+  buildStreamingHeroRecommendations,
+  STREAMING_HERO_MIN_ITEMS,
+} from '@/utils/streamingHeroRecommendations';
+import {
+  DISCOVERY_CACHE_KEYS,
+  formatCacheAgeLabel,
+  readDiscoveryCache,
+  writeDiscoveryCache,
+} from '@/utils/discoveryOfflineCache';
+import {
+  logForYouFeedDiagnostic,
+  logStreamingHeroDiagnostic,
+} from '@/utils/streamingFeedDiagnostics';
+import FeedRetryBanner from '@/components/FeedRetryBanner';
 import { extractTmdbMediaTypeFromYounifyRow } from '@/utils/younifyTmdbPoster';
 
 import { episodeNotificationService, TrackedShow } from '@/utils/episodeNotificationService';
@@ -317,12 +333,12 @@ function DetailModal({
       : parseInt((item as TMDBTVShow)?.first_air_date?.split('-')[0] || '0', 10);
     console.log(`🎬 Opening ${provider.provider_name} for "${itemTitle}"`);
     try {
-      // Disney+: prefer TMDB official homepage (disneyplus.com) — universal links open the app on title/show pages.
+      // Disney+: TMDB homepage is a disneyplus.com series/movie URL (universal link into the app).
       if (provider.provider_id === 337) {
         const homepage =
           mediaType === 'tv' ? tvShowDetails?.homepage : movieDetails?.homepage;
-        const openedDisney = await tryOpenDisneyPlusFromHomepage(homepage ?? undefined);
-        if (openedDisney) return;
+        if (homepage && (await tryOpenDisneyPlusFromHomepage(homepage))) return;
+        if (item?.id != null && (await openDisneyPlusForTmdbItem(item.id, mediaType))) return;
       }
 
       // Deterministic Younify selection: exact provider match first, then best ranked candidate.
@@ -913,6 +929,7 @@ export default function ShowsScreen() {
   const [loadingProviders, setLoadingProviders] = useState(false);
   const [younifyContent, setYounifyContent] = useState<any[]>([]);
   const [younifyLoading, setYounifyLoading] = useState(true);
+  const [streamingLoadError, setStreamingLoadError] = useState<string | null>(null);
   const [hasLinkedServices, setHasLinkedServices] = useState(false);
   const [linkedStreamingCount, setLinkedStreamingCount] = useState(0);
   const [linkedProviderIds, setLinkedProviderIds] = useState<number[]>([]);
@@ -1007,6 +1024,7 @@ export default function ShowsScreen() {
           setYounifyLoading(true);
           setStreamingLoading(true);
         }
+        setStreamingLoadError(null);
         if (shouldTrackProgress) {
           setStreamingLoadProgress({ progress: 0.05, label: 'Starting…' });
         }
@@ -1023,6 +1041,9 @@ export default function ShowsScreen() {
         setStreamingSections(Array.isArray(bundle.browseSections) ? bundle.browseSections : []);
         lastYounifyFetchAtRef.current = Date.now();
       } catch (error) {
+        const message =
+          error instanceof Error ? error.message : 'Could not load your streaming catalogs';
+        setStreamingLoadError(message);
         if (__DEV__) {
           console.warn('Failed to load Younify streaming bundle:', error);
         }
@@ -1097,12 +1118,6 @@ export default function ShowsScreen() {
     [streamingSections],
   );
 
-  const heroStreamingContent = useMemo(() => {
-    if (Array.isArray(younifyContent) && younifyContent.length > 0) return younifyContent;
-    const fallback = streamingSections.flatMap((s) => (Array.isArray(s.items) ? s.items : []));
-    return fallback.slice(0, 60);
-  }, [younifyContent, streamingSections]);
-
   const heroScrollX = useRef(new RNAnimated.Value(0)).current;
   const forYouScrollY = useRef(new RNAnimated.Value(0)).current;
   const forYouHeroTranslateY = forYouScrollY.interpolate({
@@ -1125,16 +1140,52 @@ export default function ShowsScreen() {
 
   /** TMDB discovery queries run only on For You, or after a deferred prefetch on other subtabs. */
   const [forYouQueriesEnabled, setForYouQueriesEnabled] = useState(() => selectedTab === 'for-you');
+  type ForYouTrendingPopularCache = {
+    movies: TMDBMovie[];
+    tvShows: TMDBTVShow[];
+  };
+  const [forYouTrendingPlaceholder, setForYouTrendingPlaceholder] = useState<
+    ForYouTrendingPopularCache | undefined
+  >(undefined);
+  const [forYouPopularPlaceholder, setForYouPopularPlaceholder] = useState<
+    ForYouTrendingPopularCache | undefined
+  >(undefined);
+  const [forYouCacheSavedAt, setForYouCacheSavedAt] = useState<{
+    trending?: number;
+    popular?: number;
+  }>({});
 
   useEffect(() => {
-    if (selectedTab === 'for-you') {
+    const staleMaxAge = 30 * 24 * 60 * 60 * 1000;
+    void readDiscoveryCache<ForYouTrendingPopularCache>(
+      DISCOVERY_CACHE_KEYS.forYouTrending,
+      staleMaxAge,
+    ).then((hit) => {
+      if (hit?.data) {
+        setForYouTrendingPlaceholder(hit.data);
+        setForYouCacheSavedAt((prev) => ({ ...prev, trending: hit.savedAt }));
+      }
+    });
+    void readDiscoveryCache<ForYouTrendingPopularCache>(
+      DISCOVERY_CACHE_KEYS.forYouPopular,
+      staleMaxAge,
+    ).then((hit) => {
+      if (hit?.data) {
+        setForYouPopularPlaceholder(hit.data);
+        setForYouCacheSavedAt((prev) => ({ ...prev, popular: hit.savedAt }));
+      }
+    });
+  }, []);
+
+  useEffect(() => {
+    if (selectedTab === 'for-you' || selectedTab === 'streaming') {
       setForYouQueriesEnabled(true);
     }
   }, [selectedTab]);
 
   useFocusEffect(
     useCallback(() => {
-      if (selectedTab === 'for-you') {
+      if (selectedTab === 'for-you' || selectedTab === 'streaming') {
         setForYouQueriesEnabled(true);
         return;
       }
@@ -1149,7 +1200,11 @@ export default function ShowsScreen() {
     }, [selectedTab]),
   );
 
-  const forYouQueryOptions = { enabled: forYouQueriesEnabled, staleTime: 1000 * 60 * 30 };
+  const forYouQueryOptions = {
+    enabled: forYouQueriesEnabled,
+    staleTime: 1000 * 60 * 30,
+    retry: 1,
+  };
 
   const trendingQuery = useQuery({
     queryKey: ['trending-all'],
@@ -1158,11 +1213,17 @@ export default function ShowsScreen() {
         tmdbApi.getTrendingMovies('week'),
         tmdbApi.getTrendingTVShows('week'),
       ]);
+      if (moviesResult.status === 'rejected' && tvResult.status === 'rejected') {
+        throw moviesResult.reason instanceof Error
+          ? moviesResult.reason
+          : new Error('Could not load trending picks');
+      }
       return {
         movies: moviesResult.status === 'fulfilled' ? moviesResult.value.results : [],
         tvShows: tvResult.status === 'fulfilled' ? tvResult.value.results : [],
       };
     },
+    placeholderData: forYouTrendingPlaceholder,
     ...forYouQueryOptions,
   });
 
@@ -1173,11 +1234,17 @@ export default function ShowsScreen() {
         tmdbApi.getPopularMovies(),
         tmdbApi.getPopularTVShows(),
       ]);
+      if (moviesResult.status === 'rejected' && tvResult.status === 'rejected') {
+        throw moviesResult.reason instanceof Error
+          ? moviesResult.reason
+          : new Error('Could not load popular picks');
+      }
       return {
         movies: moviesResult.status === 'fulfilled' ? moviesResult.value.results : [],
         tvShows: tvResult.status === 'fulfilled' ? tvResult.value.results : [],
       };
     },
+    placeholderData: forYouPopularPlaceholder,
     ...forYouQueryOptions,
   });
 
@@ -1499,6 +1566,21 @@ export default function ShowsScreen() {
     younifyLinkedTmdbIds,
   ]);
 
+  const heroStreamingContent = useMemo(() => {
+    if (!hasLinkedServices) return [];
+    return buildStreamingHeroRecommendations(
+      streamingSections,
+      linkedProviderIds,
+      forYouPersonalization,
+      { minItems: STREAMING_HERO_MIN_ITEMS, maxItems: 12 },
+    );
+  }, [
+    hasLinkedServices,
+    streamingSections,
+    linkedProviderIds,
+    forYouPersonalization,
+  ]);
+
   const sortForYouRail = useCallback(
     <T extends { id: number }>(
       items: readonly T[],
@@ -1524,26 +1606,44 @@ export default function ShowsScreen() {
       trendingQuery.data?.movies?.slice(0, 8).map((m) => toForYouMediaItem(m, 'movie', 'trending')) ?? [];
     const trendingTv =
       trendingQuery.data?.tvShows?.slice(0, 8).map((s) => toForYouMediaItem(s, 'tv', 'trending')) ?? [];
+    const popularMovies =
+      popularQuery.data?.movies?.slice(0, 8).map((m) => toForYouMediaItem(m, 'movie', 'popular')) ?? [];
+    const popularTv =
+      popularQuery.data?.tvShows?.slice(0, 8).map((s) => toForYouMediaItem(s, 'tv', 'popular')) ?? [];
 
-    const candidates = buildForYouHeroCandidates({
+    let candidates = buildForYouHeroCandidates({
       regionMovies,
       regionTv,
       trendingMovies,
       trendingTv,
     });
+
+    if (!candidates.length) {
+      candidates = buildForYouHeroCandidates({
+        trendingMovies: popularMovies,
+        trendingTv: popularTv,
+      });
+    } else if (candidates.length < 6) {
+      const seen = new Set(candidates.map((c) => c.id));
+      for (const item of buildForYouHeroCandidates({
+        trendingMovies: popularMovies,
+        trendingTv: popularTv,
+      })) {
+        if (seen.has(item.id)) continue;
+        seen.add(item.id);
+        candidates.push(item);
+      }
+    }
+
     if (!candidates.length) return [];
 
     return pickForYouHeroItems(candidates, forYouPersonalization, 6);
-  }, [regionTrendingQuery.data, trendingQuery.data, forYouPersonalization]);
-
-  const forYouHeroLoading =
-    forYouQueriesEnabled &&
-    heroItems.length === 0 &&
-    (trendingQuery.isLoading || (!!userCountryCode && regionTrendingQuery.isLoading));
-
-  const forYouMovieRailsLoading =
-    forYouQueriesEnabled &&
-    (nowPlayingQuery.isLoading || popularQuery.isLoading || upcomingMoviesQuery.isLoading);
+  }, [
+    regionTrendingQuery.data,
+    trendingQuery.data,
+    popularQuery.data,
+    forYouPersonalization,
+  ]);
 
   const hasAnyForYouMovieContent = useMemo(() => {
     const moviePools = [
@@ -1553,17 +1653,115 @@ export default function ShowsScreen() {
       upcomingMoviesQuery.data,
       popularQuery.data?.movies,
       topRatedQuery.data?.movies,
+      trendingQuery.data?.tvShows,
+      popularQuery.data?.tvShows,
+      onTheAirQuery.data,
     ];
     return moviePools.some((pool) => Array.isArray(pool) && pool.length > 0);
   }, [
     trendingQuery.data?.movies,
+    trendingQuery.data?.tvShows,
     regionTrendingQuery.data?.movies,
     nowPlayingQuery.data,
     upcomingMoviesQuery.data,
     popularQuery.data?.movies,
+    popularQuery.data?.tvShows,
     topRatedQuery.data?.movies,
+    onTheAirQuery.data,
   ]);
-  
+
+  const forYouHeroLoading =
+    forYouQueriesEnabled &&
+    heroItems.length === 0 &&
+    (trendingQuery.isPending || popularQuery.isPending);
+
+  const forYouFeedStillLoading =
+    forYouQueriesEnabled &&
+    !hasAnyForYouMovieContent &&
+    (trendingQuery.isPending ||
+      popularQuery.isPending ||
+      nowPlayingQuery.isPending ||
+      onTheAirQuery.isPending ||
+      topRatedQuery.isPending);
+
+  const forYouUsingStaleCache =
+    forYouQueriesEnabled &&
+    (trendingQuery.isError || popularQuery.isError) &&
+    (trendingQuery.isPlaceholderData || popularQuery.isPlaceholderData);
+
+  const forYouOfflineDetail = useMemo(() => {
+    const ages = [
+      trendingQuery.isPlaceholderData && forYouCacheSavedAt.trending
+        ? formatCacheAgeLabel(forYouCacheSavedAt.trending)
+        : null,
+      popularQuery.isPlaceholderData && forYouCacheSavedAt.popular
+        ? formatCacheAgeLabel(forYouCacheSavedAt.popular)
+        : null,
+    ].filter(Boolean);
+    if (ages.length === 0) return undefined;
+    return `Showing saved picks from ${ages[0]}${ages.length > 1 ? `–${ages[ages.length - 1]}` : ''}.`;
+  }, [
+    forYouCacheSavedAt.popular,
+    forYouCacheSavedAt.trending,
+    popularQuery.isPlaceholderData,
+    trendingQuery.isPlaceholderData,
+  ]);
+
+  useEffect(() => {
+    const data = trendingQuery.data;
+    if (!data || trendingQuery.isPlaceholderData) return;
+    if ((data.movies?.length ?? 0) + (data.tvShows?.length ?? 0) === 0) return;
+    void writeDiscoveryCache(DISCOVERY_CACHE_KEYS.forYouTrending, data);
+  }, [trendingQuery.data, trendingQuery.isPlaceholderData]);
+
+  useEffect(() => {
+    const data = popularQuery.data;
+    if (!data || popularQuery.isPlaceholderData) return;
+    if ((data.movies?.length ?? 0) + (data.tvShows?.length ?? 0) === 0) return;
+    void writeDiscoveryCache(DISCOVERY_CACHE_KEYS.forYouPopular, data);
+  }, [popularQuery.data, popularQuery.isPlaceholderData]);
+
+  useEffect(() => {
+    logForYouFeedDiagnostic({
+      heroCount: heroItems.length,
+      hasAnyContent: hasAnyForYouMovieContent,
+      trendingError: trendingQuery.isError,
+      popularError: popularQuery.isError,
+      usingCachedTrending: trendingQuery.isPlaceholderData && trendingQuery.isError,
+      usingCachedPopular: popularQuery.isPlaceholderData && popularQuery.isError,
+    });
+  }, [
+    hasAnyForYouMovieContent,
+    heroItems.length,
+    popularQuery.isError,
+    popularQuery.isPlaceholderData,
+    trendingQuery.isError,
+    trendingQuery.isPlaceholderData,
+  ]);
+
+  useEffect(() => {
+    if (!streamingInitialized || younifyLoading) return;
+    const sectionItemCounts = Object.fromEntries(
+      streamingSections.map((section) => [section.id, section.items?.length ?? 0]),
+    );
+    logStreamingHeroDiagnostic({
+      linkedProviderCount: linkedStreamingCount,
+      sectionIds: streamingSections.map((s) => s.id),
+      sectionItemCounts,
+      heroCount: heroStreamingContent.length,
+      younifyLoading,
+      streamingInitialized,
+      errorMessage: streamingLoadError,
+    });
+  }, [
+    heroStreamingContent.length,
+    linkedStreamingCount,
+    streamingInitialized,
+    streamingLoadError,
+    streamingSections,
+    younifyLoading,
+  ]);
+
   const filteredShows = useMemo(() => {
     let filtered = shows;
     if (selectedStatus !== 'all') {
@@ -2408,8 +2606,17 @@ export default function ShowsScreen() {
                 </Text>
               </View>
               <View style={styles.headerButtons}>
-                <TouchableOpacity 
-                  style={styles.headerButton}
+                <TouchableOpacity
+                  style={[
+                    styles.headerButton,
+                    hasLinkedServices && styles.headerButtonStreaming,
+                  ]}
+                  accessibilityRole="button"
+                  accessibilityLabel={
+                    hasLinkedServices
+                      ? `${linkedStreamingCount} streaming ${linkedStreamingCount === 1 ? 'provider' : 'providers'} connected. Manage streaming providers.`
+                      : 'Connect streaming providers'
+                  }
                   onPress={() => {
                     if (Platform.OS !== 'web') {
                       void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
@@ -2417,7 +2624,15 @@ export default function ShowsScreen() {
                     router.push('/(root)/streaming-services' as any);
                   }}
                 >
-                  <Globe size={18} color={THEME.textSecondary} />
+                  <Link2
+                    size={18}
+                    color={hasLinkedServices ? THEME.primary : THEME.textSecondary}
+                  />
+                  {linkedStreamingCount > 0 ? (
+                    <View style={styles.headerStreamingBadge}>
+                      <Text style={styles.headerStreamingBadgeText}>{linkedStreamingCount}</Text>
+                    </View>
+                  ) : null}
                 </TouchableOpacity>
                 <TouchableOpacity 
                   style={styles.headerButton}
@@ -2600,13 +2815,40 @@ export default function ShowsScreen() {
             </RNAnimated.View>
           ) : null}
 
-          {forYouQueriesEnabled && !forYouMovieRailsLoading && !hasAnyForYouMovieContent ? (
+          {forYouQueriesEnabled &&
+          !forYouFeedStillLoading &&
+          (forYouUsingStaleCache ||
+            ((trendingQuery.isError || popularQuery.isError) && !hasAnyForYouMovieContent)) ? (
+            <FeedRetryBanner
+              message="Can't reach the server"
+              detail={
+                forYouUsingStaleCache
+                  ? forYouOfflineDetail ?? 'Pull down to refresh or tap Try again.'
+                  : 'Check your connection and try again.'
+              }
+              onRetry={() => void onRefresh()}
+              accentColor={THEME.primary}
+              textColor={THEME.text}
+              mutedColor={THEME.textMuted}
+              backgroundColor="rgba(255,255,255,0.06)"
+              borderColor="rgba(255,255,255,0.08)"
+            />
+          ) : null}
+
+          {forYouQueriesEnabled && !forYouFeedStillLoading && !hasAnyForYouMovieContent ? (
             <View style={styles.forYouEmptyState}>
               <Film size={28} color={THEME.textMuted} />
               <Text style={styles.forYouEmptyTitle}>Couldn&apos;t load movie picks</Text>
               <Text style={styles.forYouEmptyText}>
                 Pull down to refresh, or check your connection.
               </Text>
+            </View>
+          ) : null}
+
+          {forYouFeedStillLoading && !forYouHeroLoading ? (
+            <View style={styles.forYouRailsLoading}>
+              <ActivityIndicator size="small" color={THEME.primary} />
+              <Text style={styles.forYouRailsLoadingText}>Loading movie & TV picks…</Text>
             </View>
           ) : null}
 
@@ -2708,6 +2950,18 @@ export default function ShowsScreen() {
               onBrowseItemOpenDetails={handleYounifyRowOpenDetails}
               header={
                 <>
+                  {streamingLoadError && hasLinkedServices && !hasStreamingBrowseContent ? (
+                    <FeedRetryBanner
+                      message="Can't reach the server"
+                      detail="We couldn't refresh your linked services. Try again in a moment."
+                      onRetry={() => void onStreamingPullRefresh()}
+                      accentColor={THEME.primary}
+                      textColor={THEME.text}
+                      mutedColor={THEME.textMuted}
+                      backgroundColor="rgba(255,255,255,0.06)"
+                      borderColor="rgba(255,255,255,0.08)"
+                    />
+                  ) : null}
                   <View style={styles.streamingRailWrap}>
                     <ConnectedServicesHero
                       content={heroStreamingContent}
@@ -3031,6 +3285,28 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     alignItems: 'center',
   },
+  headerButtonStreaming: {
+    backgroundColor: 'rgba(229, 9, 20, 0.12)',
+    borderWidth: 1,
+    borderColor: 'rgba(229, 9, 20, 0.25)',
+  },
+  headerStreamingBadge: {
+    position: 'absolute',
+    top: -2,
+    right: -2,
+    minWidth: 16,
+    height: 16,
+    borderRadius: 8,
+    paddingHorizontal: 4,
+    backgroundColor: THEME.primary,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  headerStreamingBadgeText: {
+    fontSize: 9,
+    fontWeight: '800',
+    color: '#FFF',
+  },
 
   tabsTrack: {
     paddingBottom: 10,
@@ -3204,6 +3480,16 @@ const styles = StyleSheet.create({
     lineHeight: 18,
     color: THEME.textSecondary,
     textAlign: 'center',
+  },
+  forYouRailsLoading: {
+    paddingVertical: 28,
+    alignItems: 'center',
+    gap: 10,
+  },
+  forYouRailsLoadingText: {
+    fontSize: 13,
+    fontWeight: '600',
+    color: THEME.textSecondary,
   },
   heroSection: {
     marginBottom: 24,

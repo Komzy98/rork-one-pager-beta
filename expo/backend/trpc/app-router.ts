@@ -14,6 +14,12 @@ import { generateVoiceRoute } from "./routes/ai/voice/route";
 import { getNearbyEventsRoute, getNearbyEventsBatchRoute } from "./routes/events/nearby/route";
 import { searchGlobalEventsRoute } from "./routes/events/search/route";
 import { getEventByIdRoute } from "./routes/events/byId/route";
+import {
+  searchKitchenRecipesRoute,
+  getKitchenRecipeRoute,
+  randomKitchenRecipesRoute,
+  spoonacularConfiguredRoute,
+} from "./routes/cooking/spoonacular";
 import { signInWithPasswordRoute } from "./routes/auth/signIn/route";
 
 export const appRouter = createTRPCRouter({
@@ -52,6 +58,12 @@ export const appRouter = createTRPCRouter({
     getNearbyBatch: getNearbyEventsBatchRoute,
     searchGlobal: searchGlobalEventsRoute,
     getById: getEventByIdRoute,
+  }),
+  cooking: createTRPCRouter({
+    searchRecipes: searchKitchenRecipesRoute,
+    getRecipe: getKitchenRecipeRoute,
+    randomRecipes: randomKitchenRecipesRoute,
+    isConfigured: spoonacularConfiguredRoute,
   }),
 });
 

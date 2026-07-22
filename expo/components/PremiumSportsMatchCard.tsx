@@ -152,6 +152,7 @@ export const PremiumSportsMatchCard = React.memo(
     onTogglePin,
     onLeaguePress,
     surfaceColors,
+    personalizationChipLabel,
   }: {
     match: SportsMatchCardModel;
     isFavoriteTeam: (name: string) => boolean;
@@ -163,6 +164,7 @@ export const PremiumSportsMatchCard = React.memo(
     onLeaguePress?: (leagueId: number, leagueName: string) => void;
     /** When set (e.g. club profile sheet), card matches parent surface instead of sports-tab gold/blue. */
     surfaceColors?: MatchCardSurfaceColors;
+    personalizationChipLabel?: string | null;
   }) => {
     const { isDark } = useTheme();
     const sfBase = sportsFixedPalette(isDark);
@@ -260,6 +262,14 @@ export const PremiumSportsMatchCard = React.memo(
                 style={cardStyles.cardGlow}
                 pointerEvents="none"
               />
+            ) : null}
+            {personalizationChipLabel ? (
+              <View style={[cardStyles.personalizationChip, { backgroundColor: `${sf.primary}18`, borderColor: `${sf.primary}44` }]}>
+                <Star size={10} color={sf.primary} fill={sf.primary} />
+                <Text style={[cardStyles.personalizationChipText, { color: sf.primary }]} numberOfLines={1}>
+                  {personalizationChipLabel}
+                </Text>
+              </View>
             ) : null}
             <View style={cardStyles.matchHeader}>
               {onLeaguePress && match.leagueId > 0 ? (
@@ -577,6 +587,23 @@ const cardStyles = StyleSheet.create({
     borderColor: 'rgba(0, 0, 0, 0.04)',
     overflow: 'hidden',
     position: 'relative',
+  },
+  personalizationChip: {
+    alignSelf: 'flex-start',
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 5,
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderRadius: 20,
+    borderWidth: 1,
+    marginBottom: 10,
+    maxWidth: '100%',
+  },
+  personalizationChipText: {
+    fontSize: 11,
+    fontWeight: '700',
+    flexShrink: 1,
   },
   upcomingFootballCard: {
     shadowOpacity: 0.08,

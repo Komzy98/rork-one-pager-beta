@@ -46,9 +46,21 @@ Notes:
 ```bash
 npm test -- utils/__tests__/skiddle.test.ts
 npm run smoke:events
-EVENTS_API_BASE_URL=https://your-api.railway.app npm run smoke:events
+npm run smoke:production
+EVENTS_API_BASE_URL=https://your-api.railway.app npm run smoke:production
 curl -s https://your-api.railway.app/health/events
 ```
+
+## Production smoke (CI)
+
+After deploys to **`main`**, GitHub Actions runs `.github/workflows/production-api-smoke.yml`:
+
+- `GET /health`
+- `events.getNearby` (Manchester sample coords)
+- `events.searchGlobal`
+- TMDB trending (For You path)
+
+Optional repo secret: `PRODUCTION_API_BASE_URL` (defaults to `https://join.onepagerapp.co.uk` in the script). Optional `TMDB_API_KEY` if the default key is rotated.
 
 ## Railway deploy
 

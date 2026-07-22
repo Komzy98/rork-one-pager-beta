@@ -157,6 +157,8 @@ export function mapSkiddleEvent(raw: SkiddleEvent): LocalEvent | null {
     longitude: lng,
     startIso,
     ticketUrl: raw.ticketUrl?.trim() || raw.link,
+    listingSource: 'skiddle',
+    marketCode: 'GB',
   };
 
   event.isLiveNow = isEventLiveNow(event);

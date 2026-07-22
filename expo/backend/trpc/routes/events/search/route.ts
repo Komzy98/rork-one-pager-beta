@@ -4,7 +4,8 @@ import { getSkiddleApiKeyFromEnv } from '@/backend/utils/skiddleApiKey';
 import { getTicketmasterApiKeyFromEnv } from '@/backend/utils/ticketmasterApiKey';
 import type { NearbyEventsResult, NearbyEventsSource } from '@/types/events';
 import { fetchMergedDiscoveryEvents } from '@/utils/eventDiscoveryFetch';
-import { rankEventsBySearchKeyword } from '@/utils/eventSearch';
+import { attachDistanceKm } from '@/utils/eventDiscovery';
+import { rankGlobalSearchResults } from '@/utils/eventSearch';
 
 const CACHE_TTL_MS = 3 * 60 * 1000;
 
@@ -16,7 +17,7 @@ interface CacheEntry {
 const cache = new Map<string, CacheEntry>();
 
 function getCacheKey(input: Record<string, unknown>): string {
-  return `events:search:v2:${JSON.stringify(input)}`;
+  return `events:search:v3:${JSON.stringify(input)}`;
 }
 
 function getCached(key: string): NearbyEventsResult | null {
@@ -60,6 +61,8 @@ export const searchGlobalEventsRoute = publicProcedure
       q: input.keyword.toLowerCase(),
       scope: 'worldwide',
       size: input.size,
+      lat: Math.round(input.latitude * 100) / 100,
+      lng: Math.round(input.longitude * 100) / 100,
     });
 
     const cached = getCached(cacheKey);
@@ -90,7 +93,14 @@ export const searchGlobalEventsRoute = publicProcedure
       { ticketmaster: ticketmasterKey, skiddle: skiddleKey },
     );
 
-    const ranked = rankEventsBySearchKeyword(events, input.keyword);
+    const withDistance = attachDistanceKm(events, {
+      latitude: input.latitude,
+      longitude: input.longitude,
+    });
+    const ranked = rankGlobalSearchResults(withDistance, input.keyword, {
+      latitude: input.latitude,
+      longitude: input.longitude,
+    });
     const result: NearbyEventsResult = {
       events: ranked,
       source: resolveSource(ticketmasterCount, skiddleCount),

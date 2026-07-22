@@ -15,6 +15,7 @@ import { formatDistanceKm } from '@/utils/eventDiscovery';
 import { getEventCategoryMeta } from '@/utils/eventCategoryMeta';
 import type { EventsPalette } from '@/utils/eventsPalette';
 import { EventRecommendationBadge } from '@/components/events/EventRecommendationBadge';
+import EventListingBadges from '@/components/events/EventListingBadges';
 import { EventSocialProofRow } from '@/components/events/EventSocialProofRow';
 import type { EventFriendProfile } from '@/utils/eventSocialProof';
 import { resolveEventPosterUrl } from '@/utils/eventPosterImage';
@@ -36,6 +37,8 @@ interface PremiumEventPosterCardProps {
   socialProofLabel?: string | null;
   socialProofFriends?: EventFriendProfile[];
   onInviteFriends?: (event: LocalEvent) => void;
+  /** Worldwide search — show Ticketmaster/Skiddle + UK/US market chips. */
+  showListingBadges?: boolean;
 }
 
 export const PremiumEventPosterCard = React.memo(function PremiumEventPosterCard({
@@ -52,6 +55,7 @@ export const PremiumEventPosterCard = React.memo(function PremiumEventPosterCard
   socialProofLabel,
   socialProofFriends = [],
   onInviteFriends,
+  showListingBadges = false,
 }: PremiumEventPosterCardProps) {
   const scaleAnim = useRef(new Animated.Value(1)).current;
   const heartScale = useRef(new Animated.Value(1)).current;
@@ -198,6 +202,8 @@ export const PremiumEventPosterCard = React.memo(function PremiumEventPosterCard
               compact={isHorizontal}
             />
           ) : null}
+
+          {showListingBadges ? <EventListingBadges event={event} palette={palette} /> : null}
 
           <View style={styles.metaRow}>
             <MapPin size={11} color={palette.textMuted} />

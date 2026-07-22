@@ -7,6 +7,30 @@ import {
   isPrimeVideoProviderId,
   normalizePrimeVideoWatchUrl,
 } from '@/utils/primeVideoLinks';
+import {
+  normalizeDisneyPlusWatchUrl,
+  isDisneyPlusSearchOrGenericUrl,
+  extractDisneyPlusUrlFromText,
+  buildDisneyPlusOpenTargets,
+} from '@/utils/disneyPlusLinks';
+import {
+  buildNetflixOpenTargets,
+  isNetflixSearchOrGenericUrl,
+  normalizeNetflixWatchUrl,
+} from '@/utils/netflixLinks';
+import { PRIME_VIDEO_APP_ORIGIN } from '@/utils/primeVideoLinks';
+
+export {
+  normalizeDisneyPlusWatchUrl,
+  isDisneyPlusSearchOrGenericUrl,
+  extractDisneyPlusUrlFromText,
+  buildDisneyPlusOpenTargets,
+} from '@/utils/disneyPlusLinks';
+export {
+  buildNetflixOpenTargets,
+  isNetflixSearchOrGenericUrl,
+  normalizeNetflixWatchUrl,
+} from '@/utils/netflixLinks';
 
 export interface StreamingPlatform {
   id: number;
@@ -280,7 +304,12 @@ export async function openStreamingTitleSearch(
   /** Appended to the title for catalog search (e.g. `S1E6`) so results skew toward the specific episode. */
   episodeSearchHint?: string,
 ): Promise<boolean> {
-  const platform = STREAMING_PLATFORMS[normalizeTmdbWatchProviderId(providerId)];
+  const canonicalId = normalizeTmdbWatchProviderId(providerId);
+  /** Disney+ `/search` is not registered for universal links — it opens the app without the query. */
+  if (canonicalId === 337 || canonicalId === 8) {
+    return false;
+  }
+  const platform = STREAMING_PLATFORMS[canonicalId];
   if (!platform) return false;
   const t = title.trim();
   const hint = episodeSearchHint?.trim();
@@ -362,6 +391,40 @@ function pickFirstString(row: Record<string, unknown>, keys: string[]): string |
   return null;
 }
 
+/** Drop URLs that open provider home/search instead of a title. */
+function sanitizeProviderWatchUrl(
+  url: string,
+  pid: number | null,
+): string | null {
+  let normalized = normalizeStreamingWatchUrl(url);
+
+  if (pid === 337 || /disneyplus\.com/i.test(normalized)) {
+    if (isDisneyPlusSearchOrGenericUrl(normalized)) return null;
+    normalized = normalizeDisneyPlusWatchUrl(normalized);
+  }
+
+  if (pid === 8 || /netflix\.com/i.test(normalized)) {
+    if (isNetflixSearchOrGenericUrl(normalized)) return null;
+    normalized = normalizeNetflixWatchUrl(normalized);
+  }
+
+  if (
+    isPrimeVideoProviderId(pid) ||
+    /amazon\.|primevideo|aiv:\/\//i.test(normalized)
+  ) {
+    normalized = normalizePrimeVideoWatchUrl(normalized);
+    const hasDetail =
+      extractAsinFromPrimeUrl(url) ??
+      extractAsinFromPrimeUrl(normalized) ??
+      extractGtiFromPrimeUrl(url) ??
+      extractGtiFromPrimeUrl(normalized);
+    if (normalized === PRIME_VIDEO_APP_ORIGIN && !hasDetail) return null;
+  }
+
+  if (isTmdbOrJustWatchAggregatorUrl(normalized)) return null;
+  return normalized;
+}
+
 /** Provider play / resume URLs from Younify rows (camelCase + snake_case). */
 export function pickWatchNowUrlFromRow(row: Record<string, unknown>): string | null {
   const keys = [
@@ -393,16 +456,17 @@ export function pickWatchNowUrlFromRow(row: Record<string, unknown>): string | n
     "prime_video_url",
   ];
   const direct = pickFirstString(row, keys);
+  const svc = row.younifySourceService as { id?: string; name?: string } | undefined;
+  const pid = younifySourceToTmdbProviderId(svc);
   if (direct) {
-    if (isTmdbOrJustWatchAggregatorUrl(direct)) return null;
-    return direct;
+    const safe = sanitizeProviderWatchUrl(direct, pid);
+    if (safe) return safe;
   }
   for (const k of keys) {
     const v = row[k];
     if (typeof v === "string" && /^https?:\/\//i.test(v.trim())) {
-      const trimmed = v.trim();
-      if (isTmdbOrJustWatchAggregatorUrl(trimmed)) continue;
-      return trimmed;
+      const safe = sanitizeProviderWatchUrl(v.trim(), pid);
+      if (safe) return safe;
     }
   }
   return null;
@@ -486,12 +550,65 @@ function extractUuidContentId(row: Record<string, unknown>): string | null {
     "video_uuid",
     "huluContentId",
     "hulu_content_id",
+    "disneyContentId",
+    "disney_content_id",
   ];
   for (const k of keys) {
     const v = row[k];
     if (typeof v === "string" && UUID_RE.test(v.trim())) return v.trim();
   }
   return null;
+}
+
+function extractDisneyPlusUrlFromRow(row: Record<string, unknown>): string | null {
+  for (const v of Object.values(row)) {
+    if (typeof v === "string") {
+      const found = extractDisneyPlusUrlFromText(v);
+      if (found) return found;
+    }
+  }
+  return null;
+}
+
+function buildDisneyPlusWatchUrlFromRow(
+  row: Record<string, unknown>,
+  title: string,
+): string | null {
+  const embedded = extractDisneyPlusUrlFromRow(row);
+  if (embedded) return embedded;
+
+  const uuid = extractUuidContentId(row);
+  if (uuid) {
+    return `https://www.disneyplus.com/play/${uuid}`;
+  }
+
+  const rawTitle = String(row.title ?? row.name ?? title ?? "").trim();
+  for (const k of ["entityId", "entity_id", "disneyEntityId", "disney_entity_id"] as const) {
+    const v = row[k];
+    if (typeof v === "string" && /^[a-zA-Z0-9-]{6,32}$/.test(v.trim())) {
+      const slug = rawTitle
+        .toLowerCase()
+        .replace(/[^a-z0-9]+/g, "-")
+        .replace(/^-|-$/g, "");
+      if (slug) {
+        return `https://www.disneyplus.com/series/${slug}/${v.trim()}`;
+      }
+    }
+  }
+  return null;
+}
+
+async function openDisneyPlusContentUrl(url: string): Promise<boolean> {
+  const targets = buildDisneyPlusOpenTargets(url);
+  for (const target of targets) {
+    try {
+      await Linking.openURL(target);
+      return true;
+    } catch {
+      /* try next */
+    }
+  }
+  return false;
 }
 
 /**
@@ -527,8 +644,7 @@ function buildProviderFallbackWatchUrl(row: Record<string, unknown>): string | n
   }
 
   if (pid === 337) {
-    const u = extractUuidContentId(row);
-    if (u) return `https://www.disneyplus.com/video/${u}`;
+    return buildDisneyPlusWatchUrlFromRow(row, String(row.title ?? row.name ?? ""));
   }
 
   return null;
@@ -539,6 +655,12 @@ function buildProviderFallbackWatchUrl(row: Record<string, unknown>): string | n
  */
 export function normalizeStreamingWatchUrl(url: string): string {
   let out = normalizePrimeVideoWatchUrl(url);
+  if (/disneyplus\.com/i.test(out)) {
+    out = normalizeDisneyPlusWatchUrl(out);
+  }
+  if (/netflix\.com/i.test(out)) {
+    out = normalizeNetflixWatchUrl(out);
+  }
   try {
     const u = new URL(out);
     const h = u.hostname.toLowerCase();
@@ -574,11 +696,21 @@ function httpsUrlToNativeScheme(httpsUrl: string, schemeWithColon: string): stri
 async function openWatchUrlWithProviderFallbacks(
   watchUrl: string,
   row: Record<string, unknown>,
+  options?: { skipDisneySearchGuard?: boolean },
 ): Promise<boolean> {
   const normalizedUrl = normalizeStreamingWatchUrl(watchUrl);
   const svc = row.younifySourceService as { id?: string; name?: string } | undefined;
   const pid = younifySourceToTmdbProviderId(svc);
   const lower = normalizedUrl.toLowerCase();
+
+  if (
+    !options?.skipDisneySearchGuard &&
+    (pid === 337 || lower.includes("disneyplus.com")) &&
+    isDisneyPlusSearchOrGenericUrl(normalizedUrl)
+  ) {
+    return false;
+  }
+
   const isPrime =
     isPrimeVideoProviderId(pid) ||
     /amazon\.|primevideo|aiv/i.test(watchUrl) ||
@@ -609,6 +741,30 @@ async function openWatchUrlWithProviderFallbacks(
       }
     }
     return false;
+  }
+
+  if (pid === 337 || lower.includes("disneyplus.com")) {
+    if (!isDisneyPlusSearchOrGenericUrl(normalizedUrl)) {
+      if (await openDisneyPlusContentUrl(normalizedUrl)) return true;
+    }
+  }
+
+  if (pid === 8 || lower.includes("netflix.com")) {
+    if (!isNetflixSearchOrGenericUrl(normalizedUrl)) {
+      const resumeSec = getPlaybackResumeSeconds(row);
+      const targets = buildNetflixOpenTargets({
+        url: normalizedUrl,
+        resumeSeconds: resumeSec,
+      });
+      for (const target of targets) {
+        try {
+          await Linking.openURL(target);
+          return true;
+        } catch {
+          /* try next */
+        }
+      }
+    }
   }
 
   try {
@@ -938,6 +1094,17 @@ export async function openYounifyBrowseItemOnPlatform(
   const pid = younifySourceToTmdbProviderId(
     row.younifySourceService as { id?: string; name?: string } | undefined,
   );
+  if (pid === 337) {
+    const disneyUrl = buildDisneyPlusWatchUrlFromRow(row, title);
+    if (disneyUrl && (await openDisneyPlusContentUrl(disneyUrl))) return;
+  }
+  if (pid === 8) {
+    const homepage = pickFirstString(row, ["homepage", "homePage", "home_page"]);
+    if (homepage && !isNetflixSearchOrGenericUrl(homepage)) {
+      const opened = await openWatchUrlWithProviderFallbacks(homepage, row);
+      if (opened) return;
+    }
+  }
   if (pid != null) {
     await openStreamingTitleSearch(pid, title, year);
     return;
@@ -959,11 +1126,69 @@ export async function tryOpenDisneyPlusFromHomepage(
   homepage: string | null | undefined,
 ): Promise<boolean> {
   if (!homepage || !/disneyplus\.com/i.test(homepage)) return false;
-  const url = normalizeStreamingWatchUrl(homepage.trim());
-  const row = {
-    younifySourceService: { id: "337", name: "Disney Plus" },
-  } as Record<string, unknown>;
-  return openWatchUrlWithProviderFallbacks(url, row);
+  return openDisneyPlusContentUrl(homepage.trim());
+}
+
+export async function openPrimeVideoForTmdbItem(
+  tmdbId: number,
+  mediaType: "movie" | "tv",
+): Promise<boolean> {
+  try {
+    const { tmdbApi } = await import("@/utils/tmdbApi");
+    const details =
+      mediaType === "movie"
+        ? await tmdbApi.getMovieDetails(tmdbId)
+        : await tmdbApi.getTVShowDetails(tmdbId);
+    const homepage = details?.homepage?.trim();
+    if (
+      !homepage ||
+      (!/amazon\.|primevideo/i.test(homepage) && !/^aiv:\/\//i.test(homepage))
+    ) {
+      return false;
+    }
+    return openWatchUrlWithProviderFallbacks(homepage, primeVideoRowStub());
+  } catch (e) {
+    if (__DEV__) console.warn("[openPrimeVideoForTmdbItem]", e);
+    return false;
+  }
+}
+
+export async function openNetflixForTmdbItem(
+  tmdbId: number,
+  mediaType: "movie" | "tv",
+): Promise<boolean> {
+  try {
+    const { tmdbApi } = await import("@/utils/tmdbApi");
+    const details =
+      mediaType === "movie"
+        ? await tmdbApi.getMovieDetails(tmdbId)
+        : await tmdbApi.getTVShowDetails(tmdbId);
+    const homepage = details?.homepage?.trim();
+    if (!homepage || !/netflix\.com/i.test(homepage)) return false;
+    const row = { younifySourceService: { id: "8", name: "Netflix" } };
+    return openWatchUrlWithProviderFallbacks(homepage, row);
+  } catch (e) {
+    if (__DEV__) console.warn("[openNetflixForTmdbItem]", e);
+    return false;
+  }
+}
+
+/** Resolve TMDB `homepage` (often a disneyplus.com series/movie URL) and open in the Disney+ app. */
+export async function openDisneyPlusForTmdbItem(
+  tmdbId: number,
+  mediaType: "movie" | "tv",
+): Promise<boolean> {
+  try {
+    const { tmdbApi } = await import("@/utils/tmdbApi");
+    const details =
+      mediaType === "movie"
+        ? await tmdbApi.getMovieDetails(tmdbId)
+        : await tmdbApi.getTVShowDetails(tmdbId);
+    return tryOpenDisneyPlusFromHomepage(details?.homepage);
+  } catch (e) {
+    if (__DEV__) console.warn("[openDisneyPlusForTmdbItem]", e);
+    return false;
+  }
 }
 
 export async function openStreamingApp(
@@ -993,26 +1218,51 @@ export async function openStreamingApp(
 
   const tryFallback = async (): Promise<boolean> => {
     if (safeFallbackUrl) {
-      try {
-        await Linking.openURL(normalizeStreamingWatchUrl(safeFallbackUrl));
-        return true;
-      } catch {
-        /* fall through to title search */
+      if (canonicalId === 337) {
+        if (await tryOpenDisneyPlusFromHomepage(safeFallbackUrl)) return true;
+      } else if (canonicalId === 8) {
+        const row = { younifySourceService: { id: "8", name: "Netflix" } };
+        if (await openWatchUrlWithProviderFallbacks(safeFallbackUrl, row)) return true;
+      } else if (isPrimeVideoProviderId(canonicalId)) {
+        if (
+          await openWatchUrlWithProviderFallbacks(
+            safeFallbackUrl,
+            primeVideoRowStub(),
+          )
+        ) {
+          return true;
+        }
+      } else {
+        try {
+          await Linking.openURL(normalizeStreamingWatchUrl(safeFallbackUrl));
+          return true;
+        } catch {
+          /* fall through to title search */
+        }
       }
     }
     return openStreamingTitleSearch(canonicalId, title, year);
   };
 
+  if (canonicalId === 337 || canonicalId === 8) {
+    return await tryFallback();
+  }
+
+  if (isPrimeVideoProviderId(canonicalId)) {
+    if (safeFallbackUrl) {
+      const opened = await openWatchUrlWithProviderFallbacks(
+        safeFallbackUrl,
+        primeVideoRowStub(),
+      );
+      if (opened) return true;
+    }
+    return await tryFallback();
+  }
+
   try {
     const searchUrl = normalizeStreamingWatchUrl(
       platform.searchUrl?.(title, year) || platform.webUrl,
     );
-
-    if (isPrimeVideoProviderId(canonicalId)) {
-      const opened = await openWatchUrlWithProviderFallbacks(searchUrl, primeVideoRowStub());
-      if (opened) return true;
-      return await tryFallback();
-    }
 
     try {
       await Linking.openURL(searchUrl);

@@ -77,6 +77,14 @@ export interface EventRecommendationInput {
   habitLabels?: string[];
   recoveryModeActive?: boolean;
   friendCountByEventId?: Map<string, number>;
+  /** Reverse-geocoded label — powers “Near Salford” chips. */
+  areaLabel?: string | null;
+}
+
+export function shortAreaLabel(areaLabel: string | null | undefined): string | null {
+  if (!areaLabel?.trim()) return null;
+  const first = areaLabel.split(',')[0]?.trim();
+  return first || areaLabel.trim();
 }
 
 export interface EventPersonalizationExtras {
@@ -799,7 +807,7 @@ export function buildEventRecommendationReasons(
     const phrase = EDITORIAL_CATEGORY_PHRASES[event.category] ?? String(event.category).replace(/_/g, ' ');
     reasons.push({
       kind: 'interest',
-      label: `You enjoy ${phrase}`,
+      label: `Because you like ${phrase}`,
       priority: 80,
     });
   }
@@ -871,12 +879,22 @@ export function buildEventRecommendationReasons(
       label: 'Popular with your friends',
       priority: 84,
     });
-  } else if (input.discoveryTab === 'near' && dist != null && dist < 15) {
+  } else if (input.discoveryTab === 'near' && dist != null && dist < 25) {
+    const areaShort = shortAreaLabel(input.areaLabel);
     reasons.push({
       kind: 'distance',
-      label: 'Close to where you are',
-      priority: 70,
+      label: areaShort ? `Near ${areaShort}` : 'Near you',
+      priority: areaShort ? 83 : 70,
     });
+  } else if (dist != null && dist < 8) {
+    const areaShort = shortAreaLabel(input.areaLabel);
+    if (areaShort) {
+      reasons.push({
+        kind: 'distance',
+        label: `Near ${areaShort}`,
+        priority: 72,
+      });
+    }
   }
 
   if (reasons.length === 0) {

@@ -134,6 +134,7 @@ export function mapTicketmasterEvent(raw: TmEvent): LocalEvent | null {
 
   const category = mapCategory(raw.classifications);
   const city = venue?.city?.name || 'Nearby';
+  const countryCode = venue?.country?.countryCode?.trim().toUpperCase();
   const event: LocalEvent = {
     id: `tm-${raw.id}`,
     title: raw.name,
@@ -159,6 +160,8 @@ export function mapTicketmasterEvent(raw: TmEvent): LocalEvent | null {
     longitude: lng,
     startIso,
     ticketUrl: raw.url,
+    listingSource: 'ticketmaster',
+    ...(countryCode ? { marketCode: countryCode } : {}),
   };
 
   event.isLiveNow = isEventLiveNow(event);

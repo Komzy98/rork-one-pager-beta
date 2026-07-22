@@ -1,0 +1,33 @@
+name: Production API smoke
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'expo/backend/**'
+      - 'expo/utils/eventDiscoveryFetch.ts'
+      - 'expo/utils/eventDiscovery.ts'
+      - 'expo/scripts/smoke-production-api.mjs'
+      - 'expo/scripts/smoke-events-api.mjs'
+      - '.github/workflows/production-api-smoke.yml'
+  workflow_dispatch:
+
+jobs:
+  smoke:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    defaults:
+      run:
+        working-directory: expo
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Run production API smoke
+        env:
+          EVENTS_API_BASE_URL: ${{ secrets.PRODUCTION_API_BASE_URL }}
+          TMDB_API_KEY: ${{ secrets.TMDB_API_KEY }}
+        run: node scripts/smoke-production-api.mjs

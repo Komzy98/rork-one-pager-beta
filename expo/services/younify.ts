@@ -708,20 +708,28 @@ export type LoadYounifyStreamingBundleOptions = {
 
 /** Hero rail from browse rows — avoids a second SDK `fetchContent` + `fetchCategories` round trip. */
 function pickHeroFromBrowseSections(sections: readonly YounifyBrowseSection[]): any[] {
-  const priority = ["trending", "recommended", "acclaimed", "continue"] as const;
+  const priority = ["recommended", "trending", "acclaimed", "watchlist"] as const;
+  const merged: any[] = [];
+  const seen = new Set<string>();
   for (const id of priority) {
     const items = sections.find((s) => s.id === id)?.items ?? [];
-    if (items.length > 0) {
-      return items.slice(0, 60);
+    for (const item of items) {
+      const key = String(item?.itemID ?? item?.itemId ?? item?.id ?? item?.title ?? item?.name ?? "");
+      if (!key || seen.has(key)) continue;
+      seen.add(key);
+      merged.push(item);
     }
   }
+  if (merged.length > 0) return merged.slice(0, 60);
   return sections.flatMap((s) => s.items).slice(0, 60);
 }
 /**
  * One configure + one linked-services fetch + **one** catalog fetch for browse rows.
  * Hero picks are derived from browse (Trending / Recommended) — no extra SDK round trip.
  */
-export async function loadYounifyStreamingBundle(
+export const YOUNIFY_STREAMING_BUNDLE_TIMEOUT_MS = 45_000;
+
+async function loadYounifyStreamingBundleInner(
   opts?: LoadYounifyStreamingBundleOptions,
 ): Promise<{
   linkedServices: any[];
@@ -769,6 +777,21 @@ export async function loadYounifyStreamingBundle(
     heroContent,
     browseSections,
   };
+}
+
+export async function loadYounifyStreamingBundle(
+  opts?: LoadYounifyStreamingBundleOptions,
+): Promise<{
+  linkedServices: any[];
+  heroContent: any[];
+  browseSections: YounifyBrowseSection[];
+}> {
+  const { withTimeout } = await import('@/utils/withTimeout');
+  return withTimeout(
+    loadYounifyStreamingBundleInner(opts),
+    YOUNIFY_STREAMING_BUNDLE_TIMEOUT_MS,
+    'Streaming catalog load',
+  );
 }
 
 /**

@@ -77,6 +77,7 @@ export function onePagerToLocalEvent(event: OnePagerEvent): LocalEvent {
     ticketUrl: event.ticketUrl,
     distanceKm: event.distanceKm,
     subCategory: event.subCategory,
+    listingSource: inferSource(event.id),
   };
 }
 

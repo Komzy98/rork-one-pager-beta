@@ -27,6 +27,7 @@
     "api:public": "tsx backend/serve.ts",
     "smoke:football": "node scripts/smoke-football-api.mjs",
     "smoke:events": "node scripts/smoke-events-api.mjs",
+    "smoke:production": "node scripts/smoke-production-api.mjs",
     "test": "node --import tsx --test utils/__tests__/*.test.ts",
     "test:football": "node --import tsx --test utils/__tests__/football*.test.ts"
   },

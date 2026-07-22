@@ -129,6 +129,7 @@ import {
   getContinueWatchingProgressPercent,
   openStreamingApp,
   openStreamingTitleSearch,
+  openDisneyPlusForTmdbItem,
   openYounifyBrowseItemOnPlatform,
   younifySourceToTmdbProviderId,
 } from '@/utils/streamingLinks';
@@ -1711,6 +1712,14 @@ export default function ActivitiesScreen() {
     if (providerId != null) {
       const younifyRow = show.tmdbId ? younifyContinueByTmdbId.get(show.tmdbId) : undefined;
       const episodeHint = formatShowEpisodeLabel(show, younifyRow, 'compact') ?? undefined;
+      if (
+        providerId === 337 &&
+        show.tmdbId &&
+        show.mediaType &&
+        (await openDisneyPlusForTmdbItem(show.tmdbId, show.mediaType))
+      ) {
+        return;
+      }
       const openedSearch = await openStreamingTitleSearch(providerId, show.title, undefined, episodeHint);
       if (openedSearch) return;
       const openedApp = await openStreamingApp(providerId, show.title);

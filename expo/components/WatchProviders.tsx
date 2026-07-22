@@ -5,7 +5,7 @@ import { ExternalLink, Play, ShoppingCart, Film } from 'lucide-react-native';
 import * as Haptics from 'expo-haptics';
 import { WatchProvider, tmdbApi } from '@/utils/tmdbApi';
 import { COLORS } from '@/constants/colors';
-import { openStreamingApp, getStreamingPlatform } from '@/utils/streamingLinks';
+import { openStreamingApp, getStreamingPlatform, openDisneyPlusForTmdbItem, openNetflixForTmdbItem, openPrimeVideoForTmdbItem, isPrimeVideoProviderId } from '@/utils/streamingLinks';
 
 interface WatchProvidersProps {
   streaming: WatchProvider[];
@@ -37,8 +37,19 @@ export default function WatchProviders({
     }
     
     console.log(`Opening ${provider.provider_name} for "${title}"`);
+    if (tmdbId) {
+      if (provider.provider_id === 337) {
+        if (await openDisneyPlusForTmdbItem(tmdbId, mediaType)) return;
+      }
+      if (provider.provider_id === 8) {
+        if (await openNetflixForTmdbItem(tmdbId, mediaType)) return;
+      }
+      if (isPrimeVideoProviderId(provider.provider_id)) {
+        if (await openPrimeVideoForTmdbItem(tmdbId, mediaType)) return;
+      }
+    }
     await openStreamingApp(provider.provider_id, title, year);
-  }, [title, year]);
+  }, [title, year, tmdbId, mediaType]);
 
   const renderProvider = useCallback((provider: WatchProvider, showLabel: boolean = true) => {
     const platform = getStreamingPlatform(provider.provider_id);

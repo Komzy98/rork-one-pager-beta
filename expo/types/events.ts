@@ -103,6 +103,10 @@ export interface LocalEvent {
   distanceKm?: number;
   /** Merged sub-tag when category is rolled into a bento parent (fitness → sports, etc.). */
   subCategory?: 'fitness' | 'tech' | 'family';
+  /** Per-listing provider (from id prefix or normalisation). */
+  listingSource?: OnePagerEventSource;
+  /** ISO 3166-1 alpha-2 — Ticketmaster venue country; Skiddle listings are GB. */
+  marketCode?: string;
 }
 
 export type NearbyEventsSource = 'ticketmaster' | 'skiddle' | 'mixed' | 'fallback' | 'none';

@@ -10,6 +10,7 @@ import {
   RefreshControl,
   Image,
   Platform,
+  ActivityIndicator,
 } from 'react-native';
 import {
   Search,
@@ -46,6 +47,7 @@ import { KeyboardAvoidingScreen } from '@/components/KeyboardAvoidingScreen';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useCookingStorage } from '@/hooks/useCookingStorage';
 import { useAuth } from '@/hooks/useAuth';
+import { useSpoonacularKitchen, parseSpoonacularId } from '@/hooks/useSpoonacularKitchen';
 import { appFont } from '@/constants/fonts';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
@@ -65,6 +67,7 @@ interface Recipe {
   rating: number;
   ingredients: string[];
   steps: string[];
+  source?: 'local' | 'spoonacular';
 }
 
 interface MealPlanItem {
@@ -1231,6 +1234,23 @@ export default function CookingScreen() {
   const [expandedRecipe, setExpandedRecipe] = useState<string | null>(null);
   const [mealPlan, setMealPlan] = useState<MealPlanItem[]>([]);
 
+  const {
+    configured: spoonacularReady,
+    isSearching: spoonacularSearching,
+    spoonacularRecipes,
+    totalSpoonacularResults,
+    heroSpoonacular,
+    refetchHero,
+    refetchSearch,
+    detailCache,
+    loadRecipeDetail,
+    loadingDetailId,
+  } = useSpoonacularKitchen({
+    searchQuery,
+    selectedCategory,
+    enabled: true,
+  });
+
   const scrollY = useRef(new Animated.Value(0)).current;
   const headerScale = useRef(new Animated.Value(0)).current;
   const categoryScrollRef = useRef<ScrollView>(null);
@@ -1301,6 +1321,42 @@ export default function CookingScreen() {
     setExpandedRecipe(recipeId);
   }, []);
 
+  useEffect(() => {
+    if (!expandedRecipe || !parseSpoonacularId(expandedRecipe)) return;
+    const cached = detailCache[expandedRecipe];
+    if (cached?.steps?.length && cached.ingredients.length) return;
+    void loadRecipeDetail(expandedRecipe);
+  }, [expandedRecipe, detailCache, loadRecipeDetail]);
+
+  const mergeRecipeDetail = useCallback(
+    (recipe: Recipe): Recipe => {
+      const cached = detailCache[recipe.id];
+      if (!cached) return recipe;
+      return {
+        ...recipe,
+        ...cached,
+        ingredients: cached.ingredients.length ? cached.ingredients : recipe.ingredients,
+        steps: cached.steps.length ? cached.steps : recipe.steps,
+      };
+    },
+    [detailCache],
+  );
+
+  const recipeCatalog = useMemo(() => {
+    const map = new Map<string, Recipe>();
+    for (const r of ALL_RECIPES) map.set(r.id, r);
+    for (const r of spoonacularRecipes) map.set(r.id, { ...r, source: 'spoonacular' });
+    if (heroSpoonacular) map.set(heroSpoonacular.id, { ...heroSpoonacular, source: 'spoonacular' });
+    for (const [id, r] of Object.entries(detailCache)) {
+      map.set(id, { ...r, source: 'spoonacular' });
+    }
+    return map;
+  }, [spoonacularRecipes, heroSpoonacular, detailCache]);
+
+  const useSpoonacularFeed =
+    spoonacularReady &&
+    (searchQuery.trim().length >= 2 || selectedCategory !== 'all');
+
   // ── Derived data ────────────────────────────────────────────────────────────
 
   const completedMealCount = mealPlan.filter((m) => m.completed).length;
@@ -1328,10 +1384,25 @@ export default function CookingScreen() {
           r.ingredients.some((i) => i.toLowerCase().includes(q)),
       );
     }
-    return filtered;
-  }, [selectedCategory, searchQuery]);
 
-  const favouriteRecipes = useMemo(() => ALL_RECIPES.filter((r) => isBookmarked(r.id)), [bookmarks]);
+    if (!useSpoonacularFeed) return filtered;
+
+    const fromApi = spoonacularRecipes.map((r) => ({ ...r, source: 'spoonacular' as const }));
+    const seen = new Set(fromApi.map((r) => r.id));
+    const merged: Recipe[] = [...fromApi];
+    for (const r of filtered) {
+      if (!seen.has(r.id)) merged.push({ ...r, source: 'local' });
+    }
+    return merged;
+  }, [selectedCategory, searchQuery, useSpoonacularFeed, spoonacularRecipes]);
+
+  const favouriteRecipes = useMemo(
+    () =>
+      bookmarks
+        .map((id) => recipeCatalog.get(id))
+        .filter((r): r is Recipe => !!r),
+    [bookmarks, recipeCatalog],
+  );
 
   // ── Live stats ──────────────────────────────────────────────────────────────
   const totalCookedThisWeek = useMemo(() => {
@@ -1342,25 +1413,45 @@ export default function CookingScreen() {
     () => [
       { label: 'Recipes Saved', value: String(bookmarks.length), icon: Bookmark, iconColor: '#007AFF' },
       { label: 'Cooked Total', value: String(totalCookedThisWeek), icon: Flame, iconColor: '#FF6347' },
-      { label: 'Recipes', value: String(ALL_RECIPES.length), icon: Trophy, iconColor: '#FFD700' },
+      {
+        label: 'Library',
+        value: spoonacularReady ? '500k+' : String(ALL_RECIPES.length),
+        icon: Trophy,
+        iconColor: '#FFD700',
+      },
     ],
-    [bookmarks.length, totalCookedThisWeek],
+    [bookmarks.length, totalCookedThisWeek, spoonacularReady],
   );
 
   // ── Daily tip ───────────────────────────────────────────────────────────────
   const todayTip = COOKING_TIPS[getDayOfYear() % COOKING_TIPS.length];
 
   // ── Hero / featured pick ────────────────────────────────────────────────────
-  const heroRecipe = useMemo(() => {
+  const heroRecipe = useMemo((): Recipe => {
+    if (heroSpoonacular) {
+      return { ...heroSpoonacular, source: 'spoonacular' };
+    }
     const topRated = [...ALL_RECIPES].sort((a, b) => b.rating - a.rating);
-    // Rotate daily so it changes each day
     return topRated[getDayOfYear() % topRated.length];
-  }, []);
+  }, [heroSpoonacular]);
 
-  const handleRefresh = useCallback(() => {
+  const heroDisplay = useMemo(() => mergeRecipeDetail(heroRecipe), [heroRecipe, mergeRecipeDetail]);
+
+  const resultCountLabel = useMemo(() => {
+    if (useSpoonacularFeed && totalSpoonacularResults > filteredRecipes.length) {
+      return `${filteredRecipes.length} shown · ${totalSpoonacularResults.toLocaleString()} match`;
+    }
+    return `${filteredRecipes.length} recipes`;
+  }, [useSpoonacularFeed, totalSpoonacularResults, filteredRecipes.length]);
+
+  const handleRefresh = useCallback(async () => {
     setRefreshing(true);
-    setTimeout(() => setRefreshing(false), 1000);
-  }, []);
+    try {
+      await Promise.all([refetchHero(), refetchSearch()]);
+    } finally {
+      setRefreshing(false);
+    }
+  }, [refetchHero, refetchSearch]);
 
   // ── Colours ─────────────────────────────────────────────────────────────────
   const accentColor = '#E8603C';
@@ -1386,7 +1477,9 @@ export default function CookingScreen() {
             </View>
             <View>
               <Text style={[styles.headerTitle, { color: mainText }]}>Kitchen</Text>
-              <Text style={[styles.headerSubtitle, { color: subtleText }]}>What shall we cook today?</Text>
+              <Text style={[styles.headerSubtitle, { color: subtleText }]}>
+                {spoonacularReady ? 'Search hundreds of thousands of recipes' : 'What shall we cook today?'}
+              </Text>
             </View>
             </View>
             <TouchableOpacity
@@ -1437,7 +1530,9 @@ export default function CookingScreen() {
         {/* ── Hero featured pick ───────────────────────────────────────────── */}
         {!searchQuery && (
           <View style={styles.heroSection}>
-            <Text style={[styles.heroLabel, { color: subtleText }]}>TOP PICK TODAY</Text>
+            <Text style={[styles.heroLabel, { color: subtleText }]}>
+              {heroRecipe.source === 'spoonacular' ? "CHEF'S PICK · SPOONACULAR" : 'TOP PICK TODAY'}
+            </Text>
             <TouchableOpacity
               activeOpacity={0.9}
               onPress={() => setExpandedRecipe(expandedRecipe === heroRecipe.id ? null : heroRecipe.id)}
@@ -1471,16 +1566,20 @@ export default function CookingScreen() {
             </TouchableOpacity>
             {expandedRecipe === heroRecipe.id && (
               <View style={[styles.heroExpanded, { backgroundColor: cardBg, borderColor: cardBorder }]}>
+                {loadingDetailId === heroRecipe.id ? (
+                  <ActivityIndicator color={accentColor} style={{ marginVertical: 16 }} />
+                ) : (
+                  <>
                 <Text style={[styles.expandedLabel, { color: accentColor }]}>Ingredients</Text>
                 <View style={styles.ingredientsList}>
-                  {heroRecipe.ingredients.map((ing, i) => (
+                  {heroDisplay.ingredients.map((ing, i) => (
                     <View key={i} style={[styles.ingredientChip, { backgroundColor: secondaryBg }]}>
                       <Text style={[styles.ingredientText, { color: mainText }]}>{ing}</Text>
               </View>
                   ))}
               </View>
                 <Text style={[styles.expandedLabel, { color: accentColor, marginTop: 12 }]}>Steps</Text>
-                {heroRecipe.steps.map((step, i) => (
+                {heroDisplay.steps.map((step, i) => (
                   <View key={i} style={styles.stepRow}>
                     <View style={[styles.stepNumber, { backgroundColor: accentColor }]}>
                       <Text style={styles.stepNumberText}>{i + 1}</Text>
@@ -1488,16 +1587,18 @@ export default function CookingScreen() {
                     <Text style={[styles.stepText, { color: mainText }]}>{step}</Text>
             </View>
                 ))}
-            <TouchableOpacity
+                <TouchableOpacity
                   style={[styles.cookBtn, { backgroundColor: accentColor }]}
                   onPress={() => { void recordCooked(heroRecipe.id); void Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success); }}
                 >
                   <ChefHat size={16} color="#fff" />
                   <Text style={styles.cookBtnText}>Mark as cooked</Text>
-            </TouchableOpacity>
-          </View>
+                </TouchableOpacity>
+                  </>
+                )}
+              </View>
             )}
-        </View>
+          </View>
         )}
 
         {/* ── Meal plan ───────────────────────────────────────────────────── */}
@@ -1635,10 +1736,16 @@ export default function CookingScreen() {
                 {selectedCategory === 'all' ? 'All Recipes' : RECIPE_CATEGORIES.find((c) => c.id === selectedCategory)?.label || 'Recipes'}
             </Text>
           </View>
-            <Text style={[styles.resultCount, { color: subtleText }]}>{filteredRecipes.length} recipes</Text>
+            <Text style={[styles.resultCount, { color: subtleText }]}>{resultCountLabel}</Text>
           </View>
 
-          {filteredRecipes.length === 0 ? (
+          {spoonacularSearching && useSpoonacularFeed ? (
+            <View style={[styles.emptyState, { backgroundColor: cardBg, borderColor: cardBorder }]}>
+              <ActivityIndicator color={accentColor} />
+              <Text style={[styles.emptyTitle, { color: mainText }]}>Finding recipes…</Text>
+              <Text style={[styles.emptyText, { color: subtleText }]}>Powered by Spoonacular</Text>
+            </View>
+          ) : filteredRecipes.length === 0 ? (
             <View style={[styles.emptyState, { backgroundColor: cardBg, borderColor: cardBorder }]}>
               <Search size={32} color={subtleText} />
               <Text style={[styles.emptyTitle, { color: mainText }]}>No recipes found</Text>
@@ -1647,6 +1754,8 @@ export default function CookingScreen() {
           ) : (
             filteredRecipes.map((recipe) => {
               const isExpanded = expandedRecipe === recipe.id;
+              const display = mergeRecipeDetail(recipe);
+              const detailLoading = loadingDetailId === recipe.id;
               return (
         <TouchableOpacity
                   key={recipe.id}
@@ -1682,19 +1791,27 @@ export default function CookingScreen() {
 
                   {isExpanded && (
                     <View style={[styles.expandedContent, { borderTopColor: cardBorder }]}>
+                      {detailLoading ? (
+                        <ActivityIndicator color={accentColor} style={{ marginVertical: 12 }} />
+                      ) : (
+                        <>
                       <View style={styles.expandedSection}>
                         <Text style={[styles.expandedLabel, { color: accentColor }]}>Ingredients</Text>
                         <View style={styles.ingredientsList}>
-                          {recipe.ingredients.map((ing, i) => (
+                          {display.ingredients.length === 0 ? (
+                            <Text style={[styles.emptyText, { color: subtleText }]}>Ingredients loading…</Text>
+                          ) : (
+                          display.ingredients.map((ing, i) => (
                             <View key={i} style={[styles.ingredientChip, { backgroundColor: secondaryBg }]}>
                               <Text style={[styles.ingredientText, { color: mainText }]}>{ing}</Text>
-          </View>
-                          ))}
-            </View>
-          </View>
+                            </View>
+                          ))
+                          )}
+                        </View>
+                      </View>
                       <View style={styles.expandedSection}>
                         <Text style={[styles.expandedLabel, { color: accentColor }]}>Steps</Text>
-                        {recipe.steps.map((step, i) => (
+                        {display.steps.map((step, i) => (
                           <View key={i} style={styles.stepRow}>
                             <View style={[styles.stepNumber, { backgroundColor: accentColor }]}>
                               <Text style={styles.stepNumberText}>{i + 1}</Text>
@@ -1706,25 +1823,27 @@ export default function CookingScreen() {
                       <View style={styles.recipeDetailsRow}>
                         <View style={[styles.detailChip, { backgroundColor: secondaryBg }]}>
                           <Users size={14} color={subtleText} />
-                          <Text style={[styles.detailText, { color: mainText }]}>{recipe.servings} servings</Text>
+                          <Text style={[styles.detailText, { color: mainText }]}>{display.servings} servings</Text>
                         </View>
                         <View style={[styles.detailChip, { backgroundColor: secondaryBg }]}>
                           <Timer size={14} color={subtleText} />
-                          <Text style={[styles.detailText, { color: mainText }]}>Prep: {recipe.prepTime}</Text>
+                          <Text style={[styles.detailText, { color: mainText }]}>Prep: {display.prepTime}</Text>
                         </View>
                         <View style={[styles.detailChip, { backgroundColor: secondaryBg }]}>
                           <Star size={14} color="#FFD700" />
-                          <Text style={[styles.detailText, { color: mainText }]}>{recipe.rating}</Text>
+                          <Text style={[styles.detailText, { color: mainText }]}>{display.rating}</Text>
                         </View>
                       </View>
-              <TouchableOpacity
+                      <TouchableOpacity
                         style={[styles.cookBtn, { backgroundColor: accentColor }]}
                         onPress={() => { void recordCooked(recipe.id); void Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success); }}
                       >
                         <ChefHat size={16} color="#fff" />
                         <Text style={styles.cookBtnText}>Mark as cooked</Text>
                       </TouchableOpacity>
-                </View>
+                        </>
+                      )}
+                    </View>
                   )}
               </TouchableOpacity>
               );

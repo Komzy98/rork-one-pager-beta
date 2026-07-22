@@ -7,6 +7,18 @@ import {
   normalizePrimeVideoWatchUrl,
   isPrimeVideoProviderId,
 } from '@/utils/primeVideoLinks';
+import {
+  normalizeDisneyPlusWatchUrl,
+  isDisneyPlusSearchOrGenericUrl,
+  extractDisneyPlusUrlFromText,
+  buildDisneyPlusOpenTargets,
+} from '@/utils/disneyPlusLinks';
+import {
+  buildNetflixOpenTargets,
+  isNetflixSearchOrGenericUrl,
+  normalizeNetflixWatchUrl,
+  extractNetflixTitleOrWatchId,
+} from '@/utils/netflixLinks';
 
 describe('Prime Video deep links', () => {
   it('treats Prime Video with Ads (2100) as Prime', () => {
@@ -73,5 +85,67 @@ describe('Prime Video deep links', () => {
     });
     assert.equal(targets[0], 'https://app.primevideo.com/detail/B08XYZ1234');
     assert.ok(!targets.some((t) => t.includes('amazon.com/gp/video')));
+  });
+});
+
+describe('Disney+ deep links', () => {
+  it('flags search URLs as non–universal-link destinations', () => {
+    assert.equal(
+      isDisneyPlusSearchOrGenericUrl('https://www.disneyplus.com/search?q=The+Bear'),
+      true,
+    );
+    assert.equal(
+      isDisneyPlusSearchOrGenericUrl('https://www.disneyplus.com/series/the-bear/4UkCRH2aE2xK'),
+      false,
+    );
+  });
+
+  it('normalizes disneyplus hosts and strips irclickid', () => {
+    const url = normalizeDisneyPlusWatchUrl(
+      'https://m.disneyplus.com/movies/joy/5MV7qtNPTJz7?irclickid=abc',
+    );
+    assert.equal(url, 'https://www.disneyplus.com/movies/joy/5MV7qtNPTJz7');
+  });
+
+  it('extracts content URLs from embedded strings', () => {
+    const url = extractDisneyPlusUrlFromText(
+      'See https://www.disneyplus.com/series/the-bear/4UkCRH2aE2xK today',
+    );
+    assert.equal(url, 'https://www.disneyplus.com/series/the-bear/4UkCRH2aE2xK');
+  });
+
+  it('buildDisneyPlusOpenTargets includes play alias and native scheme', () => {
+    const targets = buildDisneyPlusOpenTargets(
+      'https://www.disneyplus.com/video/550e8400-e29b-41d4-a716-446655440000',
+    );
+    assert.ok(targets.some((t) => t.includes('/play/')));
+    assert.ok(targets.some((t) => t.startsWith('disneyplus://')));
+  });
+});
+
+describe('Netflix deep links', () => {
+  it('flags search URLs as unreliable deep-link targets', () => {
+    assert.equal(
+      isNetflixSearchOrGenericUrl('https://www.netflix.com/search?q=Stranger'),
+      true,
+    );
+    assert.equal(
+      isNetflixSearchOrGenericUrl('https://www.netflix.com/title/80057281'),
+      false,
+    );
+  });
+
+  it('buildNetflixOpenTargets prefers watch/title paths with nflx fallback', () => {
+    const targets = buildNetflixOpenTargets({
+      url: 'https://www.netflix.com/title/80057281',
+      resumeSeconds: 120,
+    });
+    assert.equal(targets[0], 'https://www.netflix.com/title/80057281?t=120');
+    assert.ok(targets.some((t) => t.startsWith('nflx://www.netflix.com/title/80057281')));
+  });
+
+  it('extractNetflixTitleOrWatchId parses watch links', () => {
+    const parsed = extractNetflixTitleOrWatchId('https://www.netflix.com/watch/12345');
+    assert.deepEqual(parsed, { kind: 'watch', id: '12345' });
   });
 });

@@ -29,6 +29,7 @@ import {
   Users,
   ChevronLeft,
   Repeat,
+  Globe,
 } from 'lucide-react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useUserProfile } from '@/hooks/useUserProfile';
@@ -70,6 +71,8 @@ import { SavedEventsWeekTimeline } from '@/components/events/SavedEventsWeekTime
 import { CombinedNightOutPrompt } from '@/components/events/CombinedNightOutPrompt';
 import { PremiumSavedEventCard } from '@/components/events/PremiumSavedEventCard';
 import { EventConciergeFeedBanner } from '@/components/events/EventConciergeFeedBanner';
+import FeedRetryBanner from '@/components/FeedRetryBanner';
+import DiscoveryScopeChip from '@/components/events/DiscoveryScopeChip';
 import { EventWhyThisSheet } from '@/components/events/EventWhyThisSheet';
 import {
   buildEditorialEventRows,
@@ -149,17 +152,27 @@ function globalSearchBannerMessage(options: {
   source: NearbyEventsSource;
   resultCount: number;
   error: unknown;
+  usingCachedResults?: boolean;
+  cachedResultsAgeLabel?: string | null;
 }): string {
-  const { isSearching, source, resultCount, error } = options;
+  const { isSearching, source, resultCount, error, usingCachedResults, cachedResultsAgeLabel } =
+    options;
   if (isSearching) {
     return `Searching ${formatGlobalSearchSourceLabel('mixed')}…`;
+  }
+  if (usingCachedResults) {
+    const age = cachedResultsAgeLabel ? ` (saved ${cachedResultsAgeLabel})` : '';
+    return `Can't reach the server. Showing your last search results${age}.`;
   }
   const searchError = globalSearchErrorMessage(error);
   if (searchError) return searchError;
   if (source === 'none' && resultCount === 0) {
     return 'No listings for that search. Try another spelling or artist name.';
   }
-  return `${resultCount} worldwide from ${formatGlobalSearchSourceLabel(source)}`;
+  if (resultCount > 0) {
+    return `${resultCount} worldwide · closer dates first · ${formatGlobalSearchSourceLabel(source)}`;
+  }
+  return `${resultCount} worldwide · ${formatGlobalSearchSourceLabel(source)}`;
 }
 
 function sampleEventsBannerMessage(): string {
@@ -168,7 +181,7 @@ function sampleEventsBannerMessage(): string {
       ? 'Showing sample events — add TICKETMASTER_API_KEY and/or SKIDDLE_API_KEY to your Railway API service, redeploy, then pull to refresh.'
       : 'Showing sample events — add TICKETMASTER_API_KEY and/or SKIDDLE_API_KEY to expo/.env and restart Metro for live listings.';
   }
-  return 'Showing sample events — live listings from Ticketmaster and Skiddle will appear when available.';
+  return 'Sample events for now — connect live Ticketmaster and Skiddle listings when your area is supported.';
 }
 
 type ViewMode = 'list' | 'map';
@@ -266,6 +279,9 @@ function EventsScreenInner() {
     isActive: isGlobalSearchActive,
     debouncedKeyword: globalSearchKeyword,
     error: globalSearchError,
+    networkError: globalSearchNetworkError,
+    usingCachedResults: globalSearchUsingCache,
+    cachedResultsAgeLabel: globalSearchCacheAge,
     refetch: refetchGlobalSearch,
   } = globalSearch;
 
@@ -594,6 +610,15 @@ function EventsScreenInner() {
 
   const recommendationInput = useEventRecommendationInput(friendCountByEventId);
 
+  const recommendationInputWithTab = useMemo(
+    () => ({
+      ...recommendationInput,
+      discoveryTab,
+      areaLabel: areaLabel ?? undefined,
+    }),
+    [recommendationInput, discoveryTab, areaLabel],
+  );
+
   const eventConcierge = useEventConcierge({
     recommendationInput,
     userCoords,
@@ -605,10 +630,10 @@ function EventsScreenInner() {
     (event: LocalEvent, categoryId?: string) =>
       getRecommendationChipLabel(
         event,
-        { ...recommendationInput, discoveryTab },
+        recommendationInputWithTab,
         categoryId ? { categoryId } : undefined,
       ),
-    [recommendationInput, discoveryTab],
+    [recommendationInputWithTab],
   );
 
   const openWhyThis = useCallback((event: LocalEvent) => {
@@ -618,20 +643,13 @@ function EventsScreenInner() {
 
   const whyThisReasons = useMemo(() => {
     if (!whyThisEvent) return [];
-    return buildEventRecommendationReasons(
-      whyThisEvent,
-      { ...recommendationInput, discoveryTab },
-      6,
-    );
-  }, [whyThisEvent, recommendationInput, discoveryTab]);
+    return buildEventRecommendationReasons(whyThisEvent, recommendationInputWithTab, 6);
+  }, [whyThisEvent, recommendationInputWithTab]);
 
   const whyThisExplanation = useMemo(() => {
     if (!whyThisEvent) return null;
-    return explainEventPersonalization(whyThisEvent, profile, {
-      ...recommendationInput,
-      discoveryTab,
-    });
-  }, [whyThisEvent, profile, recommendationInput, discoveryTab]);
+    return explainEventPersonalization(whyThisEvent, profile, recommendationInputWithTab);
+  }, [whyThisEvent, profile, recommendationInputWithTab]);
 
   const conciergeContext = eventConcierge?.context ?? 'default';
 
@@ -1011,16 +1029,40 @@ function EventsScreenInner() {
       )}
 
       {mainTab === 'discover' && inSearchMode ? (
-        <View style={[styles.liveBanner, { backgroundColor: secondaryBg, borderColor: cardBorder }]}>
-          <Text style={[styles.liveBannerText, { color: subtleText }]}>
-            {globalSearchBannerMessage({
-              isSearching: isGlobalSearching,
-              source: globalSearchSource,
-              resultCount: verticalFeedEvents.length,
-              error: globalSearchError,
-            })}
-          </Text>
-        </View>
+        <>
+          <View style={[styles.liveBanner, { backgroundColor: secondaryBg, borderColor: cardBorder }]}>
+            <Text style={[styles.liveBannerText, { color: subtleText }]}>
+              {globalSearchBannerMessage({
+                isSearching: isGlobalSearching,
+                source: globalSearchSource,
+                resultCount: verticalFeedEvents.length,
+                error: globalSearchError,
+                usingCachedResults: globalSearchUsingCache,
+                cachedResultsAgeLabel: globalSearchCacheAge,
+              })}
+            </Text>
+          </View>
+          {(globalSearchNetworkError || globalSearchUsingCache) && !isGlobalSearching ? (
+            <FeedRetryBanner
+              message={
+                globalSearchUsingCache
+                  ? "Can't reach the server"
+                  : "Couldn't load search"
+              }
+              detail={
+                globalSearchUsingCache
+                  ? "Pull down to refresh or tap Try again when you're back online."
+                  : 'Check your connection and try again.'
+              }
+              onRetry={() => void refetchGlobalSearch()}
+              accentColor={BRAND.light.accent}
+              textColor={mainText}
+              mutedColor={subtleText}
+              backgroundColor={secondaryBg}
+              borderColor={cardBorder}
+            />
+          ) : null}
+        </>
       ) : null}
 
       {mainTab === 'myEvents' && savedEvents.length > 0 ? (
@@ -1230,7 +1272,7 @@ function EventsScreenInner() {
                           event,
                           getPrimaryEventRecommendationReasonForCategory(
                             event,
-                            { ...recommendationInput, discoveryTab },
+                            recommendationInputWithTab,
                             habitEventRow.categoryId,
                           ),
                         )
@@ -1277,7 +1319,7 @@ function EventsScreenInner() {
                           event,
                           getPrimaryEventRecommendationReasonForCategory(
                             event,
-                            { ...recommendationInput, discoveryTab },
+                            recommendationInputWithTab,
                             row.categoryId,
                           ),
                         )
@@ -1318,6 +1360,23 @@ function EventsScreenInner() {
         )}
 
         <View style={styles.section}>
+          {inSearchMode ? (
+            <DiscoveryScopeChip
+              label="Worldwide"
+              Icon={Globe}
+              color={palette.primary}
+              backgroundColor={palette.primaryLight}
+              borderColor={`${palette.primary}33`}
+            />
+          ) : areaLabel ? (
+            <DiscoveryScopeChip
+              label={`Near ${areaLabel.split(',')[0]?.trim() || areaLabel}`}
+              Icon={MapPin}
+              color={palette.secondary}
+              backgroundColor={palette.primaryLight}
+              borderColor={`${palette.primary}33`}
+            />
+          ) : null}
           <View style={styles.sectionHeader}>
             <View style={styles.sectionTitleRow}>
               <View style={[styles.sectionIconWrap, { backgroundColor: palette.primaryLight }]}>
@@ -1371,6 +1430,7 @@ function EventsScreenInner() {
                     : getChipLabel(event)
                 }
                 recommendationChipVariant={index === 0 && selectedCategory !== 'all' ? 'featured-chip' : 'feed-chip'}
+                showListingBadges={inSearchMode}
                 onWhyThis={openWhyThis}
                 {...getCardSocialProps(event.id)}
                 onPress={openEventDetail}

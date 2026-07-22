@@ -102,6 +102,8 @@ import FootballTeamSearchModal, {
   type FootballClubProfilePreset,
 } from '@/components/FootballTeamSearchModal';
 import { getFootballTeamLogoUrl } from '@/constants/footballData';
+import FootballFeedMetaBanner from '@/components/FootballFeedMetaBanner';
+import { getFootballMatchPersonalizationChip } from '@/utils/footballMatchReasons';
 import { PremiumSportsMatchCard } from '@/components/PremiumSportsMatchCard';
 import { sportsFixedPalette, ufcFixedPalette, UFC_BRAND } from '@/utils/sportsPalette';
 import {
@@ -2594,6 +2596,12 @@ function SportsScreenInner() {
     setShowMatchModal(true);
   }, []);
 
+  const getMatchPersonalizationChip = useCallback(
+    (match: Match) =>
+      getFootballMatchPersonalizationChip(match, footballPersonalizationCtx, profile),
+    [footballPersonalizationCtx, profile],
+  );
+
   const renderFlatListItem = useCallback(({ item }: { item: FlatListItem }) => {
     if (item.type === 'date') {
       return <DateHeader date={item.date} />;
@@ -2608,9 +2616,10 @@ function SportsScreenInner() {
         isPinned={isMatchPinned(match.id)}
         onTogglePin={handleToggleMatchPin}
         onPress={() => handleMatchCardPress(match)}
+        personalizationChipLabel={getMatchPersonalizationChip(match)}
       />
     );
-  }, [isFavoriteTeam, notifiedMatches, toggleMatchNotification, handleMatchCardPress, isMatchPinned, handleToggleMatchPin]);
+  }, [getMatchPersonalizationChip, isFavoriteTeam, notifiedMatches, toggleMatchNotification, handleMatchCardPress, isMatchPinned, handleToggleMatchPin]);
 
   const flatListKeyExtractor = useCallback((item: FlatListItem) => item.key, []);
 
@@ -3170,6 +3179,16 @@ function SportsScreenInner() {
             Explore narrowed to selected competitions
           </Text>
         ) : null}
+
+        <FootballFeedMetaBanner
+          textColor={sf.text}
+          mutedColor={sf.textMuted}
+          backgroundColor={sf.surfaceSecondary}
+          borderColor={sf.border}
+          updatedAtMs={footballBundleQuery.dataUpdatedAt}
+          sortMode={footballSortMode}
+          pollLive={activeTab === 'live' && isSportsScreenFocused}
+        />
 
         <TouchableOpacity
           accessibilityRole="button"

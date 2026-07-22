@@ -1,6 +1,7 @@
 import React, { useCallback, useMemo, useRef } from "react";
 import {
   ActivityIndicator,
+  Alert,
   Animated as RNAnimated,
   FlatList,
   Platform,
@@ -21,6 +22,7 @@ import StreamingLoadProgressBar from "@/components/younify/StreamingLoadProgress
 import YounifyServiceLogoMark from "@/components/younify/YounifyServiceLogoMark";
 import { openYounifyBrowseItemOnPlatform } from "@/utils/streamingLinks";
 import { formatRating } from "@/utils/tmdbApi";
+import { readStreamingHeroWhyLabel } from "@/utils/streamingHeroPersonalization";
 
 const DEFAULT_HERO_CARD_WIDTH = 360;
 const DEFAULT_HERO_HEIGHT = 480;
@@ -70,7 +72,7 @@ export default function ConnectedServicesHero({
 
   const slides = useMemo(() => {
     if (!Array.isArray(content)) return [];
-    return content.slice(0, 6);
+    return content;
   }, [content]);
 
   const onOpenItem = useCallback(
@@ -163,7 +165,13 @@ export default function ConnectedServicesHero({
         pagingEnabled
         decelerationRate="fast"
         showsHorizontalScrollIndicator={false}
-        keyExtractor={(item, index) => String(item.id ?? `${item.title ?? item.name}-${index}`)}
+        keyExtractor={(item, index) => {
+          const svc = item.younifySourceService as { id?: string; name?: string } | undefined;
+          const svcPart = String(svc?.id ?? svc?.name ?? 'svc');
+          const titlePart = String(item.title ?? item.name ?? 'untitled').trim().toLowerCase();
+          const idPart = String(item.id ?? item.itemID ?? item.itemId ?? index);
+          return `hero-${svcPart}-${titlePart}-${idPart}-${index}`;
+        }}
         onScroll={RNAnimated.event([{ nativeEvent: { contentOffset: { x: scrollX } } }], {
           useNativeDriver: Platform.OS !== "web",
         })}
@@ -193,6 +201,8 @@ export default function ConnectedServicesHero({
             extrapolate: "clamp",
           });
 
+          const whyLabel = readStreamingHeroWhyLabel(item as Record<string, unknown>);
+
           return (
             <RNAnimated.View style={[styles.heroSlide, { width: screenW, height: HERO_HEIGHT, transform: [{ scale }] }]}>
               <Pressable style={[styles.heroSlideInner, { width: heroW, height: HERO_HEIGHT }]} onPress={() => void onOpenItem(item)}>
@@ -215,6 +225,11 @@ export default function ConnectedServicesHero({
                     <Sparkles size={12} color="#FF4655" />
                     <Text style={styles.heroTopBadgeText}>FROM YOUR SERVICES</Text>
                   </View>
+                  {whyLabel ? (
+                    <Text style={styles.heroWhyPreview} numberOfLines={2}>
+                      {whyLabel}
+                    </Text>
+                  ) : null}
                   <Text style={styles.heroTitle} numberOfLines={2}>
                     {title}
                   </Text>
@@ -233,6 +248,16 @@ export default function ConnectedServicesHero({
                     </Text>
                   </View>
                   <View style={styles.heroActions}>
+                    {whyLabel ? (
+                      <TouchableOpacity
+                        style={styles.heroWhyButton}
+                        onPress={() => Alert.alert('Why this?', whyLabel)}
+                        activeOpacity={0.88}
+                      >
+                        <Sparkles size={16} color="#FF4655" />
+                        <Text style={styles.heroWhyButtonText}>Why this?</Text>
+                      </TouchableOpacity>
+                    ) : null}
                     <TouchableOpacity
                       style={styles.heroPlayButton}
                       onPress={() => void onOpenItem(item)}
@@ -376,6 +401,30 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     alignItems: "center",
     gap: 12,
+    flexWrap: 'wrap',
+  },
+  heroWhyPreview: {
+    fontSize: 12,
+    fontWeight: '600',
+    color: 'rgba(255,255,255,0.88)',
+    marginBottom: 4,
+    lineHeight: 16,
+  },
+  heroWhyButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 14,
+    paddingVertical: 11,
+    borderRadius: 12,
+    gap: 6,
+    borderWidth: 1,
+    borderColor: 'rgba(255,70,85,0.55)',
+    backgroundColor: 'rgba(255,70,85,0.12)',
+  },
+  heroWhyButtonText: {
+    fontSize: 14,
+    fontWeight: '700',
+    color: '#FF4655',
   },
   heroPlayButton: {
     flexDirection: "row",
