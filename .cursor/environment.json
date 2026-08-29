@@ -1,0 +1,15 @@
+{
+  "name": "One Pager (Expo)",
+  "install": "cd expo && npm ci",
+  "terminals": [
+    {
+      "name": "API server",
+      "command": "cd expo && npx tsx backend/serve.ts",
+      "description": "Hono + tRPC backend API. Health: http://localhost:3000/health. tRPC endpoint: http://localhost:3000/api/trpc."
+    }
+  ],
+  "ports": [
+    { "name": "API server", "port": 3000 },
+    { "name": "Metro / Expo web", "port": 8081 }
+  ]
+}
