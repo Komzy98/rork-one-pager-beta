@@ -24,7 +24,7 @@ const PRIMARY_TABS = [
     icon: CalendarCheck2,
   },
   {
-    name: "discover",
+    name: "discover-home",
     title: "Discover",
     icon: Compass,
   },
@@ -35,7 +35,7 @@ const PRIMARY_TABS = [
   },
 ] as const;
 
-const LEGACY_TABS = ["shows", "sports", "cooking", "learning", "events"] as const;
+const LEGACY_TABS = ["discover", "shows", "sports", "cooking", "learning", "events"] as const;
 
 export default function TabLayout() {
   const { colors, isDark } = useTheme();
