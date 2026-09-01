@@ -2,8 +2,8 @@ import { Tabs } from "expo-router";
 import React from "react";
 import { Platform } from "react-native";
 import {
-  CalendarCheck2,
   Compass,
+  LayoutGrid,
   Sparkles,
   UserRound,
 } from "lucide-react-native";
@@ -20,11 +20,11 @@ const PRIMARY_TABS = [
   },
   {
     name: "tasks",
-    title: "Plan",
-    icon: CalendarCheck2,
+    title: "My Life",
+    icon: LayoutGrid,
   },
   {
-    name: "discover-home",
+    name: "discover-life",
     title: "Discover",
     icon: Compass,
   },
@@ -35,7 +35,16 @@ const PRIMARY_TABS = [
   },
 ] as const;
 
-const LEGACY_TABS = ["discover", "shows", "sports", "cooking", "learning", "events"] as const;
+const LEGACY_TABS = [
+  "discover-life",
+  "discover-home",
+  "discover",
+  "shows",
+  "sports",
+  "cooking",
+  "learning",
+  "events",
+] as const;
 
 export default function TabLayout() {
   const { colors, isDark } = useTheme();
@@ -87,7 +96,7 @@ export default function TabLayout() {
             />
           ))}
 
-          {LEGACY_TABS.map((name) => (
+          {LEGACY_TABS.filter((name) => !PRIMARY_TABS.some((tab) => tab.name === name)).map((name) => (
             <Tabs.Screen
               key={name}
               name={name}
