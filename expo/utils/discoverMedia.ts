@@ -82,10 +82,14 @@ export async function resolveDiscoverShowArtwork(show: Show): Promise<DiscoverSh
       };
     }
 
-    const search = mediaType === 'movie'
-      ? await tmdbApi.searchMovies(show.title, 1)
-      : await tmdbApi.searchTVShows(show.title, 1);
-    const best = pickBestTitleMatch(search.results ?? [], show.title, mediaType);
+    let best: TMDBMovie | TMDBTVShow | null = null;
+    if (mediaType === 'movie') {
+      const search = await tmdbApi.searchMovies(show.title, 1);
+      best = pickBestTitleMatch<TMDBMovie>(search.results ?? [], show.title, 'movie');
+    } else {
+      const search = await tmdbApi.searchTVShows(show.title, 1);
+      best = pickBestTitleMatch<TMDBTVShow>(search.results ?? [], show.title, 'tv');
+    }
     if (!best) return null;
 
     return {
