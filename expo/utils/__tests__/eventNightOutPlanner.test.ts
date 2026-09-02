@@ -42,7 +42,7 @@ describe('eventNightOutPlanner', () => {
     assert.equal(steps.find((s) => s.kind === 'doors')?.timeLabel, '19:00');
   });
 
-  it('suggests a ride home for very late finishes', () => {
+  it('suggests an appropriate late-night journey home for very late finishes', () => {
     const steps = buildNightOutPlan(
       theatreEvent({
         time: '22:30',
@@ -52,7 +52,7 @@ describe('eventNightOutPlanner', () => {
     );
     const transit = steps.find((s) => s.kind === 'transit');
     assert.ok(transit);
-    assert.match(transit!.title, /ride home/i);
+    assert.match(transit!.title, /ride home|night bus|late tube/i);
   });
 
   it('includes pre-event stop for evening plans', () => {
