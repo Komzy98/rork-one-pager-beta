@@ -428,7 +428,7 @@ const styles = StyleSheet.create({
   domainGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: OP_LAYOUT.cardGap },
   domainPressable: { width: '48.2%' },
   domainWide: { width: '100%' },
-  domainCard: { minHeight: 188, height: '100%', justifyContent: 'space-between', gap: OP_SPACING.sm },
+  domainCard: { minHeight: 188, justifyContent: 'space-between', gap: OP_SPACING.sm },
   domainTop: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: OP_SPACING.xs },
   domainIcon: { width: 38, height: 38, borderRadius: 12, alignItems: 'center', justifyContent: 'center' },
   domainCopy: { flex: 1, minWidth: 0 },
