@@ -129,7 +129,17 @@ describe('Timeline evening opportunity', () => {
 
     const far = selectTimelineEveningOpportunity({
       context: context(),
-      engine: engine([eventOpportunity({ event: { ...eventOpportunity().event, distanceKm: 18 } as any })]),
+      engine: engine([eventOpportunity({
+        event: {
+          id: 'event-1',
+          title: 'Comedy night',
+          date: '2026-09-02',
+          time: '8:00 PM',
+          venue: 'Northern Quarter',
+          category: 'comedy',
+          distanceKm: 18,
+        } as any,
+      })]),
       now: new Date('2026-09-02T17:45:00'),
     });
     assert.equal(far, null);
