@@ -18,6 +18,11 @@ export interface MultiEventDayPlan {
   events: LocalEvent[];
 }
 
+export interface SavedEventsWeekOptions {
+  maxDaysAhead?: number;
+  referenceMs?: number;
+}
+
 function startOfLocalDay(date: Date): Date {
   return new Date(date.getFullYear(), date.getMonth(), date.getDate());
 }
@@ -44,7 +49,7 @@ function formatDayLabel(start: Date): string {
 
 export function groupSavedEventsByDay(
   events: LocalEvent[],
-  options?: { maxDaysAhead?: number; referenceMs?: number },
+  options?: SavedEventsWeekOptions,
 ): SavedEventDayGroup[] {
   const now = options?.referenceMs ?? Date.now();
   const maxDaysAhead = options?.maxDaysAhead ?? 7;
@@ -81,8 +86,11 @@ export function groupSavedEventsByDay(
     .sort((a, b) => a.dayKey.localeCompare(b.dayKey));
 }
 
-export function findMultiEventDays(events: LocalEvent[]): MultiEventDayPlan[] {
-  return groupSavedEventsByDay(events)
+export function findMultiEventDays(
+  events: LocalEvent[],
+  options?: SavedEventsWeekOptions,
+): MultiEventDayPlan[] {
+  return groupSavedEventsByDay(events, options)
     .filter((group) => group.events.length >= 2)
     .map((group) => ({
       dayKey: group.dayKey,
