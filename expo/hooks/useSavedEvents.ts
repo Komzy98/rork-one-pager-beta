@@ -142,17 +142,31 @@ export function useSavedEvents() {
           : entry,
       );
       await updateProfile({ savedEvents: nextSaved });
-      await experience.record({
-        kind: 'event',
-        subjectId: snapshot.id,
-        title: snapshot.title,
-        action: attended ? 'completed' : 'skipped',
-        tags: eventExperienceTags(snapshot),
-        source: 'post-event',
-      });
+      const learned = experience.getEntry('event', snapshot.id);
+      if (attended) {
+        if ((learned?.completedCount ?? 0) === 0) {
+          await experience.record({
+            kind: 'event',
+            subjectId: snapshot.id,
+            title: snapshot.title,
+            action: 'completed',
+            tags: eventExperienceTags(snapshot),
+            source: 'post-event',
+          });
+        }
+      } else {
+        await experience.record({
+          kind: 'event',
+          subjectId: snapshot.id,
+          title: snapshot.title,
+          action: 'skipped',
+          tags: eventExperienceTags(snapshot),
+          source: 'post-event',
+        });
+      }
       void Haptics.impactAsync(attended ? Haptics.ImpactFeedbackStyle.Medium : Haptics.ImpactFeedbackStyle.Light);
     },
-    [savedSnapshots, updateProfile, experience.record],
+    [savedSnapshots, updateProfile, experience.getEntry, experience.record],
   );
 
   const recordEventFeedback = useCallback(
@@ -177,7 +191,8 @@ export function useSavedEvents() {
         savedEvents: nextSaved,
         ...(patches ? { joySources: applyJoyPatches(profile?.joySources, patches) } : {}),
       });
-      if (snapshot.attendanceStatus !== 'attended') {
+      const learned = experience.getEntry('event', snapshot.id);
+      if ((learned?.completedCount ?? 0) === 0) {
         await experience.record({
           kind: 'event',
           subjectId: snapshot.id,
@@ -198,7 +213,7 @@ export function useSavedEvents() {
       });
       void Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
     },
-    [savedSnapshots, profile?.joySources, updateProfile, experience.record],
+    [savedSnapshots, profile?.joySources, updateProfile, experience.getEntry, experience.record],
   );
 
   const dismissEventFeedback = useCallback(
