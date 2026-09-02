@@ -1,4 +1,4 @@
-import React, { useMemo } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import { StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 import { router } from 'expo-router';
 import {
@@ -125,9 +125,14 @@ function parseMatchStart(match: TodayTimelineMatchItem): Date | null {
 
 function parsePlanStart(plan: TodayTimelineSavedPlan): Date | null {
   const base = plan.date.includes('T') ? plan.date.split('T')[0] : plan.date;
-  const match = plan.time?.match(/(\d{1,2}):(\d{2})/);
-  const time = match ? `${match[1].padStart(2, '0')}:${match[2]}` : '12:00';
-  const parsed = new Date(`${base}T${time}:00`);
+  const raw = plan.time?.trim() ?? '';
+  const match = raw.match(/(\d{1,2}):(\d{2})\s*(AM|PM)?/i);
+  let hours = match ? Number(match[1]) : 12;
+  const minutes = match ? Number(match[2]) : 0;
+  const meridiem = match?.[3]?.toUpperCase();
+  if (meridiem === 'PM' && hours < 12) hours += 12;
+  if (meridiem === 'AM' && hours === 12) hours = 0;
+  const parsed = new Date(`${base}T${String(hours).padStart(2, '0')}:${String(minutes).padStart(2, '0')}:00`);
   return Number.isFinite(parsed.getTime()) ? parsed : null;
 }
 
@@ -171,7 +176,13 @@ export default function TodayTimelineView({
   weather,
 }: TodayTimelineViewProps) {
   const { colors, isDark } = useTheme();
-  const now = new Date();
+  const [now, setNow] = useState(() => new Date());
+
+  useEffect(() => {
+    const timer = setInterval(() => setNow(new Date()), 60_000);
+    return () => clearInterval(timer);
+  }, []);
+
   const hour = now.getHours();
   const phase = phaseForHour(hour);
   const surface = colors.card;
@@ -199,7 +210,7 @@ export default function TodayTimelineView({
         return sameDay(due, todayYmd) || due.getTime() < now.getTime();
       })
       .sort((a, b) => priorityScore(b.priority) - priorityScore(a.priority));
-  }, [tasks, todayYmd]);
+  }, [tasks, todayYmd, now]);
 
   const bestTask = relevantTasks[0] ?? null;
   const openRoutineCount = Math.max(0, totalHabits - completedHabits);
@@ -380,7 +391,7 @@ export default function TodayTimelineView({
         return (a.time?.getTime() ?? Infinity) - (b.time?.getTime() ?? Infinity);
       })
       .slice(0, 8);
-  }, [activeCalendar, bestTask, completedHabits, continueWatchingTitle, hour, openRoutineCount, todayCalendar, todayMatches, todayPlans, totalHabits]);
+  }, [activeCalendar, bestTask, completedHabits, continueWatchingTitle, hour, now, openRoutineCount, todayCalendar, todayMatches, todayPlans, totalHabits]);
 
   const nextMoment = moments.find((moment) => moment.status === 'now' || moment.status === 'next' || moment.status === 'later') ?? null;
 
@@ -527,7 +538,7 @@ const styles = StyleSheet.create({
   windowBody: { fontSize: 13, lineHeight: 19 },
   fitRow: { minHeight: 58, borderRadius: 15, paddingHorizontal: 12, flexDirection: 'row', alignItems: 'center', gap: 10 },
   fitCopy: { flex: 1 },
-  fitTitle: { fontSize: 14, fontWeight: '750' as '700' },
+  fitTitle: { fontSize: 14, fontWeight: '700' },
   fitMeta: { marginTop: 2, fontSize: 11 },
   sectionHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-end' },
   sectionTitle: { fontSize: 25, fontWeight: '800', letterSpacing: -0.5 },
@@ -543,7 +554,7 @@ const styles = StyleSheet.create({
   momentCard: { flex: 1, minHeight: 70, marginBottom: 10, borderWidth: 1, borderRadius: 17, padding: 11, flexDirection: 'row', alignItems: 'center', gap: 10 },
   momentIcon: { width: 36, height: 36, borderRadius: 12, alignItems: 'center', justifyContent: 'center' },
   momentCopy: { flex: 1, minWidth: 0 },
-  momentTitle: { fontSize: 14, lineHeight: 18, fontWeight: '750' as '700' },
+  momentTitle: { fontSize: 14, lineHeight: 18, fontWeight: '700' },
   momentDetail: { marginTop: 3, fontSize: 11, lineHeight: 15 },
   emptyCard: { borderWidth: 1, borderRadius: 20, padding: 20, gap: 7 },
   emptyTitle: { fontSize: 17, lineHeight: 21, fontWeight: '800' },
