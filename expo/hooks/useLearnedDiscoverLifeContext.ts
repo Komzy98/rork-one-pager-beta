@@ -1,6 +1,7 @@
 import { useMemo } from 'react';
 
 import { useDiscoverLifeContext } from '@/hooks/useDiscoverLifeContext';
+import { useExperienceAutomaticSignals } from '@/hooks/useExperienceAutomaticSignals';
 import { useExperienceFeedback } from '@/hooks/useExperienceFeedback';
 import { applyExperienceDiscoveryBoost } from '@/utils/experienceDiscoveryBoost';
 import { buildDiscoverSignalChips } from '@/utils/discoverSignalChips';
@@ -13,6 +14,11 @@ import { buildDiscoverSignalChips } from '@/utils/discoverSignalChips';
 export function useLearnedDiscoverLifeContext() {
   const base = useDiscoverLifeContext();
   const experience = useExperienceFeedback();
+
+  useExperienceAutomaticSignals({
+    state: experience.state,
+    record: experience.record,
+  });
 
   const engine = useMemo(
     () => applyExperienceDiscoveryBoost(base.engine, experience.state),
