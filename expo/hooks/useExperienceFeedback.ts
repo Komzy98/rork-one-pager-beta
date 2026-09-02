@@ -41,7 +41,7 @@ export function useExperienceFeedback() {
   const { user } = useAuth();
   const userId = user?.id;
   const queryClient = useQueryClient();
-  const key = queryKey(userId);
+  const key = useMemo(() => queryKey(userId), [userId]);
 
   const query = useQuery({
     queryKey: key,
