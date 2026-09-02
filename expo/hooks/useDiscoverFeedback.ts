@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useAuth } from '@/hooks/useAuth';
+import { useExperienceFeedback } from '@/hooks/useExperienceFeedback';
 import { unifiedStorage } from '@/utils/unifiedStorage';
 import type {
   DiscoverFeedbackReason,
@@ -21,6 +22,7 @@ function clampAffinity(value: number) {
 export function useDiscoverFeedback() {
   const { user } = useAuth();
   const userId = user?.id;
+  const experience = useExperienceFeedback();
   const [state, setState] = useState<DiscoverFeedbackState>(EMPTY);
   const [hydrated, setHydrated] = useState(false);
 
@@ -75,7 +77,15 @@ export function useDiscoverFeedback() {
         [kind]: clampAffinity((state.kindAffinity[kind] ?? 0) + 1.5),
       },
     });
-  }, [persist, state]);
+    void experience.record({
+      kind: 'suggestion',
+      subjectId: key,
+      title: key,
+      action: 'useful',
+      tags: [kind],
+      source: 'discover-feedback',
+    });
+  }, [experience.record, persist, state]);
 
   const dismiss = useCallback((
     key: string,
@@ -105,7 +115,27 @@ export function useDiscoverFeedback() {
         [kind]: clampAffinity((state.kindAffinity[kind] ?? 0) - kindPenalty),
       },
     });
-  }, [persist, state]);
+
+    if (reason === 'not_for_me' || reason === 'seen_already') {
+      void experience.record({
+        kind: 'suggestion',
+        subjectId: key,
+        title: key,
+        action: 'irrelevant',
+        tags: [kind],
+        source: 'discover-feedback',
+      });
+    } else if (reason === 'bad_timing') {
+      void experience.record({
+        kind: 'suggestion',
+        subjectId: key,
+        title: key,
+        action: 'skipped',
+        tags: [kind],
+        source: 'discover-feedback',
+      });
+    }
+  }, [experience.record, persist, state]);
 
   const resetFeedback = useCallback(() => {
     persist(EMPTY);
