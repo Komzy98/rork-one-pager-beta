@@ -121,7 +121,7 @@ describe('Discover behavioural reranking', () => {
       profile: null,
       tasks: [],
       calendarEvents: [],
-      now: new Date('2026-09-02T18:00:00'),
+      now: new Date(),
     });
     const rejected = opportunity({ id: 'reject', key: 'watch:reject', score: 120 });
     const kept = opportunity({ id: 'keep', key: 'watch:keep', title: 'Another show', score: 70 });
@@ -138,7 +138,7 @@ describe('Discover behavioural reranking', () => {
             kind: 'watch',
             positive: 0,
             negative: 1,
-            lastNegativeAt: '2026-09-02T17:55:00',
+            lastNegativeAt: new Date().toISOString(),
             reasons: { not_for_me: 1 },
           },
         },
