@@ -14,7 +14,7 @@ import { useTheme } from "@/hooks/useTheme";
 
 const PRIMARY_TABS = [
   {
-    name: "today-focus",
+    name: "today-execution",
     title: "Today",
     icon: Sparkles,
   },
@@ -36,6 +36,7 @@ const PRIMARY_TABS = [
 ] as const;
 
 const LEGACY_TABS = [
+  "today-focus",
   "activities",
   "tasks",
   "discover-focused",
@@ -57,7 +58,7 @@ export default function TabLayout() {
     <FootballBundleProvider>
       <F1BundleProvider>
         <Tabs
-          initialRouteName="today-focus"
+          initialRouteName="today-execution"
           screenOptions={{
             headerShown: false,
             tabBarHideOnKeyboard: true,
