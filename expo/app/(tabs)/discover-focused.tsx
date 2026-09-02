@@ -28,8 +28,8 @@ import {
   Trophy,
 } from 'lucide-react-native';
 
+import { useSharedDiscoverLifeContext } from '@/contexts/DiscoverLifeContextProvider';
 import { useTheme } from '@/hooks/useTheme';
-import { useDiscoverLifeContext } from '@/hooks/useDiscoverLifeContext';
 import { floatingTabBarScrollPadding } from '@/constants/tabBarLayout';
 import { formatDistanceKm, getEventCountdownLabel } from '@/utils/eventDiscovery';
 import type { DiscoverFeedbackReason, DiscoverOpenWindow, DiscoverOpportunity } from '@/utils/discoverLifeEngine';
@@ -55,7 +55,7 @@ function isInsideWindow(item: DiscoverOpportunity, window: DiscoverOpenWindow) {
 export default function DiscoverFocusedScreen() {
   const insets = useSafeAreaInsets();
   const { colors, isDark } = useTheme();
-  const data = useDiscoverLifeContext();
+  const data = useSharedDiscoverLifeContext();
   const [mode, setMode] = useState<Mode>('For You');
   const [refreshing, setRefreshing] = useState(false);
 
