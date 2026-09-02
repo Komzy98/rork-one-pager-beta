@@ -25,6 +25,7 @@ import {
   MoreHorizontal,
   Plus,
   Sparkles,
+  Trophy,
 } from 'lucide-react-native';
 
 import { useTheme } from '@/hooks/useTheme';
@@ -184,6 +185,7 @@ export default function DiscoverFocusedScreen() {
               {[
                 { label: 'Events', note: data.areaLabel ? `Around ${data.areaLabel}` : 'Things happening near you', route: '/(tabs)/events', icon: MapPin },
                 { label: 'Watch', note: 'New films and series', route: '/(tabs)/shows', icon: Sparkles },
+                { label: 'Sports', note: 'Teams, fixtures and live sport', route: '/(tabs)/sports', icon: Trophy },
                 { label: 'Food', note: 'Recipes and places to try', route: '/(tabs)/cooking', icon: ChefHat },
                 { label: 'Learning', note: 'Books, ideas and courses', route: '/(tabs)/learning', icon: Compass },
               ].map((item, index) => {
