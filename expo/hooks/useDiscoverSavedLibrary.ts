@@ -4,6 +4,7 @@ import { useCookingStorage } from '@/hooks/useCookingStorage';
 import { usePremiumKitchen } from '@/hooks/usePremiumKitchen';
 import { usePinnedMatches } from '@/hooks/usePinnedMatches';
 import { useUserProfile } from '@/hooks/useUserProfile';
+import type { KitchenRecipeDto } from '@/types/kitchenRecipe';
 
 export function useDiscoverSavedLibrary() {
   const app = useAppSafe();
@@ -20,7 +21,7 @@ export function useDiscoverSavedLibrary() {
   const recipes = useMemo(
     () => cooking.bookmarks
       .map((id) => kitchen.recipeIndex.get(id))
-      .filter((recipe): recipe is NonNullable<typeof recipe> => Boolean(recipe)),
+      .filter((recipe): recipe is KitchenRecipeDto => Boolean(recipe)),
     [cooking.bookmarks, kitchen.recipeIndex],
   );
 
