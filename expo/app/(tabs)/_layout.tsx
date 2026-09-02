@@ -2,9 +2,9 @@ import { Tabs } from "expo-router";
 import React from "react";
 import { Platform } from "react-native";
 import {
+  Clock3,
   Compass,
   LayoutGrid,
-  Sparkles,
   UserRound,
 } from "lucide-react-native";
 
@@ -12,12 +12,13 @@ import { DiscoverLifeContextProvider } from "@/contexts/DiscoverLifeContextProvi
 import { FootballBundleProvider } from "@/contexts/FootballBundleContext";
 import { F1BundleProvider } from "@/contexts/F1BundleContext";
 import { useTheme } from "@/hooks/useTheme";
+import { interFont } from "@/constants/fonts";
 
 const PRIMARY_TABS = [
   {
-    name: "activities",
+    name: "today-coherent",
     title: "Today",
-    icon: Sparkles,
+    icon: Clock3,
   },
   {
     name: "my-life-world",
@@ -37,6 +38,7 @@ const PRIMARY_TABS = [
 ] as const;
 
 const LEGACY_TABS = [
+  "activities",
   "today-execution",
   "today-focus",
   "my-life",
@@ -61,28 +63,34 @@ export default function TabLayout() {
       <F1BundleProvider>
         <DiscoverLifeContextProvider>
           <Tabs
-            initialRouteName="activities"
+            initialRouteName="today-coherent"
             screenOptions={{
               headerShown: false,
               tabBarHideOnKeyboard: true,
               tabBarActiveTintColor: colors.primary,
               tabBarInactiveTintColor: colors.textSecondary,
               tabBarLabelStyle: {
+                fontFamily: interFont("600"),
                 fontSize: 11,
                 fontWeight: "600",
                 marginTop: 2,
               },
+              tabBarItemStyle: {
+                paddingTop: 1,
+              },
               tabBarStyle: {
                 position: "absolute",
-                height: Platform.OS === "ios" ? 84 : 68,
+                height: Platform.OS === "ios" ? 82 : 68,
                 paddingTop: 8,
-                paddingBottom: Platform.OS === "ios" ? 22 : 10,
+                paddingBottom: Platform.OS === "ios" ? 20 : 10,
                 borderTopWidth: 1,
-                borderTopColor: isDark
-                  ? "rgba(255,255,255,0.08)"
-                  : "rgba(15,23,42,0.08)",
-                backgroundColor: isDark ? "#0D0E12" : "#FFFFFF",
+                borderTopColor: colors.tabBarBorder || (isDark ? "rgba(255,255,255,0.08)" : "rgba(15,23,42,0.08)"),
+                backgroundColor: colors.tabBarBackground || (isDark ? "#0D0E12" : "#FFFFFF"),
                 elevation: 0,
+                shadowColor: "#0F172A",
+                shadowOffset: { width: 0, height: -2 },
+                shadowOpacity: isDark ? 0.18 : 0.04,
+                shadowRadius: 12,
               },
             }}
           >
@@ -96,8 +104,8 @@ export default function TabLayout() {
                   tabBarIcon: ({ color, size, focused }) => (
                     <Icon
                       color={color}
-                      size={focused ? size + 2 : size}
-                      strokeWidth={focused ? 2.4 : 2}
+                      size={focused ? size + 1 : size}
+                      strokeWidth={focused ? 2.35 : 2}
                     />
                   ),
                 }}
