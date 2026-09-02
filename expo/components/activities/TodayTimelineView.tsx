@@ -15,7 +15,10 @@ import {
 } from 'lucide-react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 
+import { useSharedDiscoverLifeContext } from '@/contexts/DiscoverLifeContextProvider';
 import { useTheme } from '@/hooks/useTheme';
+import { formatDistanceKm } from '@/utils/eventDiscovery';
+import { selectTimelineEveningOpportunity } from '@/utils/timelineEveningOpportunity';
 
 export type TodayTimelineCalendarItem = {
   id: string;
@@ -176,6 +179,7 @@ export default function TodayTimelineView({
   weather,
 }: TodayTimelineViewProps) {
   const { colors, isDark } = useTheme();
+  const discover = useSharedDiscoverLifeContext();
   const [now, setNow] = useState(() => new Date());
 
   useEffect(() => {
@@ -235,6 +239,28 @@ export default function TodayTimelineView({
     [savedPlans, todayYmd],
   );
 
+  const hasExistingEveningPlan = todayPlans.some((plan) => {
+    if (!plan.start || plan.start <= now) return false;
+    const planHour = plan.start.getHours();
+    return planHour >= 16 && planHour < 23;
+  });
+
+  const eveningOpportunityPick = useMemo(
+    () => selectTimelineEveningOpportunity({
+      context: discover.lifeContext,
+      engine: discover.engine,
+      isSaved: discover.saved.isSaved,
+      hasExistingEveningPlan,
+      now,
+    }),
+    [discover.lifeContext, discover.engine, discover.saved.isSaved, hasExistingEveningPlan, now],
+  );
+
+  const eveningOpportunity = eveningOpportunityPick?.opportunity ?? null;
+  const eveningDistance = typeof eveningOpportunity?.event?.distanceKm === 'number'
+    ? formatDistanceKm(eveningOpportunity.event.distanceKm)
+    : null;
+
   const nextCommitmentTime = activeCalendar?.end ?? nextCalendar?.start ?? null;
   const freeMinutes = nextCommitmentTime ? minutesBetween(now, nextCommitmentTime) : null;
   const taskFitsGap = Boolean(
@@ -266,9 +292,18 @@ export default function TodayTimelineView({
     } else if (hour < 21) {
       if (!nextCalendar && relevantTasks.length === 0) lines.push('Work is effectively finished for today.');
       else if (relevantTasks.length > 0) lines.push(`${relevantTasks.length} important item${relevantTasks.length === 1 ? '' : 's'} still remain.`);
-      if (todayPlans[0]) lines.push(`${todayPlans[0].title} is on your plan tonight.`);
-      else if (todayMatches[0]) lines.push(`${todayMatches[0].homeTeam} vs ${todayMatches[0].awayTeam} matters tonight.`);
-      if (continueWatchingTitle) lines.push(`${continueWatchingTitle} is there if you want an easy night in.`);
+
+      if (todayPlans[0]) {
+        lines.push(`${todayPlans[0].title} is on your plan tonight.`);
+      } else if (eveningOpportunity?.startsAt) {
+        lines.push(`${eveningOpportunity.title} starts at ${formatClock(eveningOpportunity.startsAt)}${eveningDistance ? ` · ${eveningDistance} away` : ''}.`);
+      } else if (todayMatches[0]) {
+        lines.push(`${todayMatches[0].homeTeam} vs ${todayMatches[0].awayTeam} matters tonight.`);
+      }
+
+      if (continueWatchingTitle && lines.length < 3) {
+        lines.push(`${continueWatchingTitle} is there if you want an easy night in.`);
+      }
     } else {
       const unfinished = relevantTasks.length + openRoutineCount;
       lines.push(unfinished === 0 ? 'You’re done for today.' : `${unfinished} thing${unfinished === 1 ? '' : 's'} can wait or be closed out.`);
@@ -285,6 +320,8 @@ export default function TodayTimelineView({
     activeCalendar,
     bestTask,
     continueWatchingTitle,
+    eveningDistance,
+    eveningOpportunity,
     freeMinutes,
     hour,
     nextCalendar,
@@ -322,6 +359,20 @@ export default function TodayTimelineView({
         kind: 'event',
         status: plan.start && plan.start < now ? 'done' : 'later',
         route: `/(root)/event/${plan.id}`,
+      });
+    }
+
+    if (eveningOpportunity?.startsAt) {
+      const reason = eveningOpportunity.reasons.find((value) => !/open\s*·|is open/i.test(value));
+      rows.push({
+        id: `discover-${eveningOpportunity.id}`,
+        time: eveningOpportunity.startsAt,
+        label: formatClock(eveningOpportunity.startsAt),
+        title: eveningOpportunity.title,
+        detail: [eveningDistance, reason].filter(Boolean).join(' · ') || 'A strong fit for your open evening',
+        kind: 'event',
+        status: 'later',
+        route: eveningOpportunity.route,
       });
     }
 
@@ -391,7 +442,7 @@ export default function TodayTimelineView({
         return (a.time?.getTime() ?? Infinity) - (b.time?.getTime() ?? Infinity);
       })
       .slice(0, 8);
-  }, [activeCalendar, bestTask, completedHabits, continueWatchingTitle, hour, now, openRoutineCount, todayCalendar, todayMatches, todayPlans, totalHabits]);
+  }, [activeCalendar, bestTask, completedHabits, continueWatchingTitle, eveningDistance, eveningOpportunity, hour, now, openRoutineCount, todayCalendar, todayMatches, todayPlans, totalHabits]);
 
   const nextMoment = moments.find((moment) => moment.status === 'now' || moment.status === 'next' || moment.status === 'later') ?? null;
 
