@@ -1,33 +1,33 @@
-import React from 'react';
+import React, { useMemo } from 'react';
 import {
-  View,
-  Text,
-  StyleSheet,
-  TouchableOpacity,
-  ScrollView,
-  TextInput,
-  RefreshControl,
   Animated,
-  useWindowDimensions,
+  RefreshControl,
+  ScrollView,
+  StyleSheet,
+  Text,
+  TextInput,
+  TouchableOpacity,
+  View,
 } from 'react-native';
 import {
+  ArrowRight,
+  CalendarDays,
+  Check,
   CheckCircle2,
+  ChevronRight,
   Clock3,
   Flame,
-  Zap,
-  Play,
+  ListChecks,
+  MoreHorizontal,
   Pause,
+  Play,
   Plus,
   Sparkles,
-  TrendingUp,
-  MoreHorizontal,
   Target,
-  Coffee,
-  Sun,
-  Sunset,
-  Moon,
-  ListChecks,
+  TrendingUp,
+  Zap,
 } from 'lucide-react-native';
+
 import type { Task, TaskCompletion } from '@/types/task';
 import type { ThemeColors } from '@/types/theme';
 import type {
@@ -36,8 +36,6 @@ import type {
   TodaySourceFilter,
   TodayStatusFilter,
 } from '@/utils/todayPlanSchedule';
-
-const NARROW_HEADER_WIDTH = 380;
 import TodayPlanItemRow from './TodayPlanItemRow';
 import HabitFormationCoach from '@/components/HabitFormationCoach';
 import HabitCompletionToast from '@/components/HabitCompletionToast';
@@ -46,15 +44,6 @@ import type { CompletionFeedback } from '@/hooks/useTodayHabits';
 import type { TodayLogItem } from '@/utils/todayHabits';
 
 export type QuickAddMode = 'task' | 'habit';
-
-const ACCENT = {
-  green: '#18C383',
-  blue: '#3578F6',
-  navy: '#112C63',
-  cyan: '#49C8F2',
-  orange: '#F59E0B',
-  purple: '#7B61FF',
-};
 
 export interface TimeBlockViewModel {
   id: string;
@@ -144,1524 +133,1269 @@ export interface TasksDashboardViewProps {
   habitTimeById?: Record<string, string | undefined>;
 }
 
-function MiniStat({
-  icon,
-  value,
-  label,
-  mutedColor,
-  textColor,
-}: {
-  icon: React.ReactNode;
-  value: string;
-  label: string;
-  mutedColor: string;
-  textColor: string;
-}) {
-  return (
-    <View style={styles.miniStat}>
-      <View style={styles.statIconValue}>
-        {icon}
-        <Text style={[styles.statValue, { color: textColor }]}>{value}</Text>
-      </View>
-      <Text style={[styles.statLabel, { color: mutedColor }]}>{label}</Text>
-    </View>
-  );
+const ACCENT = {
+  blue: '#4F73E8',
+  navy: '#14223B',
+  green: '#18A86B',
+  orange: '#E39120',
+  purple: '#7458DF',
+  red: '#D94B55',
+};
+
+function formatDateLabel() {
+  return new Date().toLocaleDateString('en-GB', {
+    weekday: 'long',
+    day: 'numeric',
+    month: 'long',
+  });
 }
 
-function TimelineRow({
-  icon: Icon,
+function plural(value: number, singular: string, pluralValue = `${singular}s`) {
+  return `${value} ${value === 1 ? singular : pluralValue}`;
+}
+
+function SectionHeader({
   title,
   subtitle,
-  status,
-  done,
-  current,
-  cardBg,
-  mutedColor,
-  textColor,
+  action,
+  onAction,
+  colors,
 }: {
-  icon: React.ComponentType<{ size?: number; color?: string }>;
   title: string;
-  subtitle: string;
-  status: string;
-  done?: boolean;
-  current?: boolean;
-  cardBg: string;
-  mutedColor: string;
-  textColor: string;
+  subtitle?: string;
+  action?: string;
+  onAction?: () => void;
+  colors: ThemeColors;
 }) {
   return (
-    <View style={[styles.timelineRow, current && { backgroundColor: cardBg }]}>
-      <View style={[styles.timelineIcon, current && styles.timelineIconCurrent]}>
-        <Icon size={18} color={current ? ACCENT.blue : '#333842'} />
+    <View style={styles.sectionHeader}>
+      <View style={styles.sectionHeaderCopy}>
+        <Text style={[styles.sectionTitle, { color: colors.text }]}>{title}</Text>
+        {subtitle ? <Text style={[styles.sectionSubtitle, { color: colors.textSecondary }]}>{subtitle}</Text> : null}
       </View>
-      <View style={styles.timelineContent}>
-        <View style={styles.timelineTitleRow}>
-          <Text style={[styles.timelineTitle, { color: textColor }]} numberOfLines={1}>
-            {title}
-          </Text>
-          <Text
-            style={[
-              styles.timelineStatus,
-              { color: mutedColor },
-              done && { color: ACCENT.green },
-              current && { color: ACCENT.blue },
-            ]}
-            numberOfLines={1}
-          >
-            {status}
-          </Text>
-        </View>
-        <Text style={[styles.timelineSubtitle, { color: mutedColor }]} numberOfLines={2}>
-          {subtitle}
-        </Text>
-      </View>
+      {action && onAction ? (
+        <TouchableOpacity activeOpacity={0.75} onPress={onAction} style={styles.sectionAction}>
+          <Text style={[styles.sectionActionText, { color: colors.primary }]}>{action}</Text>
+          <ChevronRight size={15} color={colors.primary} />
+        </TouchableOpacity>
+      ) : null}
     </View>
   );
 }
 
-export default function TasksDashboardView({
-  colors,
-  isDark,
-  paddingTop,
-  paddingBottom,
-  refreshing,
-  onRefresh,
-  momentumPercent,
-  momentumTasksDone,
-  momentumTasksTotal,
-  momentumHabitsDone,
-  momentumHabitsTotal,
-  streakCount,
-  peakPillText,
-  aiSuggestion,
-  aiSuggestionBold,
-  focusTask,
-  focusHabit,
-  incompleteHabitsCount,
-  onCompleteFocusHabit,
-  onEditFocusHabit,
-  isFocusActive,
-  focusElapsed,
-  inPeak,
-  quickTaskTitle,
-  onQuickTaskTitleChange,
-  quickAddMode,
-  onQuickAddModeChange,
-  onQuickAdd,
-  onStartFocus,
-  onPauseFocus,
-  onCompleteFocus,
-  onEditFocus,
-  todaySourceFilter,
-  onTodaySourceFilterChange,
-  todayStatusFilter,
-  onTodayStatusFilterChange,
-  todayDoneScope,
-  onTodayDoneScopeChange,
-  allOpenCount,
-  allDoneCount,
-  allWeekDoneCount,
-  tasksOpenCount,
-  tasksDoneCount,
-  tasksWeekDoneCount,
-  habitsOpenCount,
-  habitsDoneCount,
-  habitsWeekDoneCount,
-  reduceMotion,
-  onViewCompletionHistory,
-  todayPlanItems,
-  focusedTaskId,
-  onTaskPress,
-  onTaskComplete,
-  onTaskDelete,
-  onSetInProgress,
-  onSetTaskFocus,
-  getTaskColor,
-  getTaskMeta,
-  onToggleHabit,
-  timeBlocks,
-  pulseAnim,
-  hasContent,
-  onCreateTask,
-  onSeeAllTasks,
-  onViewAllHabits,
-  onAISuggestionPress,
-  aiActionable,
-  onOpenPeakScheduler,
-  onOpenHabitCoach,
-  showHabitCoach,
-  calendarPlanner,
-  completionFeedback,
-  onDismissCompletionFeedback,
-  onHabitMood,
-  todayLog = [],
-  weeklyProgressByHabitId = {},
-  habitTimeById = {},
-}: TasksDashboardViewProps) {
-  const { width: windowWidth } = useWindowDimensions();
-  const isNarrowHeader = windowWidth < NARROW_HEADER_WIDTH;
-  const surface = isDark ? 'rgba(255,255,255,0.06)' : '#FFFFFF';
-  const border = isDark ? 'rgba(255,255,255,0.1)' : '#E7EAF0';
-  const muted = colors.textSecondary;
-  const timelineActiveBg = isDark ? 'rgba(53,120,246,0.15)' : '#EDF5FF';
-  const ringRotation = reduceMotion ? 0 : -90 + (momentumPercent / 100) * 270;
-  const doneCount = momentumTasksDone + momentumHabitsDone;
-  const pendingCount = Math.max(
-    0,
-    momentumTasksTotal + momentumHabitsTotal - doneCount,
-  );
-  const doneCountForFilter =
-    todayStatusFilter === 'done' && todayDoneScope === 'week'
-      ? todaySourceFilter === 'all'
-        ? allWeekDoneCount
-        : todaySourceFilter === 'tasks'
-          ? tasksWeekDoneCount
-          : habitsWeekDoneCount
-      : todaySourceFilter === 'all'
-        ? allDoneCount
-        : todaySourceFilter === 'tasks'
-          ? tasksDoneCount
-          : habitsDoneCount;
-
-  const renderMomentumBlock = (centered?: boolean) => (
-    <View
-      style={[styles.momentumWrap, centered && styles.momentumWrapCentered]}
-      accessible
-      accessibilityRole="text"
-      accessibilityLabel={`Momentum ${momentumPercent} percent. ${momentumTasksDone} of ${momentumTasksTotal} tasks and ${momentumHabitsDone} of ${momentumHabitsTotal} habits completed today.`}
-    >
-      <View
-        style={[
-          styles.ringOuter,
-          {
-            borderTopColor: ACCENT.green,
-            borderRightColor: momentumPercent > 25 ? ACCENT.green : border,
-            borderBottomColor: momentumPercent > 50 ? ACCENT.green : border,
-            borderLeftColor: momentumPercent > 75 ? ACCENT.green : border,
-            ...(reduceMotion ? null : { transform: [{ rotate: `${ringRotation}deg` }] }),
-          },
-        ]}
-      >
-        <View
-          style={[
-            styles.ringInner,
-            reduceMotion ? null : { transform: [{ rotate: `${-ringRotation}deg` }] },
-          ]}
-        >
-          <Zap size={16} color={ACCENT.green} fill={ACCENT.green} />
-          <Text
-            style={[styles.ringPercent, { color: colors.text }]}
-            numberOfLines={1}
-            adjustsFontSizeToFit
-            minimumFontScale={0.85}
-          >
-            {momentumPercent}%
-          </Text>
-          <Text style={[styles.ringLabel, { color: muted }]} numberOfLines={1}>
-            MOMENTUM
-          </Text>
-        </View>
-      </View>
-      <Text style={[styles.momentumBreakdown, { color: muted }]} numberOfLines={2}>
-        {momentumTasksDone}/{momentumTasksTotal} tasks · {momentumHabitsDone}/{momentumHabitsTotal}{' '}
-        habits
-      </Text>
-      <Text style={[styles.momentumHint, { color: muted }]}>
-        % of today&apos;s plan completed
-      </Text>
-      <View style={[styles.peakPill, { backgroundColor: surface }]}>
-        <TrendingUp size={14} color={ACCENT.green} />
-        <Text style={[styles.peakText, { color: muted }]}>{peakPillText}</Text>
-      </View>
+function Metric({ value, label, accent, textColor }: { value: string; label: string; accent: string; textColor: string }) {
+  return (
+    <View style={styles.metric}>
+      <View style={[styles.metricDot, { backgroundColor: accent }]} />
+      <Text style={[styles.metricValue, { color: textColor }]}>{value}</Text>
+      <Text style={styles.metricLabel}>{label}</Text>
     </View>
   );
+}
 
-  const renderStats = () => {
-    if (isNarrowHeader) {
-      return (
-        <Text style={[styles.compactStats, { color: muted }]} accessibilityRole="text">
-          <Text style={{ color: colors.text, fontWeight: '800' }}>{doneCount}</Text> done ·{' '}
-          <Text style={{ color: colors.text, fontWeight: '800' }}>{pendingCount}</Text> pending ·{' '}
-          <Text style={{ color: colors.text, fontWeight: '800' }}>{streakCount}</Text> day streak
-        </Text>
-      );
-    }
+function FilterChip({
+  label,
+  selected,
+  onPress,
+  isDark,
+  textColor,
+}: {
+  label: string;
+  selected: boolean;
+  onPress: () => void;
+  isDark: boolean;
+  textColor: string;
+}) {
+  return (
+    <TouchableOpacity
+      activeOpacity={0.78}
+      onPress={onPress}
+      style={[
+        styles.filterChip,
+        { backgroundColor: isDark ? '#171B22' : '#F1F3F6' },
+        selected && styles.filterChipSelected,
+      ]}
+      accessibilityRole="button"
+      accessibilityState={{ selected }}
+    >
+      <Text style={[styles.filterChipText, { color: selected ? '#FFFFFF' : textColor }]}>{label}</Text>
+    </TouchableOpacity>
+  );
+}
 
-    return (
-      <View style={styles.statsRow}>
-        <MiniStat
-          icon={<CheckCircle2 size={19} color={ACCENT.green} />}
-          value={String(doneCount)}
-          label="Done"
-          mutedColor={muted}
-          textColor={colors.text}
-        />
-        <View style={[styles.divider, { backgroundColor: border }]} />
-        <MiniStat
-          icon={<Clock3 size={19} color={ACCENT.blue} />}
-          value={String(pendingCount)}
-          label="Pending"
-          mutedColor={muted}
-          textColor={colors.text}
-        />
-        <View style={[styles.divider, { backgroundColor: border }]} />
-        <MiniStat
-          icon={<Flame size={19} color={ACCENT.orange} />}
-          value={String(streakCount)}
-          label="Day Streak"
-          mutedColor={muted}
-          textColor={colors.text}
-        />
+export default function TasksDashboardView(props: TasksDashboardViewProps) {
+  const {
+    colors,
+    isDark,
+    paddingTop,
+    paddingBottom,
+    refreshing,
+    onRefresh,
+    momentumPercent,
+    momentumTasksDone,
+    momentumTasksTotal,
+    momentumHabitsDone,
+    momentumHabitsTotal,
+    streakCount,
+    peakPillText,
+    aiSuggestion,
+    aiSuggestionBold,
+    focusTask,
+    focusHabit,
+    incompleteHabitsCount,
+    onCompleteFocusHabit,
+    onEditFocusHabit,
+    isFocusActive,
+    focusElapsed,
+    inPeak,
+    quickTaskTitle,
+    onQuickTaskTitleChange,
+    quickAddMode,
+    onQuickAddModeChange,
+    onQuickAdd,
+    onStartFocus,
+    onPauseFocus,
+    onCompleteFocus,
+    onEditFocus,
+    todaySourceFilter,
+    onTodaySourceFilterChange,
+    todayStatusFilter,
+    onTodayStatusFilterChange,
+    todayDoneScope,
+    onTodayDoneScopeChange,
+    allOpenCount,
+    allDoneCount,
+    allWeekDoneCount,
+    tasksOpenCount,
+    tasksDoneCount,
+    tasksWeekDoneCount,
+    habitsOpenCount,
+    habitsDoneCount,
+    habitsWeekDoneCount,
+    onViewCompletionHistory,
+    todayPlanItems,
+    focusedTaskId,
+    onTaskPress,
+    onTaskComplete,
+    onTaskDelete,
+    onSetInProgress,
+    onSetTaskFocus,
+    getTaskColor,
+    getTaskMeta,
+    onToggleHabit,
+    timeBlocks,
+    pulseAnim,
+    hasContent,
+    onCreateTask,
+    onSeeAllTasks,
+    onViewAllHabits,
+    onAISuggestionPress,
+    aiActionable,
+    onOpenPeakScheduler,
+    onOpenHabitCoach,
+    showHabitCoach,
+    calendarPlanner,
+    completionFeedback,
+    onDismissCompletionFeedback,
+    onHabitMood,
+    todayLog = [],
+    weeklyProgressByHabitId = {},
+    habitTimeById = {},
+  } = props;
+
+  const surface = isDark ? '#15181F' : '#FFFFFF';
+  const softSurface = isDark ? '#191D25' : '#F5F6F8';
+  const border = isDark ? '#292E38' : '#E8EBF0';
+  const muted = colors.textSecondary;
+
+  const doneCount = momentumTasksDone + momentumHabitsDone;
+  const totalCount = momentumTasksTotal + momentumHabitsTotal;
+  const pendingCount = Math.max(0, totalCount - doneCount);
+  const dateLabel = useMemo(formatDateLabel, []);
+
+  const contextLine = useMemo(() => {
+    if (!hasContent) return 'Build a simple system for what matters to you.';
+    if (pendingCount === 0) return 'You’re clear for today. Protect the space you’ve created.';
+    if (isFocusActive && focusTask) return `You’re in focus mode on ${focusTask.title}.`;
+    if (focusTask) return `${plural(pendingCount, 'thing')} left today. Start with what matters most.`;
+    if (incompleteHabitsCount > 0) return `${plural(incompleteHabitsCount, 'routine')} left to close out today.`;
+    return 'Keep the day simple and intentional.';
+  }, [focusTask, hasContent, incompleteHabitsCount, isFocusActive, pendingCount]);
+
+  const openCount = todaySourceFilter === 'all'
+    ? allOpenCount
+    : todaySourceFilter === 'tasks'
+      ? tasksOpenCount
+      : habitsOpenCount;
+
+  const doneCountForFilter = todayStatusFilter === 'done' && todayDoneScope === 'week'
+    ? todaySourceFilter === 'all'
+      ? allWeekDoneCount
+      : todaySourceFilter === 'tasks'
+        ? tasksWeekDoneCount
+        : habitsWeekDoneCount
+    : todaySourceFilter === 'all'
+      ? allDoneCount
+      : todaySourceFilter === 'tasks'
+        ? tasksDoneCount
+        : habitsDoneCount;
+
+  const focusAccent = focusTask?.priority === 'urgent'
+    ? ACCENT.red
+    : focusTask?.priority === 'high'
+      ? ACCENT.orange
+      : ACCENT.blue;
+
+  const currentBlock = timeBlocks.find((block) => block.status === 'Current') ?? null;
+  const nextBlock = timeBlocks.find((block) => block.status === 'Upcoming') ?? null;
+
+  const renderEmptyState = () => (
+    <View style={[styles.emptyState, { backgroundColor: surface, borderColor: border }]}>
+      <View style={[styles.emptyIcon, { backgroundColor: isDark ? '#1C2A27' : '#EAF8F2' }]}>
+        <ListChecks size={27} color={ACCENT.green} />
       </View>
-    );
-  };
-
-  const renderZeroState = () => (
-    <View style={styles.zeroState}>
-      <View style={[styles.zeroIconWrap, { backgroundColor: ACCENT.green + '20' }]}>
-        <ListChecks size={36} color={ACCENT.green} />
-      </View>
-      <Text style={[styles.zeroTitle, { color: colors.text }]}>No tasks yet</Text>
-      <Text style={[styles.zeroSubtitle, { color: muted }]}>
-        Add your first task below to start building momentum
-      </Text>
-      <TouchableOpacity style={styles.zeroButton} onPress={onCreateTask} activeOpacity={0.85}>
-        <Plus size={18} color="#FFFFFF" />
-        <Text style={styles.zeroButtonText}>Create Detailed Task</Text>
+      <Text style={[styles.emptyTitle, { color: colors.text }]}>Your life, organised your way.</Text>
+      <Text style={[styles.emptyCopy, { color: muted }]}>Start with one task or one routine. My Life will organise the rest around your day.</Text>
+      <TouchableOpacity activeOpacity={0.82} onPress={onCreateTask} style={[styles.emptyButton, { backgroundColor: colors.primary }]}>
+        <Plus size={17} color="#FFFFFF" />
+        <Text style={styles.emptyButtonText}>Add your first task</Text>
       </TouchableOpacity>
     </View>
   );
 
   return (
     <>
-    <ScrollView
-      showsVerticalScrollIndicator={false}
-      contentContainerStyle={[styles.scrollContent, { paddingTop, paddingBottom }]}
-      refreshControl={
-        <RefreshControl
-          refreshing={refreshing}
-          onRefresh={onRefresh}
-          tintColor={ACCENT.green}
-          colors={[ACCENT.green]}
-        />
-      }
-    >
-      <View style={[styles.header, isNarrowHeader && styles.headerStacked]}>
-        <View style={[styles.headerMain, isNarrowHeader && styles.headerMainStacked]}>
-          <Text style={[styles.heroTitle, { color: colors.text }]}>
-            Focus on what{'\n'}moves the needle.
-          </Text>
-          <Text style={[styles.subtitle, { color: muted }]}>
-            Small steps today. Big results tomorrow.
-          </Text>
-          {!isNarrowHeader ? renderStats() : null}
+      <ScrollView
+        showsVerticalScrollIndicator={false}
+        contentContainerStyle={[styles.scrollContent, { paddingTop, paddingBottom }]}
+        refreshControl={
+          <RefreshControl
+            refreshing={refreshing}
+            onRefresh={onRefresh}
+            tintColor={colors.primary}
+            colors={[colors.primary]}
+          />
+        }
+      >
+        <View style={styles.topBar}>
+          <View style={styles.titleBlock}>
+            <Text style={[styles.dateLabel, { color: muted }]}>{dateLabel.toUpperCase()}</Text>
+            <Text style={[styles.pageTitle, { color: colors.text }]}>My Life</Text>
+            <Text style={[styles.pageSubtitle, { color: muted }]}>{contextLine}</Text>
+          </View>
+          <TouchableOpacity
+            activeOpacity={0.82}
+            onPress={onCreateTask}
+            style={[styles.addTopButton, { backgroundColor: colors.primary }]}
+            accessibilityRole="button"
+            accessibilityLabel="Add a task"
+          >
+            <Plus size={21} color="#FFFFFF" />
+          </TouchableOpacity>
         </View>
 
-        {!isNarrowHeader ? renderMomentumBlock() : null}
-      </View>
-
-      {isNarrowHeader ? (
-        <>
-          {renderMomentumBlock(true)}
-          {renderStats()}
-        </>
-      ) : null}
-
-      {!hasContent ? (
-        renderZeroState()
-      ) : (
-        <>
-          {focusTask ? (
-            <Animated.View
-              style={[
-                styles.focusCard,
-                {
-                  transform: [
-                    {
-                      scale:
-                        isFocusActive && !reduceMotion ? pulseAnim : 1,
-                    },
-                  ],
-                },
-              ]}
-            >
-              <View style={styles.focusTopRow}>
-                <View style={styles.focusPill}>
-                  <Zap size={15} color="#FFFFFF" />
-                  <Text style={styles.focusPillText}>
-                    {inPeak ? 'PEAK FOCUS' : 'FOCUS SESSION'}
-                  </Text>
-                </View>
-                <TouchableOpacity
-                  onPress={onEditFocus}
-                  hitSlop={12}
-                  accessibilityRole="button"
-                  accessibilityLabel={
-                    isFocusActive
-                      ? `Focus timer ${focusElapsed}. Open task options`
-                      : 'Open focus task options'
-                  }
-                >
-                  {isFocusActive ? (
-                    <View style={styles.timerChip}>
-                      <Clock3 size={14} color="#DDE8FF" />
-                      <Text style={styles.timerChipText}>{focusElapsed}</Text>
-                    </View>
-                  ) : (
-                    <MoreHorizontal size={25} color="#DDE8FF" />
-                  )}
-                </TouchableOpacity>
-              </View>
-
-              <View style={styles.focusBody}>
-                <View style={styles.focusTextBlock}>
-                  <Text style={styles.focusTitle} numberOfLines={3}>
-                    {focusTask.title}
-                  </Text>
-                  <View style={styles.metaRow}>
-                    <Clock3 size={14} color="#EAF1FF" />
-                    <Text style={styles.focusMeta}>
-                      {focusTask.estimatedDuration ? `${focusTask.estimatedDuration} min` : 'Focus'}
-                    </Text>
-                    <Target size={14} color="#EAF1FF" />
-                    <Text style={styles.focusMeta}>
-                      {focusTask.priority === 'urgent' || focusTask.priority === 'high'
-                        ? 'Deep Work'
-                        : 'Task'}
-                    </Text>
+        {!hasContent ? renderEmptyState() : (
+          <>
+            <View style={[styles.daySnapshot, { backgroundColor: surface, borderColor: border }]}>
+              <View style={styles.snapshotTop}>
+                <View>
+                  <Text style={[styles.snapshotKicker, { color: muted }]}>TODAY</Text>
+                  <View style={styles.snapshotProgressRow}>
+                    <Text style={[styles.snapshotPercent, { color: colors.text }]}>{momentumPercent}%</Text>
+                    <Text style={[styles.snapshotProgressLabel, { color: muted }]}>complete</Text>
                   </View>
                 </View>
+                <View style={[styles.rhythmPill, { backgroundColor: softSurface }]}>
+                  <TrendingUp size={14} color={ACCENT.green} />
+                  <Text style={[styles.rhythmText, { color: colors.text }]} numberOfLines={1}>{peakPillText}</Text>
+                </View>
+              </View>
 
-                <View style={styles.focusFooter}>
-                  <Text style={styles.focusCaption} numberOfLines={2}>
-                    High impact task · Finish strong
-                  </Text>
-                  <View style={styles.playBlock}>
-                    <TouchableOpacity
-                      activeOpacity={0.85}
-                      onPress={isFocusActive ? onPauseFocus : onStartFocus}
-                      style={styles.playRing}
-                      accessibilityRole="button"
-                      accessibilityLabel={
-                        isFocusActive ? 'Pause focus timer' : 'Start focus timer'
-                      }
-                      accessibilityHint="Runs a timed focus session for the current task"
-                    >
-                      <View style={styles.playButton}>
-                        {isFocusActive ? (
-                          <Pause size={20} color={ACCENT.blue} fill={ACCENT.blue} />
-                        ) : (
-                          <Play size={22} color={ACCENT.blue} fill={ACCENT.blue} />
-                        )}
-                      </View>
-                    </TouchableOpacity>
-                    <Text style={styles.startFocusText} numberOfLines={1}>
-                      {isFocusActive ? 'Pause' : 'Start'}
-                    </Text>
-                    {isFocusActive ? (
-                      <TouchableOpacity
-                        onPress={onCompleteFocus}
-                        style={styles.doneLink}
-                        accessibilityRole="button"
-                        accessibilityLabel="Mark focus task complete"
-                      >
-                        <Text style={styles.doneLinkText}>Done</Text>
-                      </TouchableOpacity>
-                    ) : null}
-                  </View>
-                </View>
+              <View style={[styles.progressTrack, { backgroundColor: isDark ? '#282D36' : '#ECEFF3' }]}>
+                <View style={[styles.progressFill, { width: `${Math.max(3, momentumPercent)}%`, backgroundColor: momentumPercent >= 100 ? ACCENT.green : colors.primary }]} />
               </View>
-            </Animated.View>
-          ) : focusHabit ? (
-            <View style={styles.focusCard}>
-              <View style={styles.focusTopRow}>
-                <View style={[styles.focusPill, { backgroundColor: 'rgba(24,195,131,0.25)' }]}>
-                  <Target size={15} color="#FFFFFF" />
-                  <Text style={styles.focusPillText}>HABIT FOCUS</Text>
-                </View>
-                <TouchableOpacity onPress={onEditFocusHabit} hitSlop={12}>
-                  <MoreHorizontal size={25} color="#DDE8FF" />
-                </TouchableOpacity>
-              </View>
-              <View style={styles.focusBody}>
-                <View style={styles.focusTextBlock}>
-                  <Text style={styles.focusTitle} numberOfLines={3}>
-                    {focusHabit.title}
-                  </Text>
-                  <View style={styles.metaRow}>
-                    <Flame size={14} color="#EAF1FF" />
-                    <Text style={styles.focusMeta}>
-                      {focusHabit.habitStreak ? `${focusHabit.habitStreak} day streak` : 'Build your streak'}
-                    </Text>
-                  </View>
-                </View>
-                <View style={styles.playBlock}>
-                  <TouchableOpacity
-                    activeOpacity={0.85}
-                    onPress={onCompleteFocusHabit}
-                    style={[styles.playRing, { borderTopColor: ACCENT.green, borderRightColor: ACCENT.green }]}
-                    accessibilityRole="button"
-                    accessibilityLabel="Complete focus habit"
-                  >
-                    <View style={styles.playButton}>
-                      <CheckCircle2 size={22} color={ACCENT.green} />
-                    </View>
-                  </TouchableOpacity>
-                  <Text style={styles.startFocusText} numberOfLines={1}>
-                    Complete
-                  </Text>
-                </View>
-              </View>
-              <Text style={[styles.habitFocusCaption, { color: '#D7E4FF' }]}>
-                {incompleteHabitsCount === 1
-                  ? '1 habit left today — tasks are done'
-                  : `${incompleteHabitsCount} habits left today — tasks are done`}
-              </Text>
-            </View>
-          ) : (
-            <View style={[styles.emptyFocusCard, { backgroundColor: surface, borderColor: border }]}>
-              <Target size={36} color={muted} />
-              <Text style={[styles.emptyFocusTitle, { color: colors.text }]}>All clear!</Text>
-              <Text style={[styles.emptyFocusSubtitle, { color: muted }]}>
-                Add a task or habit to get started
-              </Text>
-            </View>
-          )}
 
-          <View style={styles.quickAddWrap}>
-            <View style={[styles.quickAddModeRow, { backgroundColor: isDark ? 'rgba(255,255,255,0.08)' : '#EEF0F4' }]}>
-              <TouchableOpacity
-                style={[styles.quickAddModeBtn, quickAddMode === 'task' && styles.quickAddModeBtnActive]}
-                onPress={() => onQuickAddModeChange('task')}
-              >
-                <Text
-                  style={[
-                    styles.quickAddModeText,
-                    quickAddMode === 'task' && styles.quickAddModeTextActive,
-                  ]}
-                >
-                  Task
-                </Text>
-              </TouchableOpacity>
-              <TouchableOpacity
-                style={[styles.quickAddModeBtn, quickAddMode === 'habit' && styles.quickAddModeBtnActive]}
-                onPress={() => onQuickAddModeChange('habit')}
-              >
-                <Text
-                  style={[
-                    styles.quickAddModeText,
-                    quickAddMode === 'habit' && styles.quickAddModeTextActive,
-                  ]}
-                >
-                  Habit
-                </Text>
-              </TouchableOpacity>
+              <View style={styles.metricsRow}>
+                <Metric value={String(doneCount)} label="done" accent={ACCENT.green} textColor={colors.text} />
+                <View style={[styles.metricDivider, { backgroundColor: border }]} />
+                <Metric value={String(pendingCount)} label="left" accent={ACCENT.blue} textColor={colors.text} />
+                <View style={[styles.metricDivider, { backgroundColor: border }]} />
+                <Metric value={String(streakCount)} label="day streak" accent={ACCENT.orange} textColor={colors.text} />
+              </View>
             </View>
-            <View style={[styles.quickAdd, { backgroundColor: surface }]}>
-              <Sparkles size={24} color={ACCENT.blue} />
-              <TextInput
-                placeholder={quickAddMode === 'habit' ? 'Quick add habit...' : 'Quick add task...'}
-                placeholderTextColor={muted}
-                style={[styles.quickInput, { color: colors.text }]}
-                value={quickTaskTitle}
-                onChangeText={onQuickTaskTitleChange}
-                onSubmitEditing={onQuickAdd}
-                returnKeyType="done"
+
+            <View style={styles.sectionBlock}>
+              <SectionHeader
+                title="Up next"
+                subtitle={focusTask ? 'The strongest next move from today’s plan.' : focusHabit ? 'Tasks are clear. Protect your routine.' : 'Nothing is demanding your attention right now.'}
+                colors={colors}
               />
-              <TouchableOpacity
-                style={[styles.addButton, { opacity: quickTaskTitle.trim() ? 1 : 0.45 }]}
-                onPress={onQuickAdd}
-                disabled={!quickTaskTitle.trim()}
-              >
-                <Plus size={28} color="#FFFFFF" />
-              </TouchableOpacity>
-            </View>
-          </View>
 
-          <TouchableOpacity
-            activeOpacity={aiActionable ? 0.85 : 1}
-            onPress={aiActionable ? onAISuggestionPress : undefined}
-            style={[styles.aiCard, { backgroundColor: isDark ? 'rgba(24,195,131,0.12)' : '#EAFBF4' }]}
-          >
-            <View style={{ flex: 1 }}>
-              <Text style={styles.aiLabel}>✦ AI Suggestion</Text>
-              <Text style={[styles.aiText, { color: isDark ? colors.text : '#2A3038' }]}>
-                {aiSuggestion}{' '}
-                <Text style={{ fontWeight: '800' }}>{aiSuggestionBold}</Text>
-              </Text>
-              {aiActionable ? (
-                <Text style={styles.aiTapHint}>Tap to act on this suggestion</Text>
+              {focusTask ? (
+                <Animated.View
+                  style={[
+                    styles.focusCard,
+                    { backgroundColor: ACCENT.navy },
+                    isFocusActive ? { transform: [{ scale: pulseAnim }] } : null,
+                  ]}
+                >
+                  <View style={styles.focusHeader}>
+                    <View style={styles.focusLabelRow}>
+                      <View style={[styles.focusAccentDot, { backgroundColor: focusAccent }]} />
+                      <Text style={styles.focusKicker}>{inPeak ? 'PEAK WINDOW' : 'NEXT PRIORITY'}</Text>
+                    </View>
+                    <TouchableOpacity onPress={onEditFocus} hitSlop={12}>
+                      <MoreHorizontal size={22} color="#C9D3E5" />
+                    </TouchableOpacity>
+                  </View>
+
+                  <Text style={styles.focusTitle} numberOfLines={3}>{focusTask.title}</Text>
+                  <View style={styles.focusMetaRow}>
+                    <Clock3 size={14} color="#C9D3E5" />
+                    <Text style={styles.focusMeta}>{focusTask.estimatedDuration ? `${focusTask.estimatedDuration} min` : 'Flexible time'}</Text>
+                    <View style={styles.focusMetaDot} />
+                    <Text style={styles.focusMeta}>{focusTask.priority === 'urgent' ? 'Urgent' : focusTask.priority === 'high' ? 'High priority' : 'Planned'}</Text>
+                  </View>
+
+                  <View style={styles.focusActions}>
+                    <TouchableOpacity
+                      activeOpacity={0.82}
+                      onPress={isFocusActive ? onPauseFocus : onStartFocus}
+                      style={styles.focusPrimary}
+                    >
+                      {isFocusActive ? <Pause size={17} color={ACCENT.navy} fill={ACCENT.navy} /> : <Play size={17} color={ACCENT.navy} fill={ACCENT.navy} />}
+                      <Text style={styles.focusPrimaryText}>{isFocusActive ? `Pause · ${focusElapsed}` : 'Start focus'}</Text>
+                    </TouchableOpacity>
+                    <TouchableOpacity activeOpacity={0.8} onPress={onCompleteFocus} style={styles.focusDone}>
+                      <Check size={17} color="#FFFFFF" />
+                      <Text style={styles.focusDoneText}>Done</Text>
+                    </TouchableOpacity>
+                  </View>
+                </Animated.View>
+              ) : focusHabit ? (
+                <View style={[styles.routineFocusCard, { backgroundColor: isDark ? '#14251F' : '#EDF8F3', borderColor: isDark ? '#23543E' : '#D4EEE2' }]}>
+                  <View style={[styles.routineFocusIcon, { backgroundColor: isDark ? '#1C382E' : '#DDF4E9' }]}>
+                    <Target size={22} color={ACCENT.green} />
+                  </View>
+                  <View style={styles.routineFocusCopy}>
+                    <Text style={[styles.routineFocusKicker, { color: ACCENT.green }]}>ROUTINE TO CLOSE OUT</Text>
+                    <Text style={[styles.routineFocusTitle, { color: colors.text }]} numberOfLines={2}>{focusHabit.title}</Text>
+                    <Text style={[styles.routineFocusMeta, { color: muted }]}>{focusHabit.habitStreak ? `${focusHabit.habitStreak}-day streak` : 'Build some momentum today'}</Text>
+                  </View>
+                  <TouchableOpacity activeOpacity={0.8} onPress={onCompleteFocusHabit} style={styles.routineCheck}>
+                    <Check size={18} color="#FFFFFF" />
+                  </TouchableOpacity>
+                  <TouchableOpacity onPress={onEditFocusHabit} hitSlop={10} style={styles.routineMore}>
+                    <MoreHorizontal size={18} color={muted} />
+                  </TouchableOpacity>
+                </View>
+              ) : (
+                <View style={[styles.allClearCard, { backgroundColor: softSurface }]}>
+                  <View style={[styles.allClearIcon, { backgroundColor: isDark ? '#20382F' : '#E1F5EB' }]}><CheckCircle2 size={22} color={ACCENT.green} /></View>
+                  <View style={styles.allClearCopy}>
+                    <Text style={[styles.allClearTitle, { color: colors.text }]}>All clear for now</Text>
+                    <Text style={[styles.allClearText, { color: muted }]}>You don’t need another productivity card. Enjoy the space.</Text>
+                  </View>
+                </View>
+              )}
+            </View>
+
+            {(aiSuggestion || aiSuggestionBold) ? (
+              <TouchableOpacity
+                activeOpacity={aiActionable ? 0.82 : 1}
+                onPress={aiActionable ? onAISuggestionPress : undefined}
+                style={[styles.suggestionCard, { backgroundColor: isDark ? '#171E2B' : '#F0F4FF', borderColor: isDark ? '#26334A' : '#DEE7FF' }]}
+              >
+                <View style={[styles.suggestionIcon, { backgroundColor: isDark ? '#222D43' : '#DFE8FF' }]}>
+                  <Sparkles size={17} color={colors.primary} />
+                </View>
+                <View style={styles.suggestionCopy}>
+                  <Text style={[styles.suggestionKicker, { color: colors.primary }]}>ONE PAGER SUGGESTS</Text>
+                  <Text style={[styles.suggestionText, { color: colors.text }]} numberOfLines={3}>
+                    {aiSuggestion}{aiSuggestionBold ? ` ${aiSuggestionBold}` : ''}
+                  </Text>
+                </View>
+                {aiActionable ? <ChevronRight size={18} color={colors.primary} /> : null}
+              </TouchableOpacity>
+            ) : null}
+
+            <View style={[styles.captureCard, { backgroundColor: surface, borderColor: border }]}>
+              <View style={styles.captureTop}>
+                <Text style={[styles.captureLabel, { color: colors.text }]}>Quick capture</Text>
+                <View style={[styles.captureMode, { backgroundColor: softSurface }]}>
+                  {(['task', 'habit'] as QuickAddMode[]).map((mode) => {
+                    const selected = quickAddMode === mode;
+                    return (
+                      <TouchableOpacity
+                        key={mode}
+                        activeOpacity={0.78}
+                        onPress={() => onQuickAddModeChange(mode)}
+                        style={[styles.captureModeButton, selected && { backgroundColor: isDark ? '#2A303A' : '#FFFFFF' }]}
+                      >
+                        <Text style={[styles.captureModeText, { color: selected ? colors.text : muted }]}>{mode === 'task' ? 'Task' : 'Routine'}</Text>
+                      </TouchableOpacity>
+                    );
+                  })}
+                </View>
+              </View>
+              <View style={[styles.captureInputRow, { backgroundColor: softSurface }]}>
+                <TextInput
+                  value={quickTaskTitle}
+                  onChangeText={onQuickTaskTitleChange}
+                  onSubmitEditing={onQuickAdd}
+                  placeholder={quickAddMode === 'habit' ? 'Add a routine…' : 'Add something you need to do…'}
+                  placeholderTextColor={muted}
+                  returnKeyType="done"
+                  style={[styles.captureInput, { color: colors.text }]}
+                />
+                <TouchableOpacity
+                  activeOpacity={0.82}
+                  disabled={!quickTaskTitle.trim()}
+                  onPress={onQuickAdd}
+                  style={[styles.captureAdd, { backgroundColor: colors.primary, opacity: quickTaskTitle.trim() ? 1 : 0.4 }]}
+                >
+                  <Plus size={19} color="#FFFFFF" />
+                </TouchableOpacity>
+              </View>
+            </View>
+
+            <View style={styles.sectionBlock}>
+              <SectionHeader
+                title="Today"
+                subtitle={`${plural(openCount, 'open item')} · ${doneCountForFilter} done`}
+                action="See all"
+                onAction={onSeeAllTasks}
+                colors={colors}
+              />
+
+              {todayLog.length > 0 ? <TodayCompletionLog items={todayLog} /> : null}
+
+              <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.filterRail}>
+                <FilterChip label={`All ${todaySourceFilter === 'all' ? `· ${todayStatusFilter === 'open' ? allOpenCount : todayDoneScope === 'week' ? allWeekDoneCount : allDoneCount}` : ''}`} selected={todaySourceFilter === 'all'} onPress={() => onTodaySourceFilterChange('all')} isDark={isDark} textColor={muted} />
+                <FilterChip label={`Tasks ${todaySourceFilter === 'tasks' ? `· ${todayStatusFilter === 'open' ? tasksOpenCount : todayDoneScope === 'week' ? tasksWeekDoneCount : tasksDoneCount}` : ''}`} selected={todaySourceFilter === 'tasks'} onPress={() => onTodaySourceFilterChange('tasks')} isDark={isDark} textColor={muted} />
+                <FilterChip label={`Routines ${todaySourceFilter === 'habits' ? `· ${todayStatusFilter === 'open' ? habitsOpenCount : todayDoneScope === 'week' ? habitsWeekDoneCount : habitsDoneCount}` : ''}`} selected={todaySourceFilter === 'habits'} onPress={() => onTodaySourceFilterChange('habits')} isDark={isDark} textColor={muted} />
+              </ScrollView>
+
+              <View style={styles.statusRow}>
+                <View style={[styles.statusToggle, { backgroundColor: softSurface }]}>
+                  <TouchableOpacity onPress={() => onTodayStatusFilterChange('open')} style={[styles.statusButton, todayStatusFilter === 'open' && { backgroundColor: surface }]}>
+                    <Text style={[styles.statusButtonText, { color: todayStatusFilter === 'open' ? colors.text : muted }]}>Open</Text>
+                  </TouchableOpacity>
+                  <TouchableOpacity onPress={() => onTodayStatusFilterChange('done')} style={[styles.statusButton, todayStatusFilter === 'done' && { backgroundColor: surface }]}>
+                    <Text style={[styles.statusButtonText, { color: todayStatusFilter === 'done' ? colors.text : muted }]}>Done</Text>
+                  </TouchableOpacity>
+                </View>
+                {todayStatusFilter === 'done' ? (
+                  <View style={styles.doneControls}>
+                    <TouchableOpacity onPress={() => onTodayDoneScopeChange(todayDoneScope === 'today' ? 'week' : 'today')}>
+                      <Text style={[styles.scopeLink, { color: colors.primary }]}>{todayDoneScope === 'today' ? 'Today' : 'This week'}</Text>
+                    </TouchableOpacity>
+                    <TouchableOpacity onPress={onViewCompletionHistory}>
+                      <Text style={[styles.historyLink, { color: muted }]}>History</Text>
+                    </TouchableOpacity>
+                  </View>
+                ) : null}
+              </View>
+
+              <View style={[styles.planCard, { backgroundColor: surface, borderColor: border }]}>
+                {todayPlanItems.length === 0 ? (
+                  <View style={styles.planEmpty}>
+                    <CheckCircle2 size={22} color={todayStatusFilter === 'open' ? ACCENT.green : muted} />
+                    <Text style={[styles.planEmptyTitle, { color: colors.text }]}>{todayStatusFilter === 'open' ? 'Nothing else needs your attention' : 'Nothing completed in this view yet'}</Text>
+                    <Text style={[styles.planEmptyCopy, { color: muted }]}>{todayStatusFilter === 'open' ? 'A quiet list is a feature, not a problem.' : 'Completed items will appear here.'}</Text>
+                  </View>
+                ) : (
+                  todayPlanItems.map((item, index) => (
+                    <TodayPlanItemRow
+                      key={item.id}
+                      item={item}
+                      textColor={colors.text}
+                      mutedColor={muted}
+                      borderColor={border}
+                      isDark={isDark}
+                      isFocusRow={
+                        item.kind === 'task'
+                          ? item.task.id === focusedTaskId || item.task.id === focusTask?.id
+                          : item.task.id === focusHabit?.id
+                      }
+                      getTaskColor={getTaskColor}
+                      getTaskMeta={getTaskMeta}
+                      onTaskPress={onTaskPress}
+                      onTaskComplete={onTaskComplete}
+                      onTaskDelete={onTaskDelete}
+                      onSetInProgress={onSetInProgress}
+                      onSetFocus={onSetTaskFocus}
+                      onToggleHabit={onToggleHabit}
+                      weeklyProgressLabel={item.kind === 'habit' ? weeklyProgressByHabitId[item.task.id] : undefined}
+                      recommendedTimeLabel={item.kind === 'habit' ? habitTimeById[item.task.id] : undefined}
+                      isLast={index === todayPlanItems.length - 1}
+                    />
+                  ))
+                )}
+              </View>
+            </View>
+
+            <View style={styles.sectionBlock}>
+              <SectionHeader
+                title="Routines"
+                subtitle={momentumHabitsTotal > 0 ? `${momentumHabitsDone} of ${momentumHabitsTotal} complete today` : 'Build repeatable systems, not another checklist.'}
+                action="View all"
+                onAction={onViewAllHabits}
+                colors={colors}
+              />
+
+              <View style={[styles.routinesCard, { backgroundColor: surface, borderColor: border }]}>
+                <View style={styles.routinesTop}>
+                  <View style={[styles.routinesIcon, { backgroundColor: isDark ? '#183329' : '#EAF8F2' }]}>
+                    <Flame size={21} color={ACCENT.green} />
+                  </View>
+                  <View style={styles.routinesCopy}>
+                    <Text style={[styles.routinesTitle, { color: colors.text }]}>{momentumHabitsTotal > 0 ? `${plural(incompleteHabitsCount, 'routine')} remaining` : 'No routines yet'}</Text>
+                    <Text style={[styles.routinesMeta, { color: muted }]}>{streakCount > 0 ? `${streakCount}-day consistency streak` : 'Consistency will matter more than intensity.'}</Text>
+                  </View>
+                  <TouchableOpacity activeOpacity={0.8} onPress={onViewAllHabits} style={[styles.routinesArrow, { backgroundColor: softSurface }]}>
+                    <ArrowRight size={17} color={colors.text} />
+                  </TouchableOpacity>
+                </View>
+                <View style={[styles.routineProgressTrack, { backgroundColor: isDark ? '#282D36' : '#ECEFF3' }]}>
+                  <View style={[styles.routineProgressFill, { width: `${momentumHabitsTotal > 0 ? Math.round((momentumHabitsDone / momentumHabitsTotal) * 100) : 0}%` }]} />
+                </View>
+                <View style={styles.routineActions}>
+                  <TouchableOpacity activeOpacity={0.78} onPress={onOpenHabitCoach} style={[styles.secondaryAction, { backgroundColor: softSurface }]}>
+                    <Sparkles size={15} color={ACCENT.green} />
+                    <Text style={[styles.secondaryActionText, { color: colors.text }]}>Habit coach</Text>
+                  </TouchableOpacity>
+                  <TouchableOpacity activeOpacity={0.78} onPress={onOpenPeakScheduler} style={[styles.secondaryAction, { backgroundColor: softSurface }]}>
+                    <Zap size={15} color={colors.primary} />
+                    <Text style={[styles.secondaryActionText, { color: colors.text }]}>Schedule around energy</Text>
+                  </TouchableOpacity>
+                </View>
+              </View>
+
+              {showHabitCoach ? (
+                <View style={styles.coachWrap}>
+                  <HabitFormationCoach maxItems={3} />
+                </View>
               ) : null}
             </View>
-            <View style={[styles.aiIcon, { backgroundColor: isDark ? 'rgba(24,195,131,0.2)' : '#D5F7E9' }]}>
-              <TrendingUp size={26} color={ACCENT.green} />
-            </View>
-          </TouchableOpacity>
 
-          {calendarPlanner}
-
-          <View style={styles.sectionHeader}>
-            <TodayCompletionLog items={todayLog} />
-            <Text style={[styles.sectionTitle, { color: colors.text }]}>Today</Text>
-            <TouchableOpacity onPress={onSeeAllTasks}>
-              <Text style={styles.linkText}>See all</Text>
-            </TouchableOpacity>
-          </View>
-
-          <View
-            style={[styles.segmented, { backgroundColor: surface, borderColor: border }]}
-            accessibilityRole="tablist"
-            accessibilityLabel="Filter today list by type"
-          >
-            {(
-              [
-                { id: 'all' as const, label: 'All', icon: ListChecks },
-                { id: 'tasks' as const, label: 'Tasks', icon: CheckCircle2 },
-                { id: 'habits' as const, label: 'Habits', icon: Target },
-              ] as const
-            ).map(({ id, label, icon: Icon }) => {
-              const selected = todaySourceFilter === id;
-              return (
-                <TouchableOpacity
-                  key={id}
-                  style={[styles.segment, selected && styles.segmentActive]}
-                  onPress={() => onTodaySourceFilterChange(id)}
-                  accessibilityRole="tab"
-                  accessibilityState={{ selected }}
-                  accessibilityLabel={`${label} filter`}
-                >
-                  <Icon size={15} color={selected ? '#FFFFFF' : '#8E95A3'} />
-                  <Text
-                    style={selected ? styles.segmentActiveText : styles.segmentText}
-                    numberOfLines={1}
-                  >
-                    {label}
-                  </Text>
-                </TouchableOpacity>
-              );
-            })}
-          </View>
-
-          <View
-            style={[styles.statusSegmented, { backgroundColor: isDark ? 'rgba(255,255,255,0.06)' : '#EEF0F4' }]}
-            accessibilityRole="tablist"
-            accessibilityLabel="Filter today list by status"
-          >
-            <TouchableOpacity
-              style={[styles.statusSegment, todayStatusFilter === 'open' && styles.statusSegmentActive]}
-              onPress={() => onTodayStatusFilterChange('open')}
-              accessibilityRole="tab"
-              accessibilityState={{ selected: todayStatusFilter === 'open' }}
-              accessibilityLabel={`Open items, ${todaySourceFilter === 'all' ? allOpenCount : todaySourceFilter === 'tasks' ? tasksOpenCount : habitsOpenCount}`}
-            >
-              <Text
-                style={[
-                  styles.statusSegmentText,
-                  todayStatusFilter === 'open' && styles.statusSegmentTextActive,
-                ]}
-              >
-                Open (
-                {todaySourceFilter === 'all'
-                  ? allOpenCount
-                  : todaySourceFilter === 'tasks'
-                    ? tasksOpenCount
-                    : habitsOpenCount}
-                )
-              </Text>
-            </TouchableOpacity>
-            <TouchableOpacity
-              style={[styles.statusSegment, todayStatusFilter === 'done' && styles.statusSegmentActive]}
-              onPress={() => onTodayStatusFilterChange('done')}
-              accessibilityRole="tab"
-              accessibilityState={{ selected: todayStatusFilter === 'done' }}
-              accessibilityLabel={`Completed items, ${doneCountForFilter}`}
-            >
-              <Text
-                style={[
-                  styles.statusSegmentText,
-                  todayStatusFilter === 'done' && styles.statusSegmentTextActive,
-                ]}
-              >
-                Done ({doneCountForFilter})
-              </Text>
-            </TouchableOpacity>
-          </View>
-
-          {todayStatusFilter === 'done' ? (
-            <View style={styles.doneScopeRow}>
-              <View
-                style={[styles.doneScopeSegmented, { backgroundColor: isDark ? 'rgba(255,255,255,0.06)' : '#EEF0F4' }]}
-                accessibilityRole="tablist"
-                accessibilityLabel="Completed time range"
-              >
-                <TouchableOpacity
-                  style={[
-                    styles.doneScopeSegment,
-                    todayDoneScope === 'today' && styles.doneScopeSegmentActive,
-                  ]}
-                  onPress={() => onTodayDoneScopeChange('today')}
-                  accessibilityRole="tab"
-                  accessibilityState={{ selected: todayDoneScope === 'today' }}
-                  accessibilityLabel="Completed today"
-                >
-                  <Text
-                    style={[
-                      styles.doneScopeText,
-                      todayDoneScope === 'today' && styles.doneScopeTextActive,
-                    ]}
-                  >
-                    Today
-                  </Text>
-                </TouchableOpacity>
-                <TouchableOpacity
-                  style={[
-                    styles.doneScopeSegment,
-                    todayDoneScope === 'week' && styles.doneScopeSegmentActive,
-                  ]}
-                  onPress={() => onTodayDoneScopeChange('week')}
-                  accessibilityRole="tab"
-                  accessibilityState={{ selected: todayDoneScope === 'week' }}
-                  accessibilityLabel="Completed this week"
-                >
-                  <Text
-                    style={[
-                      styles.doneScopeText,
-                      todayDoneScope === 'week' && styles.doneScopeTextActive,
-                    ]}
-                  >
-                    This week
-                  </Text>
-                </TouchableOpacity>
-              </View>
-              <TouchableOpacity
-                onPress={onViewCompletionHistory}
-                accessibilityRole="button"
-                accessibilityLabel="View all completed tasks"
-              >
-                <Text style={styles.historyLink}>All history</Text>
-              </TouchableOpacity>
-            </View>
-          ) : null}
-
-          <View style={[styles.planCard, { backgroundColor: surface }]}>
-            {todayPlanItems.length === 0 ? (
-              <Text style={[styles.emptyPlanText, { color: muted }]}>
-                {todayStatusFilter === 'done'
-                  ? todayDoneScope === 'week'
-                    ? 'Nothing completed this week yet'
-                    : 'Nothing completed today yet'
-                  : 'Nothing on your list'}
-              </Text>
-            ) : (
-              todayPlanItems.map((item, index) => (
-                <TodayPlanItemRow
-                  key={item.id}
-                  item={item}
-                  textColor={colors.text}
-                  mutedColor={muted}
-                  borderColor={border}
-                  isDark={isDark}
-                  isFocusRow={
-                    item.kind === 'task'
-                      ? item.task.id === focusedTaskId || item.task.id === focusTask?.id
-                      : item.task.id === focusHabit?.id
-                  }
-                  getTaskColor={getTaskColor}
-                  getTaskMeta={getTaskMeta}
-                  onTaskPress={onTaskPress}
-                  onTaskComplete={onTaskComplete}
-                  onTaskDelete={onTaskDelete}
-                  onSetInProgress={onSetInProgress}
-                  onSetFocus={onSetTaskFocus}
-                  onToggleHabit={onToggleHabit}
-                  weeklyProgressLabel={
-                    item.kind === 'habit'
-                      ? weeklyProgressByHabitId[item.task.id]
-                      : undefined
-                  }
-                  recommendedTimeLabel={
-                    item.kind === 'habit' ? habitTimeById[item.task.id] : undefined
-                  }
-                  isLast={index === todayPlanItems.length - 1}
-                />
-              ))
-            )}
-          </View>
-
-          <TouchableOpacity
-            style={[styles.viewAllRow, { backgroundColor: isDark ? 'rgba(255,255,255,0.06)' : '#F4F6FA' }]}
-            onPress={onViewAllHabits}
-          >
-            <Text style={[styles.viewAllText, { color: colors.text }]}>View all habits</Text>
-            <Text style={[styles.chevron, { color: colors.text }]}>›</Text>
-          </TouchableOpacity>
-
-          <View style={styles.toolsRow}>
-            <TouchableOpacity
-              style={[styles.toolChip, { backgroundColor: surface, borderColor: border }]}
-              onPress={onOpenPeakScheduler}
-              activeOpacity={0.85}
-            >
-              <Zap size={16} color={ACCENT.blue} />
-              <Text style={[styles.toolChipText, { color: colors.text }]}>Schedule peak block</Text>
-            </TouchableOpacity>
-            <TouchableOpacity
-              style={[styles.toolChip, { backgroundColor: surface, borderColor: border }]}
-              onPress={onOpenHabitCoach}
-              activeOpacity={0.85}
-            >
-              <Target size={16} color={ACCENT.green} />
-              <Text style={[styles.toolChipText, { color: colors.text }]}>Habit coach</Text>
-            </TouchableOpacity>
-          </View>
-
-          {showHabitCoach ? (
-            <View style={styles.habitCoachWrap}>
-              <HabitFormationCoach maxItems={3} />
-            </View>
-          ) : null}
-
-          <View style={[styles.dayCard, { backgroundColor: surface }]}>
-            <View style={styles.cardHeader}>
-              <View style={styles.inlineTitle}>
-                <Clock3 size={21} color={colors.text} />
-                <Text style={[styles.cardTitle, { color: colors.text }]}>Your Day</Text>
-              </View>
-            </View>
-
-            {timeBlocks.map((block) => (
-              <TimelineRow
-                key={block.id}
-                icon={block.icon}
-                title={block.label}
-                subtitle={block.subtitle}
-                status={block.status}
-                done={block.status === 'Done'}
-                current={block.status === 'Current'}
-                cardBg={timelineActiveBg}
-                mutedColor={muted}
-                textColor={colors.text}
+            <View style={styles.sectionBlock}>
+              <SectionHeader
+                title="Shape of your day"
+                subtitle={currentBlock ? `You’re in your ${currentBlock.label.toLowerCase()} block.` : nextBlock ? `${nextBlock.label} is the next block.` : 'A simple view of how today is unfolding.'}
+                colors={colors}
               />
-            ))}
-          </View>
-        </>
-      )}
-    </ScrollView>
-    {completionFeedback ? (
-      <HabitCompletionToast
-        feedback={completionFeedback}
-        onDismiss={onDismissCompletionFeedback}
-        onMood={onHabitMood}
-        bottomInset={paddingBottom - 12}
-      />
-    ) : null}
+              <View style={[styles.dayShapeCard, { backgroundColor: surface, borderColor: border }]}>
+                {timeBlocks.map((block, index) => {
+                  const Icon = block.icon;
+                  const isCurrent = block.status === 'Current';
+                  const isDone = block.status === 'Done';
+                  return (
+                    <View key={block.id} style={[styles.dayShapeRow, index > 0 && { borderTopWidth: StyleSheet.hairlineWidth, borderTopColor: border }]}>
+                      <View style={[styles.dayShapeIcon, { backgroundColor: isCurrent ? (isDark ? '#1E2B47' : '#EDF3FF') : softSurface }]}>
+                        <Icon size={18} color={isCurrent ? colors.primary : isDone ? ACCENT.green : muted} />
+                      </View>
+                      <View style={styles.dayShapeCopy}>
+                        <View style={styles.dayShapeTitleRow}>
+                          <Text style={[styles.dayShapeTitle, { color: colors.text }]}>{block.label}</Text>
+                          <Text style={[styles.dayShapeStatus, { color: isCurrent ? colors.primary : isDone ? ACCENT.green : muted }]}>{block.status}</Text>
+                        </View>
+                        <Text style={[styles.dayShapeSubtitle, { color: muted }]} numberOfLines={2}>{block.subtitle}</Text>
+                      </View>
+                    </View>
+                  );
+                })}
+              </View>
+            </View>
+
+            {calendarPlanner ? (
+              <View style={styles.sectionBlock}>
+                <SectionHeader title="Calendar & rhythm" subtitle="Fit routines into real space instead of forcing them into your day." colors={colors} />
+                {calendarPlanner}
+              </View>
+            ) : null}
+
+            <View style={[styles.bottomUtility, { borderTopColor: border }]}>
+              <CalendarDays size={16} color={muted} />
+              <Text style={[styles.bottomUtilityText, { color: muted }]}>My Life should help you run the day — not make you manage another dashboard.</Text>
+            </View>
+          </>
+        )}
+      </ScrollView>
+
+      {completionFeedback ? (
+        <HabitCompletionToast
+          feedback={completionFeedback}
+          onDismiss={onDismissCompletionFeedback}
+          onMood={onHabitMood}
+          bottomInset={paddingBottom - 12}
+        />
+      ) : null}
     </>
   );
 }
 
 const styles = StyleSheet.create({
   scrollContent: {
-    paddingHorizontal: 22,
+    paddingHorizontal: 20,
   },
-  header: {
+  topBar: {
     flexDirection: 'row',
-    gap: 12,
     alignItems: 'flex-start',
-    marginBottom: 6,
+    justifyContent: 'space-between',
+    gap: 18,
+    marginBottom: 24,
   },
-  headerStacked: {
-    flexDirection: 'column',
-    marginBottom: 0,
-  },
-  headerMain: {
+  titleBlock: {
     flex: 1,
     minWidth: 0,
-    paddingRight: 4,
   },
-  headerMainStacked: {
-    paddingRight: 0,
-    width: '100%',
+  dateLabel: {
+    fontSize: 11,
+    lineHeight: 15,
+    fontWeight: '800',
+    letterSpacing: 1.5,
   },
-  compactStats: {
-    marginTop: 14,
-    fontSize: 14,
-    fontWeight: '600',
-    lineHeight: 20,
-    textAlign: 'center',
+  pageTitle: {
+    marginTop: 5,
+    fontSize: 36,
+    lineHeight: 41,
+    fontWeight: '800',
+    letterSpacing: -1.1,
   },
-  heroTitle: {
+  pageSubtitle: {
+    marginTop: 7,
+    fontSize: 15,
+    lineHeight: 21,
+    fontWeight: '500',
+    maxWidth: 330,
+  },
+  addTopButton: {
+    width: 46,
+    height: 46,
+    borderRadius: 23,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginTop: 15,
+  },
+  daySnapshot: {
+    borderRadius: 22,
+    borderWidth: StyleSheet.hairlineWidth,
+    padding: 18,
+  },
+  snapshotTop: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    gap: 12,
+  },
+  snapshotKicker: {
+    fontSize: 10,
+    fontWeight: '800',
+    letterSpacing: 1.4,
+  },
+  snapshotProgressRow: {
+    flexDirection: 'row',
+    alignItems: 'baseline',
+    gap: 6,
+    marginTop: 2,
+  },
+  snapshotPercent: {
     fontSize: 30,
-    lineHeight: 36,
-    fontWeight: '900',
+    lineHeight: 34,
+    fontWeight: '800',
     letterSpacing: -0.8,
   },
-  subtitle: {
-    marginTop: 12,
-    fontSize: 16,
+  snapshotProgressLabel: {
+    fontSize: 13,
     fontWeight: '600',
   },
-  statsRow: {
+  rhythmPill: {
+    maxWidth: 165,
+    minHeight: 36,
+    borderRadius: 18,
+    paddingHorizontal: 11,
     flexDirection: 'row',
     alignItems: 'center',
-    marginTop: 28,
-    gap: 12,
-  },
-  miniStat: {
-    alignItems: 'center',
-    minWidth: 66,
-  },
-  statIconValue: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 7,
-  },
-  statValue: {
-    fontSize: 28,
-    color: '#16181D',
-    fontWeight: '900',
-  },
-  statLabel: {
-    fontSize: 12,
-    fontWeight: '600',
-  },
-  divider: {
-    width: 1,
-    height: 39,
-  },
-  momentumWrap: {
-    alignItems: 'center',
-    marginTop: 6,
-    flexShrink: 0,
-    width: 108,
-  },
-  momentumWrapCentered: {
-    alignSelf: 'center',
-    marginTop: 18,
-    marginBottom: 4,
-  },
-  ringOuter: {
-    width: 108,
-    height: 108,
-    borderRadius: 54,
-    borderWidth: 9,
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  ringInner: {
-    alignItems: 'center',
-    justifyContent: 'center',
-    width: 76,
-    gap: 1,
-  },
-  ringPercent: {
-    fontSize: 20,
-    lineHeight: 22,
-    fontWeight: '900',
-    marginTop: 2,
-    textAlign: 'center',
-    width: '100%',
-  },
-  ringLabel: {
-    fontSize: 8,
-    fontWeight: '800',
-    letterSpacing: 0.35,
-    textAlign: 'center',
-    width: '100%',
-  },
-  momentumBreakdown: {
-    marginTop: 8,
-    fontSize: 10,
-    fontWeight: '700',
-    textAlign: 'center',
-    lineHeight: 13,
-    maxWidth: 108,
-  },
-  momentumHint: {
-    marginTop: 2,
-    fontSize: 9,
-    fontWeight: '600',
-    textAlign: 'center',
-    maxWidth: 108,
-    opacity: 0.85,
-  },
-  peakPill: {
-    marginTop: 13,
-    paddingHorizontal: 12,
-    paddingVertical: 7,
-    borderRadius: 999,
-    flexDirection: 'row',
     gap: 6,
-    alignItems: 'center',
-    maxWidth: 140,
   },
-  peakText: {
-    fontWeight: '700',
-    fontSize: 11,
+  rhythmText: {
     flexShrink: 1,
+    fontSize: 11,
+    lineHeight: 15,
+    fontWeight: '700',
   },
-  focusCard: {
-    marginTop: 24,
-    borderRadius: 23,
-    backgroundColor: ACCENT.navy,
-    padding: 18,
+  progressTrack: {
+    height: 7,
+    borderRadius: 999,
     overflow: 'hidden',
-    shadowColor: '#123473',
-    shadowOpacity: 0.24,
-    shadowRadius: 22,
-    shadowOffset: { width: 0, height: 13 },
-    elevation: 8,
+    marginTop: 16,
   },
-  emptyFocusCard: {
-    marginTop: 24,
-    borderRadius: 23,
-    padding: 32,
+  progressFill: {
+    height: '100%',
+    borderRadius: 999,
+  },
+  metricsRow: {
+    flexDirection: 'row',
     alignItems: 'center',
-    borderWidth: 1,
+    marginTop: 17,
   },
-  emptyFocusTitle: {
-    fontSize: 18,
+  metric: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 5,
+  },
+  metricDot: {
+    width: 6,
+    height: 6,
+    borderRadius: 3,
+  },
+  metricValue: {
+    fontSize: 15,
     fontWeight: '800',
-    marginTop: 12,
   },
-  emptyFocusSubtitle: {
-    fontSize: 14,
-    marginTop: 6,
-    textAlign: 'center',
+  metricLabel: {
+    color: '#8C94A1',
+    fontSize: 11,
+    fontWeight: '600',
   },
-  focusTopRow: {
+  metricDivider: {
+    width: StyleSheet.hairlineWidth,
+    height: 18,
+  },
+  sectionBlock: {
+    marginTop: 28,
+  },
+  sectionHeader: {
     flexDirection: 'row',
-    alignItems: 'center',
+    alignItems: 'flex-end',
     justifyContent: 'space-between',
+    gap: 14,
+    marginBottom: 12,
   },
-  focusPill: {
+  sectionHeaderCopy: {
+    flex: 1,
+    minWidth: 0,
+  },
+  sectionTitle: {
+    fontSize: 23,
+    lineHeight: 28,
+    fontWeight: '800',
+    letterSpacing: -0.45,
+  },
+  sectionSubtitle: {
+    marginTop: 3,
+    fontSize: 13,
+    lineHeight: 18,
+    fontWeight: '500',
+  },
+  sectionAction: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 7,
-    paddingHorizontal: 12,
-    paddingVertical: 8,
-    backgroundColor: 'rgba(255,255,255,0.16)',
-    borderRadius: 999,
+    gap: 2,
+    paddingBottom: 2,
   },
-  focusPillText: {
-    color: '#FFFFFF',
-    fontSize: 12,
-    fontWeight: '900',
-    letterSpacing: 1.6,
-  },
-  timerChip: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 6,
-    backgroundColor: 'rgba(0,0,0,0.2)',
-    paddingHorizontal: 10,
-    paddingVertical: 6,
-    borderRadius: 999,
-  },
-  timerChipText: {
-    color: '#FFFFFF',
+  sectionActionText: {
     fontSize: 13,
     fontWeight: '700',
-    fontVariant: ['tabular-nums'],
   },
-  focusBody: {
-    marginTop: 18,
-    gap: 14,
+  focusCard: {
+    borderRadius: 22,
+    padding: 18,
+    shadowColor: '#0B1528',
+    shadowOpacity: 0.18,
+    shadowRadius: 20,
+    shadowOffset: { width: 0, height: 9 },
+    elevation: 6,
   },
-  focusTextBlock: {
-    width: '100%',
-  },
-  focusFooter: {
+  focusHeader: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-    gap: 12,
+  },
+  focusLabelRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 7,
+  },
+  focusAccentDot: {
+    width: 8,
+    height: 8,
+    borderRadius: 4,
+  },
+  focusKicker: {
+    color: '#C9D3E5',
+    fontSize: 10,
+    fontWeight: '800',
+    letterSpacing: 1.25,
   },
   focusTitle: {
     color: '#FFFFFF',
-    fontSize: 22,
-    lineHeight: 28,
-    fontWeight: '900',
-    letterSpacing: -0.4,
+    marginTop: 14,
+    fontSize: 25,
+    lineHeight: 31,
+    fontWeight: '800',
+    letterSpacing: -0.55,
   },
-  metaRow: {
+  focusMetaRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    flexWrap: 'wrap',
+    gap: 6,
+    marginTop: 11,
+  },
+  focusMeta: {
+    color: '#C9D3E5',
+    fontSize: 12,
+    fontWeight: '600',
+  },
+  focusMetaDot: {
+    width: 3,
+    height: 3,
+    borderRadius: 2,
+    backgroundColor: '#65738B',
+  },
+  focusActions: {
+    flexDirection: 'row',
+    gap: 10,
+    marginTop: 18,
+  },
+  focusPrimary: {
+    flex: 1,
+    minHeight: 46,
+    borderRadius: 14,
+    backgroundColor: '#FFFFFF',
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 8,
+  },
+  focusPrimaryText: {
+    color: ACCENT.navy,
+    fontSize: 14,
+    fontWeight: '800',
+  },
+  focusDone: {
+    minWidth: 92,
+    minHeight: 46,
+    borderRadius: 14,
+    backgroundColor: 'rgba(255,255,255,0.12)',
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 7,
+  },
+  focusDoneText: {
+    color: '#FFFFFF',
+    fontSize: 14,
+    fontWeight: '700',
+  },
+  routineFocusCard: {
+    minHeight: 96,
+    borderRadius: 20,
+    borderWidth: StyleSheet.hairlineWidth,
+    padding: 15,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+  },
+  routineFocusIcon: {
+    width: 46,
+    height: 46,
+    borderRadius: 15,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  routineFocusCopy: {
+    flex: 1,
+    minWidth: 0,
+  },
+  routineFocusKicker: {
+    fontSize: 9,
+    fontWeight: '800',
+    letterSpacing: 1.05,
+  },
+  routineFocusTitle: {
+    marginTop: 4,
+    fontSize: 17,
+    lineHeight: 21,
+    fontWeight: '800',
+  },
+  routineFocusMeta: {
+    marginTop: 3,
+    fontSize: 12,
+    fontWeight: '500',
+  },
+  routineCheck: {
+    width: 38,
+    height: 38,
+    borderRadius: 19,
+    backgroundColor: ACCENT.green,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  routineMore: {
+    width: 24,
+    alignItems: 'flex-end',
+  },
+  allClearCard: {
+    borderRadius: 18,
+    padding: 16,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+  },
+  allClearIcon: {
+    width: 44,
+    height: 44,
+    borderRadius: 14,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  allClearCopy: {
+    flex: 1,
+  },
+  allClearTitle: {
+    fontSize: 16,
+    fontWeight: '800',
+  },
+  allClearText: {
+    marginTop: 3,
+    fontSize: 12,
+    lineHeight: 17,
+    fontWeight: '500',
+  },
+  suggestionCard: {
+    marginTop: 16,
+    borderRadius: 17,
+    borderWidth: StyleSheet.hairlineWidth,
+    padding: 14,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 11,
+  },
+  suggestionIcon: {
+    width: 38,
+    height: 38,
+    borderRadius: 12,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  suggestionCopy: {
+    flex: 1,
+    minWidth: 0,
+  },
+  suggestionKicker: {
+    fontSize: 9,
+    fontWeight: '800',
+    letterSpacing: 1.05,
+  },
+  suggestionText: {
+    marginTop: 3,
+    fontSize: 13,
+    lineHeight: 18,
+    fontWeight: '600',
+  },
+  captureCard: {
+    marginTop: 16,
+    borderRadius: 18,
+    borderWidth: StyleSheet.hairlineWidth,
+    padding: 13,
+  },
+  captureTop: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    gap: 12,
+    marginBottom: 10,
+  },
+  captureLabel: {
+    fontSize: 13,
+    fontWeight: '800',
+  },
+  captureMode: {
+    flexDirection: 'row',
+    padding: 2,
+    borderRadius: 10,
+  },
+  captureModeButton: {
+    minHeight: 28,
+    paddingHorizontal: 10,
+    borderRadius: 8,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  captureModeText: {
+    fontSize: 11,
+    fontWeight: '700',
+  },
+  captureInputRow: {
+    minHeight: 48,
+    borderRadius: 14,
+    paddingLeft: 13,
+    paddingRight: 5,
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  captureInput: {
+    flex: 1,
+    minWidth: 0,
+    fontSize: 14,
+    fontWeight: '500',
+  },
+  captureAdd: {
+    width: 38,
+    height: 38,
+    borderRadius: 12,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  filterRail: {
+    gap: 8,
+    paddingBottom: 10,
+  },
+  filterChip: {
+    minHeight: 35,
+    borderRadius: 18,
+    paddingHorizontal: 13,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  filterChipSelected: {
+    backgroundColor: ACCENT.navy,
+  },
+  filterChipText: {
+    fontSize: 12,
+    fontWeight: '700',
+  },
+  statusRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    gap: 12,
+    marginBottom: 10,
+  },
+  statusToggle: {
+    flexDirection: 'row',
+    borderRadius: 11,
+    padding: 2,
+  },
+  statusButton: {
+    minHeight: 31,
+    minWidth: 60,
+    borderRadius: 9,
+    paddingHorizontal: 10,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  statusButtonText: {
+    fontSize: 11,
+    fontWeight: '700',
+  },
+  doneControls: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 13,
+  },
+  scopeLink: {
+    fontSize: 11,
+    fontWeight: '800',
+  },
+  historyLink: {
+    fontSize: 11,
+    fontWeight: '700',
+  },
+  planCard: {
+    borderRadius: 19,
+    borderWidth: StyleSheet.hairlineWidth,
+    overflow: 'hidden',
+  },
+  planEmpty: {
+    padding: 24,
+    alignItems: 'center',
+  },
+  planEmptyTitle: {
+    marginTop: 9,
+    fontSize: 14,
+    fontWeight: '800',
+    textAlign: 'center',
+  },
+  planEmptyCopy: {
+    marginTop: 4,
+    fontSize: 12,
+    lineHeight: 17,
+    textAlign: 'center',
+  },
+  routinesCard: {
+    borderRadius: 20,
+    borderWidth: StyleSheet.hairlineWidth,
+    padding: 15,
+  },
+  routinesTop: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 11,
+  },
+  routinesIcon: {
+    width: 44,
+    height: 44,
+    borderRadius: 14,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  routinesCopy: {
+    flex: 1,
+    minWidth: 0,
+  },
+  routinesTitle: {
+    fontSize: 15,
+    fontWeight: '800',
+  },
+  routinesMeta: {
+    marginTop: 3,
+    fontSize: 12,
+    fontWeight: '500',
+  },
+  routinesArrow: {
+    width: 36,
+    height: 36,
+    borderRadius: 12,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  routineProgressTrack: {
+    height: 6,
+    borderRadius: 999,
+    overflow: 'hidden',
+    marginTop: 15,
+  },
+  routineProgressFill: {
+    height: '100%',
+    borderRadius: 999,
+    backgroundColor: ACCENT.green,
+  },
+  routineActions: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 8,
+    marginTop: 13,
+  },
+  secondaryAction: {
+    minHeight: 36,
+    borderRadius: 12,
+    paddingHorizontal: 11,
     flexDirection: 'row',
     alignItems: 'center',
     gap: 7,
-    marginTop: 13,
-    flexWrap: 'wrap',
   },
-  focusMeta: {
-    color: '#EEF4FF',
-    fontSize: 14,
+  secondaryActionText: {
+    fontSize: 11,
     fontWeight: '700',
-    marginRight: 7,
   },
-  focusCaption: {
+  coachWrap: {
+    marginTop: 12,
+  },
+  dayShapeCard: {
+    borderRadius: 20,
+    borderWidth: StyleSheet.hairlineWidth,
+    overflow: 'hidden',
+    paddingHorizontal: 14,
+  },
+  dayShapeRow: {
+    minHeight: 76,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 11,
+    paddingVertical: 12,
+  },
+  dayShapeIcon: {
+    width: 42,
+    height: 42,
+    borderRadius: 13,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  dayShapeCopy: {
     flex: 1,
     minWidth: 0,
-    color: '#D7E4FF',
-    fontSize: 13,
-    lineHeight: 18,
-    fontWeight: '700',
-    paddingRight: 8,
   },
-  playBlock: {
+  dayShapeTitleRow: {
+    flexDirection: 'row',
     alignItems: 'center',
-    flexShrink: 0,
-    width: 72,
-  },
-  playRing: {
-    width: 58,
-    height: 58,
-    borderRadius: 29,
-    borderWidth: 5,
-    borderTopColor: ACCENT.cyan,
-    borderRightColor: ACCENT.blue,
-    borderBottomColor: 'rgba(255,255,255,0.14)',
-    borderLeftColor: 'rgba(255,255,255,0.14)',
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  playButton: {
-    width: 44,
-    height: 44,
-    borderRadius: 22,
-    backgroundColor: '#FFFFFF',
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  startFocusText: {
-    color: '#FFFFFF',
-    fontSize: 11,
-    fontWeight: '800',
-    marginTop: 6,
-    textAlign: 'center',
-    maxWidth: 72,
-  },
-  doneLink: {
-    marginTop: 6,
-  },
-  doneLinkText: {
-    color: '#D7E4FF',
-    fontSize: 12,
-    fontWeight: '700',
-  },
-  habitFocusCaption: {
-    marginTop: 14,
-    fontSize: 13,
-    fontWeight: '700',
-    lineHeight: 18,
-  },
-  quickAddWrap: {
-    marginTop: 23,
+    justifyContent: 'space-between',
     gap: 10,
   },
-  quickAddModeRow: {
-    flexDirection: 'row',
-    borderRadius: 12,
-    padding: 4,
-    alignSelf: 'flex-start',
-  },
-  quickAddModeBtn: {
-    paddingHorizontal: 16,
-    paddingVertical: 8,
-    borderRadius: 10,
-  },
-  quickAddModeBtnActive: {
-    backgroundColor: ACCENT.navy,
-  },
-  quickAddModeText: {
-    fontSize: 13,
+  dayShapeTitle: {
+    fontSize: 14,
     fontWeight: '800',
-    color: '#6F7480',
   },
-  quickAddModeTextActive: {
-    color: '#FFFFFF',
+  dayShapeStatus: {
+    fontSize: 10,
+    fontWeight: '800',
+    textTransform: 'uppercase',
+    letterSpacing: 0.5,
   },
-  quickAdd: {
-    height: 72,
-    borderRadius: 22,
-    paddingHorizontal: 18,
+  dayShapeSubtitle: {
+    marginTop: 3,
+    fontSize: 12,
+    lineHeight: 17,
+    fontWeight: '500',
+  },
+  bottomUtility: {
+    marginTop: 30,
+    paddingTop: 17,
+    paddingBottom: 6,
+    borderTopWidth: StyleSheet.hairlineWidth,
     flexDirection: 'row',
-    alignItems: 'center',
-    shadowColor: '#1A2333',
-    shadowOpacity: 0.06,
-    shadowRadius: 18,
-    shadowOffset: { width: 0, height: 10 },
-    elevation: 3,
+    alignItems: 'flex-start',
+    gap: 8,
   },
-  quickInput: {
+  bottomUtilityText: {
     flex: 1,
-    fontSize: 17,
-    fontWeight: '600',
-    marginLeft: 13,
+    fontSize: 11,
+    lineHeight: 16,
+    fontWeight: '500',
   },
-  addButton: {
+  emptyState: {
+    borderRadius: 22,
+    borderWidth: StyleSheet.hairlineWidth,
+    padding: 24,
+    alignItems: 'center',
+  },
+  emptyIcon: {
     width: 54,
     height: 54,
-    borderRadius: 17,
-    backgroundColor: ACCENT.green,
+    borderRadius: 18,
+    alignItems: 'center',
     justifyContent: 'center',
-    alignItems: 'center',
   },
-  aiCard: {
-    marginTop: 20,
-    borderRadius: 22,
-    padding: 18,
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-  },
-  aiLabel: {
-    color: ACCENT.green,
-    fontSize: 14,
-    fontWeight: '900',
-    marginBottom: 8,
-  },
-  aiText: {
-    fontSize: 15,
-    lineHeight: 22,
-    fontWeight: '600',
-  },
-  aiIcon: {
-    width: 48,
-    height: 48,
-    borderRadius: 24,
-    justifyContent: 'center',
-    alignItems: 'center',
-    marginLeft: 12,
-  },
-  aiTapHint: {
-    marginTop: 8,
-    fontSize: 12,
-    fontWeight: '700',
-    color: ACCENT.green,
-  },
-  sectionHeader: {
-    marginTop: 25,
-    marginBottom: 13,
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-  },
-  sectionTitle: {
-    fontSize: 21,
-    fontWeight: '900',
-  },
-  linkText: {
-    color: ACCENT.blue,
-    fontSize: 14,
+  emptyTitle: {
+    marginTop: 14,
+    fontSize: 19,
     fontWeight: '800',
+    textAlign: 'center',
   },
-  segmented: {
-    minHeight: 49,
-    borderRadius: 16,
-    borderWidth: 1,
+  emptyCopy: {
+    marginTop: 6,
+    fontSize: 13,
+    lineHeight: 19,
+    textAlign: 'center',
+    maxWidth: 300,
+  },
+  emptyButton: {
+    marginTop: 17,
+    minHeight: 44,
+    borderRadius: 14,
+    paddingHorizontal: 16,
     flexDirection: 'row',
-    padding: 4,
-  },
-  segment: {
-    flex: 1,
-    borderRadius: 12,
-    justifyContent: 'center',
     alignItems: 'center',
-    flexDirection: 'row',
-    gap: 5,
-    paddingHorizontal: 4,
+    gap: 8,
   },
-  segmentActive: {
-    backgroundColor: ACCENT.navy,
-  },
-  segmentText: {
-    color: '#777D89',
-    fontSize: 11,
-    fontWeight: '800',
-  },
-  segmentActiveText: {
+  emptyButtonText: {
     color: '#FFFFFF',
-    fontSize: 11,
-    fontWeight: '900',
-  },
-  statusSegmented: {
-    flexDirection: 'row',
-    borderRadius: 12,
-    padding: 4,
-    marginTop: 10,
-    gap: 4,
-  },
-  statusSegment: {
-    flex: 1,
-    paddingVertical: 9,
-    borderRadius: 10,
-    alignItems: 'center',
-  },
-  statusSegmentActive: {
-    backgroundColor: ACCENT.navy,
-  },
-  statusSegmentText: {
-    fontSize: 12,
-    fontWeight: '800',
-    color: '#6F7480',
-  },
-  statusSegmentTextActive: {
-    color: '#FFFFFF',
-  },
-  doneScopeRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    marginTop: 10,
-    gap: 10,
-  },
-  doneScopeSegmented: {
-    flex: 1,
-    flexDirection: 'row',
-    borderRadius: 12,
-    padding: 4,
-    gap: 4,
-  },
-  doneScopeSegment: {
-    flex: 1,
-    paddingVertical: 8,
-    borderRadius: 10,
-    alignItems: 'center',
-  },
-  doneScopeSegmentActive: {
-    backgroundColor: ACCENT.navy,
-  },
-  doneScopeText: {
-    fontSize: 12,
-    fontWeight: '800',
-    color: '#6F7480',
-  },
-  doneScopeTextActive: {
-    color: '#FFFFFF',
-  },
-  historyLink: {
-    color: ACCENT.blue,
     fontSize: 13,
     fontWeight: '800',
-    flexShrink: 0,
-  },
-  planCard: {
-    borderRadius: 22,
-    paddingHorizontal: 12,
-    paddingVertical: 8,
-    marginTop: 4,
-    shadowColor: '#1A2333',
-    shadowOpacity: 0.045,
-    shadowRadius: 15,
-    shadowOffset: { width: 0, height: 10 },
-    elevation: 2,
-  },
-  emptyPlanText: {
-    paddingVertical: 24,
-    textAlign: 'center',
-    fontSize: 14,
-    fontWeight: '600',
-  },
-  taskContent: {
-    flex: 1,
-    minWidth: 0,
-    marginRight: 4,
-  },
-  taskRow: {
-    minHeight: 65,
-    borderBottomWidth: 1,
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 10,
-    paddingHorizontal: 8,
-    paddingVertical: 6,
-  },
-  taskRowActive: {
-    backgroundColor: '#EFF5FF',
-    borderRadius: 16,
-    borderBottomWidth: 0,
-    marginBottom: 2,
-  },
-  taskTitle: {
-    fontSize: 16,
-    fontWeight: '900',
-  },
-  taskTitleDone: {
-    textDecorationLine: 'line-through',
-    opacity: 0.55,
-  },
-  taskMeta: {
-    marginTop: 4,
-    fontSize: 12,
-    fontWeight: '700',
-    textTransform: 'capitalize',
-  },
-  taskBadge: {
-    minWidth: 48,
-    height: 28,
-    borderRadius: 10,
-    paddingHorizontal: 9,
-    flexDirection: 'row',
-    gap: 4,
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  focusBadge: {
-    backgroundColor: ACCENT.blue,
-  },
-  taskBadgeText: {
-    fontSize: 12,
-    fontWeight: '900',
-  },
-  toolsRow: {
-    flexDirection: 'row',
-    gap: 10,
-    marginTop: 18,
-  },
-  toolChip: {
-    flex: 1,
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    gap: 8,
-    paddingVertical: 12,
-    paddingHorizontal: 10,
-    borderRadius: 14,
-    borderWidth: 1,
-  },
-  toolChipText: {
-    fontSize: 12,
-    fontWeight: '800',
-    flexShrink: 1,
-  },
-  habitCoachWrap: {
-    marginTop: 16,
-  },
-  dayCard: {
-    width: '100%',
-    borderRadius: 22,
-    padding: 14,
-    marginTop: 18,
-    shadowColor: '#1A2333',
-    shadowOpacity: 0.045,
-    shadowRadius: 14,
-    shadowOffset: { width: 0, height: 9 },
-    elevation: 2,
-  },
-  cardHeader: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    marginBottom: 10,
-  },
-  inlineTitle: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 8,
-  },
-  cardTitle: {
-    fontSize: 18,
-    fontWeight: '900',
-  },
-  viewAllRow: {
-    marginTop: 12,
-    height: 38,
-    borderRadius: 13,
-    paddingHorizontal: 12,
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-  },
-  viewAllText: {
-    fontSize: 12,
-    fontWeight: '900',
-  },
-  chevron: {
-    fontSize: 24,
-    marginTop: -2,
-  },
-  timelineRow: {
-    minHeight: 52,
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 10,
-    borderRadius: 14,
-    paddingHorizontal: 8,
-    paddingVertical: 8,
-  },
-  timelineContent: {
-    flex: 1,
-    minWidth: 0,
-  },
-  timelineTitleRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    gap: 8,
-  },
-  timelineIcon: {
-    width: 34,
-    height: 34,
-    borderRadius: 17,
-    backgroundColor: '#F2F4F7',
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  timelineIconCurrent: {
-    backgroundColor: '#DAEAFF',
-  },
-  timelineTitle: {
-    flex: 1,
-    minWidth: 0,
-    fontWeight: '900',
-    fontSize: 14,
-  },
-  timelineSubtitle: {
-    marginTop: 4,
-    fontWeight: '600',
-    fontSize: 12,
-    lineHeight: 16,
-  },
-  timelineStatus: {
-    flexShrink: 0,
-    fontSize: 11,
-    fontWeight: '900',
-  },
-  zeroState: {
-    alignItems: 'center',
-    paddingTop: 48,
-    paddingBottom: 24,
-  },
-  zeroIconWrap: {
-    width: 80,
-    height: 80,
-    borderRadius: 28,
-    alignItems: 'center',
-    justifyContent: 'center',
-    marginBottom: 20,
-  },
-  zeroTitle: {
-    fontSize: 22,
-    fontWeight: '800',
-    marginBottom: 8,
-  },
-  zeroSubtitle: {
-    fontSize: 15,
-    textAlign: 'center',
-    lineHeight: 22,
-    marginBottom: 20,
-    maxWidth: 280,
-  },
-  zeroButton: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 8,
-    backgroundColor: ACCENT.green,
-    paddingHorizontal: 24,
-    paddingVertical: 14,
-    borderRadius: 16,
-  },
-  zeroButtonText: {
-    color: '#FFFFFF',
-    fontSize: 15,
-    fontWeight: '700',
   },
 });
