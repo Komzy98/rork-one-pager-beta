@@ -18,12 +18,12 @@ import {
   Trophy,
 } from 'lucide-react-native';
 
+import { useSharedDiscoverLifeContext } from '@/contexts/DiscoverLifeContextProvider';
 import { useTheme } from '@/hooks/useTheme';
 import { useTasks } from '@/hooks/useTasksStore';
 import { useCalendar } from '@/hooks/useCalendar';
-import { useSavedEvents } from '@/hooks/useSavedEvents';
-import { useDiscoverSavedLibrary } from '@/hooks/useDiscoverSavedLibrary';
-import { useUserProfile } from '@/hooks/useUserProfile';
+import { useCookingStorage } from '@/hooks/useCookingStorage';
+import { usePinnedMatches } from '@/hooks/usePinnedMatches';
 import { useAppSafe } from '@/hooks/useHabitsStore';
 import { floatingTabBarScrollPadding } from '@/constants/tabBarLayout';
 import { parseEventStartDateTime } from '@/utils/eventDiscovery';
@@ -50,6 +50,13 @@ function withinDays(value: string | Date | undefined | null, now: Date, days: nu
   return date.getTime() >= start && date.getTime() < end;
 }
 
+function ageDays(value: string | undefined | null, now: Date) {
+  if (!value) return Number.POSITIVE_INFINITY;
+  const date = new Date(value);
+  if (!Number.isFinite(date.getTime())) return Number.POSITIVE_INFINITY;
+  return Math.max(0, Math.floor((now.getTime() - date.getTime()) / 86_400_000));
+}
+
 function weekRoutineCount(completions: Record<string, boolean> | undefined, now: Date) {
   if (!completions) return 0;
   const start = new Date(now);
@@ -64,30 +71,75 @@ function weekRoutineCount(completions: Record<string, boolean> | undefined, now:
   return count;
 }
 
+function daysUntil(value: Date | null, now: Date) {
+  if (!value || !Number.isFinite(value.getTime())) return null;
+  return Math.ceil((startOfDay(value).getTime() - startOfDay(now).getTime()) / 86_400_000);
+}
+
+function eventWhen(date: Date | null, now: Date) {
+  const days = daysUntil(date, now);
+  if (days == null) return 'Upcoming';
+  if (days === 0) return 'Today';
+  if (days === 1) return 'Tomorrow';
+  if (days < 7) return date?.toLocaleDateString('en-GB', { weekday: 'long' }) ?? 'This week';
+  return date?.toLocaleDateString('en-GB', { day: 'numeric', month: 'short' }) ?? 'Upcoming';
+}
+
+function sportWhen(dateValue?: string, timeValue?: string, live?: boolean) {
+  if (live) return 'Live now';
+  if (dateValue) {
+    const date = new Date(dateValue);
+    if (Number.isFinite(date.getTime())) {
+      const day = date.toLocaleDateString('en-GB', { weekday: 'short', day: 'numeric', month: 'short' });
+      return [day, timeValue].filter(Boolean).join(' · ');
+    }
+  }
+  return timeValue || 'Upcoming';
+}
+
 type WorldCardProps = {
   title: string;
-  value: string;
+  status: string;
+  focus: string;
   detail: string;
   route: string;
   accent: string;
   icon: React.ComponentType<{ size?: number; color?: string }>;
+  textColor: string;
+  secondaryColor: string;
   wide?: boolean;
 };
 
-function WorldCard({ title, value, detail, route, accent, icon: Icon, wide }: WorldCardProps) {
+function WorldCard({
+  title,
+  status,
+  focus,
+  detail,
+  route,
+  accent,
+  icon: Icon,
+  textColor,
+  secondaryColor,
+  wide,
+}: WorldCardProps) {
   return (
     <TouchableOpacity
       activeOpacity={0.88}
       onPress={() => router.push(route as never)}
-      style={[styles.worldCard, wide && styles.worldCardWide, { backgroundColor: `${accent}12`, borderColor: `${accent}28` }]}
+      style={[styles.worldCard, wide && styles.worldCardWide, { backgroundColor: `${accent}10`, borderColor: `${accent}2B` }]}
     >
-      <View style={[styles.worldIcon, { backgroundColor: `${accent}1F` }]}>
-        <Icon size={20} color={accent} />
+      <View style={styles.worldTop}>
+        <View style={[styles.worldIcon, { backgroundColor: `${accent}1F` }]}>
+          <Icon size={20} color={accent} />
+        </View>
+        <View style={[styles.stateBadge, { backgroundColor: `${accent}18` }]}>
+          <Text style={[styles.stateBadgeText, { color: accent }]}>{status}</Text>
+        </View>
       </View>
       <View style={styles.worldCopy}>
         <Text style={[styles.worldTitle, { color: accent }]}>{title}</Text>
-        <Text style={styles.worldValue}>{value}</Text>
-        <Text style={styles.worldDetail} numberOfLines={2}>{detail}</Text>
+        <Text style={[styles.worldFocus, { color: textColor }]} numberOfLines={wide ? 2 : 3}>{focus}</Text>
+        <Text style={[styles.worldDetail, { color: secondaryColor }]} numberOfLines={2}>{detail}</Text>
       </View>
       <ChevronRight size={17} color={accent} />
     </TouchableOpacity>
@@ -99,10 +151,11 @@ export default function MyLifeWorldScreen() {
   const { colors, isDark } = useTheme();
   const taskStore = useTasks();
   const calendar = useCalendar();
-  const savedEvents = useSavedEvents();
-  const savedLibrary = useDiscoverSavedLibrary();
-  const { profile } = useUserProfile();
+  const cooking = useCookingStorage();
+  const pinnedMatches = usePinnedMatches();
   const app = useAppSafe();
+  const discover = useSharedDiscoverLifeContext();
+  const profile = discover.profile;
 
   const now = new Date();
   const surface = isDark ? '#15171C' : '#FFFFFF';
@@ -115,12 +168,18 @@ export default function MyLifeWorldScreen() {
     () => tasks.filter((task) => task.status !== 'completed' && task.status !== 'cancelled'),
     [tasks],
   );
+  const inProgressTasks = useMemo(() => openTasks.filter((task) => task.status === 'in-progress'), [openTasks]);
   const overdueTasks = useMemo(
     () => openTasks.filter((task) => task.dueDate && new Date(task.dueDate).getTime() < now.getTime()),
     [openTasks, now],
   );
+  const staleTasks = useMemo(
+    () => openTasks.filter((task) => ageDays(task.updatedAt, now) >= 14),
+    [openTasks, now],
+  );
+  const activeProjects = useMemo(() => taskStore.projects.filter((project) => !project.isArchived), [taskStore.projects]);
   const nextWeekCalendar = useMemo(() => calendar.getUpcomingCalendarEvents(7), [calendar]);
-  const upcomingSaved = savedEvents.upcomingSaved;
+  const upcomingSaved = discover.saved.upcomingSaved;
   const thisWeekSaved = useMemo(
     () => upcomingSaved.filter((event) => {
       const start = parseEventStartDateTime(event);
@@ -128,14 +187,117 @@ export default function MyLifeWorldScreen() {
     }),
     [upcomingSaved, now],
   );
+
   const watching = useMemo(() => app.shows.filter((show) => show.status === 'Watching'), [app.shows]);
-  const plannedShows = useMemo(() => app.shows.filter((show) => show.status === 'Plan to Watch'), [app.shows]);
+  const plannedShows = useMemo(() => app.shows.filter((show) => show.status === 'Plan to Watch' || show.status === 'On Hold'), [app.shows]);
+  const staleWatching = useMemo(() => watching.filter((show) => ageDays(show.updatedAt, now) >= 21), [watching, now]);
+  const currentWatch = discover.watchSignal?.title ?? watching[0]?.title ?? null;
+
   const maxStreak = routines.reduce((max, routine) => Math.max(max, routine.habitStreak ?? 0), 0);
   const routineCompletionsThisWeek = routines.reduce((sum, routine) => sum + weekRoutineCount(routine.habitCompletions, now), 0);
+  const quietRoutines = routines.filter((routine) => weekRoutineCount(routine.habitCompletions, now) === 0 && ageDays(routine.createdAt, now) >= 7);
+
   const favoriteTeams = (profile?.favoriteTeams?.length ?? 0) + (profile?.favoriteNBATeams?.length ?? 0);
+  const nextSport = discover.sportSignals.find((signal) => signal.status === 'Live')
+    ?? discover.sportSignals.find((signal) => signal.favoriteTeamName && signal.status === 'Upcoming')
+    ?? discover.sportSignals.find((signal) => signal.status === 'Upcoming')
+    ?? null;
+
   const goals = profile?.identityGoals ?? [];
   const nextSaved = upcomingSaved[0] ?? null;
-  const plannedTotal = upcomingSaved.length + savedLibrary.counts.shows + savedLibrary.counts.recipes + savedLibrary.counts.matches + savedLibrary.counts.books;
+  const nextSavedStart = nextSaved ? parseEventStartDateTime(nextSaved) : null;
+  const learningInProgress = app.activities.find((activity) => activity.category === 'Learning' && activity.status === 'In Progress') ?? null;
+  const savedBooks = profile?.favoriteBooks?.length ?? 0;
+  const savedRecipeCount = cooking.bookmarks.length;
+  const totalCooked = Object.values(cooking.cookCounts).reduce((sum, count) => sum + count, 0);
+  const pinnedCount = pinnedMatches.records.length;
+
+  const taskStatus = overdueTasks.length > 0
+    ? 'NEEDS ATTENTION'
+    : inProgressTasks.length > 0
+      ? 'IN MOTION'
+      : openTasks.length > 0
+        ? 'ACTIVE'
+        : 'CLEAR';
+  const taskFocus = overdueTasks.length > 0
+    ? `${overdueTasks.length} overdue task${overdueTasks.length === 1 ? '' : 's'} need a decision`
+    : inProgressTasks[0]
+      ? inProgressTasks[0].title
+      : openTasks[0]?.title ?? 'Nothing open right now';
+  const taskDetail = `${activeProjects.length} active project${activeProjects.length === 1 ? '' : 's'} · ${openTasks.length} open${staleTasks.length ? ` · ${staleTasks.length} stale` : ''}`;
+
+  const routineStatus = quietRoutines.length > 0
+    ? 'LOSING MOMENTUM'
+    : maxStreak >= 7
+      ? 'STRONG'
+      : routineCompletionsThisWeek > 0
+        ? 'IN MOTION'
+        : routines.length > 0
+          ? 'QUIET'
+          : 'EMPTY';
+  const routineFocus = quietRoutines.length > 0
+    ? `${quietRoutines.length} routine${quietRoutines.length === 1 ? '' : 's'} have gone quiet`
+    : maxStreak > 0
+      ? `${maxStreak}-day streak is your strongest current run`
+      : routines.length > 0
+        ? 'Build some momentum this week'
+        : 'No routines tracked yet';
+  const routineDetail = `${routineCompletionsThisWeek} completion${routineCompletionsThisWeek === 1 ? '' : 's'} this week · ${routines.length} active`;
+
+  const calendarStatus = nextWeekCalendar.length >= 8 ? 'BUSY' : nextWeekCalendar.length > 0 ? 'PLANNED' : 'OPEN';
+  const nextCalendar = nextWeekCalendar[0] ?? null;
+  const calendarFocus = nextCalendar
+    ? `${nextCalendar.title}`
+    : 'The next seven days are unusually open';
+  const calendarDetail = nextCalendar
+    ? `${new Date(nextCalendar.startDate).toLocaleDateString('en-GB', { weekday: 'short', day: 'numeric', month: 'short' })} · ${nextWeekCalendar.length} commitment${nextWeekCalendar.length === 1 ? '' : 's'} in 7 days`
+    : 'No upcoming calendar commitments';
+
+  const watchStatus = staleWatching.length > 0 ? 'GOING STALE' : currentWatch ? 'WATCHING' : plannedShows.length > 0 ? 'SAVED' : 'QUIET';
+  const watchFocus = currentWatch ?? plannedShows[0]?.title ?? 'Nothing in progress';
+  const watchDetail = `${watching.length} watching · ${plannedShows.length} saved for later${staleWatching.length ? ` · ${staleWatching.length} untouched 3+ weeks` : ''}`;
+
+  const sportStatus = nextSport?.status === 'Live' ? 'LIVE' : nextSport ? 'NEXT UP' : favoriteTeams > 0 ? 'FOLLOWING' : 'QUIET';
+  const sportFocus = nextSport ? `${nextSport.homeTeam} vs ${nextSport.awayTeam}` : favoriteTeams ? `${favoriteTeams} teams in your world` : 'No teams followed yet';
+  const sportDetail = nextSport
+    ? `${sportWhen(nextSport.date, nextSport.time, nextSport.status === 'Live')} · ${pinnedCount} pinned match${pinnedCount === 1 ? '' : 'es'}`
+    : `${pinnedCount} pinned match${pinnedCount === 1 ? '' : 'es'}`;
+
+  const eventStatus = nextSavedStart && withinDays(nextSavedStart, now, 7) ? 'COMING UP' : upcomingSaved.length > 0 ? 'SAVED' : 'OPEN';
+  const eventFocus = nextSaved?.title ?? 'Nothing planned yet';
+  const eventDetail = nextSavedStart
+    ? `${eventWhen(nextSavedStart, now)} · ${upcomingSaved.length} saved plan${upcomingSaved.length === 1 ? '' : 's'}`
+    : `${upcomingSaved.length} saved plan${upcomingSaved.length === 1 ? '' : 's'}`;
+
+  const cookingStatus = totalCooked > 0 ? 'USED' : savedRecipeCount > 0 ? 'SAVED' : 'OPEN';
+  const cookingFocus = discover.recipeSignal?.saved
+    ? discover.recipeSignal.title
+    : savedRecipeCount > 0
+      ? `${savedRecipeCount} recipe${savedRecipeCount === 1 ? '' : 's'} waiting to be cooked`
+      : 'No recipes saved yet';
+  const cookingDetail = `${savedRecipeCount} saved · ${totalCooked} cook${totalCooked === 1 ? '' : 's'} logged`;
+
+  const learningStatus = learningInProgress ? 'IN PROGRESS' : savedBooks > 0 ? 'SAVED' : goals.length > 0 ? 'DIRECTED' : 'OPEN';
+  const learningFocus = learningInProgress?.title ?? profile?.favoriteBooks?.[0] ?? goals[0] ?? 'Nothing active right now';
+  const learningDetail = `${savedBooks} book${savedBooks === 1 ? '' : 's'} · ${goals.length} long-term goal${goals.length === 1 ? '' : 's'}`;
+
+  const attentionSignals = [
+    overdueTasks.length > 0 ? { id: 'tasks', label: 'Tasks', text: `${overdueTasks.length} overdue task${overdueTasks.length === 1 ? '' : 's'} need a decision`, route: '/(tabs)/tasks', accent: '#3B63F3' } : null,
+    quietRoutines.length > 0 ? { id: 'routines', label: 'Routines', text: `${quietRoutines.length} routine${quietRoutines.length === 1 ? '' : 's'} have no wins this week`, route: '/(tabs)/tasks', accent: '#13A66A' } : null,
+    staleWatching.length > 0 ? { id: 'watch', label: 'Watch', text: `${staleWatching[0].title} has not moved in ${ageDays(staleWatching[0].updatedAt, now)} days`, route: '/(tabs)/shows', accent: '#8A5CF6' } : null,
+    staleTasks.length > overdueTasks.length ? { id: 'stale-tasks', label: 'Projects', text: `${staleTasks.length} open task${staleTasks.length === 1 ? '' : 's'} have been untouched for 2+ weeks`, route: '/(tabs)/tasks', accent: '#3B63F3' } : null,
+  ].filter((item): item is NonNullable<typeof item> => Boolean(item)).slice(0, 3);
+
+  const activeAreaCount = [
+    openTasks.length > 0,
+    routines.length > 0,
+    nextWeekCalendar.length > 0,
+    watching.length + plannedShows.length > 0,
+    favoriteTeams + pinnedCount > 0,
+    upcomingSaved.length > 0,
+    savedRecipeCount > 0,
+    savedBooks + (learningInProgress ? 1 : 0) > 0,
+  ].filter(Boolean).length;
 
   const weekDays = useMemo(() => Array.from({ length: 7 }, (_, index) => {
     const date = startOfDay(now);
@@ -163,8 +325,8 @@ export default function MyLifeWorldScreen() {
     >
       <View style={styles.header}>
         <Text style={[styles.eyebrow, { color: colors.primary }]}>MY LIFE</Text>
-        <Text style={[styles.title, { color: colors.text }]}>Your world, in one place.</Text>
-        <Text style={[styles.subtitle, { color: colors.textSecondary }]}>Everything you’re building, following and keeping — without turning it into another Today feed.</Text>
+        <Text style={[styles.title, { color: colors.text }]}>Your world, not another to-do list.</Text>
+        <Text style={[styles.subtitle, { color: colors.textSecondary }]}>See what is moving, what is waiting, what is coming up and what has quietly gone stale.</Text>
       </View>
 
       <LinearGradient
@@ -178,23 +340,49 @@ export default function MyLifeWorldScreen() {
           <Text style={[styles.heroKicker, { color: colors.primary }]}>YOUR WORLD</Text>
         </View>
         <Text style={[styles.heroTitle, { color: colors.text }]}>
-          {openTasks.length + routines.length + plannedTotal} things are actively part of your life.
+          {activeAreaCount} parts of your life are active right now.
         </Text>
         <Text style={[styles.heroMeta, { color: colors.textSecondary }]}>
-          {openTasks.length} open tasks · {routines.length} routines · {plannedTotal} saved or planned
+          {attentionSignals.length > 0
+            ? `${attentionSignals.length} area${attentionSignals.length === 1 ? '' : 's'} could use attention. The rest can keep moving in the background.`
+            : 'Nothing looks neglected. You can scan the state of your life without turning everything into an obligation.'}
         </Text>
         <View style={styles.heroStats}>
-          <View><Text style={[styles.heroStatValue, { color: colors.text }]}>{overdueTasks.length}</Text><Text style={[styles.heroStatLabel, { color: colors.textSecondary }]}>overdue</Text></View>
+          <View><Text style={[styles.heroStatValue, { color: colors.text }]}>{activeProjects.length}</Text><Text style={[styles.heroStatLabel, { color: colors.textSecondary }]}>projects</Text></View>
           <View style={[styles.heroDivider, { backgroundColor: border }]} />
           <View><Text style={[styles.heroStatValue, { color: colors.text }]}>{routineCompletionsThisWeek}</Text><Text style={[styles.heroStatLabel, { color: colors.textSecondary }]}>routine wins</Text></View>
           <View style={[styles.heroDivider, { backgroundColor: border }]} />
-          <View><Text style={[styles.heroStatValue, { color: colors.text }]}>{thisWeekSaved.length + nextWeekCalendar.length}</Text><Text style={[styles.heroStatLabel, { color: colors.textSecondary }]}>this week</Text></View>
+          <View><Text style={[styles.heroStatValue, { color: colors.text }]}>{thisWeekSaved.length + nextWeekCalendar.length}</Text><Text style={[styles.heroStatLabel, { color: colors.textSecondary }]}>coming up</Text></View>
         </View>
       </LinearGradient>
 
+      {attentionSignals.length > 0 ? (
+        <View style={styles.section}>
+          <View style={styles.sectionHeader}>
+            <View><Text style={[styles.sectionTitle, { color: colors.text }]}>Needs a look</Text><Text style={[styles.sectionSubtitle, { color: colors.textSecondary }]}>Not urgent Today items — just parts of your life that are drifting.</Text></View>
+          </View>
+          <View style={[styles.attentionList, { backgroundColor: surface, borderColor: border }]}>
+            {attentionSignals.map((signal, index) => (
+              <TouchableOpacity
+                key={signal.id}
+                onPress={() => router.push(signal.route as never)}
+                style={[styles.attentionRow, index > 0 && { borderTopWidth: StyleSheet.hairlineWidth, borderTopColor: border }]}
+              >
+                <View style={[styles.attentionDot, { backgroundColor: signal.accent }]} />
+                <View style={styles.attentionCopy}>
+                  <Text style={[styles.attentionLabel, { color: signal.accent }]}>{signal.label.toUpperCase()}</Text>
+                  <Text style={[styles.attentionText, { color: colors.text }]}>{signal.text}</Text>
+                </View>
+                <ChevronRight size={17} color={colors.textSecondary} />
+              </TouchableOpacity>
+            ))}
+          </View>
+        </View>
+      ) : null}
+
       <View style={styles.section}>
         <View style={styles.sectionHeader}>
-          <View><Text style={[styles.sectionTitle, { color: colors.text }]}>This week</Text><Text style={[styles.sectionSubtitle, { color: colors.textSecondary }]}>A quick sense of how full the next seven days are.</Text></View>
+          <View><Text style={[styles.sectionTitle, { color: colors.text }]}>This week</Text><Text style={[styles.sectionSubtitle, { color: colors.textSecondary }]}>How much life is already spoken for across the next seven days.</Text></View>
         </View>
         <View style={[styles.weekStrip, { backgroundColor: surface, borderColor: border }]}>
           {weekDays.map((day) => (
@@ -209,28 +397,28 @@ export default function MyLifeWorldScreen() {
 
       <View style={styles.section}>
         <View style={styles.sectionHeader}>
-          <View><Text style={[styles.sectionTitle, { color: colors.text }]}>Your world</Text><Text style={[styles.sectionSubtitle, { color: colors.textSecondary }]}>Open a part of your life and go deeper.</Text></View>
+          <View><Text style={[styles.sectionTitle, { color: colors.text }]}>Your world</Text><Text style={[styles.sectionSubtitle, { color: colors.textSecondary }]}>Each area shows what is actually happening, not just where to tap.</Text></View>
         </View>
         <View style={styles.worldGrid}>
-          <WorldCard title="Tasks & projects" value={`${openTasks.length} open`} detail={`${taskStore.projects.length} projects${overdueTasks.length ? ` · ${overdueTasks.length} overdue` : ''}`} route="/(tabs)/tasks" accent="#3B63F3" icon={ListChecks} wide />
-          <WorldCard title="Routines" value={`${routines.length} active`} detail={maxStreak ? `${maxStreak}-day best current streak` : `${routineCompletionsThisWeek} completions this week`} route="/(tabs)/tasks" accent="#13A66A" icon={Flame} />
-          <WorldCard title="Calendar" value={`${nextWeekCalendar.length} upcoming`} detail="Next 7 days" route="/(tabs)/activities" accent="#6E56CF" icon={CalendarDays} />
-          <WorldCard title="Watch" value={`${watching.length} watching`} detail={`${plannedShows.length} saved for later`} route="/(tabs)/shows" accent="#8A5CF6" icon={Clapperboard} />
-          <WorldCard title="Sports" value={`${favoriteTeams} teams`} detail={`${savedLibrary.counts.matches} pinned matches`} route="/(tabs)/sports" accent="#D88900" icon={Trophy} />
-          <WorldCard title="Events" value={`${upcomingSaved.length} saved`} detail={`${thisWeekSaved.length} in the next 7 days`} route="/(tabs)/events" accent="#E05273" icon={MapPin} />
-          <WorldCard title="Cooking" value={`${savedLibrary.counts.recipes} saved`} detail="Recipes you want to come back to" route="/(tabs)/cooking" accent="#E56B3E" icon={ChefHat} />
-          <WorldCard title="Learning" value={`${savedLibrary.counts.books} books`} detail={`${goals.length} goals shaping what matters`} route="/(tabs)/learning" accent="#2586C8" icon={BookOpen} />
+          <WorldCard title="Tasks & projects" status={taskStatus} focus={taskFocus} detail={taskDetail} route="/(tabs)/tasks" accent="#3B63F3" icon={ListChecks} textColor={colors.text} secondaryColor={colors.textSecondary} wide />
+          <WorldCard title="Routines" status={routineStatus} focus={routineFocus} detail={routineDetail} route="/(tabs)/tasks" accent="#13A66A" icon={Flame} textColor={colors.text} secondaryColor={colors.textSecondary} />
+          <WorldCard title="Calendar" status={calendarStatus} focus={calendarFocus} detail={calendarDetail} route="/(tabs)/activities" accent="#6E56CF" icon={CalendarDays} textColor={colors.text} secondaryColor={colors.textSecondary} />
+          <WorldCard title="Watch" status={watchStatus} focus={watchFocus} detail={watchDetail} route="/(tabs)/shows" accent="#8A5CF6" icon={Clapperboard} textColor={colors.text} secondaryColor={colors.textSecondary} />
+          <WorldCard title="Sports" status={sportStatus} focus={sportFocus} detail={sportDetail} route="/(tabs)/sports" accent="#D88900" icon={Trophy} textColor={colors.text} secondaryColor={colors.textSecondary} />
+          <WorldCard title="Events" status={eventStatus} focus={eventFocus} detail={eventDetail} route="/(tabs)/events" accent="#E05273" icon={MapPin} textColor={colors.text} secondaryColor={colors.textSecondary} />
+          <WorldCard title="Cooking" status={cookingStatus} focus={cookingFocus} detail={cookingDetail} route="/(tabs)/cooking" accent="#E56B3E" icon={ChefHat} textColor={colors.text} secondaryColor={colors.textSecondary} />
+          <WorldCard title="Learning" status={learningStatus} focus={learningFocus} detail={learningDetail} route="/(tabs)/learning" accent="#2586C8" icon={BookOpen} textColor={colors.text} secondaryColor={colors.textSecondary} />
         </View>
       </View>
 
       {nextSaved ? (
         <View style={styles.section}>
           <View style={styles.sectionHeader}>
-            <View><Text style={[styles.sectionTitle, { color: colors.text }]}>Next plan</Text><Text style={[styles.sectionSubtitle, { color: colors.textSecondary }]}>Something you’ve already chosen.</Text></View>
+            <View><Text style={[styles.sectionTitle, { color: colors.text }]}>Next plan</Text><Text style={[styles.sectionSubtitle, { color: colors.textSecondary }]}>Something you chose in Discover is now part of your life.</Text></View>
           </View>
           <TouchableOpacity activeOpacity={0.88} onPress={() => router.push(`/(root)/event/${nextSaved.id}` as never)} style={[styles.planCard, { backgroundColor: isDark ? '#1B2232' : '#EEF3FF', borderColor: isDark ? '#293552' : '#DCE6FF' }]}>
             <View style={[styles.planIcon, { backgroundColor: isDark ? '#263452' : '#DCE7FF' }]}><MapPin size={20} color={colors.primary} /></View>
-            <View style={styles.planCopy}><Text style={[styles.planKicker, { color: colors.primary }]}>SAVED PLAN</Text><Text style={[styles.planTitle, { color: colors.text }]} numberOfLines={2}>{nextSaved.title}</Text><Text style={[styles.planMeta, { color: colors.textSecondary }]}>{[nextSaved.date, nextSaved.time, nextSaved.venue].filter(Boolean).join(' · ')}</Text></View>
+            <View style={styles.planCopy}><Text style={[styles.planKicker, { color: colors.primary }]}>SAVED PLAN · {eventWhen(nextSavedStart, now).toUpperCase()}</Text><Text style={[styles.planTitle, { color: colors.text }]} numberOfLines={2}>{nextSaved.title}</Text><Text style={[styles.planMeta, { color: colors.textSecondary }]}>{[nextSaved.time, nextSaved.venue].filter(Boolean).join(' · ')}</Text></View>
             <ChevronRight size={18} color={colors.primary} />
           </TouchableOpacity>
         </View>
@@ -238,7 +426,7 @@ export default function MyLifeWorldScreen() {
 
       <View style={styles.section}>
         <View style={styles.sectionHeader}>
-          <View><Text style={[styles.sectionTitle, { color: colors.text }]}>Goals</Text><Text style={[styles.sectionSubtitle, { color: colors.textSecondary }]}>The longer-term things you’re trying to move toward.</Text></View>
+          <View><Text style={[styles.sectionTitle, { color: colors.text }]}>Goals</Text><Text style={[styles.sectionSubtitle, { color: colors.textSecondary }]}>Direction, not another checklist.</Text></View>
           <TouchableOpacity onPress={() => router.push('/(tabs)/profile' as never)}><ChevronRight size={19} color={colors.textSecondary} /></TouchableOpacity>
         </View>
         <View style={[styles.goalsCard, { backgroundColor: surface, borderColor: border }]}>
@@ -252,7 +440,7 @@ export default function MyLifeWorldScreen() {
 
       <TouchableOpacity onPress={() => router.push('/(tabs)/tasks' as never)} style={[styles.manageCard, { backgroundColor: surface, borderColor: border }]}>
         <View style={[styles.manageIcon, { backgroundColor: subtle }]}><FolderKanban size={20} color={colors.primary} /></View>
-        <View style={styles.manageCopy}><Text style={[styles.manageTitle, { color: colors.text }]}>Manage tasks, projects & routines</Text><Text style={[styles.manageMeta, { color: colors.textSecondary }]}>Open the full management workspace.</Text></View>
+        <View style={styles.manageCopy}><Text style={[styles.manageTitle, { color: colors.text }]}>Manage tasks, projects & routines</Text><Text style={[styles.manageMeta, { color: colors.textSecondary }]}>The deeper workspace lives here when you actually need to organise things.</Text></View>
         <ChevronRight size={18} color={colors.textSecondary} />
       </TouchableOpacity>
     </ScrollView>
@@ -278,20 +466,29 @@ const styles = StyleSheet.create({
   section: { gap: 13 },
   sectionHeader: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 14 },
   sectionTitle: { fontSize: 26, fontWeight: '900', letterSpacing: -0.7 },
-  sectionSubtitle: { marginTop: 3, fontSize: 13, lineHeight: 18, fontWeight: '500' },
+  sectionSubtitle: { marginTop: 3, fontSize: 13, lineHeight: 18, fontWeight: '500', maxWidth: 340 },
+  attentionList: { borderWidth: 1, borderRadius: 20, overflow: 'hidden' },
+  attentionRow: { minHeight: 70, paddingHorizontal: 15, paddingVertical: 12, flexDirection: 'row', alignItems: 'center', gap: 11 },
+  attentionDot: { width: 9, height: 9, borderRadius: 5 },
+  attentionCopy: { flex: 1, minWidth: 0 },
+  attentionLabel: { fontSize: 9, fontWeight: '900', letterSpacing: 1.2 },
+  attentionText: { marginTop: 3, fontSize: 14, lineHeight: 19, fontWeight: '700' },
   weekStrip: { flexDirection: 'row', borderRadius: 20, borderWidth: 1, padding: 8, gap: 5 },
   dayCell: { flex: 1, minHeight: 68, borderRadius: 14, alignItems: 'center', justifyContent: 'center', gap: 3 },
   dayName: { fontSize: 10, fontWeight: '800' },
   dayDate: { fontSize: 16, fontWeight: '900' },
   dayDot: { width: 5, height: 5, borderRadius: 3, marginTop: 1 },
   worldGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: 12 },
-  worldCard: { width: '48.2%', minHeight: 158, borderRadius: 22, borderWidth: 1, padding: 15, justifyContent: 'space-between' },
-  worldCardWide: { width: '100%', minHeight: 140, flexDirection: 'row', alignItems: 'center', gap: 14 },
+  worldCard: { width: '48.2%', minHeight: 210, borderRadius: 22, borderWidth: 1, padding: 15, justifyContent: 'space-between', gap: 10 },
+  worldCardWide: { width: '100%', minHeight: 170 },
+  worldTop: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 8 },
   worldIcon: { width: 42, height: 42, borderRadius: 14, alignItems: 'center', justifyContent: 'center' },
+  stateBadge: { maxWidth: '62%', paddingHorizontal: 8, paddingVertical: 5, borderRadius: 999 },
+  stateBadgeText: { fontSize: 8, fontWeight: '900', letterSpacing: 0.8 },
   worldCopy: { flex: 1, minWidth: 0 },
-  worldTitle: { fontSize: 12, fontWeight: '900', letterSpacing: 0.4, textTransform: 'uppercase' },
-  worldValue: { marginTop: 12, fontSize: 27, fontWeight: '900', color: '#111318', letterSpacing: -0.5 },
-  worldDetail: { marginTop: 4, fontSize: 12, lineHeight: 17, fontWeight: '600', color: '#667085' },
+  worldTitle: { fontSize: 10, fontWeight: '900', letterSpacing: 1.1, textTransform: 'uppercase' },
+  worldFocus: { marginTop: 8, fontSize: 19, lineHeight: 23, fontWeight: '900', letterSpacing: -0.3 },
+  worldDetail: { marginTop: 6, fontSize: 12, lineHeight: 17, fontWeight: '600' },
   planCard: { borderRadius: 22, borderWidth: 1, padding: 16, flexDirection: 'row', alignItems: 'center', gap: 13 },
   planIcon: { width: 44, height: 44, borderRadius: 15, alignItems: 'center', justifyContent: 'center' },
   planCopy: { flex: 1, minWidth: 0 },
