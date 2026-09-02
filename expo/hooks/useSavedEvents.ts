@@ -1,6 +1,7 @@
 import { useCallback, useMemo } from 'react';
 import * as Haptics from 'expo-haptics';
 import { useUserProfile } from '@/hooks/useUserProfile';
+import { useExperienceFeedback } from '@/hooks/useExperienceFeedback';
 import type { LocalEvent, SavedEventSnapshot } from '@/types/events';
 import { localEventToSavedSnapshot, savedSnapshotToLocalEvent } from '@/utils/eventMappers';
 import { getDaysUntilEvent } from '@/utils/eventDiscovery';
@@ -16,11 +17,16 @@ import { useFriends } from '@/hooks/useFriends';
 import { publishEventSave, unpublishEventSave } from '@/utils/sharedPlansService';
 import { mergeSocialPrivacy, shouldPublishEventSaves } from '@/utils/socialPrivacy';
 
+function eventExperienceTags(snapshot: Pick<SavedEventSnapshot, 'category' | 'tags' | 'subCategory'>) {
+  return [snapshot.category, snapshot.subCategory, ...(snapshot.tags ?? [])].filter((value): value is string => Boolean(value));
+}
+
 export function useSavedEvents() {
   const { profile, updateProfile } = useUserProfile();
   const { logEventSaved } = useSocialActivity();
   const { supabaseUser, isGuest } = useAuth();
   const { myProfile } = useFriends();
+  const experience = useExperienceFeedback();
 
   const savedSnapshots = useMemo(
     () => profile?.savedEvents ?? [],
@@ -48,6 +54,14 @@ export function useSavedEvents() {
       const snapshot = localEventToSavedSnapshot(event);
       const next = [snapshot, ...savedSnapshots.filter((e) => e.id !== event.id)].slice(0, 50);
       await updateProfile({ savedEvents: next });
+      await experience.record({
+        kind: 'event',
+        subjectId: snapshot.id,
+        title: snapshot.title,
+        action: 'chosen',
+        tags: eventExperienceTags(snapshot),
+        source: 'saved-event',
+      });
       void Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
       void logEventSaved(event);
       if (shareSavesWithFriends && supabaseUser?.id) {
@@ -55,7 +69,7 @@ export function useSavedEvents() {
       }
       return snapshot;
     },
-    [savedSnapshots, updateProfile, logEventSaved, shareSavesWithFriends, supabaseUser?.id, profile?.socialPrivacy]
+    [savedSnapshots, updateProfile, experience.record, logEventSaved, shareSavesWithFriends, supabaseUser?.id]
   );
 
   const removeFromOnePager = useCallback(
@@ -68,7 +82,7 @@ export function useSavedEvents() {
         void unpublishEventSave(supabaseUser.id, eventId).catch(() => {});
       }
     },
-    [savedIds, savedSnapshots, updateProfile, shareSavesWithFriends, supabaseUser?.id, profile?.socialPrivacy]
+    [savedIds, savedSnapshots, updateProfile, shareSavesWithFriends, supabaseUser?.id]
   );
 
   const toggleSaved = useCallback(
@@ -113,18 +127,48 @@ export function useSavedEvents() {
     [savedSnapshots],
   );
 
+  const recordEventAttendance = useCallback(
+    async (eventId: string, attended: boolean) => {
+      const snapshot = savedSnapshots.find((entry) => entry.id === eventId);
+      if (!snapshot) return;
+      const now = new Date().toISOString();
+      const nextSaved = savedSnapshots.map((entry) =>
+        entry.id === eventId
+          ? {
+              ...entry,
+              attendanceStatus: attended ? 'attended' as const : 'missed' as const,
+              attendedAt: attended ? (entry.attendedAt ?? now) : undefined,
+            }
+          : entry,
+      );
+      await updateProfile({ savedEvents: nextSaved });
+      await experience.record({
+        kind: 'event',
+        subjectId: snapshot.id,
+        title: snapshot.title,
+        action: attended ? 'completed' : 'skipped',
+        tags: eventExperienceTags(snapshot),
+        source: 'post-event',
+      });
+      void Haptics.impactAsync(attended ? Haptics.ImpactFeedbackStyle.Medium : Haptics.ImpactFeedbackStyle.Light);
+    },
+    [savedSnapshots, updateProfile, experience.record],
+  );
+
   const recordEventFeedback = useCallback(
     async (eventId: string, rating: EventFeedbackRating) => {
       const snapshot = savedSnapshots.find((entry) => entry.id === eventId);
       if (!snapshot) return;
 
+      const now = new Date().toISOString();
       const patches = inferJoyPatchesFromSavedEvent(snapshot, rating);
       const nextSaved = savedSnapshots.map((entry) =>
         entry.id === eventId
           ? {
               ...entry,
+              attendanceStatus: 'attended' as const,
               feedbackRating: rating,
-              attendedAt: entry.attendedAt ?? new Date().toISOString(),
+              attendedAt: entry.attendedAt ?? now,
             }
           : entry,
       );
@@ -133,9 +177,28 @@ export function useSavedEvents() {
         savedEvents: nextSaved,
         ...(patches ? { joySources: applyJoyPatches(profile?.joySources, patches) } : {}),
       });
+      if (snapshot.attendanceStatus !== 'attended') {
+        await experience.record({
+          kind: 'event',
+          subjectId: snapshot.id,
+          title: snapshot.title,
+          action: 'completed',
+          tags: eventExperienceTags(snapshot),
+          source: 'post-event',
+        });
+      }
+      await experience.record({
+        kind: 'event',
+        subjectId: snapshot.id,
+        title: snapshot.title,
+        action: 'enjoyed',
+        value: rating,
+        tags: eventExperienceTags(snapshot),
+        source: 'post-event',
+      });
       void Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
     },
-    [savedSnapshots, profile?.joySources, updateProfile],
+    [savedSnapshots, profile?.joySources, updateProfile, experience.record],
   );
 
   const dismissEventFeedback = useCallback(
@@ -162,6 +225,7 @@ export function useSavedEvents() {
     removeFromOnePager,
     toggleSaved,
     getSnapshotById,
+    recordEventAttendance,
     recordEventFeedback,
     dismissEventFeedback,
   };
