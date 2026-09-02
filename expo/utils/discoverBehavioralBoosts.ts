@@ -1,5 +1,6 @@
 import type { UserProfile } from '@/types/habit';
 import type { Task } from '@/types/task';
+import type { ExperienceFeedbackState } from '@/utils/experienceFeedback';
 import type {
   DiscoverEngineResult,
   DiscoverFeedbackState,
@@ -43,10 +44,43 @@ function tabAffinity(profile?: UserProfile | null): Partial<Record<DiscoverOppor
   };
 }
 
+/**
+ * Real-world behaviour gets a stronger voice than passive navigation. A save is useful,
+ * but completing and enjoying an experience is substantially stronger evidence.
+ */
+function experienceAffinity(
+  experience?: ExperienceFeedbackState | null,
+): Partial<Record<DiscoverOpportunityKind, number>> {
+  if (!experience) return {};
+  const direct = experience.kindAffinity;
+  const tags = experience.tagAffinity;
+  const suggestion = (kind: DiscoverOpportunityKind) => tags[kind] ?? 0;
+  return {
+    event: clamp((direct.event ?? 0) + suggestion('event') * 0.6, -18, 18),
+    recipe: clamp((direct.recipe ?? 0) + suggestion('recipe') * 0.6, -18, 18),
+    media: clamp((direct.show ?? 0) + suggestion('media') * 0.6 + suggestion('watch') * 0.35, -18, 18),
+    watch: clamp((direct.show ?? 0) + suggestion('watch') * 0.6 + suggestion('media') * 0.35, -18, 18),
+    habit: clamp((direct.routine ?? 0) + suggestion('habit') * 0.6, -18, 18),
+    task: clamp(suggestion('task') * 0.6, -12, 12),
+    sport: clamp(suggestion('sport') * 0.6, -12, 12),
+  };
+}
+
+function mergeAffinity(
+  passive: Partial<Record<DiscoverOpportunityKind, number>>,
+  observed: Partial<Record<DiscoverOpportunityKind, number>>,
+) {
+  const kinds: DiscoverOpportunityKind[] = ['event', 'watch', 'media', 'sport', 'recipe', 'habit', 'task'];
+  return Object.fromEntries(
+    kinds.map((kind) => [kind, clamp((passive[kind] ?? 0) + (observed[kind] ?? 0), -20, 24)]),
+  ) as Partial<Record<DiscoverOpportunityKind, number>>;
+}
+
 export function buildDiscoverBehaviorProfile(
   profile: UserProfile | null | undefined,
   tasks: readonly Task[],
   now = new Date(),
+  experience?: ExperienceFeedbackState | null,
 ): DiscoverBehaviorProfile {
   const since = now.getTime() - 30 * 24 * 60 * 60 * 1000;
   const logs = tasks
@@ -75,7 +109,7 @@ export function buildDiscoverBehaviorProfile(
     .sort((a, b) => b[1] - a[1])[0]?.[0] ?? null;
 
   return {
-    kindAffinity: tabAffinity(profile),
+    kindAffinity: mergeAffinity(tabAffinity(profile), experienceAffinity(experience)),
     preferredProductiveHour,
     recentAverageEffort: effortCount ? effortTotal / effortCount : null,
     recentDifficultRate: logs.length ? difficult / logs.length : 0,
@@ -194,8 +228,14 @@ export function rerankDiscoverEngine(params: {
   profile?: UserProfile | null;
   tasks: readonly Task[];
   feedback?: DiscoverFeedbackState | null;
+  experience?: ExperienceFeedbackState | null;
 }): DiscoverEngineResult & { behavior: DiscoverBehaviorProfile } {
-  const behavior = buildDiscoverBehaviorProfile(params.profile, params.tasks, params.context.now);
+  const behavior = buildDiscoverBehaviorProfile(
+    params.profile,
+    params.tasks,
+    params.context.now,
+    params.experience,
+  );
   const ranked = params.engine.ranked
     .filter((item) => !isHardDismissed(item, params.feedback))
     .map((item) => ({
