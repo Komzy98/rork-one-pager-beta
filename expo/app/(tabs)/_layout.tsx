@@ -14,17 +14,17 @@ import { useTheme } from "@/hooks/useTheme";
 
 const PRIMARY_TABS = [
   {
-    name: "activities",
+    name: "today-focus",
     title: "Today",
     icon: Sparkles,
   },
   {
-    name: "tasks",
+    name: "my-life",
     title: "My Life",
     icon: LayoutGrid,
   },
   {
-    name: "discover-concierge",
+    name: "discover-focused",
     title: "Discover",
     icon: Compass,
   },
@@ -36,6 +36,9 @@ const PRIMARY_TABS = [
 ] as const;
 
 const LEGACY_TABS = [
+  "activities",
+  "tasks",
+  "discover-focused",
   "discover-concierge",
   "discover-flagship",
   "discover-life",
@@ -54,7 +57,7 @@ export default function TabLayout() {
     <FootballBundleProvider>
       <F1BundleProvider>
         <Tabs
-          initialRouteName="activities"
+          initialRouteName="today-focus"
           screenOptions={{
             headerShown: false,
             tabBarHideOnKeyboard: true,
