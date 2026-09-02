@@ -39,7 +39,6 @@ const LEGACY_TABS = [
   "discover-concierge",
   "discover-flagship",
   "discover-life",
-  "discover-home",
   "discover",
   "shows",
   "sports",
