@@ -5,6 +5,8 @@ import * as Haptics from 'expo-haptics';
 
 import { useExperienceCheckIn } from '@/hooks/useExperienceCheckIn';
 import { useTheme } from '@/hooks/useTheme';
+import { OP_RADIUS, OP_SPACING, OP_TYPE } from '@/constants/onePagerDesign';
+import { StatusPill, SurfaceCard } from '@/components/ui/OnePagerUI';
 
 export function ExperienceCheckInCard() {
   const { colors, isDark } = useTheme();
@@ -36,16 +38,14 @@ export function ExperienceCheckInCard() {
   }, [dismiss, prompt, submitting]);
 
   if (!prompt || answered) return null;
-
-  const surface = isDark ? '#171A20' : '#FFFFFF';
-  const soft = isDark ? '#20242D' : '#F5F7FA';
+  const soft = isDark ? colors.surfaceSecondary : '#F3F5F8';
 
   return (
-    <View style={[styles.card, { backgroundColor: surface, borderColor: colors.border }]}>
+    <SurfaceCard style={styles.card}>
       <View style={styles.topRow}>
         <View style={styles.copy}>
-          <Text style={[styles.eyebrow, { color: colors.primary }]}>{prompt.eyebrow}</Text>
-          <Text style={[styles.question, { color: colors.text }]}>{prompt.question}</Text>
+          <StatusPill label={prompt.eyebrow} tone="info" />
+          <Text style={[OP_TYPE.cardTitle, styles.question, { color: colors.text }]}>{prompt.question}</Text>
         </View>
         <TouchableOpacity
           onPress={() => void handleDismiss()}
@@ -58,7 +58,7 @@ export function ExperienceCheckInCard() {
         </TouchableOpacity>
       </View>
 
-      <Text style={[styles.hint, { color: colors.textSecondary }]}>{prompt.hint}</Text>
+      <Text style={[OP_TYPE.meta, { color: colors.textSecondary }]}>{prompt.hint}</Text>
 
       <View style={styles.options}>
         {prompt.options.map((option) => (
@@ -70,90 +70,29 @@ export function ExperienceCheckInCard() {
             style={[styles.option, { backgroundColor: soft, borderColor: colors.border }]}
           >
             <Text style={styles.emoji}>{option.emoji}</Text>
-            <Text style={[styles.optionText, { color: colors.text }]}>{option.label}</Text>
+            <Text style={[OP_TYPE.meta, styles.optionText, { color: colors.text }]}>{option.label}</Text>
           </TouchableOpacity>
         ))}
       </View>
 
       <View style={styles.learningRow}>
         <Check size={13} color={colors.textSecondary} />
-        <Text style={[styles.learningText, { color: colors.textSecondary }]}>One tap helps One Pager learn from what you actually do.</Text>
+        <Text style={[OP_TYPE.meta, styles.learningText, { color: colors.textSecondary }]}>One tap helps One Pager learn from what you actually do.</Text>
       </View>
-    </View>
+    </SurfaceCard>
   );
 }
 
 const styles = StyleSheet.create({
-  card: {
-    borderWidth: 1,
-    borderRadius: 22,
-    padding: 16,
-    gap: 12,
-  },
-  topRow: {
-    flexDirection: 'row',
-    alignItems: 'flex-start',
-    gap: 12,
-  },
-  copy: {
-    flex: 1,
-    minWidth: 0,
-  },
-  eyebrow: {
-    fontSize: 9,
-    fontWeight: '900',
-    letterSpacing: 1.25,
-  },
-  question: {
-    marginTop: 5,
-    fontSize: 19,
-    lineHeight: 24,
-    fontWeight: '850' as any,
-    letterSpacing: -0.3,
-  },
-  dismiss: {
-    width: 32,
-    height: 32,
-    borderRadius: 16,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  hint: {
-    fontSize: 12,
-    lineHeight: 17,
-    fontWeight: '500',
-  },
-  options: {
-    flexDirection: 'row',
-    gap: 8,
-  },
-  option: {
-    flex: 1,
-    minHeight: 58,
-    borderWidth: 1,
-    borderRadius: 14,
-    alignItems: 'center',
-    justifyContent: 'center',
-    gap: 4,
-    paddingHorizontal: 6,
-  },
-  emoji: {
-    fontSize: 18,
-  },
-  optionText: {
-    fontSize: 11,
-    fontWeight: '750' as any,
-    textAlign: 'center',
-  },
-  learningRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 6,
-  },
-  learningText: {
-    flex: 1,
-    fontSize: 10,
-    lineHeight: 14,
-    fontWeight: '500',
-  },
+  card: { gap: OP_SPACING.sm },
+  topRow: { flexDirection: 'row', alignItems: 'flex-start', gap: OP_SPACING.sm },
+  copy: { flex: 1, minWidth: 0, gap: OP_SPACING.xs },
+  question: { fontSize: 17, lineHeight: 22 },
+  dismiss: { width: 32, height: 32, borderRadius: 16, alignItems: 'center', justifyContent: 'center' },
+  options: { flexDirection: 'row', gap: OP_SPACING.xs },
+  option: { flex: 1, minHeight: 54, borderWidth: 1, borderRadius: OP_RADIUS.medium, alignItems: 'center', justifyContent: 'center', gap: 3, paddingHorizontal: 6 },
+  emoji: { fontSize: 18 },
+  optionText: { fontWeight: '700', textAlign: 'center' },
+  learningRow: { flexDirection: 'row', alignItems: 'center', gap: 6 },
+  learningText: { flex: 1, fontSize: 10, lineHeight: 14 },
 });
