@@ -1,15 +1,18 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useAuth } from '@/hooks/useAuth';
+import { useExperienceFeedback } from '@/hooks/useExperienceFeedback';
 import { unifiedStorage } from '@/utils/unifiedStorage';
 
 const keyBookmarks = (userId?: string) => `cooking_bookmarks_${userId || 'guest'}`;
 const keyCounts = (userId?: string) => `cooking_cook_counts_${userId || 'guest'}`;
 
 type CookCounts = Record<string, number>;
+type RecipeExperienceMeta = { title?: string; tags?: string[] };
 
 export function useCookingStorage() {
   const { user } = useAuth();
   const userId = user?.id;
+  const experience = useExperienceFeedback();
   const [bookmarks, setBookmarks] = useState<string[]>([]);
   const [cookCounts, setCookCounts] = useState<CookCounts>({});
   const [hydrated, setHydrated] = useState(false);
@@ -63,20 +66,38 @@ export function useCookingStorage() {
   );
 
   const toggleBookmark = useCallback(
-    async (recipeId: string) => {
+    async (recipeId: string, meta?: RecipeExperienceMeta) => {
       const has = bookmarks.includes(recipeId);
       const next = has ? bookmarks.filter((id) => id !== recipeId) : [...bookmarks, recipeId];
       await persistBookmarks(next);
+      if (!has) {
+        await experience.record({
+          kind: 'recipe',
+          subjectId: recipeId,
+          title: meta?.title,
+          tags: meta?.tags,
+          action: 'chosen',
+          source: 'recipe-save',
+        });
+      }
     },
-    [bookmarks, persistBookmarks],
+    [bookmarks, persistBookmarks, experience.record],
   );
 
   const recordCooked = useCallback(
-    async (recipeId: string) => {
+    async (recipeId: string, meta?: RecipeExperienceMeta) => {
       const next = { ...cookCounts, [recipeId]: (cookCounts[recipeId] ?? 0) + 1 };
       await persistCounts(next);
+      await experience.record({
+        kind: 'recipe',
+        subjectId: recipeId,
+        title: meta?.title,
+        tags: meta?.tags,
+        action: 'completed',
+        source: 'recipe-cooked',
+      });
     },
-    [cookCounts, persistCounts],
+    [cookCounts, persistCounts, experience.record],
   );
 
   const bookmarkSet = useMemo(() => new Set(bookmarks), [bookmarks]);
