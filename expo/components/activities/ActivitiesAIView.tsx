@@ -1,6 +1,7 @@
 import React, { useMemo } from 'react';
 
 import TodayEveningOpportunity from '@/components/activities/TodayEveningOpportunity';
+import TodaySynthesisCue from '@/components/activities/TodaySynthesisCue';
 import TodayTimelineView from '@/components/activities/TodayTimelineView';
 import { useSharedDiscoverLifeContext } from '@/contexts/DiscoverLifeContextProvider';
 import { useAppSafe } from '@/hooks/useHabitsStore';
@@ -8,6 +9,7 @@ import { useCalendar } from '@/hooks/useCalendar';
 import { useTasks } from '@/hooks/useTasksStore';
 import { useTodayHabits } from '@/hooks/useTodayHabits';
 import { useTodayYmd } from '@/hooks/useTodayYmd';
+import { findUpcomingCalendarConflict, pickQuietActivityObservation } from '@/utils/quietSynthesis';
 
 /**
  * Kept under the old filename so older imports continue to work.
@@ -36,6 +38,25 @@ export default function ActivitiesAIView(_props: { onRequestPeakScheduler?: () =
       isAllDay: event.isAllDay,
     })),
     [calendar],
+  );
+
+  const calendarConflict = useMemo(() => {
+    const rows = calendarEvents.map((event) => ({
+      id: event.id,
+      title: event.title,
+      start: new Date(event.startDate),
+      end: new Date(event.endDate),
+      isAllDay: event.isAllDay,
+    }));
+    return findUpcomingCalendarConflict(rows)?.message ?? null;
+  }, [calendarEvents]);
+
+  const quietObservation = useMemo(
+    () => pickQuietActivityObservation({
+      crossInsights: discover.intelligence.rankedCrossInsights,
+      recommendations: discover.intelligence.topRecommendations,
+    }),
+    [discover.intelligence.rankedCrossInsights, discover.intelligence.topRecommendations],
   );
 
   const taskItems = useMemo(
@@ -99,6 +120,7 @@ export default function ActivitiesAIView(_props: { onRequestPeakScheduler?: () =
         savedPlans={savedPlans}
         weather={discover.weather}
       />
+      <TodaySynthesisCue conflict={calendarConflict} observation={calendarConflict ? null : quietObservation} />
       <TodayEveningOpportunity />
     </>
   );
