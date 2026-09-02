@@ -83,10 +83,27 @@ export function buildDiscoverBehaviorProfile(
   };
 }
 
+function feedbackAgeHours(item: DiscoverOpportunity, feedback?: DiscoverFeedbackState | null): number | null {
+  const at = feedback?.entries[item.key]?.lastNegativeAt;
+  if (!at) return null;
+  const parsed = new Date(at).getTime();
+  if (!Number.isFinite(parsed)) return null;
+  return Math.max(0, (Date.now() - parsed) / 3_600_000);
+}
+
+function isHardDismissed(item: DiscoverOpportunity, feedback?: DiscoverFeedbackState | null): boolean {
+  const entry = feedback?.entries[item.key];
+  if (!entry || entry.negative <= entry.positive) return false;
+  const ageHours = feedbackAgeHours(item, feedback);
+  if (ageHours == null || ageHours > 30 * 24) return false;
+  const reasons = entry.reasons ?? {};
+  return (reasons.not_for_me ?? 0) > 0 || (reasons.seen_already ?? 0) > 0;
+}
+
 function feedbackPenalty(item: DiscoverOpportunity, feedback?: DiscoverFeedbackState | null): number {
   const entry = feedback?.entries[item.key];
   if (!entry?.lastNegativeAt || entry.negative <= entry.positive) return 0;
-  const ageHours = Math.max(0, (Date.now() - new Date(entry.lastNegativeAt).getTime()) / 3_600_000);
+  const ageHours = feedbackAgeHours(item, feedback) ?? 9999;
   const recency = ageHours < 24 ? 1 : ageHours < 72 ? 0.8 : ageHours < 168 ? 0.55 : ageHours < 720 ? 0.25 : 0.1;
   const reasons = entry.reasons ?? {};
   let penalty = 0;
@@ -180,6 +197,7 @@ export function rerankDiscoverEngine(params: {
 }): DiscoverEngineResult & { behavior: DiscoverBehaviorProfile } {
   const behavior = buildDiscoverBehaviorProfile(params.profile, params.tasks, params.context.now);
   const ranked = params.engine.ranked
+    .filter((item) => !isHardDismissed(item, params.feedback))
     .map((item) => ({
       ...item,
       score:
