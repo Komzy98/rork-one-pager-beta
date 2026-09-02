@@ -68,6 +68,8 @@ export interface SavedEventSnapshot {
   dateLabel?: string;
   timeLabel?: string;
   tags?: string[];
+  /** Explicit outcome: saving an event does not mean the user actually attended. */
+  attendanceStatus?: 'attended' | 'missed';
   /** Set when the user confirms they went (post-event feedback). */
   attendedAt?: string;
   /** 1–5 post-event rating; 4+ can reinforce joy sources. */
