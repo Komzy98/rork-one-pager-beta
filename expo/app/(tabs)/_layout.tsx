@@ -40,7 +40,6 @@ const PRIMARY_TABS = [
 const LEGACY_TABS = [
   "activities",
   "profile",
-  "today-execution",
   "today-focus",
   "my-life",
   "tasks",
