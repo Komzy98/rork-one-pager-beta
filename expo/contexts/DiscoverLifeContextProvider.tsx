@@ -1,13 +1,13 @@
 import React, { createContext, useContext, type ReactNode } from 'react';
 
-import { useDiscoverLifeContext } from '@/hooks/useDiscoverLifeContext';
+import { useLearnedDiscoverLifeContext } from '@/hooks/useLearnedDiscoverLifeContext';
 
-type DiscoverLifeContextValue = ReturnType<typeof useDiscoverLifeContext>;
+type DiscoverLifeContextValue = ReturnType<typeof useLearnedDiscoverLifeContext>;
 
 const DiscoverLifeContext = createContext<DiscoverLifeContextValue | null>(null);
 
 export function DiscoverLifeContextProvider({ children }: { children: ReactNode }) {
-  const value = useDiscoverLifeContext();
+  const value = useLearnedDiscoverLifeContext();
   return (
     <DiscoverLifeContext.Provider value={value}>
       {children}
