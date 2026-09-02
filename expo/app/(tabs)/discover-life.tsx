@@ -41,6 +41,8 @@ import { useApp } from '@/hooks/useHabitsStore';
 import { floatingTabBarScrollPadding } from '@/constants/tabBarLayout';
 import type { LocalEvent } from '@/types/events';
 
+type DiscoverMode = 'For You' | 'Near You' | 'Saved';
+
 type RouteTarget =
   | '/(tabs)/events'
   | '/(tabs)/shows'
@@ -55,8 +57,10 @@ type WorldItem = {
   note: string;
   route: RouteTarget;
   icon: React.ComponentType<{ color?: string; size?: number; strokeWidth?: number }>;
-  gradient: [string, string];
+  accent: string;
 };
+
+const MODES: DiscoverMode[] = ['For You', 'Near You', 'Saved'];
 
 function normalize(value?: string | null) {
   return (value ?? '').trim().toLowerCase();
@@ -114,7 +118,38 @@ function reasonForEvent(
   return 'Picked around your location';
 }
 
-function EventStripCard({
+function SectionHeader({
+  title,
+  subtitle,
+  action,
+  onAction,
+  colors,
+}: {
+  title: string;
+  subtitle?: string;
+  action?: string;
+  onAction?: () => void;
+  colors: { text: string; textSecondary: string; primary: string };
+}) {
+  return (
+    <View style={styles.sectionHeader}>
+      <View style={styles.sectionHeaderCopy}>
+        <Text style={[styles.sectionTitle, { color: colors.text }]}>{title}</Text>
+        {subtitle ? (
+          <Text style={[styles.sectionSubtitle, { color: colors.textSecondary }]}>{subtitle}</Text>
+        ) : null}
+      </View>
+      {action && onAction ? (
+        <TouchableOpacity activeOpacity={0.75} onPress={onAction} style={styles.sectionAction}>
+          <Text style={[styles.sectionActionText, { color: colors.primary }]}>{action}</Text>
+          <ChevronRight size={15} color={colors.primary} strokeWidth={2.5} />
+        </TouchableOpacity>
+      ) : null}
+    </View>
+  );
+}
+
+function EventRailCard({
   event,
   saved,
   onToggle,
@@ -131,26 +166,30 @@ function EventStripCard({
     <TouchableOpacity
       activeOpacity={0.9}
       onPress={() => router.push(`/(root)/event/${event.id}` as any)}
-      style={[styles.stripCard, { backgroundColor: isDark ? '#151820' : '#FFFFFF' }]}
+      style={[styles.railCard, { backgroundColor: isDark ? '#16191F' : '#FFFFFF' }]}
     >
       {event.image ? (
-        <ImageBackground source={{ uri: event.image }} style={styles.stripImage} imageStyle={styles.stripImageRadius}>
-          <LinearGradient colors={['transparent', 'rgba(7,10,18,0.76)']} style={styles.stripImageGradient}>
-            <View style={styles.stripDistancePill}>
+        <ImageBackground
+          source={{ uri: event.image }}
+          style={styles.railImage}
+          imageStyle={styles.railImageRadius}
+        >
+          <LinearGradient colors={['transparent', 'rgba(4,7,14,0.78)']} style={styles.railImageOverlay}>
+            <View style={styles.distanceChip}>
               <MapPin size={11} color="#FFFFFF" strokeWidth={2.4} />
-              <Text style={styles.stripDistanceText}>{formatDistance(event.distanceKm) ?? 'Near you'}</Text>
+              <Text style={styles.distanceChipText}>{formatDistance(event.distanceKm) ?? 'Near you'}</Text>
             </View>
           </LinearGradient>
         </ImageBackground>
       ) : (
-        <LinearGradient colors={['#3357C8', '#18213A']} style={styles.stripImageFallback}>
-          <MapPin size={28} color="#FFFFFF" />
+        <LinearGradient colors={['#315BCB', '#19233F']} style={styles.railImageFallback}>
+          <MapPin size={27} color="#FFFFFF" />
         </LinearGradient>
       )}
-      <View style={styles.stripBody}>
-        <Text style={[styles.stripCategory, { color: colors.primary }]}>{titleCase(event.category || 'Event')}</Text>
-        <Text style={[styles.stripTitle, { color: colors.text }]} numberOfLines={2}>{event.title}</Text>
-        <Text style={[styles.stripMeta, { color: colors.textSecondary }]} numberOfLines={1}>
+      <View style={styles.railBody}>
+        <Text style={[styles.railEyebrow, { color: colors.primary }]}>{titleCase(event.category || 'Event')}</Text>
+        <Text style={[styles.railTitle, { color: colors.text }]} numberOfLines={2}>{event.title}</Text>
+        <Text style={[styles.railMeta, { color: colors.textSecondary }]} numberOfLines={1}>
           {[event.date, event.time].filter(Boolean).join(' · ')}
         </Text>
         <TouchableOpacity
@@ -159,12 +198,47 @@ function EventStripCard({
             pressEvent.stopPropagation?.();
             onToggle();
           }}
-          style={[styles.stripSave, { backgroundColor: saved ? '#E5F7ED' : isDark ? '#262A33' : '#F3F5F8' }]}
+          style={[
+            styles.railSave,
+            { backgroundColor: saved ? '#E6F7EE' : isDark ? '#272B34' : '#F2F4F7' },
+          ]}
         >
-          {saved ? <Check size={13} color="#138C50" /> : <Plus size={13} color={colors.text} />}
-          <Text style={[styles.stripSaveText, { color: saved ? '#138C50' : colors.text }]}>{saved ? 'Added' : 'Add'}</Text>
+          {saved ? <Check size={13} color="#128A50" /> : <Plus size={13} color={colors.text} />}
+          <Text style={[styles.railSaveText, { color: saved ? '#128A50' : colors.text }]}>
+            {saved ? 'Added' : 'Add'}
+          </Text>
         </TouchableOpacity>
       </View>
+    </TouchableOpacity>
+  );
+}
+
+function NearbyGridCard({ event, colors }: { event: LocalEvent; colors: { text: string; textSecondary: string } }) {
+  return (
+    <TouchableOpacity
+      activeOpacity={0.9}
+      onPress={() => router.push(`/(root)/event/${event.id}` as any)}
+      style={styles.nearbyGridCard}
+    >
+      {event.image ? (
+        <ImageBackground source={{ uri: event.image }} style={styles.nearbyGridImage} imageStyle={styles.nearbyGridRadius}>
+          <LinearGradient colors={['transparent', 'rgba(4,7,14,0.90)']} style={styles.nearbyGridOverlay}>
+            <Text style={styles.nearbyGridCategory}>{titleCase(event.category || 'Event')}</Text>
+            <Text style={styles.nearbyGridTitle} numberOfLines={3}>{event.title}</Text>
+            <Text style={styles.nearbyGridMeta} numberOfLines={2}>
+              {[event.date, event.time, formatDistance(event.distanceKm)].filter(Boolean).join(' · ')}
+            </Text>
+          </LinearGradient>
+        </ImageBackground>
+      ) : (
+        <LinearGradient colors={['#2C56C7', '#162443']} style={styles.nearbyGridImage}>
+          <View style={styles.nearbyGridOverlay}>
+            <Text style={styles.nearbyGridCategory}>{titleCase(event.category || 'Event')}</Text>
+            <Text style={styles.nearbyGridTitle}>{event.title}</Text>
+            <Text style={styles.nearbyGridMeta}>{event.date}</Text>
+          </View>
+        </LinearGradient>
+      )}
     </TouchableOpacity>
   );
 }
@@ -188,6 +262,7 @@ export default function DiscoverLifeScreen() {
   });
   const { isSaved, toggleSaved, upcomingSaved } = useSavedEvents();
   const [refreshing, setRefreshing] = useState(false);
+  const [mode, setMode] = useState<DiscoverMode>('For You');
 
   const favoriteCategories = profile?.favoriteEventCategories ?? [];
   const interests = profile?.interests ?? [];
@@ -201,9 +276,15 @@ export default function DiscoverLifeScreen() {
     [allEvents, favoriteCategories, interests],
   );
 
+  const nearestEvents = useMemo(
+    () =>
+      [...allEvents].sort((a, b) => (a.distanceKm ?? Number.MAX_VALUE) - (b.distanceKm ?? Number.MAX_VALUE)),
+    [allEvents],
+  );
+
   const heroEvent = rankedEvents[0] ?? null;
-  const eventRail = rankedEvents.filter((event) => event.id !== heroEvent?.id).slice(0, 7);
-  const sideEvents = eventRail.slice(0, 2);
+  const forYouRail = rankedEvents.filter((event) => event.id !== heroEvent?.id).slice(0, 7);
+  const nearYouGrid = nearestEvents.slice(0, 8);
 
   const surpriseEvent = useMemo(() => {
     const favoriteSet = new Set(favoriteCategories.map(normalize));
@@ -235,62 +316,19 @@ export default function DiscoverLifeScreen() {
     return [...habitsWithStats].sort((a, b) => b.streak - a.streak)[0] ?? null;
   }, [habitsWithStats]);
 
-  const nextSaved = upcomingSaved[0] ?? null;
-  const liveEvents = eventsSource !== 'fallback' && eventsSource !== 'none';
-
   const worldItems = useMemo<WorldItem[]>(
     () => [
-      {
-        id: 'shows',
-        label: 'Watch',
-        note: watchingShow ? watchingShow.title : 'Shows & films',
-        route: '/(tabs)/shows',
-        icon: Clapperboard,
-        gradient: ['#6E56CF', '#4338A8'],
-      },
-      {
-        id: 'sports',
-        label: 'Sports',
-        note: favoriteTeam ? favoriteTeam.name : 'Teams & fixtures',
-        route: '/(tabs)/sports',
-        icon: Trophy,
-        gradient: ['#F59E0B', '#D97706'],
-      },
-      {
-        id: 'events',
-        label: 'Go out',
-        note: areaLabel ? `Around ${areaLabel}` : 'Events near you',
-        route: '/(tabs)/events',
-        icon: MapPin,
-        gradient: ['#2563EB', '#1D4ED8'],
-      },
-      {
-        id: 'habits',
-        label: 'Build',
-        note: strongestHabit ? `${strongestHabit.streak}-day streak` : 'Habits & routines',
-        route: '/(tabs)/discover',
-        icon: Dumbbell,
-        gradient: ['#10B981', '#047857'],
-      },
-      {
-        id: 'learning',
-        label: 'Learn',
-        note: interests[0] ? titleCase(interests[0]) : 'Courses & ideas',
-        route: '/(tabs)/learning',
-        icon: BookOpen,
-        gradient: ['#0EA5E9', '#0369A1'],
-      },
-      {
-        id: 'cooking',
-        label: 'Cook',
-        note: 'Ideas for tonight',
-        route: '/(tabs)/cooking',
-        icon: ChefHat,
-        gradient: ['#F97316', '#C2410C'],
-      },
+      { id: 'shows', label: 'Watch', note: watchingShow?.title ?? 'Shows & films', route: '/(tabs)/shows', icon: Clapperboard, accent: '#7057E8' },
+      { id: 'sports', label: 'Sports', note: favoriteTeam?.name ?? 'Teams & fixtures', route: '/(tabs)/sports', icon: Trophy, accent: '#D98B00' },
+      { id: 'events', label: 'Events', note: areaLabel ? `Around ${areaLabel}` : 'Things near you', route: '/(tabs)/events', icon: MapPin, accent: '#3262D9' },
+      { id: 'habits', label: 'Habits', note: strongestHabit ? `${strongestHabit.streak}-day streak` : 'Build a routine', route: '/(tabs)/discover', icon: Dumbbell, accent: '#0E9B62' },
+      { id: 'learning', label: 'Learn', note: interests[0] ? titleCase(interests[0]) : 'Ideas & courses', route: '/(tabs)/learning', icon: BookOpen, accent: '#0D97C8' },
+      { id: 'cooking', label: 'Cook', note: 'Ideas for tonight', route: '/(tabs)/cooking', icon: ChefHat, accent: '#EA6A37' },
     ],
     [watchingShow, favoriteTeam, areaLabel, strongestHabit, interests],
   );
+
+  const liveEvents = eventsSource !== 'fallback' && eventsSource !== 'none';
 
   const onRefresh = useCallback(async () => {
     setRefreshing(true);
@@ -301,10 +339,12 @@ export default function DiscoverLifeScreen() {
     }
   }, [refreshLocation, refetchEvents]);
 
-  const todayLabel = useMemo(
-    () => new Intl.DateTimeFormat('en-GB', { weekday: 'long', day: 'numeric', month: 'short' }).format(new Date()),
-    [],
-  );
+  const dayContext = useMemo(() => {
+    const now = new Date();
+    const hour = now.getHours();
+    const part = hour < 12 ? 'this morning' : hour < 17 ? 'this afternoon' : 'tonight';
+    return areaLabel ? `${areaLabel} · ${part}` : part;
+  }, [areaLabel]);
 
   return (
     <View style={[styles.screen, { backgroundColor: colors.background }]}> 
@@ -312,293 +352,358 @@ export default function DiscoverLifeScreen() {
         showsVerticalScrollIndicator={false}
         refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={colors.primary} />}
         contentContainerStyle={{
-          paddingTop: insets.top + 14,
+          paddingTop: insets.top + 12,
           paddingBottom: floatingTabBarScrollPadding(insets.bottom) + 42,
         }}
       >
         <View style={styles.header}>
           <View style={styles.headerRow}>
-            <View>
-              <Text style={[styles.dateLine, { color: colors.textSecondary }]}>{todayLabel}</Text>
+            <View style={styles.headerCopy}>
+              <Text style={[styles.headerContext, { color: colors.primary }]}>{dayContext.toUpperCase()}</Text>
               <Text style={[styles.pageTitle, { color: colors.text }]}>Discover</Text>
+              <Text style={[styles.pageSubtitle, { color: colors.textSecondary }]}>What is worth your time right now?</Text>
             </View>
             <TouchableOpacity
               activeOpacity={0.8}
               onPress={() => router.push('/(tabs)/profile')}
-              style={[styles.tuneButton, { backgroundColor: isDark ? '#1A1D24' : '#F1F3F7' }]}
+              style={[styles.tuneButton, { backgroundColor: isDark ? '#1B1E25' : '#F1F3F7' }]}
             >
               <SlidersHorizontal size={19} color={colors.text} strokeWidth={2.2} />
             </TouchableOpacity>
           </View>
-          <Text style={[styles.pageSub, { color: colors.textSecondary }]}>A living feed of things worth doing, watching and following.</Text>
-        </View>
 
-        <View style={styles.heroSection}>
-          {eventsLoading && !heroEvent ? (
-            <View style={[styles.heroLoading, { backgroundColor: isDark ? '#171A22' : '#EEF2F7' }]}>
-              <ActivityIndicator color={colors.primary} />
-              <Text style={[styles.loadingCopy, { color: colors.textSecondary }]}>Looking for something strong near you…</Text>
-            </View>
-          ) : heroEvent ? (
-            <View style={styles.heroEditorial}>
-              {heroEvent.image ? (
-                <ImageBackground source={{ uri: heroEvent.image }} style={styles.heroMedia} imageStyle={styles.heroRadius}>
-                  <LinearGradient colors={['rgba(4,8,18,0.02)', 'rgba(4,8,18,0.94)']} style={styles.heroOverlay}>
-                    <View style={styles.heroTopRow}>
-                      <View style={styles.heroChip}>
-                        <Sparkles size={12} color="#FFFFFF" strokeWidth={2.5} />
-                        <Text style={styles.heroChipText}>{reasonForEvent(heroEvent, favoriteCategories, interests, areaLabel)}</Text>
-                      </View>
-                      {heroEvent.isHot ? (
-                        <View style={styles.hotChip}>
-                          <Flame size={12} color="#FFFFFF" fill="#FFFFFF" />
-                          <Text style={styles.hotChipText}>HOT</Text>
-                        </View>
-                      ) : null}
-                    </View>
-                    <View>
-                      <Text style={styles.heroEyebrow}>{liveEvents ? 'ONE PAGER PICK' : 'DISCOVERY PREVIEW'}</Text>
-                      <Text style={styles.heroTitle}>{heroEvent.title}</Text>
-                      <View style={styles.heroInfoRow}>
-                        <Clock3 size={14} color="rgba(255,255,255,0.82)" />
-                        <Text style={styles.heroInfoText}>{[heroEvent.date, heroEvent.time].filter(Boolean).join(' · ')}</Text>
-                      </View>
-                      <View style={styles.heroInfoRow}>
-                        <MapPin size={14} color="rgba(255,255,255,0.82)" />
-                        <Text style={styles.heroInfoText} numberOfLines={1}>{[heroEvent.venue, formatDistance(heroEvent.distanceKm)].filter(Boolean).join(' · ')}</Text>
-                      </View>
-                    </View>
-                  </LinearGradient>
-                </ImageBackground>
-              ) : (
-                <LinearGradient colors={['#385AC9', '#141B30']} style={styles.heroMedia}>
-                  <View style={styles.heroOverlay}>
-                    <View style={styles.heroChip}>
-                      <Sparkles size={12} color="#FFFFFF" />
-                      <Text style={styles.heroChipText}>{reasonForEvent(heroEvent, favoriteCategories, interests, areaLabel)}</Text>
-                    </View>
-                    <View>
-                      <Text style={styles.heroEyebrow}>ONE PAGER PICK</Text>
-                      <Text style={styles.heroTitle}>{heroEvent.title}</Text>
-                      <Text style={styles.heroInfoText}>{[heroEvent.date, heroEvent.time, heroEvent.venue].filter(Boolean).join(' · ')}</Text>
-                    </View>
-                  </View>
-                </LinearGradient>
-              )}
-              <View style={[styles.heroBar, { backgroundColor: isDark ? '#11141A' : '#FFFFFF' }]}>
-                <TouchableOpacity
-                  activeOpacity={0.82}
-                  onPress={() => void toggleSaved(heroEvent)}
-                  style={[styles.heroAdd, { backgroundColor: isSaved(heroEvent.id) ? '#E5F7ED' : isDark ? '#242832' : '#F1F3F7' }]}
-                >
-                  {isSaved(heroEvent.id) ? <Check size={17} color="#14894F" /> : <Plus size={17} color={colors.text} />}
-                  <Text style={[styles.heroAddText, { color: isSaved(heroEvent.id) ? '#14894F' : colors.text }]}>
-                    {isSaved(heroEvent.id) ? 'In my life' : 'Add to my life'}
-                  </Text>
-                </TouchableOpacity>
-                <TouchableOpacity activeOpacity={0.85} onPress={() => router.push(`/(root)/event/${heroEvent.id}` as any)} style={styles.heroDetails}>
-                  <Text style={[styles.heroDetailsText, { color: colors.primary }]}>Explore</Text>
-                  <ArrowUpRight size={17} color={colors.primary} strokeWidth={2.5} />
-                </TouchableOpacity>
-              </View>
-            </View>
-          ) : (
-            <TouchableOpacity activeOpacity={0.85} onPress={() => router.push('/(tabs)/events')} style={[styles.heroEmpty, { backgroundColor: isDark ? '#17213A' : '#EDF3FF' }]}>
-              <Sparkles size={28} color={colors.primary} />
-              <Text style={[styles.heroEmptyTitle, { color: colors.text }]}>Give Discover more to work with</Text>
-              <Text style={[styles.heroEmptyCopy, { color: colors.textSecondary }]}>Follow teams, save events and add interests. This page gets sharper as One Pager learns you.</Text>
-            </TouchableOpacity>
-          )}
-        </View>
-
-        {sideEvents.length > 0 ? (
-          <View style={styles.editorialSplit}>
-            <View style={styles.sectionLabelRow}>
-              <Text style={[styles.sectionLabel, { color: colors.text }]}>Happening around you</Text>
-              <TouchableOpacity onPress={() => router.push('/(tabs)/events')} style={styles.inlineLink}>
-                <Text style={[styles.inlineLinkText, { color: colors.primary }]}>See all</Text>
-                <ChevronRight size={15} color={colors.primary} />
-              </TouchableOpacity>
-            </View>
-            <View style={styles.splitGrid}>
-              {sideEvents.map((event, index) => (
-                <TouchableOpacity
-                  key={event.id}
-                  activeOpacity={0.9}
-                  onPress={() => router.push(`/(root)/event/${event.id}` as any)}
-                  style={[styles.splitCard, index === 0 && styles.splitCardTall]}
-                >
-                  {event.image ? (
-                    <ImageBackground source={{ uri: event.image }} style={styles.splitImage} imageStyle={styles.splitRadius}>
-                      <LinearGradient colors={['transparent', 'rgba(4,7,14,0.88)']} style={styles.splitOverlay}>
-                        <Text style={styles.splitKicker}>{titleCase(event.category || 'Event')}</Text>
-                        <Text style={styles.splitTitle} numberOfLines={3}>{event.title}</Text>
-                        <Text style={styles.splitMeta}>{[event.date, formatDistance(event.distanceKm)].filter(Boolean).join(' · ')}</Text>
-                      </LinearGradient>
-                    </ImageBackground>
-                  ) : (
-                    <LinearGradient colors={index === 0 ? ['#2F62DF', '#17337A'] : ['#7C3AED', '#4C1D95']} style={styles.splitImage}>
-                      <View style={styles.splitOverlay}>
-                        <Text style={styles.splitKicker}>{titleCase(event.category || 'Event')}</Text>
-                        <Text style={styles.splitTitle}>{event.title}</Text>
-                        <Text style={styles.splitMeta}>{event.date}</Text>
-                      </View>
-                    </LinearGradient>
-                  )}
-                </TouchableOpacity>
-              ))}
-            </View>
-          </View>
-        ) : null}
-
-        <View style={styles.pulseSection}>
-          <View style={styles.pulseHeadingRow}>
-            <View>
-              <Text style={[styles.sectionLabel, { color: colors.text }]}>Your pulse</Text>
-              <Text style={[styles.sectionCaption, { color: colors.textSecondary }]}>The things already moving in your life.</Text>
-            </View>
-          </View>
-
-          <View style={styles.pulseBento}>
-            <TouchableOpacity
-              activeOpacity={0.86}
-              onPress={() => router.push('/(tabs)/shows')}
-              style={[styles.watchPanel, { backgroundColor: isDark ? '#1B1730' : '#F1EDFF' }]}
-            >
-              <View style={styles.panelIconRow}>
-                <View style={styles.watchIcon}><Clapperboard size={20} color="#7057E8" /></View>
-                <Text style={styles.watchKicker}>WATCH</Text>
-              </View>
-              <Text style={[styles.panelTitleLarge, { color: colors.text }]} numberOfLines={2}>
-                {watchingShow?.title ?? 'Your next watch'}
-              </Text>
-              <Text style={[styles.panelMeta, { color: colors.textSecondary }]}>
-                {watchingShow
-                  ? watchingShow.type === 'Series' && watchingShow.currentEpisode
-                    ? `S${watchingShow.currentSeason ?? 1} · E${watchingShow.currentEpisode} · ${watchingShow.platform}`
-                    : `${watchingShow.type} · ${watchingShow.platform}`
-                  : 'Add a show and One Pager will keep your place.'}
-              </Text>
-              <View style={styles.panelArrow}><ArrowRight size={18} color="#7057E8" /></View>
-            </TouchableOpacity>
-
-            <View style={styles.pulseRightColumn}>
-              <TouchableOpacity
-                activeOpacity={0.86}
-                onPress={() => router.push('/(tabs)/sports')}
-                style={[styles.sportPanel, { backgroundColor: isDark ? '#2A2112' : '#FFF7E5' }]}
-              >
-                <View style={styles.sportTopLine}>
-                  {favoriteTeam?.logo ? <Image source={{ uri: favoriteTeam.logo }} style={styles.sportLogo} /> : <Medal size={22} color="#D98B00" />}
-                  <Text style={styles.sportKicker}>SPORT</Text>
-                </View>
-                <Text style={[styles.panelTitleSmall, { color: colors.text }]} numberOfLines={2}>
-                  {teamMatch ? `${teamMatch.homeTeam} vs ${teamMatch.awayTeam}` : favoriteTeam ? favoriteTeam.name : 'Follow a team'}
-                </Text>
-                <Text style={[styles.panelMetaSmall, { color: colors.textSecondary }]}>
-                  {teamMatch ? `${teamMatch.date} · ${teamMatch.time}` : favoriteTeam?.league ?? 'Fixtures appear here'}
-                </Text>
-              </TouchableOpacity>
-
-              <TouchableOpacity
-                activeOpacity={0.86}
-                onPress={() => router.push('/(tabs)/discover')}
-                style={[styles.habitPanel, { backgroundColor: isDark ? '#10251C' : '#EAF9F1' }]}
-              >
-                <View style={styles.habitTopLine}>
-                  <Dumbbell size={20} color="#0E9B62" />
-                  <Text style={styles.habitKicker}>MOMENTUM</Text>
-                </View>
-                <Text style={[styles.habitNumber, { color: colors.text }]}>{strongestHabit?.streak ?? 0}</Text>
-                <Text style={[styles.habitLabel, { color: colors.textSecondary }]} numberOfLines={1}>
-                  {strongestHabit ? `${strongestHabit.name} streak` : 'days — start a habit'}
-                </Text>
-              </TouchableOpacity>
-            </View>
-          </View>
-        </View>
-
-        <View style={styles.worldSection}>
-          <View style={styles.sectionLabelRow}>
-            <View>
-              <Text style={[styles.sectionLabel, { color: colors.text }]}>Explore your world</Text>
-              <Text style={[styles.sectionCaption, { color: colors.textSecondary }]}>All the depth of One Pager, one layer down.</Text>
-            </View>
-          </View>
-          <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.worldRail}>
-            {worldItems.map((item) => {
-              const Icon = item.icon;
+          <View style={[styles.modeControl, { backgroundColor: isDark ? '#171A20' : '#EFF1F5' }]}>
+            {MODES.map((item) => {
+              const active = mode === item;
               return (
-                <TouchableOpacity key={item.id} activeOpacity={0.88} onPress={() => router.push(item.route)} style={styles.worldTile}>
-                  <LinearGradient colors={item.gradient} style={styles.worldGradient}>
-                    <View style={styles.worldIcon}><Icon size={25} color="#FFFFFF" strokeWidth={2.2} /></View>
-                    <View>
-                      <Text style={styles.worldLabel}>{item.label}</Text>
-                      <Text style={styles.worldNote} numberOfLines={2}>{item.note}</Text>
-                    </View>
-                  </LinearGradient>
+                <TouchableOpacity
+                  key={item}
+                  activeOpacity={0.8}
+                  onPress={() => setMode(item)}
+                  style={[
+                    styles.modeButton,
+                    active && {
+                      backgroundColor: isDark ? '#2B303A' : '#FFFFFF',
+                      shadowColor: '#000',
+                      shadowOpacity: isDark ? 0 : 0.06,
+                      shadowRadius: 8,
+                      shadowOffset: { width: 0, height: 2 },
+                    },
+                  ]}
+                >
+                  <Text style={[styles.modeText, { color: active ? colors.text : colors.textSecondary }]}>{item}</Text>
                 </TouchableOpacity>
               );
             })}
-          </ScrollView>
+          </View>
         </View>
 
-        {eventRail.length > 0 ? (
-          <View style={styles.railSection}>
-            <View style={styles.sectionLabelRow}>
-              <View>
-                <Text style={[styles.sectionLabel, { color: colors.text }]}>{areaLabel ? `More around ${areaLabel}` : 'More near you'}</Text>
-                <Text style={[styles.sectionCaption, { color: colors.textSecondary }]}>Save anything that deserves a place in your week.</Text>
+        {mode === 'For You' ? (
+          <>
+            <View style={styles.heroSection}>
+              {eventsLoading && !heroEvent ? (
+                <View style={[styles.heroLoading, { backgroundColor: isDark ? '#171A22' : '#EEF2F7' }]}>
+                  <ActivityIndicator color={colors.primary} />
+                  <Text style={[styles.loadingCopy, { color: colors.textSecondary }]}>Finding a strong pick for you…</Text>
+                </View>
+              ) : heroEvent ? (
+                <TouchableOpacity
+                  activeOpacity={0.96}
+                  onPress={() => router.push(`/(root)/event/${heroEvent.id}` as any)}
+                  style={styles.heroCard}
+                >
+                  {heroEvent.image ? (
+                    <ImageBackground source={{ uri: heroEvent.image }} style={styles.heroMedia} imageStyle={styles.heroRadius}>
+                      <LinearGradient colors={['rgba(4,7,14,0.02)', 'rgba(4,7,14,0.94)']} style={styles.heroOverlay}>
+                        <View style={styles.heroTopRow}>
+                          <View style={styles.heroReasonChip}>
+                            <Sparkles size={12} color="#FFFFFF" strokeWidth={2.5} />
+                            <Text style={styles.heroReasonText}>{reasonForEvent(heroEvent, favoriteCategories, interests, areaLabel)}</Text>
+                          </View>
+                          {heroEvent.isHot ? (
+                            <View style={styles.hotChip}>
+                              <Flame size={12} color="#FFFFFF" fill="#FFFFFF" />
+                              <Text style={styles.hotText}>HOT</Text>
+                            </View>
+                          ) : null}
+                        </View>
+                        <View>
+                          <Text style={styles.heroKicker}>{liveEvents ? 'ONE PAGER PICK' : 'DISCOVERY PREVIEW'}</Text>
+                          <Text style={styles.heroTitle}>{heroEvent.title}</Text>
+                          <View style={styles.heroInfoRow}>
+                            <Clock3 size={14} color="rgba(255,255,255,0.82)" />
+                            <Text style={styles.heroInfo}>{[heroEvent.date, heroEvent.time].filter(Boolean).join(' · ')}</Text>
+                          </View>
+                          <View style={styles.heroInfoRow}>
+                            <MapPin size={14} color="rgba(255,255,255,0.82)" />
+                            <Text style={styles.heroInfo} numberOfLines={1}>{[heroEvent.venue, formatDistance(heroEvent.distanceKm)].filter(Boolean).join(' · ')}</Text>
+                          </View>
+                        </View>
+                      </LinearGradient>
+                    </ImageBackground>
+                  ) : (
+                    <LinearGradient colors={['#3157C8', '#121A30']} style={styles.heroMedia}>
+                      <View style={styles.heroOverlay}>
+                        <View style={styles.heroReasonChip}>
+                          <Sparkles size={12} color="#FFFFFF" />
+                          <Text style={styles.heroReasonText}>{reasonForEvent(heroEvent, favoriteCategories, interests, areaLabel)}</Text>
+                        </View>
+                        <View>
+                          <Text style={styles.heroKicker}>ONE PAGER PICK</Text>
+                          <Text style={styles.heroTitle}>{heroEvent.title}</Text>
+                          <Text style={styles.heroInfo}>{[heroEvent.date, heroEvent.time, heroEvent.venue].filter(Boolean).join(' · ')}</Text>
+                        </View>
+                      </View>
+                    </LinearGradient>
+                  )}
+
+                  <TouchableOpacity
+                    activeOpacity={0.85}
+                    onPress={(pressEvent) => {
+                      pressEvent.stopPropagation?.();
+                      void toggleSaved(heroEvent);
+                    }}
+                    style={[styles.heroFloatingAction, { backgroundColor: isSaved(heroEvent.id) ? '#E5F7ED' : '#FFFFFF' }]}
+                  >
+                    {isSaved(heroEvent.id) ? <Check size={18} color="#128A50" /> : <Plus size={18} color="#111827" />}
+                    <Text style={[styles.heroFloatingActionText, { color: isSaved(heroEvent.id) ? '#128A50' : '#111827' }]}>
+                      {isSaved(heroEvent.id) ? 'In my life' : 'Add to my life'}
+                    </Text>
+                  </TouchableOpacity>
+                </TouchableOpacity>
+              ) : (
+                <TouchableOpacity
+                  activeOpacity={0.85}
+                  onPress={() => router.push('/(tabs)/events')}
+                  style={[styles.heroEmpty, { backgroundColor: isDark ? '#17213A' : '#EDF3FF' }]}
+                >
+                  <Sparkles size={27} color={colors.primary} />
+                  <Text style={[styles.heroEmptyTitle, { color: colors.text }]}>Give One Pager more to work with</Text>
+                  <Text style={[styles.heroEmptyCopy, { color: colors.textSecondary }]}>Follow teams, save events and add interests. Discover gets better as One Pager learns you.</Text>
+                </TouchableOpacity>
+              )}
+            </View>
+
+            <View style={styles.sectionBlock}>
+              <SectionHeader
+                title="Your next moves"
+                subtitle="Three things already connected to your life."
+                colors={colors}
+              />
+              <View style={styles.lifeBento}>
+                <TouchableOpacity
+                  activeOpacity={0.87}
+                  onPress={() => router.push('/(tabs)/shows')}
+                  style={[styles.watchCard, { backgroundColor: isDark ? '#211C37' : '#F1EDFF' }]}
+                >
+                  <View style={styles.lifeCardTop}>
+                    <View style={styles.watchIcon}><Clapperboard size={20} color="#7057E8" /></View>
+                    <Text style={styles.watchKicker}>CONTINUE</Text>
+                  </View>
+                  <Text style={[styles.watchTitle, { color: colors.text }]} numberOfLines={2}>{watchingShow?.title ?? 'Find your next watch'}</Text>
+                  <Text style={[styles.watchMeta, { color: colors.textSecondary }]}>
+                    {watchingShow
+                      ? watchingShow.type === 'Series' && watchingShow.currentEpisode
+                        ? `S${watchingShow.currentSeason ?? 1} · E${watchingShow.currentEpisode} · ${watchingShow.platform}`
+                        : `${watchingShow.type} · ${watchingShow.platform}`
+                      : 'Your watching activity will appear here.'}
+                  </Text>
+                  <View style={styles.watchArrow}><ArrowRight size={18} color="#7057E8" /></View>
+                </TouchableOpacity>
+
+                <View style={styles.lifeRightColumn}>
+                  <TouchableOpacity
+                    activeOpacity={0.87}
+                    onPress={() => router.push('/(tabs)/sports')}
+                    style={[styles.sportCard, { backgroundColor: isDark ? '#2A2112' : '#FFF7E5' }]}
+                  >
+                    <View style={styles.sportHeader}>
+                      {favoriteTeam?.logo ? <Image source={{ uri: favoriteTeam.logo }} style={styles.sportLogo} /> : <Medal size={21} color="#D98B00" />}
+                      <Text style={styles.sportKicker}>NEXT UP</Text>
+                    </View>
+                    <Text style={[styles.sportTitle, { color: colors.text }]} numberOfLines={2}>
+                      {teamMatch ? `${teamMatch.homeTeam} vs ${teamMatch.awayTeam}` : favoriteTeam?.name ?? 'Follow a team'}
+                    </Text>
+                    <Text style={[styles.sportMeta, { color: colors.textSecondary }]} numberOfLines={1}>
+                      {teamMatch ? `${teamMatch.date} · ${teamMatch.time}` : favoriteTeam?.league ?? 'Fixtures appear here'}
+                    </Text>
+                  </TouchableOpacity>
+
+                  <TouchableOpacity
+                    activeOpacity={0.87}
+                    onPress={() => router.push('/(tabs)/discover')}
+                    style={[styles.habitCard, { backgroundColor: isDark ? '#10251C' : '#EAF9F1' }]}
+                  >
+                    <View style={styles.habitHeader}>
+                      <Dumbbell size={19} color="#0E9B62" />
+                      <Text style={styles.habitKicker}>MOMENTUM</Text>
+                    </View>
+                    <Text style={[styles.habitNumber, { color: colors.text }]}>{strongestHabit?.streak ?? 0}</Text>
+                    <Text style={[styles.habitMeta, { color: colors.textSecondary }]} numberOfLines={1}>
+                      {strongestHabit ? `${strongestHabit.name} streak` : 'days — start a habit'}
+                    </Text>
+                  </TouchableOpacity>
+                </View>
               </View>
             </View>
-            <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.stripRail}>
-              {eventRail.map((event) => (
-                <EventStripCard
-                  key={event.id}
-                  event={event}
-                  saved={isSaved(event.id)}
-                  onToggle={() => void toggleSaved(event)}
+
+            {forYouRail.length > 0 ? (
+              <View style={styles.sectionBlock}>
+                <SectionHeader
+                  title={areaLabel ? `Worth leaving the house for` : 'Worth going out for'}
+                  subtitle={areaLabel ? `A few strong picks around ${areaLabel}.` : 'A few strong nearby picks.'}
+                  action="See all"
+                  onAction={() => setMode('Near You')}
                   colors={colors}
-                  isDark={isDark}
                 />
-              ))}
-            </ScrollView>
+                <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.railContent}>
+                  {forYouRail.map((event) => (
+                    <EventRailCard
+                      key={event.id}
+                      event={event}
+                      saved={isSaved(event.id)}
+                      onToggle={() => void toggleSaved(event)}
+                      colors={colors}
+                      isDark={isDark}
+                    />
+                  ))}
+                </ScrollView>
+              </View>
+            ) : null}
+
+            <View style={styles.sectionBlock}>
+              <SectionHeader title="Explore your world" subtitle="The rest of One Pager is one layer down." colors={colors} />
+              <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.worldRail}>
+                {worldItems.map((item) => {
+                  const Icon = item.icon;
+                  return (
+                    <TouchableOpacity
+                      key={item.id}
+                      activeOpacity={0.86}
+                      onPress={() => router.push(item.route)}
+                      style={[
+                        styles.worldCard,
+                        {
+                          backgroundColor: isDark ? '#171A20' : '#FFFFFF',
+                          borderColor: isDark ? '#2A2E36' : '#E7EAF0',
+                        },
+                      ]}
+                    >
+                      <View style={[styles.worldIcon, { backgroundColor: `${item.accent}16` }]}>
+                        <Icon size={21} color={item.accent} strokeWidth={2.25} />
+                      </View>
+                      <Text style={[styles.worldTitle, { color: colors.text }]}>{item.label}</Text>
+                      <Text style={[styles.worldMeta, { color: colors.textSecondary }]} numberOfLines={2}>{item.note}</Text>
+                    </TouchableOpacity>
+                  );
+                })}
+              </ScrollView>
+            </View>
+
+            {surpriseEvent ? (
+              <View style={styles.sectionBlock}>
+                <SectionHeader title="Try something different" subtitle="Discovery should occasionally surprise you." colors={colors} />
+                <TouchableOpacity
+                  activeOpacity={0.9}
+                  onPress={() => router.push(`/(root)/event/${surpriseEvent.id}` as any)}
+                  style={[styles.wildcardCard, { backgroundColor: isDark ? '#2A2113' : '#FFF7E4' }]}
+                >
+                  <View style={styles.wildcardTop}>
+                    <Sparkles size={18} color="#B7791F" />
+                    <Text style={styles.wildcardKicker}>OUTSIDE YOUR USUAL</Text>
+                  </View>
+                  <Text style={[styles.wildcardTitle, { color: colors.text }]}>{surpriseEvent.title}</Text>
+                  <Text style={[styles.wildcardMeta, { color: colors.textSecondary }]}>
+                    {[titleCase(surpriseEvent.category || 'Event'), surpriseEvent.date, formatDistance(surpriseEvent.distanceKm)].filter(Boolean).join(' · ')}
+                  </Text>
+                  <View style={styles.wildcardFooter}>
+                    <Text style={styles.wildcardLink}>See if it is your thing</Text>
+                    <ArrowUpRight size={17} color="#B7791F" />
+                  </View>
+                </TouchableOpacity>
+              </View>
+            ) : null}
+          </>
+        ) : null}
+
+        {mode === 'Near You' ? (
+          <View style={styles.modeBody}>
+            <SectionHeader
+              title={areaLabel ? `Around ${areaLabel}` : 'Around you'}
+              subtitle="Real things happening close enough to actually do."
+              action="Full events"
+              onAction={() => router.push('/(tabs)/events')}
+              colors={colors}
+            />
+
+            {eventsLoading && nearYouGrid.length === 0 ? (
+              <View style={[styles.modeLoading, { backgroundColor: isDark ? '#171A22' : '#F1F3F7' }]}>
+                <ActivityIndicator color={colors.primary} />
+                <Text style={[styles.loadingCopy, { color: colors.textSecondary }]}>Looking around you…</Text>
+              </View>
+            ) : nearYouGrid.length > 0 ? (
+              <View style={styles.nearbyGrid}>
+                {nearYouGrid.map((event) => (
+                  <NearbyGridCard key={event.id} event={event} colors={colors} />
+                ))}
+              </View>
+            ) : (
+              <View style={[styles.emptyState, { backgroundColor: isDark ? '#171A22' : '#F4F6FA' }]}>
+                <MapPin size={26} color={colors.primary} />
+                <Text style={[styles.emptyStateTitle, { color: colors.text }]}>Nothing strong nearby yet</Text>
+                <Text style={[styles.emptyStateCopy, { color: colors.textSecondary }]}>Try the full Events experience for wider search and categories.</Text>
+                <TouchableOpacity activeOpacity={0.8} onPress={() => router.push('/(tabs)/events')} style={[styles.emptyStateButton, { backgroundColor: colors.primary }]}>
+                  <Text style={styles.emptyStateButtonText}>Explore events</Text>
+                </TouchableOpacity>
+              </View>
+            )}
           </View>
         ) : null}
 
-        {(nextSaved || surpriseEvent) ? (
-          <View style={styles.bottomEditorial}>
-            {nextSaved ? (
-              <TouchableOpacity
-                activeOpacity={0.88}
-                onPress={() => router.push(`/(root)/event/${nextSaved.id}` as any)}
-                style={[styles.savedPanel, { backgroundColor: isDark ? '#14231B' : '#ECFAF2' }]}
-              >
-                <View style={styles.savedTop}>
-                  <View style={styles.savedBadge}><Check size={15} color="#0C8F53" /></View>
-                  <Text style={styles.savedKicker}>ALREADY IN YOUR LIFE</Text>
-                </View>
-                <Text style={[styles.savedTitle, { color: colors.text }]}>{nextSaved.title}</Text>
-                <Text style={[styles.savedMeta, { color: colors.textSecondary }]}>{[nextSaved.date, nextSaved.time, nextSaved.venue].filter(Boolean).join(' · ')}</Text>
-                <View style={styles.savedArrow}><ArrowUpRight size={18} color="#0C8F53" /></View>
-              </TouchableOpacity>
-            ) : null}
+        {mode === 'Saved' ? (
+          <View style={styles.modeBody}>
+            <SectionHeader
+              title="Saved to your life"
+              subtitle="Things you chose should be easy to find again."
+              colors={colors}
+            />
 
-            {surpriseEvent ? (
-              <TouchableOpacity
-                activeOpacity={0.88}
-                onPress={() => router.push(`/(root)/event/${surpriseEvent.id}` as any)}
-                style={[styles.surprisePanel, { backgroundColor: isDark ? '#2A2113' : '#FFF7E4' }]}
-              >
-                <View style={styles.surpriseTop}>
-                  <Sparkles size={18} color="#B7791F" />
-                  <Text style={styles.surpriseKicker}>OUTSIDE YOUR USUAL</Text>
-                </View>
-                <Text style={[styles.surpriseTitle, { color: colors.text }]}>{surpriseEvent.title}</Text>
-                <Text style={[styles.surpriseMeta, { color: colors.textSecondary }]}>{[titleCase(surpriseEvent.category || 'Event'), surpriseEvent.date, formatDistance(surpriseEvent.distanceKm)].filter(Boolean).join(' · ')}</Text>
-                <Text style={styles.surpriseLink}>See if it surprises you →</Text>
-              </TouchableOpacity>
-            ) : null}
+            {upcomingSaved.length > 0 ? (
+              <View style={styles.savedList}>
+                {upcomingSaved.map((event) => (
+                  <TouchableOpacity
+                    key={event.id}
+                    activeOpacity={0.86}
+                    onPress={() => router.push(`/(root)/event/${event.id}` as any)}
+                    style={[
+                      styles.savedRow,
+                      {
+                        backgroundColor: isDark ? '#171A20' : '#FFFFFF',
+                        borderColor: isDark ? '#2A2E36' : '#E7EAF0',
+                      },
+                    ]}
+                  >
+                    <View style={styles.savedIcon}><Check size={16} color="#0E9B62" strokeWidth={2.5} /></View>
+                    <View style={styles.savedCopy}>
+                      <Text style={[styles.savedTitle, { color: colors.text }]} numberOfLines={2}>{event.title}</Text>
+                      <Text style={[styles.savedMeta, { color: colors.textSecondary }]} numberOfLines={2}>
+                        {[event.date, event.time, event.venue].filter(Boolean).join(' · ')}
+                      </Text>
+                    </View>
+                    <ChevronRight size={18} color={colors.textSecondary} />
+                  </TouchableOpacity>
+                ))}
+              </View>
+            ) : (
+              <View style={[styles.emptyState, { backgroundColor: isDark ? '#171A22' : '#F4F6FA' }]}>
+                <Check size={26} color={colors.primary} />
+                <Text style={[styles.emptyStateTitle, { color: colors.text }]}>Nothing saved yet</Text>
+                <Text style={[styles.emptyStateCopy, { color: colors.textSecondary }]}>When something catches your eye, add it to your life and it will live here.</Text>
+                <TouchableOpacity activeOpacity={0.8} onPress={() => setMode('For You')} style={[styles.emptyStateButton, { backgroundColor: colors.primary }]}>
+                  <Text style={styles.emptyStateButtonText}>Find something</Text>
+                </TouchableOpacity>
+              </View>
+            )}
           </View>
         ) : null}
 
@@ -607,9 +712,9 @@ export default function DiscoverLifeScreen() {
           onPress={() => router.push('/(tabs)/profile')}
           style={[styles.tuneFooter, { borderColor: isDark ? '#2A2E38' : '#E5E8EE' }]}
         >
-          <View style={{ flex: 1 }}>
+          <View style={styles.tuneFooterCopy}>
             <Text style={[styles.tuneFooterTitle, { color: colors.text }]}>Tune your Discover</Text>
-            <Text style={[styles.tuneFooterCopy, { color: colors.textSecondary }]}>Interests, teams and preferences directly shape what gets surfaced here.</Text>
+            <Text style={[styles.tuneFooterSubtitle, { color: colors.textSecondary }]}>Interests, teams and preferences directly shape what appears here.</Text>
           </View>
           <SlidersHorizontal size={20} color={colors.primary} />
         </TouchableOpacity>
@@ -621,116 +726,122 @@ export default function DiscoverLifeScreen() {
 const styles = StyleSheet.create({
   screen: { flex: 1 },
   header: { paddingHorizontal: 20 },
-  headerRow: { flexDirection: 'row', alignItems: 'flex-start', justifyContent: 'space-between', gap: 12 },
-  dateLine: { fontSize: 13, fontWeight: '700', marginBottom: 3 },
-  pageTitle: { fontSize: 42, lineHeight: 45, fontWeight: '850', letterSpacing: -1.6 },
-  pageSub: { marginTop: 7, fontSize: 15.5, lineHeight: 22, maxWidth: 560 },
-  tuneButton: { width: 44, height: 44, borderRadius: 22, alignItems: 'center', justifyContent: 'center', marginTop: 7 },
+  headerRow: { flexDirection: 'row', alignItems: 'flex-start', justifyContent: 'space-between', gap: 14 },
+  headerCopy: { flex: 1 },
+  headerContext: { fontSize: 10.5, fontWeight: '850', letterSpacing: 1.2, marginBottom: 4 },
+  pageTitle: { fontSize: 36, lineHeight: 39, fontWeight: '850', letterSpacing: -1.25 },
+  pageSubtitle: { marginTop: 4, fontSize: 15, lineHeight: 21 },
+  tuneButton: { width: 42, height: 42, borderRadius: 21, alignItems: 'center', justifyContent: 'center', marginTop: 9 },
+  modeControl: { marginTop: 18, height: 44, borderRadius: 14, padding: 3, flexDirection: 'row', gap: 3 },
+  modeButton: { flex: 1, borderRadius: 11, alignItems: 'center', justifyContent: 'center' },
+  modeText: { fontSize: 13, fontWeight: '750' },
 
-  heroSection: { paddingHorizontal: 20, marginTop: 22 },
-  heroLoading: { minHeight: 390, borderRadius: 30, alignItems: 'center', justifyContent: 'center', gap: 10 },
-  loadingCopy: { fontSize: 14, fontWeight: '650' },
-  heroEditorial: { borderRadius: 30, overflow: 'hidden', shadowColor: '#000', shadowOpacity: 0.13, shadowRadius: 24, shadowOffset: { width: 0, height: 10 }, elevation: 4 },
-  heroMedia: { minHeight: 390, justifyContent: 'space-between' },
-  heroRadius: { borderTopLeftRadius: 30, borderTopRightRadius: 30 },
-  heroOverlay: { flex: 1, minHeight: 390, padding: 20, justifyContent: 'space-between' },
-  heroTopRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 10 },
-  heroChip: { alignSelf: 'flex-start', minHeight: 30, maxWidth: '78%', paddingHorizontal: 10, borderRadius: 15, backgroundColor: 'rgba(8,11,19,0.64)', flexDirection: 'row', alignItems: 'center', gap: 6 },
-  heroChipText: { color: '#FFFFFF', fontSize: 11.5, fontWeight: '750', flexShrink: 1 },
-  hotChip: { minHeight: 28, paddingHorizontal: 9, borderRadius: 14, backgroundColor: 'rgba(232,67,45,0.92)', flexDirection: 'row', alignItems: 'center', gap: 4 },
-  hotChipText: { color: '#FFFFFF', fontSize: 10, fontWeight: '850', letterSpacing: 0.7 },
-  heroEyebrow: { color: '#C9D7FF', fontSize: 11, fontWeight: '850', letterSpacing: 1.5, marginBottom: 8 },
-  heroTitle: { color: '#FFFFFF', fontSize: 31, lineHeight: 35, fontWeight: '850', letterSpacing: -0.8, maxWidth: '96%' },
-  heroInfoRow: { marginTop: 8, flexDirection: 'row', alignItems: 'center', gap: 6 },
-  heroInfoText: { color: 'rgba(255,255,255,0.84)', fontSize: 13, lineHeight: 18, fontWeight: '600', flexShrink: 1 },
-  heroBar: { minHeight: 66, flexDirection: 'row', alignItems: 'center', gap: 10, padding: 10 },
-  heroAdd: { flex: 1, minHeight: 46, borderRadius: 15, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 7 },
-  heroAddText: { fontSize: 13, fontWeight: '800' },
-  heroDetails: { minHeight: 46, paddingHorizontal: 14, borderRadius: 14, flexDirection: 'row', alignItems: 'center', gap: 5 },
-  heroDetailsText: { fontSize: 13, fontWeight: '850' },
-  heroEmpty: { minHeight: 260, borderRadius: 30, padding: 24, justifyContent: 'center' },
-  heroEmptyTitle: { marginTop: 18, fontSize: 25, lineHeight: 30, fontWeight: '850', letterSpacing: -0.5 },
-  heroEmptyCopy: { marginTop: 8, fontSize: 15, lineHeight: 22 },
+  heroSection: { paddingHorizontal: 20, marginTop: 18 },
+  heroLoading: { minHeight: 350, borderRadius: 27, alignItems: 'center', justifyContent: 'center', gap: 10 },
+  loadingCopy: { fontSize: 13.5, fontWeight: '650' },
+  heroCard: { borderRadius: 27, overflow: 'hidden', position: 'relative', shadowColor: '#000', shadowOpacity: 0.12, shadowRadius: 20, shadowOffset: { width: 0, height: 8 }, elevation: 4 },
+  heroMedia: { height: 370 },
+  heroRadius: { borderRadius: 27 },
+  heroOverlay: { flex: 1, padding: 18, justifyContent: 'space-between' },
+  heroTopRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 8 },
+  heroReasonChip: { maxWidth: '78%', minHeight: 29, borderRadius: 15, paddingHorizontal: 10, backgroundColor: 'rgba(6,10,18,0.66)', flexDirection: 'row', alignItems: 'center', gap: 6 },
+  heroReasonText: { color: '#FFFFFF', fontSize: 11, fontWeight: '750', flexShrink: 1 },
+  hotChip: { minHeight: 27, paddingHorizontal: 8, borderRadius: 14, backgroundColor: 'rgba(226,69,43,0.92)', flexDirection: 'row', alignItems: 'center', gap: 4 },
+  hotText: { color: '#FFFFFF', fontSize: 9.5, fontWeight: '850', letterSpacing: 0.6 },
+  heroKicker: { color: '#D2DEFF', fontSize: 10.5, fontWeight: '850', letterSpacing: 1.4, marginBottom: 7 },
+  heroTitle: { color: '#FFFFFF', fontSize: 30, lineHeight: 34, fontWeight: '850', letterSpacing: -0.75, maxWidth: '94%' },
+  heroInfoRow: { marginTop: 7, flexDirection: 'row', alignItems: 'center', gap: 6 },
+  heroInfo: { color: 'rgba(255,255,255,0.84)', fontSize: 12.5, lineHeight: 18, fontWeight: '600', flexShrink: 1 },
+  heroFloatingAction: { position: 'absolute', right: 14, bottom: 14, minHeight: 42, paddingHorizontal: 13, borderRadius: 21, flexDirection: 'row', alignItems: 'center', gap: 6, shadowColor: '#000', shadowOpacity: 0.16, shadowRadius: 9, shadowOffset: { width: 0, height: 3 }, elevation: 3 },
+  heroFloatingActionText: { fontSize: 12.5, fontWeight: '800' },
+  heroEmpty: { minHeight: 240, borderRadius: 27, padding: 22, justifyContent: 'center' },
+  heroEmptyTitle: { marginTop: 16, fontSize: 23, lineHeight: 28, fontWeight: '850', letterSpacing: -0.45 },
+  heroEmptyCopy: { marginTop: 7, fontSize: 14.5, lineHeight: 21 },
 
-  editorialSplit: { marginTop: 32 },
-  sectionLabelRow: { paddingHorizontal: 20, flexDirection: 'row', alignItems: 'flex-end', justifyContent: 'space-between', gap: 12 },
-  sectionLabel: { fontSize: 24, lineHeight: 28, fontWeight: '850', letterSpacing: -0.6 },
-  sectionCaption: { marginTop: 4, fontSize: 13.5, lineHeight: 19 },
-  inlineLink: { flexDirection: 'row', alignItems: 'center', paddingBottom: 2 },
-  inlineLinkText: { fontSize: 13, fontWeight: '800' },
-  splitGrid: { paddingHorizontal: 20, marginTop: 13, flexDirection: 'row', gap: 10 },
-  splitCard: { flex: 1, minHeight: 215, borderRadius: 24, overflow: 'hidden' },
-  splitCardTall: { minHeight: 265 },
-  splitImage: { flex: 1, minHeight: '100%' },
-  splitRadius: { borderRadius: 24 },
-  splitOverlay: { flex: 1, padding: 14, justifyContent: 'flex-end' },
-  splitKicker: { color: '#C9D7FF', fontSize: 10, fontWeight: '850', letterSpacing: 1.0, textTransform: 'uppercase', marginBottom: 5 },
-  splitTitle: { color: '#FFFFFF', fontSize: 18, lineHeight: 22, fontWeight: '850', letterSpacing: -0.3 },
-  splitMeta: { color: 'rgba(255,255,255,0.78)', marginTop: 6, fontSize: 11.5, lineHeight: 16 },
+  sectionBlock: { marginTop: 30 },
+  sectionHeader: { paddingHorizontal: 20, flexDirection: 'row', alignItems: 'flex-end', justifyContent: 'space-between', gap: 12, marginBottom: 12 },
+  sectionHeaderCopy: { flex: 1 },
+  sectionTitle: { fontSize: 22, lineHeight: 26, fontWeight: '850', letterSpacing: -0.5 },
+  sectionSubtitle: { marginTop: 3, fontSize: 13, lineHeight: 18 },
+  sectionAction: { flexDirection: 'row', alignItems: 'center', paddingBottom: 1 },
+  sectionActionText: { fontSize: 12.5, fontWeight: '800' },
 
-  pulseSection: { marginTop: 34 },
-  pulseHeadingRow: { paddingHorizontal: 20 },
-  pulseBento: { paddingHorizontal: 20, marginTop: 13, flexDirection: 'row', gap: 10, minHeight: 330 },
-  watchPanel: { flex: 1.05, borderRadius: 26, padding: 18, justifyContent: 'space-between' },
-  pulseRightColumn: { flex: 0.95, gap: 10 },
-  sportPanel: { flex: 1.05, borderRadius: 24, padding: 15 },
-  habitPanel: { flex: 0.95, borderRadius: 24, padding: 15 },
-  panelIconRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
-  watchIcon: { width: 42, height: 42, borderRadius: 14, backgroundColor: 'rgba(112,87,232,0.14)', alignItems: 'center', justifyContent: 'center' },
-  watchKicker: { color: '#7057E8', fontSize: 10.5, fontWeight: '850', letterSpacing: 1.2 },
-  panelTitleLarge: { marginTop: 42, fontSize: 24, lineHeight: 28, fontWeight: '850', letterSpacing: -0.5 },
-  panelMeta: { marginTop: 8, fontSize: 13, lineHeight: 19 },
-  panelArrow: { marginTop: 18, width: 38, height: 38, borderRadius: 19, backgroundColor: 'rgba(112,87,232,0.14)', alignItems: 'center', justifyContent: 'center' },
-  sportTopLine: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
-  sportLogo: { width: 32, height: 32, resizeMode: 'contain' },
-  sportKicker: { color: '#D98B00', fontSize: 9.5, fontWeight: '850', letterSpacing: 1.0 },
-  panelTitleSmall: { marginTop: 16, fontSize: 16.5, lineHeight: 20, fontWeight: '850' },
-  panelMetaSmall: { marginTop: 5, fontSize: 11.5, lineHeight: 16 },
-  habitTopLine: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
-  habitKicker: { color: '#0E9B62', fontSize: 9.5, fontWeight: '850', letterSpacing: 1.0 },
-  habitNumber: { marginTop: 8, fontSize: 39, lineHeight: 42, fontWeight: '850', letterSpacing: -1.5 },
-  habitLabel: { marginTop: 2, fontSize: 11.5, lineHeight: 16 },
+  lifeBento: { paddingHorizontal: 20, flexDirection: 'row', gap: 10, minHeight: 300 },
+  watchCard: { flex: 1.08, borderRadius: 24, padding: 17, justifyContent: 'space-between' },
+  lifeRightColumn: { flex: 0.92, gap: 10 },
+  sportCard: { flex: 1.03, borderRadius: 22, padding: 14 },
+  habitCard: { flex: 0.97, borderRadius: 22, padding: 14 },
+  lifeCardTop: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
+  watchIcon: { width: 40, height: 40, borderRadius: 13, backgroundColor: 'rgba(112,87,232,0.14)', alignItems: 'center', justifyContent: 'center' },
+  watchKicker: { color: '#7057E8', fontSize: 9.5, fontWeight: '850', letterSpacing: 1.0 },
+  watchTitle: { marginTop: 34, fontSize: 23, lineHeight: 27, fontWeight: '850', letterSpacing: -0.5 },
+  watchMeta: { marginTop: 7, fontSize: 12.5, lineHeight: 18 },
+  watchArrow: { width: 36, height: 36, borderRadius: 18, backgroundColor: 'rgba(112,87,232,0.14)', alignItems: 'center', justifyContent: 'center' },
+  sportHeader: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
+  sportLogo: { width: 30, height: 30, resizeMode: 'contain' },
+  sportKicker: { color: '#D98B00', fontSize: 9, fontWeight: '850', letterSpacing: 0.9 },
+  sportTitle: { marginTop: 15, fontSize: 16, lineHeight: 19, fontWeight: '850' },
+  sportMeta: { marginTop: 4, fontSize: 11, lineHeight: 15 },
+  habitHeader: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
+  habitKicker: { color: '#0E9B62', fontSize: 9, fontWeight: '850', letterSpacing: 0.9 },
+  habitNumber: { marginTop: 5, fontSize: 38, lineHeight: 41, fontWeight: '850', letterSpacing: -1.4 },
+  habitMeta: { marginTop: 2, fontSize: 11, lineHeight: 15 },
 
-  worldSection: { marginTop: 35 },
-  worldRail: { paddingHorizontal: 20, paddingTop: 13, gap: 10 },
-  worldTile: { width: 154, height: 190, borderRadius: 25, overflow: 'hidden' },
-  worldGradient: { flex: 1, padding: 17, justifyContent: 'space-between' },
-  worldIcon: { width: 46, height: 46, borderRadius: 15, backgroundColor: 'rgba(255,255,255,0.15)', alignItems: 'center', justifyContent: 'center' },
-  worldLabel: { color: '#FFFFFF', fontSize: 21, fontWeight: '850', letterSpacing: -0.4 },
-  worldNote: { color: 'rgba(255,255,255,0.78)', marginTop: 4, fontSize: 12, lineHeight: 17 },
+  railContent: { paddingHorizontal: 20, gap: 11 },
+  railCard: { width: 210, borderRadius: 21, overflow: 'hidden' },
+  railImage: { height: 142 },
+  railImageRadius: { borderTopLeftRadius: 21, borderTopRightRadius: 21 },
+  railImageOverlay: { flex: 1, padding: 9, justifyContent: 'flex-end' },
+  railImageFallback: { height: 142, alignItems: 'center', justifyContent: 'center' },
+  distanceChip: { alignSelf: 'flex-start', minHeight: 24, paddingHorizontal: 8, borderRadius: 12, backgroundColor: 'rgba(6,10,18,0.62)', flexDirection: 'row', alignItems: 'center', gap: 4 },
+  distanceChipText: { color: '#FFFFFF', fontSize: 10, fontWeight: '750' },
+  railBody: { padding: 12 },
+  railEyebrow: { fontSize: 9.5, fontWeight: '850', letterSpacing: 0.9, textTransform: 'uppercase', marginBottom: 4 },
+  railTitle: { fontSize: 16, lineHeight: 19, fontWeight: '850' },
+  railMeta: { marginTop: 4, fontSize: 11, lineHeight: 15 },
+  railSave: { alignSelf: 'flex-start', marginTop: 9, minHeight: 29, borderRadius: 10, paddingHorizontal: 9, flexDirection: 'row', alignItems: 'center', gap: 5 },
+  railSaveText: { fontSize: 11, fontWeight: '800' },
 
-  railSection: { marginTop: 35 },
-  stripRail: { paddingHorizontal: 20, paddingTop: 13, gap: 12 },
-  stripCard: { width: 218, borderRadius: 23, overflow: 'hidden' },
-  stripImage: { width: '100%', height: 150 },
-  stripImageRadius: { borderTopLeftRadius: 23, borderTopRightRadius: 23 },
-  stripImageGradient: { flex: 1, padding: 10, justifyContent: 'flex-end' },
-  stripDistancePill: { alignSelf: 'flex-start', flexDirection: 'row', alignItems: 'center', gap: 4, minHeight: 25, paddingHorizontal: 8, borderRadius: 13, backgroundColor: 'rgba(7,10,18,0.60)' },
-  stripDistanceText: { color: '#FFFFFF', fontSize: 10.5, fontWeight: '750' },
-  stripImageFallback: { width: '100%', height: 150, alignItems: 'center', justifyContent: 'center' },
-  stripBody: { padding: 13 },
-  stripCategory: { fontSize: 10, fontWeight: '850', letterSpacing: 1.0, textTransform: 'uppercase', marginBottom: 5 },
-  stripTitle: { fontSize: 16.5, lineHeight: 20, fontWeight: '850' },
-  stripMeta: { marginTop: 5, fontSize: 11.5, lineHeight: 16 },
-  stripSave: { alignSelf: 'flex-start', marginTop: 10, minHeight: 31, paddingHorizontal: 10, borderRadius: 11, flexDirection: 'row', alignItems: 'center', gap: 5 },
-  stripSaveText: { fontSize: 11.5, fontWeight: '800' },
+  worldRail: { paddingHorizontal: 20, gap: 9 },
+  worldCard: { width: 134, minHeight: 142, borderRadius: 20, borderWidth: 1, padding: 14 },
+  worldIcon: { width: 39, height: 39, borderRadius: 12, alignItems: 'center', justifyContent: 'center', marginBottom: 18 },
+  worldTitle: { fontSize: 16, fontWeight: '850', letterSpacing: -0.2 },
+  worldMeta: { marginTop: 4, fontSize: 11.5, lineHeight: 16 },
 
-  bottomEditorial: { paddingHorizontal: 20, marginTop: 35, gap: 12 },
-  savedPanel: { minHeight: 180, borderRadius: 26, padding: 18 },
-  savedTop: { flexDirection: 'row', alignItems: 'center', gap: 8 },
-  savedBadge: { width: 34, height: 34, borderRadius: 12, backgroundColor: '#DDF5E8', alignItems: 'center', justifyContent: 'center' },
-  savedKicker: { color: '#0C8F53', fontSize: 10, fontWeight: '850', letterSpacing: 1.0 },
-  savedTitle: { marginTop: 18, fontSize: 22, lineHeight: 27, fontWeight: '850', letterSpacing: -0.4 },
-  savedMeta: { marginTop: 6, fontSize: 12.5, lineHeight: 18 },
-  savedArrow: { position: 'absolute', right: 18, bottom: 18, width: 38, height: 38, borderRadius: 19, backgroundColor: '#DDF5E8', alignItems: 'center', justifyContent: 'center' },
-  surprisePanel: { minHeight: 180, borderRadius: 26, padding: 18 },
-  surpriseTop: { flexDirection: 'row', alignItems: 'center', gap: 8 },
-  surpriseKicker: { color: '#B7791F', fontSize: 10, fontWeight: '850', letterSpacing: 1.0 },
-  surpriseTitle: { marginTop: 18, fontSize: 22, lineHeight: 27, fontWeight: '850', letterSpacing: -0.4 },
-  surpriseMeta: { marginTop: 6, fontSize: 12.5, lineHeight: 18 },
-  surpriseLink: { color: '#B7791F', marginTop: 17, fontSize: 12.5, fontWeight: '850' },
+  wildcardCard: { marginHorizontal: 20, borderRadius: 23, padding: 18 },
+  wildcardTop: { flexDirection: 'row', alignItems: 'center', gap: 8 },
+  wildcardKicker: { color: '#B7791F', fontSize: 9.5, fontWeight: '850', letterSpacing: 1.0 },
+  wildcardTitle: { marginTop: 16, fontSize: 21, lineHeight: 25, fontWeight: '850', letterSpacing: -0.35 },
+  wildcardMeta: { marginTop: 6, fontSize: 12.5, lineHeight: 18 },
+  wildcardFooter: { marginTop: 15, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
+  wildcardLink: { color: '#B7791F', fontSize: 12.5, fontWeight: '850' },
 
-  tuneFooter: { marginHorizontal: 20, marginTop: 34, paddingVertical: 19, borderTopWidth: 1, borderBottomWidth: 1, flexDirection: 'row', alignItems: 'center', gap: 16 },
-  tuneFooterTitle: { fontSize: 16, fontWeight: '850' },
-  tuneFooterCopy: { marginTop: 4, fontSize: 12.5, lineHeight: 18 },
+  modeBody: { marginTop: 24 },
+  modeLoading: { marginHorizontal: 20, minHeight: 220, borderRadius: 24, alignItems: 'center', justifyContent: 'center', gap: 10 },
+  nearbyGrid: { paddingHorizontal: 20, flexDirection: 'row', flexWrap: 'wrap', gap: 10 },
+  nearbyGridCard: { width: '48.5%', minHeight: 235, borderRadius: 22, overflow: 'hidden' },
+  nearbyGridImage: { flex: 1, minHeight: 235 },
+  nearbyGridRadius: { borderRadius: 22 },
+  nearbyGridOverlay: { flex: 1, padding: 13, justifyContent: 'flex-end' },
+  nearbyGridCategory: { color: '#D7E2FF', fontSize: 9, fontWeight: '850', letterSpacing: 0.9, textTransform: 'uppercase', marginBottom: 5 },
+  nearbyGridTitle: { color: '#FFFFFF', fontSize: 16.5, lineHeight: 20, fontWeight: '850', letterSpacing: -0.2 },
+  nearbyGridMeta: { color: 'rgba(255,255,255,0.78)', marginTop: 5, fontSize: 10.5, lineHeight: 15 },
+
+  savedList: { paddingHorizontal: 20, gap: 9 },
+  savedRow: { borderRadius: 18, borderWidth: 1, padding: 14, flexDirection: 'row', alignItems: 'center', gap: 12 },
+  savedIcon: { width: 40, height: 40, borderRadius: 13, backgroundColor: '#E7F8EF', alignItems: 'center', justifyContent: 'center' },
+  savedCopy: { flex: 1 },
+  savedTitle: { fontSize: 15.5, lineHeight: 19, fontWeight: '850' },
+  savedMeta: { marginTop: 4, fontSize: 11.5, lineHeight: 16 },
+
+  emptyState: { marginHorizontal: 20, minHeight: 240, borderRadius: 24, padding: 22, alignItems: 'flex-start', justifyContent: 'center' },
+  emptyStateTitle: { marginTop: 15, fontSize: 21, lineHeight: 25, fontWeight: '850', letterSpacing: -0.35 },
+  emptyStateCopy: { marginTop: 6, fontSize: 13.5, lineHeight: 20, maxWidth: 330 },
+  emptyStateButton: { marginTop: 17, minHeight: 42, paddingHorizontal: 16, borderRadius: 14, alignItems: 'center', justifyContent: 'center' },
+  emptyStateButtonText: { color: '#FFFFFF', fontSize: 12.5, fontWeight: '850' },
+
+  tuneFooter: { marginHorizontal: 20, marginTop: 32, borderTopWidth: 1, borderBottomWidth: 1, paddingVertical: 17, flexDirection: 'row', alignItems: 'center', gap: 15 },
+  tuneFooterCopy: { flex: 1 },
+  tuneFooterTitle: { fontSize: 15, fontWeight: '850' },
+  tuneFooterSubtitle: { marginTop: 3, fontSize: 11.5, lineHeight: 16 },
 });
