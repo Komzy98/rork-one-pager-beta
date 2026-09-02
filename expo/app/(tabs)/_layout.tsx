@@ -24,7 +24,7 @@ const PRIMARY_TABS = [
     icon: LayoutGrid,
   },
   {
-    name: "discover-life",
+    name: "discover-flagship",
     title: "Discover",
     icon: Compass,
   },
@@ -36,6 +36,7 @@ const PRIMARY_TABS = [
 ] as const;
 
 const LEGACY_TABS = [
+  "discover-flagship",
   "discover-life",
   "discover-home",
   "discover",
