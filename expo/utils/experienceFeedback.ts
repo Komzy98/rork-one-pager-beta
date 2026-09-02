@@ -8,7 +8,8 @@ export type ExperienceAction =
   | 'enjoyed'
   | 'useful'
   | 'irrelevant'
-  | 'difficulty';
+  | 'difficulty'
+  | 'dismissed';
 
 export interface ExperienceSignal {
   kind: ExperienceKind;
@@ -44,6 +45,7 @@ export interface ExperienceEntry {
   lastCompletedAt?: string;
   lastSkippedAt?: string;
   lastFeedbackAt?: string;
+  lastPromptDismissedAt?: string;
   source?: string;
 }
 
@@ -99,6 +101,7 @@ function affinityDelta(signal: ExperienceSignal) {
       return (rating - 3) * 1.35;
     }
     case 'difficulty':
+    case 'dismissed':
       return 0;
     default:
       return 0;
@@ -183,6 +186,9 @@ export function applyExperienceSignal(
       next.lastFeedbackAt = now;
       break;
     }
+    case 'dismissed':
+      next.lastPromptDismissedAt = now;
+      break;
   }
 
   const delta = affinityDelta(signal);
