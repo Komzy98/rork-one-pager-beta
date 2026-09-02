@@ -46,6 +46,7 @@ describe('eventNightOutPlanner', () => {
     const steps = buildNightOutPlan(
       theatreEvent({
         time: '22:30',
+        startIso: '2026-07-08T22:30:00',
         category: 'nightlife',
       }),
     );
@@ -59,6 +60,7 @@ describe('eventNightOutPlanner', () => {
       theatreEvent({
         category: 'comedy',
         time: '20:00',
+        startIso: '2026-07-08T20:00:00',
       }),
     );
     assert.ok(steps.some((s) => s.kind === 'pre'));
@@ -69,6 +71,7 @@ describe('eventNightOutPlanner', () => {
       theatreEvent({
         category: 'music',
         time: '19:00',
+        startIso: '2026-07-08T19:00:00',
         location: 'Manchester',
         distanceKm: undefined,
       }),
