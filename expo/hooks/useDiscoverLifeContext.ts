@@ -42,6 +42,7 @@ import {
   type DiscoverWatchSignal,
 } from '@/utils/discoverLifeEngine';
 import { rerankDiscoverEngine } from '@/utils/discoverBehavioralBoosts';
+import { buildDiscoverSignalChips } from '@/utils/discoverSignalChips';
 
 function normalize(value?: string | null) {
   return (value ?? '').toLowerCase().replace(/[^a-z0-9]+/g, ' ').replace(/\s+/g, ' ').trim();
@@ -529,6 +530,21 @@ export function useDiscoverLifeContext() {
     });
   }, [rawEngine, f1Opportunity, lifeContext, profile, tasks.allTasks, feedback.feedback]);
 
+  const signalChips = useMemo(
+    () => buildDiscoverSignalChips({
+      profile,
+      context: lifeContext,
+      engine,
+      sportSignals,
+    }),
+    [profile, lifeContext, engine, sportSignals],
+  );
+
+  const contextualLifeContext = useMemo(
+    () => ({ ...lifeContext, signalChips }),
+    [lifeContext, signalChips],
+  );
+
   const refresh = useCallback(async () => {
     await Promise.allSettled([
       refreshLocation(),
@@ -569,7 +585,7 @@ export function useDiscoverLifeContext() {
     eventRecommendationInput,
     friendEventData,
     friendCount: friends.friends.length,
-    lifeContext,
+    lifeContext: contextualLifeContext,
     engine,
     watchSignal,
     sportSignals,
