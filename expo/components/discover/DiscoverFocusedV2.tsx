@@ -18,6 +18,7 @@ import {
   ArrowRight,
   CalendarDays,
   ChefHat,
+  ChevronRight,
   Compass,
   MapPin,
   MoreHorizontal,
