@@ -3,14 +3,14 @@ import { StyleSheet, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { ExperienceCheckInCard } from '@/components/experience/ExperienceCheckInCard';
-import MyLifeWorldV2 from '@/components/my-life/MyLifeWorldV2';
+import MyLifeWorldV3 from '@/components/my-life/MyLifeWorldV3';
 
 export default function MyLifeWorldRoute() {
   const insets = useSafeAreaInsets();
 
   return (
     <View style={styles.root}>
-      <MyLifeWorldV2 />
+      <MyLifeWorldV3 />
       <View
         pointerEvents="box-none"
         style={[styles.checkInWrap, { bottom: Math.max(insets.bottom, 18) + 82 }]}
