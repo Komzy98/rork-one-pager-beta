@@ -73,10 +73,44 @@ describe('semantic habit recommendations', () => {
 
     assert.equal(steps?.timingKind, 'progress');
     assert.equal(steps?.timeLabel, 'Track through the day');
+    assert.equal(steps?.healthMetric, 'steps');
+    assert.equal(steps?.targetValue, 10000);
     assert.equal(diet?.timingKind, 'all_day');
     assert.equal(diet?.timeLabel, 'Applies throughout the day');
     assert.equal(skincare?.timingKind, 'multi_window');
     assert.equal(skincare?.timeLabel, 'Morning + evening');
+  });
+
+  it('replaces generic step guidance with real Apple Health progress', () => {
+    const now = new Date(2026, 8, 3, 17, 0, 0, 0);
+    const recommendation = buildSemanticHabitRecommendations(
+      [task('10K Steps Daily')],
+      [],
+      nightOwl,
+      now,
+      { stepsToday: 6842, appleHealthRequested: true },
+    )[0];
+
+    assert.equal(recommendation.timingKind, 'progress');
+    assert.equal(recommendation.healthSource, 'apple_health');
+    assert.equal(recommendation.currentValue, 6842);
+    assert.equal(recommendation.remainingValue, 3158);
+    assert.equal(recommendation.goalComplete, false);
+    assert.match(recommendation.timeLabel, /6,842 \/ 10,000 steps/);
+  });
+
+  it('marks a Health-grounded step goal reached instead of recommending catch-up movement', () => {
+    const recommendation = buildSemanticHabitRecommendations(
+      [task('10K Steps Daily')],
+      [],
+      nightOwl,
+      new Date(2026, 8, 3, 19, 0, 0, 0),
+      { stepsToday: 10550, appleHealthRequested: true },
+    )[0];
+
+    assert.equal(recommendation.goalComplete, true);
+    assert.match(recommendation.timeLabel, /Goal reached/);
+    assert.match(recommendation.reasoning, /No catch-up walk needed/);
   });
 
   it('keeps morning semantics stronger than a night-owl chronotype', () => {
