@@ -1,0 +1,342 @@
+from pathlib import Path
+
+
+def replace_once(path: str, old: str, new: str) -> None:
+    file = Path(path)
+    text = file.read_text()
+    count = text.count(old)
+    if count != 1:
+        raise SystemExit(f"{path}: expected exactly one match, found {count}")
+    file.write_text(text.replace(old, new, 1))
+
+
+# My Life: learning owns learning state; sports owns teams the user actually follows.
+replace_once(
+    "expo/components/my-life/MyLifeWorldV3.tsx",
+    """  const nextSport = discover.sportSignals.find((signal) => signal.status === 'Live')
+    ?? discover.sportSignals.find((signal) => signal.favoriteTeamName && signal.status === 'Upcoming')
+    ?? discover.sportSignals.find((signal) => signal.status === 'Upcoming')
+    ?? null;
+""",
+    """  const followedSportSignals = discover.sportSignals.filter((signal) => Boolean(signal.favoriteTeamName));
+  const nextSport = followedSportSignals.find((signal) => signal.status === 'Live')
+    ?? followedSportSignals.find((signal) => signal.status === 'Upcoming')
+    ?? null;
+""",
+)
+replace_once(
+    "expo/components/my-life/MyLifeWorldV3.tsx",
+    """  const learningStatus = learningInProgress ? 'IN PROGRESS' : savedBooks > 0 ? 'SAVED' : goals.length > 0 ? 'DIRECTED' : 'OPEN';
+  const learningFocus = learningInProgress?.title ?? firstBookTitle ?? goals[0] ?? 'Nothing active right now';
+  const learningDetail = `${savedBooks} book${savedBooks === 1 ? '' : 's'} · ${goals.length} long-term goal${goals.length === 1 ? '' : 's'}`;
+""",
+    """  const learningStatus = learningInProgress ? 'IN PROGRESS' : savedBooks > 0 ? 'SAVED' : 'OPEN';
+  const learningFocus = learningInProgress?.title ?? firstBookTitle ?? 'Nothing active right now';
+  const learningDetail = learningInProgress
+    ? `${savedBooks} book${savedBooks === 1 ? '' : 's'} · 1 learning activity in progress`
+    : `${savedBooks} book${savedBooks === 1 ? '' : 's'} · Learning is quiet`;
+""",
+)
+
+# Today: use a tested day phase and never put unrelated global live fixtures into the user's rhythm.
+replace_once(
+    "expo/components/activities/TodayPrimaryV2.tsx",
+    "import { findUpcomingCalendarConflict, pickQuietActivityObservation } from '@/utils/quietSynthesis';\n",
+    "import { findUpcomingCalendarConflict, pickQuietActivityObservation } from '@/utils/quietSynthesis';\nimport { getTodayPhase } from '@/utils/todayPhase';\n",
+)
+replace_once(
+    "expo/components/activities/TodayPrimaryV2.tsx",
+    """function phaseForHour(hour: number) {
+  if (hour < 12) return { title: 'Set the shape of your day.', label: 'Morning brief' };
+  if (hour < 17) return { title: 'Use the next window well.', label: 'Midday check-in' };
+  if (hour < 21) return { title: 'Make the evening count.', label: 'Evening' };
+  return { title: 'Close the day well.', label: 'Wind down' };
+}
+
+""",
+    "",
+)
+replace_once(
+    "expo/components/activities/TodayPrimaryV2.tsx",
+    "  const phase = phaseForHour(now.getHours());\n",
+    "  const phase = getTodayPhase(now.getHours());\n",
+)
+replace_once(
+    "expo/components/activities/TodayPrimaryV2.tsx",
+    """  const matches = useMemo(() => discover.sportSignals
+    .filter((match) => match.status === 'Live' || match.status === 'Upcoming')
+""",
+    """  const matches = useMemo(() => discover.sportSignals
+    .filter((match) => Boolean(match.favoriteTeamName))
+    .filter((match) => match.status === 'Live' || match.status === 'Upcoming')
+""",
+)
+
+# Quiet synthesis: high confidence alone is not enough; a Today insight must be grounded in the user's live context.
+replace_once(
+    "expo/utils/quietSynthesis.ts",
+    """function durationLabel(minutes: number) {
+  if (minutes < 60) return `${minutes} min`;
+  const hours = Math.floor(minutes / 60);
+  const remainder = minutes % 60;
+  return remainder ? `${hours}h ${remainder}m` : `${hours}h`;
+}
+""",
+    """function durationLabel(minutes: number) {
+  if (minutes < 60) return `${minutes} min`;
+  const hours = Math.floor(minutes / 60);
+  const remainder = minutes % 60;
+  return remainder ? `${hours}h ${remainder}m` : `${hours}h`;
+}
+
+function isPersonallyGroundedObservation(text: string) {
+  const normalized = text.toLowerCase();
+  const addressesUser = /\\b(you|your)\\b/.test(normalized);
+  const hasLiveContext = /\\b(today|tonight|now|next|before|after|open|calendar|meeting|task|routine|saved|follow|watching|streak|goal|window)\\b/.test(normalized);
+  return addressesUser && hasLiveContext;
+}
+""",
+)
+replace_once(
+    "expo/utils/quietSynthesis.ts",
+    """  const recommendation = (params.recommendations ?? []).find((item) =>
+    item.confidence >= 0.84
+    && item.estimatedBenefit >= 0.65
+    && item.urgencyLabel !== 'later'
+    && Boolean(item.reasoning?.trim() || item.description?.trim()),
+  );
+""",
+    """  const recommendation = (params.recommendations ?? []).find((item) => {
+    const text = item.reasoning?.trim() || item.description?.trim() || '';
+    return item.confidence >= 0.84
+      && item.estimatedBenefit >= 0.65
+      && item.urgencyLabel !== 'later'
+      && Boolean(text)
+      && isPersonallyGroundedObservation(text);
+  });
+""",
+)
+
+# Discover: one free gap can span several dayparts; label the segment an event actually occupies.
+replace_once(
+    "expo/utils/discoverLifeEngine.ts",
+    """function windowPart(start: Date): DiscoverOpenWindow['part'] {
+  const hour = start.getHours();
+  if (hour < 12) return 'morning';
+  if (hour < 17) return 'afternoon';
+  return 'evening';
+}
+""",
+    """function windowPart(start: Date): DiscoverOpenWindow['part'] {
+  const hour = start.getHours();
+  if (hour < 12) return 'morning';
+  if (hour < 17) return 'afternoon';
+  return 'evening';
+}
+
+function splitOpenGapByDaypart(startMs: number, endMs: number): { start: number; end: number }[] {
+  const segments: { start: number; end: number }[] = [];
+  let cursor = startMs;
+
+  while (cursor < endMs) {
+    const start = new Date(cursor);
+    const boundary = new Date(start);
+    const hour = start.getHours();
+    if (hour < 12) boundary.setHours(12, 0, 0, 0);
+    else if (hour < 17) boundary.setHours(17, 0, 0, 0);
+    else {
+      boundary.setDate(boundary.getDate() + 1);
+      boundary.setHours(0, 0, 0, 0);
+    }
+
+    const segmentEnd = Math.min(endMs, boundary.getTime());
+    if (segmentEnd <= cursor) break;
+    segments.push({ start: cursor, end: segmentEnd });
+    cursor = segmentEnd;
+  }
+
+  return segments;
+}
+""",
+)
+replace_once(
+    "expo/utils/discoverLifeEngine.ts",
+    """    for (const gap of gaps) {
+      const start = new Date(gap.start);
+      const end = new Date(gap.end);
+      const durationMinutes = Math.round((gap.end - gap.start) / 60000);
+      const part = windowPart(start);
+      windows.push({
+        id: `${localDateKey(day)}-${gap.start}`,
+        start,
+        end,
+        durationMinutes,
+        label: windowLabel(day, now, part),
+        rangeLabel: `${formatClock(start)} – ${formatClock(end)}`,
+        part,
+        isToday: offset === 0,
+        isWeekend: day.getDay() === 0 || day.getDay() === 6,
+      });
+    }
+""",
+    """    for (const gap of gaps) {
+      for (const segment of splitOpenGapByDaypart(gap.start, gap.end)) {
+        const start = new Date(segment.start);
+        const end = new Date(segment.end);
+        const durationMinutes = Math.round((segment.end - segment.start) / 60000);
+        if (durationMinutes < 30) continue;
+        const part = windowPart(start);
+        windows.push({
+          id: `${localDateKey(day)}-${segment.start}`,
+          start,
+          end,
+          durationMinutes,
+          label: windowLabel(day, now, part),
+          rangeLabel: `${formatClock(start)} – ${formatClock(end)}`,
+          part,
+          isToday: offset === 0,
+          isWeekend: day.getDay() === 0 || day.getDay() === 6,
+        });
+      }
+    }
+""",
+)
+replace_once(
+    "expo/utils/discoverLifeEngine.ts",
+    """    .sort((a, b) => a.start.getTime() - b.start.getTime())
+    .slice(0, 10);
+""",
+    """    .sort((a, b) => a.start.getTime() - b.start.getTime())
+    .slice(0, 21);
+""",
+)
+replace_once(
+    "expo/utils/discoverLifeEngine.ts",
+    "function diversify(opportunities: DiscoverOpportunity[], limit: number): DiscoverOpportunity[] {\n",
+    """export function dedupeEventExperiences(opportunities: DiscoverOpportunity[]): DiscoverOpportunity[] {
+  const seen = new Set<string>();
+  return opportunities.filter((item) => {
+    if (item.kind !== 'event' || !item.event) return true;
+    const title = normalize(item.title);
+    const venue = normalize(item.event.venue);
+    if (!title || !venue) return true;
+    const signature = `${title}|${venue}`;
+    if (seen.has(signature)) return false;
+    seen.add(signature);
+    return true;
+  });
+}
+
+function diversify(opportunities: DiscoverOpportunity[], limit: number): DiscoverOpportunity[] {
+""",
+)
+replace_once(
+    "expo/utils/discoverLifeEngine.ts",
+    """  const ranked = opportunities
+    .filter((item) => Number.isFinite(item.score))
+    .sort((a, b) => b.score - a.score);
+""",
+    """  const ranked = dedupeEventExperiences(
+    opportunities
+      .filter((item) => Number.isFinite(item.score))
+      .sort((a, b) => b.score - a.score),
+  );
+""",
+)
+
+Path("expo/utils/todayPhase.ts").write_text("""export type TodayPhase = {
+  title: string;
+  label: string;
+};
+
+export function getTodayPhase(hour: number): TodayPhase {
+  if (hour < 12) return { title: 'Set the shape of your day.', label: 'Morning brief' };
+  if (hour < 17) return { title: 'Use the next window well.', label: 'Afternoon check-in' };
+  if (hour < 21) return { title: 'Make the evening count.', label: 'Evening' };
+  return { title: 'Close the day well.', label: 'Wind down' };
+}
+""")
+
+Path("expo/utils/__tests__/semanticTrust.test.ts").write_text("""import { describe, it } from 'node:test';
+import assert from 'node:assert/strict';
+
+import { buildOpenWindows, dedupeEventExperiences, type DiscoverOpportunity } from '@/utils/discoverLifeEngine';
+import { pickQuietActivityObservation } from '@/utils/quietSynthesis';
+import { getTodayPhase } from '@/utils/todayPhase';
+
+describe('semantic trust guardrails', () => {
+  it('splits a long open day into truthful morning, afternoon and evening windows', () => {
+    const windows = buildOpenWindows([], null, new Date('2026-09-03T08:00:00'), 0);
+    assert.deepEqual(windows.map((window) => window.part), ['morning', 'afternoon', 'evening']);
+    assert.equal(windows[0]?.end.getHours(), 12);
+    assert.equal(windows[1]?.start.getHours(), 12);
+    assert.equal(windows[1]?.end.getHours(), 17);
+    assert.equal(windows[2]?.start.getHours(), 17);
+  });
+
+  it('labels 16:xx as afternoon and 17:xx as evening', () => {
+    assert.equal(getTodayPhase(16).label, 'Afternoon check-in');
+    assert.equal(getTodayPhase(17).label, 'Evening');
+  });
+
+  it('does not surface generic productivity advice as personal context', () => {
+    const generic = pickQuietActivityObservation({
+      crossInsights: [],
+      recommendations: [{
+        id: 'generic',
+        type: 'focus',
+        title: 'Focus windows',
+        description: 'Planned focus windows increase follow-through and reduce context switching.',
+        reasoning: 'Planned focus windows increase follow-through and reduce context switching.',
+        confidence: 0.95,
+        estimatedBenefit: 0.9,
+        difficulty: 0.2,
+        relatedActivities: [],
+        urgencyLabel: 'today',
+        createdAt: new Date().toISOString(),
+      }],
+    });
+    assert.equal(generic, null);
+  });
+
+  it('keeps grounded contextual advice when it genuinely uses the user situation', () => {
+    const grounded = pickQuietActivityObservation({
+      crossInsights: [],
+      recommendations: [{
+        id: 'grounded',
+        type: 'focus',
+        title: 'Use your open block',
+        description: 'Your task fits before your next meeting.',
+        reasoning: 'Your highest-priority task fits inside the open window before your next meeting.',
+        confidence: 0.95,
+        estimatedBenefit: 0.9,
+        difficulty: 0.2,
+        relatedActivities: [],
+        urgencyLabel: 'today',
+        createdAt: new Date().toISOString(),
+      }],
+    });
+    assert.equal(grounded, 'Your highest-priority task fits inside the open window before your next meeting.');
+  });
+
+  it('collapses repeated performances at the same venue in Discover', () => {
+    const event = (id: string, score: number): DiscoverOpportunity => ({
+      id,
+      key: `event:${id}`,
+      kind: 'event',
+      title: 'Globe Theatre Tours 2026',
+      subtitle: "Shakespeare's Globe",
+      eyebrow: 'WORTH GOING OUT FOR',
+      reasons: [],
+      score,
+      route: `/(root)/event/${id}`,
+      actionLabel: 'Add to my life',
+      accent: '#315ED8',
+      event: { id, title: 'Globe Theatre Tours 2026', venue: "Shakespeare's Globe" } as any,
+    });
+    const rows = dedupeEventExperiences([event('first', 90), event('second', 80)]);
+    assert.equal(rows.length, 1);
+    assert.equal(rows[0]?.id, 'first');
+  });
+});
+""")
