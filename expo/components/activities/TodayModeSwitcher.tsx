@@ -16,7 +16,8 @@ export default function TodayModeSwitcher({ active }: Props) {
 
   const goTo = (mode: TodayMode) => {
     if (mode === active) return;
-    router.replace(mode === 'now' ? '/(tabs)/today-coherent' : '/(tabs)/today-overview');
+    const route = mode === 'now' ? '/(tabs)/today-coherent' : '/(tabs)/today-overview';
+    router.replace(route as never);
   };
 
   return (
