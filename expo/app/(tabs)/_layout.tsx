@@ -42,6 +42,7 @@ const LEGACY_TABS = [
   "activities",
   "profile",
   "today-focus",
+  "today-overview",
   "my-life",
   "tasks",
   "discover-focused",
