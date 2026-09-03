@@ -21,12 +21,18 @@ import { useCalendar } from '@/hooks/useCalendar';
 import { useTasks } from '@/hooks/useTasksStore';
 import { useTodayHabits } from '@/hooks/useTodayHabits';
 import { useTodayYmd } from '@/hooks/useTodayYmd';
+import { useHealthContext } from '@/contexts/HealthContext';
 import { useSharedDiscoverLifeContext } from '@/contexts/DiscoverLifeContextProvider';
 import { floatingTabBarScrollPadding } from '@/constants/tabBarLayout';
 import { OP_DOMAIN, OP_LAYOUT, OP_RADIUS, OP_SPACING, OP_TYPE } from '@/constants/onePagerDesign';
 import { formatDistanceKm } from '@/utils/eventDiscovery';
 import { findUpcomingCalendarConflict, pickQuietActivityObservation } from '@/utils/quietSynthesis';
 import { selectTimelineEveningOpportunity } from '@/utils/timelineEveningOpportunity';
+import {
+  buildStepHabitProgress,
+  buildStepOpportunity,
+  extractStepTarget,
+} from '@/utils/stepHabitIntelligence';
 import {
   ActionButton,
   ContextCue,
@@ -113,7 +119,8 @@ export default function TodayPrimaryV2() {
   const app = useAppSafe();
   const tasks = useTasks();
   const calendar = useCalendar();
-  const { stats } = useTodayHabits();
+  const health = useHealthContext();
+  const { stats, entries: todayHabitEntries } = useTodayHabits();
   const todayYmd = useTodayYmd();
   const discover = useSharedDiscoverLifeContext();
   const profile = discover.profile;
@@ -151,7 +158,20 @@ export default function TodayPrimaryV2() {
     .sort((a, b) => priorityScore(b.priority) - priorityScore(a.priority)), [tasks.allTasks, todayYmd, now]);
 
   const bestTask = relevantTasks[0] ?? null;
-  const openRoutineCount = Math.max(0, stats.totalHabits - stats.completedHabits);
+
+  const todayStepHabit = useMemo(() => {
+    const dueTodayIds = new Set(todayHabitEntries.map((entry) => entry.id));
+    return tasks.allTasks.find((task) => task.isHabit && dueTodayIds.has(task.id) && extractStepTarget(task) != null) ?? null;
+  }, [tasks.allTasks, todayHabitEntries]);
+
+  const stepProgress = useMemo(
+    () => todayStepHabit ? buildStepHabitProgress(todayStepHabit, health.stepsToday) : null,
+    [health.stepsToday, todayStepHabit],
+  );
+
+  const stepAlreadyLogged = Boolean(todayStepHabit?.habitCompletions?.[todayYmd]);
+  const healthSatisfiedRoutine = Boolean(stepProgress?.completed && !stepAlreadyLogged);
+  const openRoutineCount = Math.max(0, stats.totalHabits - stats.completedHabits - (healthSatisfiedRoutine ? 1 : 0));
 
   const matches = useMemo(() => discover.sportSignals
     .filter((match) => match.status === 'Live' || match.status === 'Upcoming')
@@ -185,6 +205,13 @@ export default function TodayPrimaryV2() {
   const nextCommitmentTime = activeCalendar?.end ?? nextCalendar?.start ?? null;
   const freeMinutes = nextCommitmentTime ? minutesBetween(now, nextCommitmentTime) : null;
   const taskFitsGap = Boolean(bestTask && freeMinutes != null && freeMinutes >= Math.max(15, bestTask.estimatedDuration ?? 30));
+  const stepOpportunity = useMemo(() => buildStepOpportunity({
+    progress: stepProgress,
+    now,
+    freeMinutes,
+    nextCommitmentTitle: nextCalendar?.title ?? activeCalendar?.title ?? null,
+    outdoorConditionsPoor: Boolean(discover.weather?.isRaining || discover.weather?.isStormy || discover.weather?.isSnowing),
+  }), [activeCalendar?.title, discover.weather?.isRaining, discover.weather?.isSnowing, discover.weather?.isStormy, freeMinutes, nextCalendar?.title, now, stepProgress]);
 
   const calendarConflict = useMemo(() => findUpcomingCalendarConflict(
     todayCalendar.map((event) => ({ id: event.id, title: event.title, start: event.start, end: event.end, isAllDay: event.isAllDay })),
@@ -296,7 +323,7 @@ export default function TodayPrimaryV2() {
         time: routineTime,
         label: now.getHours() < 17 ? 'This evening' : 'Before you finish',
         title: `${openRoutineCount} routine${openRoutineCount === 1 ? '' : 's'} left`,
-        detail: `${stats.completedHabits}/${stats.totalHabits} complete today`,
+        detail: `${stats.completedHabits + (healthSatisfiedRoutine ? 1 : 0)}/${stats.totalHabits} complete today`,
         accent: OP_DOMAIN.routines,
         icon: <Flame size={18} color={OP_DOMAIN.routines} />,
         route: '/(tabs)/tasks',
@@ -323,10 +350,20 @@ export default function TodayPrimaryV2() {
       if (rank[a.status] !== rank[b.status]) return rank[a.status] - rank[b.status];
       return (a.time?.getTime() ?? Infinity) - (b.time?.getTime() ?? Infinity);
     }).slice(0, 7);
-  }, [activeCalendar, bestTask, continueWatchingTitle, matches, now, openRoutineCount, stats.completedHabits, stats.totalHabits, todayCalendar, todayPlans]);
+  }, [activeCalendar, bestTask, continueWatchingTitle, healthSatisfiedRoutine, matches, now, openRoutineCount, stats.completedHabits, stats.totalHabits, todayCalendar, todayPlans]);
 
   const eveningEvent = eveningOpportunity?.event ?? null;
   const fitReason = eveningOpportunity?.reasons.find((reason) => !/open\s*·|is open/i.test(reason)) ?? eveningOpportunity?.reasons[0] ?? null;
+
+  const openWindowText = taskFitsGap && bestTask
+    ? `${durationLabel(freeMinutes ?? 0)} before ${nextCalendar?.title ?? 'your next commitment'}. ${bestTask.title} fits in about ${bestTask.estimatedDuration ?? 30} minutes.`
+    : stepOpportunity?.text
+      ?? `${durationLabel(freeMinutes ?? 0)} before ${nextCalendar?.title ?? 'your next commitment'}. You have room to reset.`;
+  const openWindowPress = taskFitsGap && bestTask
+    ? () => router.push('/(tabs)/tasks' as never)
+    : stepOpportunity
+      ? () => router.push('/(tabs)/tasks' as never)
+      : undefined;
 
   return (
     <ScrollView
@@ -379,12 +416,10 @@ export default function TodayPrimaryV2() {
 
       {freeMinutes != null && freeMinutes >= 20 && nextCalendar ? (
         <ContextCue
-          label="Open window"
-          text={taskFitsGap && bestTask
-            ? `${durationLabel(freeMinutes)} before ${nextCalendar.title}. ${bestTask.title} fits in about ${bestTask.estimatedDuration ?? 30} minutes.`
-            : `${durationLabel(freeMinutes)} before ${nextCalendar.title}. You have room to reset.`}
+          label={stepOpportunity && !taskFitsGap ? 'Fits your open window' : 'Open window'}
+          text={openWindowText}
           tone="positive"
-          onPress={taskFitsGap && bestTask ? () => router.push('/(tabs)/tasks' as never) : undefined}
+          onPress={openWindowPress}
         />
       ) : null}
 
