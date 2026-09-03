@@ -53,7 +53,9 @@ export function extractStepTarget(habit: Pick<Task, 'title' | 'description' | 't
   const explicitMatch = text.match(/\b(\d{1,3}(?:,\d{3})+|\d{4,6})\s*[- ]?steps?\b/i);
   if (explicitMatch) return normaliseTarget(explicitMatch[1]);
 
-  const goalFirst = text.match(/\bstep(?:s)?\s+goal\s*(?:of|:|-)?\s*(\d{1,3}(?:,\d{3})+|\d{4,6})\b/i);
+  const goalFirst = text.match(
+    /\bstep(?:s)?\s+(?:goal|target)\s*(?:(?:is|of)\s+|[:=-]\s*)?(\d{1,3}(?:,\d{3})+|\d{4,6})\b/i,
+  );
   if (goalFirst) return normaliseTarget(goalFirst[1]);
 
   return null;
