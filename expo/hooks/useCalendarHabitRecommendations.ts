@@ -1,5 +1,6 @@
 import { useCallback, useMemo } from 'react';
 import { useEventKit } from '@/hooks/useEventKit';
+import { useHealthContext } from '@/contexts/HealthContext';
 import type { ChronotypeInfo } from '@/types/habit';
 import type { Task } from '@/types/task';
 import {
@@ -13,6 +14,7 @@ export function useCalendarHabitRecommendations(
   chronoInfo?: ChronotypeInfo,
 ) {
   const eventKit = useEventKit();
+  const health = useHealthContext();
 
   const isConnected =
     eventKit.isEventKitAvailable &&
@@ -29,8 +31,17 @@ export function useCalendarHabitRecommendations(
         }))
       : [];
 
-    return buildSemanticHabitRecommendations(incompleteHabits, todayEvents, chronoInfo);
-  }, [incompleteHabits, chronoInfo, isConnected, eventKit.events]);
+    return buildSemanticHabitRecommendations(
+      incompleteHabits,
+      todayEvents,
+      chronoInfo,
+      new Date(),
+      {
+        stepsToday: health.stepsToday,
+        appleHealthRequested: health.permissionRequested,
+      },
+    );
+  }, [incompleteHabits, chronoInfo, isConnected, eventKit.events, health.stepsToday, health.permissionRequested]);
 
   const nextRecommendation = useMemo(
     () => getNextSemanticRecommendation(recommendations),
@@ -62,7 +73,7 @@ export function useCalendarHabitRecommendations(
     hasPermission: eventKit.hasPermission,
     hasSelectedCalendars: eventKit.selectedCalendarIds.length > 0,
     isConnected,
-    isLoading: eventKit.isLoading,
+    isLoading: eventKit.isLoading || health.isLoading,
     recommendations,
     nextRecommendation,
     recommendationByHabitId,
