@@ -75,6 +75,7 @@ describe('habit semantic classification', () => {
 
     assert.equal(semantic('Morning Meditation').windows[0]?.label, 'morning');
     assert.equal(semantic('Yoga Flow Morning', '20-minute yoga flow').windows[0]?.label, 'morning');
+    assert.equal(inferHabitDurationMinutes({ title: '20-minute yoga flow' }), 20);
     assert.equal(semantic('5x5 Strength Training').type, 'duration_activity');
     assert.ok(semantic('5x5 Strength Training').durationMinutes >= 30);
 
@@ -90,10 +91,13 @@ describe('habit semantic classification', () => {
     assert.equal(inferHabitDurationMinutes({ title: 'Read for 20 minutes' }), 20);
     assert.equal(semantic('Call Mum every Saturday').policy, 'schedule');
     assert.equal(semantic('Call Mum every Saturday').windows.length, 1);
+    assert.equal(semantic('Call Sarah').windows[0]?.startHour, 9);
     assert.equal(semantic('Write 500 words').policy, 'schedule');
     assert.equal(semantic('Evening journal').windows[0]?.label, 'evening');
     assert.equal(semantic('Morning walk').windows[0]?.label, 'morning');
     assert.equal(semantic('After dinner walk').policy, 'contextual');
+    assert.equal(semantic('Walk for 30 minutes').type, 'duration_activity');
+    assert.equal(inferHabitDurationMinutes({ title: '30-minute walk' }), 30);
   });
 
   it('does not infer a new clock schedule for dosing-related custom habits', () => {
