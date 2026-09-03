@@ -11,6 +11,10 @@ import {
   classifyHabitSemantics,
   type HabitSemantics,
 } from '@/utils/habitSemantics';
+import {
+  buildStepHabitProgress,
+  extractStepTarget,
+} from '@/utils/stepHabitIntelligence';
 
 export type SemanticTimingKind =
   | 'scheduled'
@@ -21,10 +25,21 @@ export type SemanticTimingKind =
   | 'user_defined'
   | 'window';
 
+export interface HabitRuntimeContext {
+  stepsToday?: number | null;
+  appleHealthRequested?: boolean;
+}
+
 export interface SemanticHabitRecommendation extends HabitTimeRecommendation {
   timingKind: SemanticTimingKind;
   semanticType: HabitSemantics['type'];
   confidence: number;
+  healthMetric?: 'steps';
+  currentValue?: number;
+  targetValue?: number;
+  remainingValue?: number;
+  goalComplete?: boolean;
+  healthSource?: 'apple_health';
 }
 
 function semanticKind(semantics: HabitSemantics): SemanticTimingKind {
@@ -58,6 +73,45 @@ function guidance(
     timingKind: semanticKind(semantics),
     semanticType: semantics.type,
     confidence: semantics.confidence,
+  };
+}
+
+function stepGuidance(
+  habit: Task,
+  semantics: HabitSemantics,
+  now: Date,
+  runtime: HabitRuntimeContext,
+): SemanticHabitRecommendation | null {
+  const target = extractStepTarget(habit);
+  if (target == null) return null;
+
+  const progress = buildStepHabitProgress(habit, runtime.stepsToday);
+  if (!progress) {
+    return {
+      ...guidance(habit, semantics, now),
+      healthMetric: 'steps',
+      targetValue: target,
+      healthSource: runtime.appleHealthRequested ? 'apple_health' : undefined,
+      reasoning: runtime.appleHealthRequested
+        ? 'Apple Health is set up, but no step data is available today. One Pager will not assume that means 0 steps.'
+        : 'Connect Apple Health to replace generic tracking with your real step progress.',
+    };
+  }
+
+  return {
+    ...guidance(
+      habit,
+      semantics,
+      now,
+      progress.completed ? `Goal reached · ${progress.label}` : progress.label,
+      progress.detail,
+    ),
+    healthMetric: 'steps',
+    currentValue: progress.current,
+    targetValue: progress.target,
+    remainingValue: progress.remaining,
+    goalComplete: progress.completed,
+    healthSource: 'apple_health',
   };
 }
 
@@ -119,6 +173,7 @@ export function buildSemanticHabitRecommendations(
   calendarEvents: CalendarBusyEvent[],
   chronoInfo: ChronotypeInfo | undefined,
   now: Date = new Date(),
+  runtime: HabitRuntimeContext = {},
 ): SemanticHabitRecommendation[] {
   if (habits.length === 0) return [];
 
@@ -141,6 +196,13 @@ export function buildSemanticHabitRecommendations(
     const semantics = semanticsById.get(habit.id) ?? classifyHabitSemantics(habit);
 
     if (semantics.policy !== 'schedule') {
+      if (semantics.type === 'cumulative_goal') {
+        const stepRecommendation = stepGuidance(habit, semantics, now, runtime);
+        if (stepRecommendation) {
+          output.push(stepRecommendation);
+          return;
+        }
+      }
       output.push(guidance(habit, semantics, now));
       return;
     }
