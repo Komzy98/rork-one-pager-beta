@@ -1,7 +1,6 @@
 import React from 'react';
-
-import YouPrimaryV2 from '@/components/profile/YouPrimaryV2';
+import { Redirect } from 'expo-router';
 
 export default function YouCoherentRoute() {
-  return <YouPrimaryV2 />;
+  return <Redirect href={'/(tabs)/profile' as any} />;
 }
