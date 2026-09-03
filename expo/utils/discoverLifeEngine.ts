@@ -249,6 +249,30 @@ function windowPart(start: Date): DiscoverOpenWindow['part'] {
   return 'evening';
 }
 
+function splitOpenGapByDaypart(startMs: number, endMs: number): { start: number; end: number }[] {
+  const segments: { start: number; end: number }[] = [];
+  let cursor = startMs;
+
+  while (cursor < endMs) {
+    const start = new Date(cursor);
+    const boundary = new Date(start);
+    const hour = start.getHours();
+    if (hour < 12) boundary.setHours(12, 0, 0, 0);
+    else if (hour < 17) boundary.setHours(17, 0, 0, 0);
+    else {
+      boundary.setDate(boundary.getDate() + 1);
+      boundary.setHours(0, 0, 0, 0);
+    }
+
+    const segmentEnd = Math.min(endMs, boundary.getTime());
+    if (segmentEnd <= cursor) break;
+    segments.push({ start: cursor, end: segmentEnd });
+    cursor = segmentEnd;
+  }
+
+  return segments;
+}
+
 function windowLabel(day: Date, now: Date, part: DiscoverOpenWindow['part']): string {
   if (sameLocalDay(day, now)) {
     if (part === 'evening') return 'Tonight';
@@ -343,28 +367,31 @@ export function buildOpenWindows(
     if (windowEndMs - cursor >= 30 * 60 * 1000) gaps.push({ start: cursor, end: windowEndMs });
 
     for (const gap of gaps) {
-      const start = new Date(gap.start);
-      const end = new Date(gap.end);
-      const durationMinutes = Math.round((gap.end - gap.start) / 60000);
-      const part = windowPart(start);
-      windows.push({
-        id: `${localDateKey(day)}-${gap.start}`,
-        start,
-        end,
-        durationMinutes,
-        label: windowLabel(day, now, part),
-        rangeLabel: `${formatClock(start)} – ${formatClock(end)}`,
-        part,
-        isToday: offset === 0,
-        isWeekend: day.getDay() === 0 || day.getDay() === 6,
-      });
+      for (const segment of splitOpenGapByDaypart(gap.start, gap.end)) {
+        const start = new Date(segment.start);
+        const end = new Date(segment.end);
+        const durationMinutes = Math.round((segment.end - segment.start) / 60000);
+        if (durationMinutes < 30) continue;
+        const part = windowPart(start);
+        windows.push({
+          id: `${localDateKey(day)}-${segment.start}`,
+          start,
+          end,
+          durationMinutes,
+          label: windowLabel(day, now, part),
+          rangeLabel: `${formatClock(start)} – ${formatClock(end)}`,
+          part,
+          isToday: offset === 0,
+          isWeekend: day.getDay() === 0 || day.getDay() === 6,
+        });
+      }
     }
   }
 
   return windows
     .filter((window) => window.durationMinutes >= 30)
     .sort((a, b) => a.start.getTime() - b.start.getTime())
-    .slice(0, 10);
+    .slice(0, 21);
 }
 
 function isIncomplete(task: Task): boolean {
@@ -850,6 +877,20 @@ function mediaOpportunity(signal: DiscoverMediaSignal, input: DiscoverEngineInpu
   };
 }
 
+export function dedupeEventExperiences(opportunities: DiscoverOpportunity[]): DiscoverOpportunity[] {
+  const seen = new Set<string>();
+  return opportunities.filter((item) => {
+    if (item.kind !== 'event' || !item.event) return true;
+    const title = normalize(item.title);
+    const venue = normalize(item.event.venue);
+    if (!title || !venue) return true;
+    const signature = `${title}|${venue}`;
+    if (seen.has(signature)) return false;
+    seen.add(signature);
+    return true;
+  });
+}
+
 function diversify(opportunities: DiscoverOpportunity[], limit: number): DiscoverOpportunity[] {
   const chosen: DiscoverOpportunity[] = [];
   const kindCounts = new Map<DiscoverOpportunityKind, number>();
@@ -885,9 +926,11 @@ export function buildDiscoverOpportunities(input: DiscoverEngineInput): Discover
   for (const task of priorityTasks) opportunities.push(taskOpportunity(task, input));
   for (const media of (input.media ?? []).slice(0, 8)) opportunities.push(mediaOpportunity(media, input));
 
-  const ranked = opportunities
-    .filter((item) => Number.isFinite(item.score))
-    .sort((a, b) => b.score - a.score);
+  const ranked = dedupeEventExperiences(
+    opportunities
+      .filter((item) => Number.isFinite(item.score))
+      .sort((a, b) => b.score - a.score),
+  );
 
   const hero = ranked[0] ?? null;
   const remaining = ranked.filter((item) => item.key !== hero?.key);

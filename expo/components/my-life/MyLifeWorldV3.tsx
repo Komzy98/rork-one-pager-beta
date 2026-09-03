@@ -198,9 +198,9 @@ export default function MyLifeWorldV3() {
   const quietRoutines = routines.filter((routine) => weekRoutineCount(routine.habitCompletions, now) === 0 && ageDays(routine.createdAt, now) >= 7);
 
   const favoriteTeams = (profile?.favoriteTeams?.length ?? 0) + (profile?.favoriteNBATeams?.length ?? 0);
-  const nextSport = discover.sportSignals.find((signal) => signal.status === 'Live')
-    ?? discover.sportSignals.find((signal) => signal.favoriteTeamName && signal.status === 'Upcoming')
-    ?? discover.sportSignals.find((signal) => signal.status === 'Upcoming')
+  const followedSportSignals = discover.sportSignals.filter((signal) => Boolean(signal.favoriteTeamName));
+  const nextSport = followedSportSignals.find((signal) => signal.status === 'Live')
+    ?? followedSportSignals.find((signal) => signal.status === 'Upcoming')
     ?? null;
 
   const goals = profile?.identityGoals ?? [];
@@ -254,9 +254,11 @@ export default function MyLifeWorldV3() {
     : savedRecipeCount > 0 ? `${savedRecipeCount} recipe${savedRecipeCount === 1 ? '' : 's'} waiting to be cooked` : 'No recipes saved yet';
   const cookingDetail = `${savedRecipeCount} saved · ${totalCooked} cook${totalCooked === 1 ? '' : 's'} logged`;
 
-  const learningStatus = learningInProgress ? 'IN PROGRESS' : savedBooks > 0 ? 'SAVED' : goals.length > 0 ? 'DIRECTED' : 'OPEN';
-  const learningFocus = learningInProgress?.title ?? firstBookTitle ?? goals[0] ?? 'Nothing active right now';
-  const learningDetail = `${savedBooks} book${savedBooks === 1 ? '' : 's'} · ${goals.length} long-term goal${goals.length === 1 ? '' : 's'}`;
+  const learningStatus = learningInProgress ? 'IN PROGRESS' : savedBooks > 0 ? 'SAVED' : 'OPEN';
+  const learningFocus = learningInProgress?.title ?? firstBookTitle ?? 'Nothing active right now';
+  const learningDetail = learningInProgress
+    ? `${savedBooks} book${savedBooks === 1 ? '' : 's'} · 1 learning activity in progress`
+    : `${savedBooks} book${savedBooks === 1 ? '' : 's'} · Learning is quiet`;
 
   const attentionSignals = ([
     overdueTasks.length > 0 ? { id: 'tasks', label: 'Tasks need a look', text: `${overdueTasks.length} overdue task${overdueTasks.length === 1 ? '' : 's'} need a decision.`, route: '/(tabs)/tasks', tone: 'warning' as const } : null,

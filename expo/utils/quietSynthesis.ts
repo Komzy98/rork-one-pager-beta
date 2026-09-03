@@ -29,6 +29,13 @@ function durationLabel(minutes: number) {
   return remainder ? `${hours}h ${remainder}m` : `${hours}h`;
 }
 
+function isPersonallyGroundedObservation(text: string) {
+  const normalized = text.toLowerCase();
+  const addressesUser = /\b(you|your)\b/.test(normalized);
+  const hasLiveContext = /\b(today|tonight|now|next|before|after|open|calendar|meeting|task|routine|saved|follow|watching|streak|goal|window)\b/.test(normalized);
+  return addressesUser && hasLiveContext;
+}
+
 /** Finds the first genuine overlap that still matters from now onward. */
 export function findUpcomingCalendarConflict(
   events: readonly CalendarConflictInput[],
@@ -75,12 +82,14 @@ export function pickQuietActivityObservation(params: {
   );
   if (cross) return compact(cross.insight?.trim() || cross.description.trim());
 
-  const recommendation = (params.recommendations ?? []).find((item) =>
-    item.confidence >= 0.84
-    && item.estimatedBenefit >= 0.65
-    && item.urgencyLabel !== 'later'
-    && Boolean(item.reasoning?.trim() || item.description?.trim()),
-  );
+  const recommendation = (params.recommendations ?? []).find((item) => {
+    const text = item.reasoning?.trim() || item.description?.trim() || '';
+    return item.confidence >= 0.84
+      && item.estimatedBenefit >= 0.65
+      && item.urgencyLabel !== 'later'
+      && Boolean(text)
+      && isPersonallyGroundedObservation(text);
+  });
   if (!recommendation) return null;
   return compact(recommendation.reasoning?.trim() || recommendation.description.trim());
 }

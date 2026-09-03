@@ -27,6 +27,7 @@ import { floatingTabBarScrollPadding } from '@/constants/tabBarLayout';
 import { OP_DOMAIN, OP_LAYOUT, OP_RADIUS, OP_SPACING, OP_TYPE } from '@/constants/onePagerDesign';
 import { formatDistanceKm } from '@/utils/eventDiscovery';
 import { findUpcomingCalendarConflict, pickQuietActivityObservation } from '@/utils/quietSynthesis';
+import { getTodayPhase } from '@/utils/todayPhase';
 import { selectTimelineEveningOpportunity } from '@/utils/timelineEveningOpportunity';
 import {
   buildStepHabitProgress,
@@ -106,13 +107,6 @@ function parsePlanStart(dateValue: string, timeValue?: string) {
   return Number.isFinite(parsed.getTime()) ? parsed : null;
 }
 
-function phaseForHour(hour: number) {
-  if (hour < 12) return { title: 'Set the shape of your day.', label: 'Morning brief' };
-  if (hour < 17) return { title: 'Use the next window well.', label: 'Midday check-in' };
-  if (hour < 21) return { title: 'Make the evening count.', label: 'Evening' };
-  return { title: 'Close the day well.', label: 'Wind down' };
-}
-
 export default function TodayPrimaryV2() {
   const insets = useSafeAreaInsets();
   const { colors, isDark } = useTheme();
@@ -131,7 +125,7 @@ export default function TodayPrimaryV2() {
     return () => clearInterval(timer);
   }, []);
 
-  const phase = phaseForHour(now.getHours());
+  const phase = getTodayPhase(now.getHours());
   const dateLabel = now.toLocaleDateString('en-GB', { weekday: 'long', day: 'numeric', month: 'long' });
   const weatherMeta = discover.weather?.temp != null
     ? `${Math.round(discover.weather.temp)}° · ${discover.weather.description ?? discover.weather.condition ?? ''}`.replace(/ · $/, '')
@@ -174,6 +168,7 @@ export default function TodayPrimaryV2() {
   const openRoutineCount = Math.max(0, stats.totalHabits - stats.completedHabits - (healthSatisfiedRoutine ? 1 : 0));
 
   const matches = useMemo(() => discover.sportSignals
+    .filter((match) => Boolean(match.favoriteTeamName))
     .filter((match) => match.status === 'Live' || match.status === 'Upcoming')
     .map((match) => ({ ...match, start: parseMatchStart(match.date, match.time) }))
     .filter((match) => match.status === 'Live' || (match.start && sameDay(match.start, todayYmd)))
