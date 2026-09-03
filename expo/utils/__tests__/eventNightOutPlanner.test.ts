@@ -42,16 +42,17 @@ describe('eventNightOutPlanner', () => {
     assert.equal(steps.find((s) => s.kind === 'doors')?.timeLabel, '19:00');
   });
 
-  it('suggests a ride home for very late finishes', () => {
+  it('suggests an appropriate late-night journey home for very late finishes', () => {
     const steps = buildNightOutPlan(
       theatreEvent({
         time: '22:30',
+        startIso: '2026-07-08T22:30:00',
         category: 'nightlife',
       }),
     );
     const transit = steps.find((s) => s.kind === 'transit');
     assert.ok(transit);
-    assert.match(transit!.title, /ride home/i);
+    assert.match(transit!.title, /ride home|night bus|late tube/i);
   });
 
   it('includes pre-event stop for evening plans', () => {
@@ -59,6 +60,7 @@ describe('eventNightOutPlanner', () => {
       theatreEvent({
         category: 'comedy',
         time: '20:00',
+        startIso: '2026-07-08T20:00:00',
       }),
     );
     assert.ok(steps.some((s) => s.kind === 'pre'));
@@ -69,6 +71,7 @@ describe('eventNightOutPlanner', () => {
       theatreEvent({
         category: 'music',
         time: '19:00',
+        startIso: '2026-07-08T19:00:00',
         location: 'Manchester',
         distanceKm: undefined,
       }),

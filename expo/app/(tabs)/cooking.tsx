@@ -53,6 +53,19 @@ const COLLECTIONS = [
   { id: 'vegetarian', label: 'Veggie', icon: Leaf },
 ] as const;
 
+function recipeExperienceMeta(recipe: KitchenRecipeDto) {
+  return {
+    title: recipe.title,
+    tags: [
+      recipe.category,
+      ...recipe.tags,
+      ...recipe.cuisines,
+      ...recipe.diets,
+      ...recipe.dishTypes,
+    ],
+  };
+}
+
 export default function CookingScreen() {
   const { isDark } = useTheme();
   const insets = useSafeAreaInsets();
@@ -101,6 +114,15 @@ export default function CookingScreen() {
       setRefreshing(false);
     }
   }, [refetchAll]);
+
+  const handleToggleRecipe = useCallback((recipe: KitchenRecipeDto) => {
+    void toggleBookmark(recipe.id, recipeExperienceMeta(recipe));
+  }, [toggleBookmark]);
+
+  const handleToggleRecipeById = useCallback((id: string) => {
+    const recipe = recipeIndex.get(id);
+    void toggleBookmark(id, recipe ? recipeExperienceMeta(recipe) : undefined);
+  }, [recipeIndex, toggleBookmark]);
 
   const showSearchResults = isSearching || (activeCollection !== 'discover' && !isSearching);
   const totalCooked = Object.values(cookCounts).reduce((a, b) => a + b, 0);
@@ -220,7 +242,7 @@ export default function CookingScreen() {
                       colors={colors}
                       compact
                       onPress={() => void openRecipe(recipe)}
-                      onToggleSave={() => void toggleBookmark(recipe.id)}
+                      onToggleSave={() => handleToggleRecipe(recipe)}
                     />
                   </View>
                 ))}
@@ -235,7 +257,7 @@ export default function CookingScreen() {
                 saved={bookmarkSet.has(bundle.hero.id)}
                 colors={colors}
                 onPress={() => void openRecipe(bundle.hero)}
-                onToggleSave={() => void toggleBookmark(bundle.hero.id)}
+                onToggleSave={() => handleToggleRecipe(bundle.hero)}
               />
 
               {savedRecipesFromBundle.length > 0 ? (
@@ -246,7 +268,7 @@ export default function CookingScreen() {
                   colors={colors}
                   savedIds={bookmarkSet}
                   onOpenRecipe={(r) => void openRecipe(r)}
-                  onToggleSave={(id) => void toggleBookmark(id)}
+                  onToggleSave={handleToggleRecipeById}
                 />
               ) : null}
 
@@ -259,7 +281,7 @@ export default function CookingScreen() {
                   colors={colors}
                   savedIds={bookmarkSet}
                   onOpenRecipe={(r) => void openRecipe(r)}
-                  onToggleSave={(id) => void toggleBookmark(id)}
+                  onToggleSave={handleToggleRecipeById}
                   onSeeAll={() => setActiveCollection(col.id)}
                 />
               ))}
@@ -279,13 +301,13 @@ export default function CookingScreen() {
             setDetailRecipe(null);
           }}
           onToggleSave={() => {
-            if (selectedRecipe) void toggleBookmark(selectedRecipe.id);
+            if (selectedRecipe) handleToggleRecipe(selectedRecipe);
           }}
           onStartGuided={() => {
             if (detailRecipe?.steps.length) setGuidedVisible(true);
           }}
           onMarkCooked={() => {
-            if (selectedRecipe) void recordCooked(selectedRecipe.id);
+            if (selectedRecipe) void recordCooked(selectedRecipe.id, recipeExperienceMeta(selectedRecipe));
           }}
         />
 
@@ -295,7 +317,7 @@ export default function CookingScreen() {
           isDark={isDark}
           onClose={() => setGuidedVisible(false)}
           onCompleteCook={async () => {
-            if (detailRecipe) await recordCooked(detailRecipe.id);
+            if (detailRecipe) await recordCooked(detailRecipe.id, recipeExperienceMeta(detailRecipe));
             setGuidedVisible(false);
           }}
         />

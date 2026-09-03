@@ -1,0 +1,47 @@
+name: Simplified v1 TestFlight
+
+on:
+  push:
+    branches:
+      - simplified-v1
+
+jobs:
+  testflight:
+    if: contains(github.event.head_commit.message, '[testflight]')
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: expo
+    env:
+      EXPO_TOKEN: ${{ secrets.EXPO_TOKEN }}
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20.19.4
+          cache: npm
+          cache-dependency-path: expo/package-lock.json
+
+      - name: Verify Expo authentication
+        run: |
+          if [ -z "$EXPO_TOKEN" ]; then
+            echo "::error::EXPO_TOKEN repository secret is not configured."
+            exit 1
+          fi
+          npx eas-cli whoami
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Unit tests
+        run: npm test
+
+      - name: TypeScript
+        run: npx tsc --noEmit
+
+      - name: Build and submit iOS to TestFlight
+        run: npx eas-cli build --profile production --platform ios --non-interactive --auto-submit --wait

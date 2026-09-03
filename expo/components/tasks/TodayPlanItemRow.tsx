@@ -7,6 +7,7 @@ import {
   countHabitCompletionsInWeek,
   getWeekDateKeysThroughToday,
 } from '@/utils/todayPlanSchedule';
+import { isClockTimeLabel } from '@/utils/habitSemantics';
 import SwipeablePlanTaskRow from './SwipeablePlanTaskRow';
 
 const ACCENT = {
@@ -81,10 +82,15 @@ export default function TodayPlanItemRow({
   const weekDays = isWeekItem
     ? countHabitCompletionsInWeek(habit, getWeekDateKeysThroughToday())
     : 0;
+  const timingMeta = recommendedTimeLabel
+    ? isClockTimeLabel(recommendedTimeLabel)
+      ? `Best time today · ${recommendedTimeLabel}`
+      : recommendedTimeLabel
+    : null;
   const habitMeta = isWeekItem
     ? `${weekDays} day${weekDays === 1 ? '' : 's'} completed this week`
-    : !item.isCompleted && recommendedTimeLabel
-      ? `Best time today · ${recommendedTimeLabel}`
+    : !item.isCompleted && timingMeta
+      ? timingMeta
       : weeklyProgressLabel
         ? weeklyProgressLabel
         : habit.habitStreak
@@ -136,7 +142,7 @@ export default function TodayPlanItemRow({
             <Text style={[styles.kindBadgeText, { color: habitColor }]}>Habit</Text>
           </View>
         </View>
-        <Text style={[styles.meta, { color: mutedColor }]} numberOfLines={1}>
+        <Text style={[styles.meta, { color: mutedColor }]} numberOfLines={2}>
           {habitMeta}
         </Text>
       </View>

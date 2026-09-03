@@ -13,7 +13,11 @@ export function getEventsNeedingFeedback(
 ): SavedEventSnapshot[] {
   return snapshots
     .filter((snapshot) => {
-      if (snapshot.feedbackRating != null || snapshot.feedbackDismissedAt) return false;
+      if (
+        snapshot.feedbackRating != null ||
+        snapshot.feedbackDismissedAt ||
+        snapshot.attendanceStatus === 'missed'
+      ) return false;
       const start = parseEventStartDateTime({
         id: snapshot.id,
         title: snapshot.title,

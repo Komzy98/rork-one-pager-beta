@@ -7,6 +7,8 @@ import {
   buildCombinedNightOutPlan,
 } from '@/utils/savedEventsWeek';
 
+const REFERENCE_MS = new Date('2026-07-10T12:00:00').getTime();
+
 function baseEvent(overrides: Partial<LocalEvent> = {}): LocalEvent {
   return {
     id: 'evt-1',
@@ -32,14 +34,13 @@ function baseEvent(overrides: Partial<LocalEvent> = {}): LocalEvent {
 
 describe('savedEventsWeek', () => {
   it('groups upcoming saved events by day', () => {
-    const referenceMs = new Date('2026-07-10T12:00:00').getTime();
     const groups = groupSavedEventsByDay(
       [
         baseEvent({ id: 'a', startIso: '2026-07-10T20:00:00', title: 'Comedy' }),
         baseEvent({ id: 'b', startIso: '2026-07-12T19:00:00', title: 'Jazz' }),
         baseEvent({ id: 'c', startIso: '2026-07-12T21:30:00', title: 'Club' }),
       ],
-      { referenceMs },
+      { referenceMs: REFERENCE_MS },
     );
 
     assert.equal(groups.length, 2);
@@ -48,12 +49,14 @@ describe('savedEventsWeek', () => {
   });
 
   it('finds days with multiple events', () => {
-    const referenceMs = new Date('2026-07-10T12:00:00').getTime();
-    const multi = findMultiEventDays([
-      baseEvent({ id: 'a', startIso: '2026-07-12T19:00:00' }),
-      baseEvent({ id: 'b', startIso: '2026-07-12T22:00:00' }),
-      baseEvent({ id: 'c', startIso: '2026-07-13T20:00:00' }),
-    ]);
+    const multi = findMultiEventDays(
+      [
+        baseEvent({ id: 'a', startIso: '2026-07-12T19:00:00' }),
+        baseEvent({ id: 'b', startIso: '2026-07-12T22:00:00' }),
+        baseEvent({ id: 'c', startIso: '2026-07-13T20:00:00' }),
+      ],
+      { referenceMs: REFERENCE_MS },
+    );
     assert.equal(multi.length, 1);
     assert.equal(multi[0]?.events.length, 2);
   });

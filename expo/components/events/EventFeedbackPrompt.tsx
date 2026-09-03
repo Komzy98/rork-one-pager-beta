@@ -1,7 +1,8 @@
-import React, { useCallback } from 'react';
+import React, { useCallback, useState } from 'react';
 import { StyleSheet, Text, TouchableOpacity, View } from 'react-native';
-import { Sparkles, X } from 'lucide-react-native';
+import { Check, Sparkles, X } from 'lucide-react-native';
 import * as Haptics from 'expo-haptics';
+import { useSavedEvents } from '@/hooks/useSavedEvents';
 import type { SavedEventSnapshot } from '@/types/events';
 import type { EventFeedbackRating } from '@/utils/eventJoyFeedback';
 
@@ -33,6 +34,18 @@ export function EventFeedbackPrompt({
   onRate,
   onDismiss,
 }: EventFeedbackPromptProps) {
+  const savedEvents = useSavedEvents();
+  const [stage, setStage] = useState<'attendance' | 'rating'>(
+    snapshot.attendanceStatus === 'attended' ? 'rating' : 'attendance',
+  );
+
+  const handleAttendance = useCallback(async (attended: boolean) => {
+    await savedEvents.recordEventAttendance(snapshot.id, attended);
+    if (attended) {
+      setStage('rating');
+    }
+  }, [savedEvents.recordEventAttendance, snapshot.id]);
+
   const handleRate = useCallback(
     (rating: EventFeedbackRating) => {
       void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
@@ -53,7 +66,9 @@ export function EventFeedbackPrompt({
           <Sparkles size={16} color={colors.primary} />
         </View>
         <View style={styles.headerCopy}>
-          <Text style={[styles.title, { color: colors.text }]}>How was it?</Text>
+          <Text style={[styles.title, { color: colors.text }]}>
+            {stage === 'attendance' ? 'Did you go?' : 'How was it?'}
+          </Text>
           <Text style={[styles.subtitle, { color: colors.textSecondary }]} numberOfLines={2}>
             {snapshot.title}
           </Text>
@@ -64,22 +79,44 @@ export function EventFeedbackPrompt({
       </View>
 
       <Text style={[styles.hint, { color: colors.textSecondary }]}>
-        Great nights feed your joy picks and future recommendations.
+        {stage === 'attendance'
+          ? 'Saving something is intent. What you actually do teaches One Pager much more.'
+          : 'Your real enjoyment helps future recommendations beat your onboarding answers.'}
       </Text>
 
-      <View style={styles.options}>
-        {RATING_OPTIONS.map((option) => (
+      {stage === 'attendance' ? (
+        <View style={styles.options}>
           <TouchableOpacity
-            key={option.rating}
-            style={[styles.option, { backgroundColor: colors.primaryLight, borderColor: colors.border }]}
-            onPress={() => handleRate(option.rating)}
+            style={[styles.attendanceOption, { backgroundColor: colors.primaryLight, borderColor: colors.border }]}
+            onPress={() => void handleAttendance(true)}
             activeOpacity={0.85}
           >
-            <Text style={styles.emoji}>{option.emoji}</Text>
-            <Text style={[styles.optionLabel, { color: colors.primary }]}>{option.label}</Text>
+            <Check size={17} color={colors.primary} />
+            <Text style={[styles.attendanceLabel, { color: colors.primary }]}>Yes, I went</Text>
           </TouchableOpacity>
-        ))}
-      </View>
+          <TouchableOpacity
+            style={[styles.attendanceOption, { backgroundColor: colors.card, borderColor: colors.border }]}
+            onPress={() => void handleAttendance(false)}
+            activeOpacity={0.85}
+          >
+            <Text style={[styles.attendanceLabel, { color: colors.textSecondary }]}>Didn't go</Text>
+          </TouchableOpacity>
+        </View>
+      ) : (
+        <View style={styles.options}>
+          {RATING_OPTIONS.map((option) => (
+            <TouchableOpacity
+              key={option.rating}
+              style={[styles.option, { backgroundColor: colors.primaryLight, borderColor: colors.border }]}
+              onPress={() => handleRate(option.rating)}
+              activeOpacity={0.85}
+            >
+              <Text style={styles.emoji}>{option.emoji}</Text>
+              <Text style={[styles.optionLabel, { color: colors.primary }]}>{option.label}</Text>
+            </TouchableOpacity>
+          ))}
+        </View>
+      )}
     </View>
   );
 }
@@ -134,6 +171,21 @@ const styles = StyleSheet.create({
     paddingVertical: 10,
     borderRadius: 12,
     borderWidth: 1,
+  },
+  attendanceOption: {
+    flex: 1,
+    minHeight: 46,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 7,
+    paddingHorizontal: 12,
+    borderRadius: 12,
+    borderWidth: 1,
+  },
+  attendanceLabel: {
+    fontSize: 12,
+    fontWeight: '800',
   },
   emoji: {
     fontSize: 20,
