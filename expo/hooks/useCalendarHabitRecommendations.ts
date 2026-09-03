@@ -3,10 +3,10 @@ import { useEventKit } from '@/hooks/useEventKit';
 import type { ChronotypeInfo } from '@/types/habit';
 import type { Task } from '@/types/task';
 import {
-  getNextRecommendation,
-  recommendHabitTimes,
-  type HabitTimeRecommendation,
-} from '@/utils/calendarHabitSlots';
+  buildSemanticHabitRecommendations,
+  getNextSemanticRecommendation,
+  type SemanticHabitRecommendation,
+} from '@/utils/semanticHabitRecommendations';
 
 export function useCalendarHabitRecommendations(
   incompleteHabits: Task[],
@@ -19,7 +19,7 @@ export function useCalendarHabitRecommendations(
     eventKit.hasPermission &&
     eventKit.selectedCalendarIds.length > 0;
 
-  const recommendations = useMemo((): HabitTimeRecommendation[] => {
+  const recommendations = useMemo((): SemanticHabitRecommendation[] => {
     const todayEvents = isConnected
       ? eventKit.getTodayEvents().map((event) => ({
           startDate: event.startDate,
@@ -29,11 +29,11 @@ export function useCalendarHabitRecommendations(
         }))
       : [];
 
-    return recommendHabitTimes(incompleteHabits, todayEvents, chronoInfo);
+    return buildSemanticHabitRecommendations(incompleteHabits, todayEvents, chronoInfo);
   }, [incompleteHabits, chronoInfo, isConnected, eventKit.events]);
 
   const nextRecommendation = useMemo(
-    () => getNextRecommendation(recommendations),
+    () => getNextSemanticRecommendation(recommendations),
     [recommendations],
   );
 
@@ -52,7 +52,7 @@ export function useCalendarHabitRecommendations(
   }, [eventKit]);
 
   const recommendationByHabitId = useMemo(() => {
-    const map = new Map<string, HabitTimeRecommendation>();
+    const map = new Map<string, SemanticHabitRecommendation>();
     recommendations.forEach((rec) => map.set(rec.habitId, rec));
     return map;
   }, [recommendations]);
