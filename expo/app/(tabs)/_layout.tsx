@@ -32,7 +32,7 @@ const PRIMARY_TABS = [
     icon: Compass,
   },
   {
-    name: "you-coherent",
+    name: "profile",
     title: "You",
     icon: UserRound,
   },
@@ -41,6 +41,7 @@ const PRIMARY_TABS = [
 const LEGACY_TABS = [
   "activities",
   "profile",
+  "you-coherent",
   "today-focus",
   "today-overview",
   "my-life",
