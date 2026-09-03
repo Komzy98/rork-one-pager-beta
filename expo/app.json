@@ -29,6 +29,9 @@
         "applinks:join.onepagerapp.co.uk"
       ],
       "usesIcloudStorage": true,
+      "entitlements": {
+        "com.apple.developer.healthkit": true
+      },
       "infoPlist": {
         "UIBackgroundModes": [
           "audio",
@@ -43,6 +46,7 @@
         "NSLocationAlwaysAndWhenInUseUsageDescription": "Allow $(PRODUCT_NAME) to use your location.",
         "NSLocationAlwaysUsageDescription": "Allow $(PRODUCT_NAME) to use your location.",
         "NSLocationWhenInUseUsageDescription": "Allow $(PRODUCT_NAME) to use your location.",
+        "NSHealthShareUsageDescription": "Allow One Pager to read your step count from Apple Health so it can understand your progress and make relevant activity suggestions. Your health data stays on your device.",
         "LSApplicationQueriesSchemes": [
           "aiv",
           "nflx",
