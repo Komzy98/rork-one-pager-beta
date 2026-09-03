@@ -62,7 +62,7 @@ const DAYPARTS: Record<HabitDaypart, HabitSemanticWindow> = {
 
 const MEDICAL_TIMING = /\b(medication|medicine|meds|prescription|insulin|antibiotic|dose|dosage|pill|pills|tablet|tablets|supplement|supplements|vitamin|vitamins)\b/i;
 const MULTI_WINDOW = /\b(am\s*[\/+&-]\s*pm|morning\s*(?:and|&|\+)\s*(?:evening|night)|twice\s+(?:a\s+day|daily|per\s+day)|2\s*x\s*(?:daily|a\s+day)|brush(?:ing)?\s+(?:my\s+)?teeth)\b/i;
-const WORKOUT = /\b(workout|work out|gym|strength|strength training|weight training|resistance training|bodybuilding|muscle building|hiit|cardio|run(?:ning)?|jog(?:ging)?|cycle|cycling|bike ride|swim(?:ming)?|pilates|yoga|rowing|football training|sports training)\b/i;
+const WORKOUT = /\b(workout|work out|gym|strength|strength training|weight training|resistance training|bodybuilding|muscle building|hiit|cardio|run(?:ning)?|jog(?:ging)?|walk(?:ing)?|cycle|cycling|bike ride|swim(?:ming)?|pilates|yoga|rowing|football training|sports training)\b/i;
 const CUMULATIVE = /\b(steps?|step goal|10k\s*steps?|walk\s+\d+[,.]?\d*\s*steps?|glasses?\s+of\s+water|litres?\s+of\s+water|liters?\s+of\s+water|hydration goal|water intake|movement goal|stand goal)\b/i;
 const DIET_OR_LIFESTYLE = /\b(diet|eating|lifestyle|whole foods?|plant[- ]based|low[- ]carb|keto|high[- ]protein|no[- ]spend|no spend|no social media|digital detox|fasting|fast for|intermittent fast|no sugar|sugar[- ]free|no alcohol|alcohol[- ]free|sobriety|avoid spending|avoid social media)\b/i;
 const CONTEXT_ANCHOR = /\b(after|before|with)\s+(breakfast|lunch|dinner|a meal|meals|coffee|shower|bath|commute|work|workout|gym|church|school|class)\b/i;
@@ -74,6 +74,9 @@ const AFTERNOON = /\b(afternoon|after lunch)\b/i;
 const EVENING = /\b(evening|after work|after dinner)\b/i;
 const NIGHT = /\b(night routine|every night|at night|bedtime|before bed|before sleep)\b/i;
 const FLEXIBLE_SKILL = /\b(read|reading|study|studying|learn|learning|language|duolingo|practice|guitar|piano|music|write|writing|sketch|draw|drawing|journal|journaling|devotional|bible|prayer|pray|meditat|therapy|self[- ]check|declutter|meal prep|meal planning|network|reach out|call a friend|call family|inbox zero|finance review|budget|saving|savings challenge)\b/i;
+// A custom contact habit can contain an arbitrary person's name ("Call Mum", "Ring Josh").
+// Exclude common non-contact phrasings so we do not turn "call it a day" into a phone reminder.
+const SOCIAL_CONTACT = /\b(?:phone|ring|facetime|video call)\b|\bcall\s+(?!(?:it|this|that|the|in|out|off)\b)/i;
 
 function combinedText(input: HabitSemanticInput): string {
   return [input.title, input.description ?? '', ...(input.tags ?? []), input.category ?? '']
@@ -83,9 +86,9 @@ function combinedText(input: HabitSemanticInput): string {
 }
 
 function parseDurationText(value: string): number | null {
-  const hour = value.match(/\b(\d+(?:\.\d+)?)\s*(?:hours?|hrs?|hr)\b/i);
+  const hour = value.match(/\b(\d+(?:\.\d+)?)\s*[-–—]?\s*(?:hours?|hrs?|hr)\b/i);
   if (hour) return Math.max(1, Math.round(Number(hour[1]) * 60));
-  const minutes = value.match(/\b(\d+)\s*(?:minutes?|mins?|min)\b/i);
+  const minutes = value.match(/\b(\d+)\s*[-–—]?\s*(?:minutes?|mins?|min)\b/i);
   if (minutes) return Math.max(1, Number(minutes[1]));
   return null;
 }
@@ -105,7 +108,7 @@ export function inferHabitDurationMinutes(input: HabitSemanticInput): number {
 
   if (/\b(meal prep|batch cook)\b/i.test(text)) return 90;
   if (WORKOUT.test(text)) return 60;
-  if (/\b(therapy|self[- ]check|call a friend|call family|network|reach out|creative writing|practice guitar|piano)\b/i.test(text)) return 30;
+  if (/\b(therapy|self[- ]check|network|reach out|creative writing|practice guitar|piano)\b/i.test(text) || SOCIAL_CONTACT.test(text)) return 30;
   if (/\b(read|reading|study|learn|duolingo|language|bible|devotional|journal|meditat|sketch|draw)\b/i.test(text)) return 20;
   if (/\b(declutter|inbox zero|time blocking|plan (?:my|the) day|daily planning)\b/i.test(text)) return 15;
   return 20;
@@ -147,7 +150,7 @@ function contextualGuidance(text: string): { label: string; detail: string; anch
     return { label: 'With your next shower', detail: 'Keep it attached to the shower instead of assigning an arbitrary clock time.', anchor: 'shower' };
   }
   if (BEDTIME_RELATIVE.test(text)) {
-    const minutes = text.match(/\b(\d+)\s*(?:minutes?|mins?|min)\s+before\s+(?:bed|bedtime|sleep)\b/i)?.[1];
+    const minutes = text.match(/\b(\d+)\s*[-–—]?\s*(?:minutes?|mins?|min)\s+before\s+(?:bed|bedtime|sleep)\b/i)?.[1];
     const hour = /\b(?:an|one|1)\s+hour\s+before\s+(?:bed|bedtime|sleep)\b/i.test(text);
     const amount = minutes ? `${minutes} min` : hour ? '1 hour' : '';
     return {
@@ -295,8 +298,8 @@ export function classifyHabitSemantics(input: HabitSemanticInput): HabitSemantic
   }
 
   // Social calls and professional outreach are flexible, but “2am because you are a
-  // night owl” is not a sensible default. Keep them inside normal social/work hours.
-  if (/\b(call a friend|call family|phone call|network|reach out|professional contact)\b/i.test(text)) {
+  // night owl” is not a sensible default. Arbitrary names are expected in custom habits.
+  if (/\b(call a friend|call family|phone call|network|reach out|professional contact)\b/i.test(text) || SOCIAL_CONTACT.test(text)) {
     return {
       type: 'flexible_session',
       policy: 'schedule',
