@@ -2,7 +2,7 @@ import React from 'react';
 import { View, Text, StyleSheet, TouchableOpacity, ActivityIndicator } from 'react-native';
 import { CalendarDays, Clock3, Sparkles, ChevronRight } from 'lucide-react-native';
 import type { ThemeColors } from '@/types/theme';
-import type { HabitTimeRecommendation } from '@/utils/calendarHabitSlots';
+import type { SemanticHabitRecommendation } from '@/utils/semanticHabitRecommendations';
 
 const ACCENT = {
   green: '#18C383',
@@ -16,7 +16,7 @@ interface Props {
   isConnected: boolean;
   isLoading: boolean;
   todayEventCount: number;
-  recommendations: HabitTimeRecommendation[];
+  recommendations: SemanticHabitRecommendation[];
   onConnectPress: () => void;
   onManageCalendarsPress: () => void;
 }
@@ -48,9 +48,9 @@ export default function CalendarHabitPlanner({
             <CalendarDays size={18} color={ACCENT.blue} />
           </View>
           <View style={styles.headerCopy}>
-            <Text style={[styles.title, { color: colors.text }]}>Smart habit timing</Text>
+            <Text style={[styles.title, { color: colors.text }]}>Calendar & rhythm</Text>
             <Text style={[styles.subtitle, { color: muted }]}>
-              Connect your calendar and we&apos;ll find the best free windows for today&apos;s habits.
+              Connect your calendar so flexible routines can fit around real commitments. Natural rules still stay natural.
             </Text>
           </View>
         </View>
@@ -62,7 +62,7 @@ export default function CalendarHabitPlanner({
     );
   }
 
-  const topPicks = recommendations.slice(0, 3);
+  const topPicks = recommendations.slice(0, 4);
 
   return (
     <View style={[styles.card, { backgroundColor: surface, borderColor: border }]}>
@@ -71,11 +71,11 @@ export default function CalendarHabitPlanner({
           <CalendarDays size={18} color={ACCENT.green} />
         </View>
         <View style={styles.headerCopy}>
-          <Text style={[styles.title, { color: colors.text }]}>Best times today</Text>
+          <Text style={[styles.title, { color: colors.text }]}>Best fit today</Text>
           <Text style={[styles.subtitle, { color: muted }]}>
             {todayEventCount > 0
-              ? `Based on ${todayEventCount} calendar event${todayEventCount === 1 ? '' : 's'} + your rhythm`
-              : 'Open day on your calendar — habits fit around your peak hours'}
+              ? `Using ${todayEventCount} calendar event${todayEventCount === 1 ? '' : 's'}, habit meaning and your rhythm`
+              : 'Open calendar — flexible sessions can use your rhythm, but not every habit needs a clock time'}
           </Text>
         </View>
         <TouchableOpacity onPress={onManageCalendarsPress} hitSlop={10}>
@@ -86,28 +86,40 @@ export default function CalendarHabitPlanner({
       {isLoading && topPicks.length === 0 ? (
         <ActivityIndicator color={ACCENT.green} style={{ marginVertical: 12 }} />
       ) : topPicks.length === 0 ? (
-        <Text style={[styles.empty, { color: muted }]}>No habits due today — you&apos;re clear.</Text>
+        <Text style={[styles.empty, { color: muted }]}>Nothing needs timing right now.</Text>
       ) : (
         <View style={styles.list}>
-          {topPicks.map((rec) => (
-            <View
-              key={rec.habitId}
-              style={[styles.row, { backgroundColor: isDark ? 'rgba(255,255,255,0.04)' : '#FFFFFF' }]}
-            >
-              <View style={styles.timeCol}>
-                <Clock3 size={14} color={ACCENT.green} />
-                <Text style={[styles.timeText, { color: colors.text }]}>{rec.timeLabel}</Text>
+          {topPicks.map((rec) => {
+            const isScheduled = rec.timingKind === 'scheduled';
+            return (
+              <View
+                key={rec.habitId}
+                style={[styles.row, { backgroundColor: isDark ? 'rgba(255,255,255,0.04)' : '#FFFFFF' }]}
+              >
+                <View style={styles.timeCol}>
+                  {isScheduled ? (
+                    <Clock3 size={14} color={ACCENT.green} />
+                  ) : (
+                    <Sparkles size={14} color={ACCENT.blue} />
+                  )}
+                  <Text
+                    style={[styles.timeText, { color: isScheduled ? colors.text : ACCENT.blue }]}
+                    numberOfLines={2}
+                  >
+                    {rec.timeLabel}
+                  </Text>
+                </View>
+                <View style={styles.rowBody}>
+                  <Text style={[styles.habitTitle, { color: colors.text }]} numberOfLines={1}>
+                    {rec.habitTitle}
+                  </Text>
+                  <Text style={[styles.reason, { color: muted }]} numberOfLines={3}>
+                    {rec.reasoning}
+                  </Text>
+                </View>
               </View>
-              <View style={styles.rowBody}>
-                <Text style={[styles.habitTitle, { color: colors.text }]} numberOfLines={1}>
-                  {rec.habitTitle}
-                </Text>
-                <Text style={[styles.reason, { color: muted }]} numberOfLines={2}>
-                  {rec.reasoning}
-                </Text>
-              </View>
-            </View>
-          ))}
+            );
+          })}
         </View>
       )}
     </View>
@@ -174,11 +186,12 @@ const styles = StyleSheet.create({
   },
   timeCol: {
     alignItems: 'center',
-    width: 58,
+    width: 92,
     gap: 4,
   },
   timeText: {
-    fontSize: 12,
+    fontSize: 11,
+    lineHeight: 14,
     fontWeight: '800',
     textAlign: 'center',
   },
