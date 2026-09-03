@@ -12,6 +12,7 @@ import { DiscoverLifeContextProvider } from "@/contexts/DiscoverLifeContextProvi
 import { FootballBundleProvider } from "@/contexts/FootballBundleContext";
 import { F1BundleProvider } from "@/contexts/F1BundleContext";
 import { HealthContextProvider } from "@/contexts/HealthContext";
+import BackNavigationButton from "@/components/navigation/BackNavigationButton";
 import { useTheme } from "@/hooks/useTheme";
 import { interFont } from "@/constants/fonts";
 
@@ -57,6 +58,21 @@ const LEGACY_TABS = [
   "learning",
   "events",
 ] as const;
+
+/**
+ * These are full-screen workspaces opened from My Life. They are intentionally
+ * hidden from the tab bar, but unlike primary tabs they must always provide a
+ * clear route back to the screen that opened them.
+ */
+const DRILL_DOWN_TABS = new Set<string>([
+  "activities",
+  "tasks",
+  "shows",
+  "sports",
+  "cooking",
+  "learning",
+  "events",
+]);
 
 export default function TabLayout() {
   const { colors, isDark } = useTheme();
@@ -116,15 +132,30 @@ export default function TabLayout() {
                 />
               ))}
 
-              {LEGACY_TABS.filter((name) => !PRIMARY_TABS.some((tab) => tab.name === name)).map((name) => (
-                <Tabs.Screen
-                  key={name}
-                  name={name}
-                  options={{
-                    href: null,
-                  }}
-                />
-              ))}
+              {LEGACY_TABS.filter((name) => !PRIMARY_TABS.some((tab) => tab.name === name)).map((name) => {
+                const isDrillDown = DRILL_DOWN_TABS.has(name);
+
+                return (
+                  <Tabs.Screen
+                    key={name}
+                    name={name}
+                    options={{
+                      href: null,
+                      ...(isDrillDown
+                        ? {
+                            headerShown: true,
+                            headerTransparent: true,
+                            headerShadowVisible: false,
+                            headerTitle: "",
+                            headerLeft: () => <BackNavigationButton style={{ marginLeft: 16 }} />,
+                          }
+                        : {
+                            headerShown: false,
+                          }),
+                    }}
+                  />
+                );
+              })}
             </Tabs>
           </DiscoverLifeContextProvider>
         </HealthContextProvider>
