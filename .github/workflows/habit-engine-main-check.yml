@@ -1,0 +1,23 @@
+name: Habit Engine Main Validation
+
+on:
+  push:
+    branches:
+      - habit-engine-main
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: expo
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20.19.4
+          cache: npm
+          cache-dependency-path: expo/package-lock.json
+      - run: npm ci
+      - run: npm test
+      - run: npx tsc --noEmit
