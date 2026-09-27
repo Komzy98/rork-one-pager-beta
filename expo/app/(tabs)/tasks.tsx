@@ -860,10 +860,12 @@ export default function TasksScreen() {
             progress: 0,
             isRecurring: false,
             isHabit: true,
-            habitFrequency: { days: [0, 1, 2, 3, 4, 5, 6] },
+            habitFrequency: updates.habitFrequency || { days: [0, 1, 2, 3, 4, 5, 6] },
             habitCompletions: {},
             habitStreak: 0,
-            color: HABIT_COLORS[habits.length % HABIT_COLORS.length],
+            habitEngine: updates.habitEngine,
+            color: updates.color || HABIT_COLORS[habits.length % HABIT_COLORS.length],
+            icon: updates.icon,
           });
           setIsCreatingHabit(false);
         }}
