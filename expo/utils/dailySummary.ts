@@ -105,6 +105,109 @@ export function computeDailyScore(input: DailySummaryScoreInput): number {
   return Math.max(0, Math.min(100, Math.round(weighted * 100)));
 }
 
+export type DailySummaryGroundingInput = {
+  habits?: DailySummaryHabit[];
+  habitRollup?: DailySummaryHabitRollup | null;
+  priorityTasks?: DailySummaryPriorityTask[];
+  openItems?: string[];
+};
+
+function uniqueNonEmpty(values: string[]): string[] {
+  const seen = new Set<string>();
+  return values.filter((value) => {
+    const trimmed = value.trim();
+    if (!trimmed) return false;
+    const key = trimmed.toLowerCase();
+    if (seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  });
+}
+
+function joinNaturalTitles(titles: string[]): string {
+  if (titles.length === 0) return '';
+  if (titles.length === 1) return titles[0];
+  if (titles.length === 2) return `${titles[0]} and ${titles[1]}`;
+  return `${titles.slice(0, -1).join(', ')}, and ${titles[titles.length - 1]}`;
+}
+
+/**
+ * Grounding gate for the Overview wrap-up.
+ *
+ * The model can still help with secondary recommendations, but the copy that
+ * describes what the user actually did is built from verified app data only.
+ * This prevents sports results, weather, shows, or stylistic embellishment from
+ * being misrepresented as the user's achievement, mood, or energy.
+ */
+export function buildGroundedDailySummary(
+  input: DailySummaryGroundingInput
+): Pick<DailySummary, 'summary' | 'wins' | 'challenges' | 'streaks' | 'sentiment'> {
+  const scheduledHabits = (input.habits ?? []).filter((habit) => habit.scheduledToday !== false);
+  const completedHabits = scheduledHabits.filter((habit) => habit.done);
+  const completedPriorityTasks = (input.priorityTasks ?? []).filter((task) => task.completed);
+
+  const scheduledCount = input.habitRollup?.scheduledCount ?? scheduledHabits.length;
+  const completedCount = input.habitRollup?.completedCount ?? completedHabits.length;
+  const openItems = uniqueNonEmpty(
+    input.openItems?.length
+      ? input.openItems
+      : input.habitRollup?.incompleteNames ?? []
+  );
+
+  const wins = uniqueNonEmpty([
+    ...completedHabits.map((habit) => habit.name),
+    ...completedPriorityTasks.map((task) => task.title),
+  ]).slice(0, 4);
+
+  const streaks = completedHabits
+    .filter((habit) => (habit.streak ?? 0) >= 2)
+    .map((habit) => ({ name: habit.name, length: habit.streak ?? 0 }));
+
+  const sentences: string[] = [];
+
+  if (scheduledCount > 0) {
+    sentences.push(
+      `You completed ${completedCount} of ${scheduledCount} habit${scheduledCount === 1 ? '' : 's'} today.`
+    );
+  }
+
+  const completedHabitNames = completedHabits.map((habit) => habit.name).slice(0, 2);
+  if (completedHabitNames.length > 0) {
+    const names = joinNaturalTitles(completedHabitNames);
+    sentences.push(
+      `${names} ${completedHabitNames.length === 1 ? 'is' : 'are'} complete.`
+    );
+  }
+
+  const completedTaskTitle = completedPriorityTasks[0]?.title;
+  if (completedTaskTitle) {
+    sentences.push(`You also finished ${completedTaskTitle}.`);
+  }
+
+  if (openItems.length > 0) {
+    sentences.push(
+      `${openItems[0]} is still open; finish it if it still matters today, or carry it into tomorrow.`
+    );
+  } else if (scheduledCount > 0 && completedCount === scheduledCount) {
+    sentences.push('Everything scheduled in your habit list is complete.');
+  }
+
+  if (sentences.length === 0) {
+    sentences.push("There isn't enough completed activity logged yet to give you a useful wrap-up.");
+  }
+
+  const completionRatio = scheduledCount > 0 ? completedCount / scheduledCount : 0;
+  const sentiment: DailySummary['sentiment'] = completionRatio >= 0.7 ? 'positive' : 'neutral';
+
+  return {
+    summary: sentences.join(' '),
+    wins,
+    challenges: openItems.slice(0, 3),
+    streaks,
+    sentiment,
+  };
+}
+
 const RECOVERY_SYSTEM_PROMPT = `You are a compassionate recovery coach for One Pager during Turbulent Times / Recovery Mode.
 Rules:
 - Keep "summary" ≤ 80 words. Warm, human, zero guilt.
@@ -171,7 +274,10 @@ export async function summarizeDailyProgress(input: {
               ? RECOVERY_SYSTEM_PROMPT
               : `You are an assistant that writes crisp, motivational daily progress summaries for the One-Pager app.
 Rules:
-- Keep "summary" ≤ 80 words. Be specific, motivational, and warm — the user should feel seen.
+- Keep "summary" ≤ 80 words. Be specific, calm, and useful.
+- Use plain language. No hype, slang, cutesy metaphors, cheerleading, or playful rewrites of user data.
+- NEVER infer the user's mood, energy, allegiance, motivation, or emotional reaction from weather, sports, shows, calendar items, or completion data.
+- Habit/task titles must be used exactly as provided. Do not decorate them with adjectives or metaphors.
 - MUST name at least one real habit or task by exact title in "summary" (never only "your main task" or "a habit").
 - NAMED WIN (required): "wins" MUST include at least one bullet that names a completed habit or completed priority task by exact title from habits/priorityTasks/habitRollup data.
 - NAMED OPEN ITEM (required when openItems is non-empty): "challenges" MUST include at least one bullet naming a specific open habit or incomplete task from openItems — frame as gentle tomorrow focus, not guilt.
@@ -179,9 +285,9 @@ Rules:
 - HABIT ROLLUP: If habitRollup is provided and completedCount < scheduledCount, praise proportionate effort (e.g. "5/7 habits — you didn't need a perfect day"). If completedCount === scheduledCount and scheduledCount > 0, celebrate a full sweep. Mention 1–2 incomplete habit names gently as optional tomorrow focus, not failure.
 - PRIORITY TASKS: If priorityTasks lists completed urgent/high items, cite at least one by exact title in summary or wins. Incomplete urgent/high can go in challenges.
 - TODAY CALENDAR + WEATHER: If todayCalendar and weather exist, weave one sentence when natural (e.g. "Between [Event] and the rain, you still [named win]"). todayCalendar is already filtered to today only.
-- SPORTS BEATS: Prefer sportsBeats headlines for emotional colour (recent win, live match, match today) over raw fixture lists. Only use beats provided — tie to discipline/mood lightly if a win exists, never invent scores.
-- CONTINUE WATCHING: If continueWatching has entries, you may mention one show by title as part of a balanced day (leisure counts) — do not invent episodes.
-- TOUGH WEATHER (rain, snow, storms, cold ≤8°C, strong wind, fog): acknowledge local conditions and praise effort for showing up indoors or despite weather.
+- SPORTS CONTEXT: Sports results and fixtures are context only. Never count them as the user's win, never infer support for either team, and never describe a result as a boost, lift, disappointment, or mood change. If mentioned, state the fixture/result neutrally and only when it is genuinely useful.
+- CONTINUE WATCHING: If continueWatching has entries, you may mention one show by exact title as neutral leisure context — do not infer that watching it is deserved, productive, restorative, or emotionally beneficial.
+- WEATHER: Weather is context only. Do not claim it caused the user's mood, energy, motivation, or success. Mention it only when directly useful for a concrete recommendation.
 - Include upcoming matches for favourite teams if available (mention next 1-2 important matches) when sportsBeats is empty.
 - CRITICAL: When mentioning match timing, compare the match date to TODAY'S DATE (${input.date}). If the match date equals today's date, say "today". If it's the next day, say "tomorrow". Be accurate!
 - SAVED DISCOVERY EVENTS: If savedDiscoveryEvents has entries the user saved from the Events tab, mention at most one by exact title when planning the week (e.g. comedy night Friday — weave with habits/tasks if relevant). Do not invent events.
@@ -189,7 +295,7 @@ Rules:
 - EVENT INTENT (critical): savedDiscoveryEvents and upcomingEvents with intent "saved" or "scheduled" mean the user bookmarked or planned something — say "saved", "planned", or "coming up". NEVER say they "attended", "went to", or "enjoyed" an event unless timing is "past".
 - EVENT TIMING LABELS: Use timing field — "today" only when timing is "today"; "tomorrow" only when daysUntil is 1; otherwise use dateLabel. For timing "upcoming", frame as looking forward, not something that already happened.
 - UPCOMING CALENDAR: upcomingEvents lists scheduled calendar entries with dateLabel + timeLabel. Compare dateLabel to TODAY'S DATE (${input.date}) for today/tomorrow wording.
-- "wins" must include 2–4 specific bullets from real data (habits done, priority tasks, sports beats, calendar survived, weather grit). At least one bullet uses an exact habit/task title.
+- "wins" must describe only actions the user actually completed: completed habits or completed priority tasks. Never put sports results, weather, shows, or calendar events in "wins". At least one bullet uses an exact habit/task title when one exists.
 - "streaks": include every habit in habits[] with streak ≥ 2 and done true today; use exact habit name and day count.
 - If yesterdayContext is provided, you may reference momentum vs yesterday in summary (one short clause) — do not invent numbers beyond yesterdayContext.
 - "recommendations" should be concrete and achievable (≤ 3). On nice weather suggest outdoor wins; on tough weather suggest indoor habits or one small task — never guilt-trip.
@@ -280,9 +386,22 @@ Generate a daily summary with this exact JSON structure:
     // The model tends to echo the example score (85); always use the real,
     // data-derived score so it reflects the actual day.
     summary.score = computeDailyScore(input);
+
     if (input.recoveryMode) {
       summary.streaks = [];
+    } else {
+      // User-facing progress copy is generated from verified One Pager data,
+      // not model interpretation. The LLM may still supply recommendations,
+      // but it cannot turn a match result, weather, or a habit title into an
+      // invented feeling or achievement.
+      const grounded = buildGroundedDailySummary(input);
+      summary.summary = grounded.summary;
+      summary.wins = grounded.wins;
+      summary.challenges = grounded.challenges;
+      summary.streaks = grounded.streaks;
+      summary.sentiment = grounded.sentiment;
     }
+
     return summary;
   } catch (error) {
     console.error('Error generating daily summary:', error);
