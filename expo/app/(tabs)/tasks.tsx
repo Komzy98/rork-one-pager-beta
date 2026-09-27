@@ -1,7 +1,7 @@
 import React, { useState, useRef, useEffect, useCallback, useMemo } from 'react';
 import { View, StyleSheet, Platform, Alert, Animated } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { Stack } from 'expo-router';
+import { Stack, useLocalSearchParams } from 'expo-router';
 import { Coffee, Sun, Sunset, Moon } from 'lucide-react-native';
 import * as Haptics from 'expo-haptics';
 
@@ -88,6 +88,10 @@ const getPeakPillText = (chronoInfo: ReturnType<typeof getChronotypeInfo>, inPea
 
 export default function TasksScreen() {
   const insets = useSafeAreaInsets();
+  const { habitId: rawHabitId, habitAction: rawHabitAction } = useLocalSearchParams<{
+    habitId?: string | string[];
+    habitAction?: string | string[];
+  }>();
   const { isDark, colors } = useTheme();
   const { profile } = useUserProfile();
   const { tasks, addTask, updateTask, deleteTask, activeTimer, startTimer, stopTimer } = useTasks();
@@ -112,12 +116,29 @@ export default function TasksScreen() {
   const [isCreatingHabit, setIsCreatingHabit] = useState(false);
 
   const pulseAnim = useRef(new Animated.Value(1)).current;
+  const handledHabitActionRef = useRef<string | null>(null);
+
+  const requestedHabitId = Array.isArray(rawHabitId) ? rawHabitId[0] : rawHabitId;
+  const requestedHabitAction = Array.isArray(rawHabitAction) ? rawHabitAction[0] : rawHabitAction;
 
   const todayStr = getTodayFormatted();
   const currentBlock = getCurrentTimeBlock();
 
   const allTasks = useMemo(() => tasks.filter((t) => !t.isHabit), [tasks]);
   const habits = useMemo(() => tasks.filter((t) => t.isHabit), [tasks]);
+
+  useEffect(() => {
+    if (!requestedHabitId || !requestedHabitAction) return;
+    if (handledHabitActionRef.current === requestedHabitAction) return;
+
+    const requestedHabit = tasks.find(
+      (task) => task.id === requestedHabitId && task.isHabit,
+    );
+    if (!requestedHabit) return;
+
+    handledHabitActionRef.current = requestedHabitAction;
+    setEditingTask(requestedHabit);
+  }, [requestedHabitAction, requestedHabitId, tasks]);
 
   const chronoInfo = profile?.chronotype ? getChronotypeInfo(profile.chronotype) : undefined;
   const inPeak = chronoInfo ? isInPeakHours(chronoInfo) : false;
