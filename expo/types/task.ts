@@ -67,6 +67,15 @@ export interface Task {
     endDate?: string;
   };
   // Habit-specific fields
+  // Habit Engine V1 — behavioural context used to improve follow-through.
+  habitEngine?: {
+    anchor?: string; // Existing event/routine that cues the habit, e.g. "after work"
+    windowStart?: string; // Local HH:mm preferred start
+    windowEnd?: string; // Local HH:mm preferred end
+    obstacle?: string; // Most common reason this habit gets missed
+    fallback?: string; // Minimum viable action when the normal plan fails
+    immediateReward?: string; // Optional immediate reward / temptation bundle
+  };
   isHabit?: boolean;
   habitFrequency?: {
     type?: 'specific_days' | 'times_per_week';
