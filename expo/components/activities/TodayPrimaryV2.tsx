@@ -28,6 +28,7 @@ import { OP_DOMAIN, OP_LAYOUT, OP_RADIUS, OP_SPACING, OP_TYPE } from '@/constant
 import { formatDistanceKm } from '@/utils/eventDiscovery';
 import { findUpcomingCalendarConflict, pickQuietActivityObservation } from '@/utils/quietSynthesis';
 import { getTodayPhase } from '@/utils/todayPhase';
+import { rankHabitEngineInterventions } from '@/utils/habitEngine';
 import { selectTimelineEveningOpportunity } from '@/utils/timelineEveningOpportunity';
 import {
   buildStepHabitProgress,
@@ -166,6 +167,11 @@ export default function TodayPrimaryV2() {
   const stepAlreadyLogged = Boolean(todayStepHabit?.habitCompletions?.[todayYmd]);
   const healthSatisfiedRoutine = Boolean(stepProgress?.completed && !stepAlreadyLogged);
   const openRoutineCount = Math.max(0, stats.totalHabits - stats.completedHabits - (healthSatisfiedRoutine ? 1 : 0));
+
+  const habitIntervention = useMemo(() => {
+    const ranked = rankHabitEngineInterventions(tasks.allTasks, now);
+    return ranked.find(({ snapshot }) => snapshot.dueNow || snapshot.overdueWindow) ?? ranked[0] ?? null;
+  }, [tasks.allTasks, now]);
 
   const matches = useMemo(() => discover.sportSignals
     .filter((match) => Boolean(match.favoriteTeamName))
@@ -407,6 +413,15 @@ export default function TodayPrimaryV2() {
         <ContextCue label="Schedule conflict" text={calendarConflict.message} tone="warning" />
       ) : quietObservation ? (
         <ContextCue label="Worth knowing" text={quietObservation} tone="info" />
+      ) : null}
+
+      {habitIntervention ? (
+        <ContextCue
+          label={`${habitIntervention.task.title} · ${habitIntervention.snapshot.maturity} ${habitIntervention.snapshot.stabilityScore}%`}
+          text={habitIntervention.snapshot.guidance}
+          tone={habitIntervention.snapshot.overdueWindow ? 'warning' : habitIntervention.snapshot.dueNow ? 'positive' : 'info'}
+          onPress={() => router.push('/(tabs)/tasks' as never)}
+        />
       ) : null}
 
       {freeMinutes != null && freeMinutes >= 20 && nextCalendar ? (
