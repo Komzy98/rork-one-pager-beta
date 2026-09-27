@@ -38,6 +38,71 @@ export interface TaskCompletion {
   celebrationViewed?: boolean; // Whether user saw the completion celebration
 }
 
+export type HabitEngineFrictionReason =
+  | 'too_tired'
+  | 'forgot'
+  | 'no_time'
+  | 'wrong_time'
+  | 'low_motivation'
+  | 'unexpected'
+  | 'other';
+
+export type HabitEngineCompletionLevel = 'full' | 'minimum';
+export type HabitEnginePromptCadence = 'high' | 'normal' | 'low';
+
+export interface HabitEngineAutomaticityCheckIn {
+  date: string; // ISO timestamp
+  score: 1 | 2 | 3 | 4 | 5; // "This behaviour is something I do automatically"
+}
+
+export interface HabitEngineFrictionLog {
+  date: string; // ISO timestamp
+  reason: HabitEngineFrictionReason;
+  note?: string;
+}
+
+export interface HabitEngineAttemptLog {
+  date: string; // YYYY-MM-DD
+  completedAt?: string; // ISO timestamp
+  level: HabitEngineCompletionLevel;
+}
+
+export interface HabitEngineAdaptationRecord {
+  id: string;
+  createdAt: string;
+  kind:
+    | 'strengthen_cue'
+    | 'shift_window'
+    | 'use_minimum'
+    | 'use_fallback'
+    | 'add_reward'
+    | 'reduce_prompts'
+    | 'review_plan';
+  message: string;
+  acceptedAt?: string;
+  dismissedAt?: string;
+}
+
+export interface HabitEngineConfig {
+  version?: 1 | 2;
+  anchor?: string; // Stable cue, e.g. "after I close my work laptop"
+  firstStep?: string; // Small initiation action, e.g. "put on gym clothes"
+  location?: string; // Optional stable context
+  windowStart?: string; // Local HH:mm preferred start
+  windowEnd?: string; // Local HH:mm preferred end
+  obstacle?: string; // Most common anticipated barrier
+  minimumVersion?: string; // Smallest version that preserves cue -> response repetition
+  fallback?: string; // Alternate action/context when the normal plan fails
+  immediateReward?: string; // Immediate positive reinforcement / temptation bundle
+  onboardingCompletedAt?: string;
+  automaticityCheckIns?: HabitEngineAutomaticityCheckIn[];
+  frictionLogs?: HabitEngineFrictionLog[];
+  attemptLogs?: HabitEngineAttemptLog[];
+  adaptationHistory?: HabitEngineAdaptationRecord[];
+  promptCadence?: HabitEnginePromptCadence;
+  lastInterventionAt?: string;
+}
+
 export interface Task {
   id: string;
   title: string;
@@ -67,15 +132,8 @@ export interface Task {
     endDate?: string;
   };
   // Habit-specific fields
-  // Habit Engine V1 — behavioural context used to improve follow-through.
-  habitEngine?: {
-    anchor?: string; // Existing event/routine that cues the habit, e.g. "after work"
-    windowStart?: string; // Local HH:mm preferred start
-    windowEnd?: string; // Local HH:mm preferred end
-    obstacle?: string; // Most common reason this habit gets missed
-    fallback?: string; // Minimum viable action when the normal plan fails
-    immediateReward?: string; // Optional immediate reward / temptation bundle
-  };
+  // Habit Engine V2 — context, automaticity, friction and adaptive plan data.
+  habitEngine?: HabitEngineConfig;
   isHabit?: boolean;
   habitFrequency?: {
     type?: 'specific_days' | 'times_per_week';
