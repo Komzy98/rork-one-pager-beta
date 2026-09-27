@@ -71,9 +71,12 @@ export const TaskEditModal: React.FC<TaskEditModalProps> = ({
   const [recurringDays, setRecurringDays] = useState<number[]>([1, 2, 3, 4, 5]);
   const [showFrequencyPicker, setShowFrequencyPicker] = useState<boolean>(false);
   const [habitAnchor, setHabitAnchor] = useState<string>('');
+  const [habitFirstStep, setHabitFirstStep] = useState<string>('');
+  const [habitLocation, setHabitLocation] = useState<string>('');
   const [habitWindowStart, setHabitWindowStart] = useState<string>('');
   const [habitWindowEnd, setHabitWindowEnd] = useState<string>('');
   const [habitObstacle, setHabitObstacle] = useState<string>('');
+  const [habitMinimumVersion, setHabitMinimumVersion] = useState<string>('');
   const [habitFallback, setHabitFallback] = useState<string>('');
   const [habitReward, setHabitReward] = useState<string>('');
 
@@ -108,9 +111,12 @@ export const TaskEditModal: React.FC<TaskEditModalProps> = ({
         setHabitIcon(task.icon);
       }
       setHabitAnchor(task.habitEngine?.anchor || '');
+      setHabitFirstStep(task.habitEngine?.firstStep || '');
+      setHabitLocation(task.habitEngine?.location || '');
       setHabitWindowStart(task.habitEngine?.windowStart || '');
       setHabitWindowEnd(task.habitEngine?.windowEnd || '');
       setHabitObstacle(task.habitEngine?.obstacle || '');
+      setHabitMinimumVersion(task.habitEngine?.minimumVersion || task.habitEngine?.fallback || '');
       setHabitFallback(task.habitEngine?.fallback || '');
       setHabitReward(task.habitEngine?.immediateReward || '');
       setIsRecurring(task.isRecurring || false);
@@ -136,9 +142,12 @@ export const TaskEditModal: React.FC<TaskEditModalProps> = ({
       setRecurringDays([1, 2, 3, 4, 5]);
       setShowFrequencyPicker(false);
       setHabitAnchor('');
+      setHabitFirstStep('');
+      setHabitLocation('');
       setHabitWindowStart('');
       setHabitWindowEnd('');
       setHabitObstacle('');
+      setHabitMinimumVersion('');
       setHabitFallback('');
       setHabitReward('');
     }
@@ -171,13 +180,25 @@ export const TaskEditModal: React.FC<TaskEditModalProps> = ({
       updates.habitFrequency = { days: selectedDays };
       updates.color = habitColor;
       updates.icon = habitIcon;
+      const completedPlan =
+        habitAnchor.trim().length > 1 &&
+        habitFirstStep.trim().length > 1 &&
+        habitMinimumVersion.trim().length > 1;
       updates.habitEngine = {
+        ...(task?.habitEngine || {}),
+        version: 2,
         anchor: habitAnchor.trim() || undefined,
+        firstStep: habitFirstStep.trim() || undefined,
+        location: habitLocation.trim() || undefined,
         windowStart: habitWindowStart.trim() || undefined,
         windowEnd: habitWindowEnd.trim() || undefined,
         obstacle: habitObstacle.trim() || undefined,
+        minimumVersion: habitMinimumVersion.trim() || undefined,
         fallback: habitFallback.trim() || undefined,
         immediateReward: habitReward.trim() || undefined,
+        onboardingCompletedAt:
+          task?.habitEngine?.onboardingCompletedAt ||
+          (completedPlan ? new Date().toISOString() : undefined),
       };
     } else {
       updates.dueDate = dueDate ? `${dueDate.getFullYear()}-${String(dueDate.getMonth() + 1).padStart(2, '0')}-${String(dueDate.getDate()).padStart(2, '0')}` : undefined;
@@ -637,16 +658,34 @@ export const TaskEditModal: React.FC<TaskEditModalProps> = ({
                 <View style={styles.card}>
                   {renderSectionHeader(
                     <Clock size={16} color="#007AFF" />,
-                    'Habit Engine'
+                    'Habit Engine V2'
                   )}
-                  <Text style={styles.scheduleHint}>Teach One Pager the conditions that make this habit easier to complete.</Text>
+                  <Text style={styles.scheduleHint}>
+                    Build a stable cue, a tiny first step and a minimum version for difficult days.
+                  </Text>
                   <TextInput
                     style={styles.engineInput}
                     value={habitAnchor}
                     onChangeText={setHabitAnchor}
-                    placeholder="Anchor — e.g. After I finish work"
+                    placeholder="Cue — e.g. After I close my work laptop"
                     placeholderTextColor="#A1A1AA"
                     testID="habit-engine-anchor"
+                  />
+                  <TextInput
+                    style={styles.engineInput}
+                    value={habitFirstStep}
+                    onChangeText={setHabitFirstStep}
+                    placeholder="First step — e.g. Put on gym clothes"
+                    placeholderTextColor="#A1A1AA"
+                    testID="habit-engine-first-step"
+                  />
+                  <TextInput
+                    style={styles.engineInput}
+                    value={habitLocation}
+                    onChangeText={setHabitLocation}
+                    placeholder="Location (optional)"
+                    placeholderTextColor="#A1A1AA"
+                    testID="habit-engine-location"
                   />
                   <View style={styles.engineTimeRow}>
                     <TextInput
@@ -663,12 +702,20 @@ export const TaskEditModal: React.FC<TaskEditModalProps> = ({
                       style={[styles.engineInput, styles.engineTimeInput]}
                       value={habitWindowEnd}
                       onChangeText={setHabitWindowEnd}
-                      placeholder="19:30"
+                      placeholder="19:00"
                       placeholderTextColor="#A1A1AA"
                       keyboardType="numbers-and-punctuation"
                       testID="habit-engine-window-end"
                     />
                   </View>
+                  <TextInput
+                    style={styles.engineInput}
+                    value={habitMinimumVersion}
+                    onChangeText={setHabitMinimumVersion}
+                    placeholder="Minimum version — e.g. One lift for 10 minutes"
+                    placeholderTextColor="#A1A1AA"
+                    testID="habit-engine-minimum"
+                  />
                   <TextInput
                     style={styles.engineInput}
                     value={habitObstacle}
@@ -681,7 +728,7 @@ export const TaskEditModal: React.FC<TaskEditModalProps> = ({
                     style={styles.engineInput}
                     value={habitFallback}
                     onChangeText={setHabitFallback}
-                    placeholder="Fallback — e.g. 20-minute home workout"
+                    placeholder="Fallback — e.g. 10-minute home workout"
                     placeholderTextColor="#A1A1AA"
                     testID="habit-engine-fallback"
                   />
