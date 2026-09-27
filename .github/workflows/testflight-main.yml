@@ -38,7 +38,7 @@ jobs:
         run: npm ci
 
       - name: Habit Engine tests
-        run: node --import tsx --test utils/__tests__/habitEngine.test.ts
+        run: node --import tsx --test utils/__tests__/habitEngine.test.ts utils/__tests__/habitEngineV2.test.ts
 
       - name: TypeScript
         run: npx tsc --noEmit
