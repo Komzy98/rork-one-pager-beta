@@ -1,4 +1,4 @@
-import React, { useMemo } from 'react';
+import React, { useCallback, useMemo } from 'react';
 import { StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 import { BrainCircuit, ChevronRight } from 'lucide-react-native';
 import { router } from 'expo-router';
@@ -18,15 +18,23 @@ export default function HabitEngineTodayCard() {
       ?? null;
   }, [tasks]);
 
+  const openHabitPlan = useCallback((habitId: string) => {
+    router.navigate({
+      pathname: '/(tabs)/tasks',
+      params: {
+        habitId,
+        habitAction: String(Date.now()),
+      },
+    } as any);
+  }, []);
+
   if (!intervention) return null;
 
   const { task, snapshot } = intervention;
   const tone = snapshot.overdueWindow ? '#F59E0B' : snapshot.dueNow ? '#10B981' : colors.primary;
 
   return (
-    <TouchableOpacity
-      activeOpacity={0.86}
-      onPress={() => router.push('/tasks' as any)}
+    <View
       style={[
         styles.card,
         {
@@ -36,44 +44,59 @@ export default function HabitEngineTodayCard() {
       ]}
       testID="habit-engine-today-card"
     >
-      <View style={styles.topRow}>
-        <View style={[styles.iconWrap, { backgroundColor: `${tone}18` }]}>
-          <BrainCircuit size={20} color={tone} />
+      <TouchableOpacity
+        activeOpacity={0.8}
+        onPress={() => openHabitPlan(task.id)}
+        accessibilityRole="button"
+        accessibilityLabel={`Open ${task.title} habit plan`}
+        testID="habit-engine-card-open"
+      >
+        <View style={styles.topRow}>
+          <View style={[styles.iconWrap, { backgroundColor: `${tone}18` }]}>
+            <BrainCircuit size={20} color={tone} />
+          </View>
+          <View style={styles.titleWrap}>
+            <Text style={[styles.eyebrow, { color: tone }]}>HABIT ENGINE</Text>
+            <Text style={[styles.title, { color: colors.text }]} numberOfLines={1}>
+              {task.title}
+            </Text>
+          </View>
+          <ChevronRight size={18} color={colors.textSecondary} />
         </View>
-        <View style={styles.titleWrap}>
-          <Text style={[styles.eyebrow, { color: tone }]}>HABIT ENGINE</Text>
-          <Text style={[styles.title, { color: colors.text }]} numberOfLines={1}>
-            {task.title}
-          </Text>
-        </View>
-        <ChevronRight size={18} color={colors.textSecondary} />
-      </View>
 
-      <View style={styles.metricsRow}>
-        <View style={styles.metric}>
-          <Text style={[styles.metricValue, { color: colors.text }]}>
-            {snapshot.stabilityScore}%
-          </Text>
-          <Text style={[styles.metricLabel, { color: colors.textSecondary }]}>stability</Text>
+        <View style={styles.metricsRow}>
+          <View style={styles.metric}>
+            <Text style={[styles.metricValue, { color: colors.text }]}>
+              {snapshot.stabilityScore}%
+            </Text>
+            <Text style={[styles.metricLabel, { color: colors.textSecondary }]}>stability</Text>
+          </View>
+          <View style={styles.metric}>
+            <Text style={[styles.metricValue, { color: colors.text }]}>{snapshot.maturity}</Text>
+            <Text style={[styles.metricLabel, { color: colors.textSecondary }]}>maturity</Text>
+          </View>
+          <View style={styles.metric}>
+            <Text style={[styles.metricValue, { color: colors.text }]}>{snapshot.recoveryScore}%</Text>
+            <Text style={[styles.metricLabel, { color: colors.textSecondary }]}>recovery</Text>
+          </View>
         </View>
-        <View style={styles.metric}>
-          <Text style={[styles.metricValue, { color: colors.text }]}>{snapshot.maturity}</Text>
-          <Text style={[styles.metricLabel, { color: colors.textSecondary }]}>maturity</Text>
-        </View>
-        <View style={styles.metric}>
-          <Text style={[styles.metricValue, { color: colors.text }]}>{snapshot.recoveryScore}%</Text>
-          <Text style={[styles.metricLabel, { color: colors.textSecondary }]}>recovery</Text>
-        </View>
-      </View>
 
-      <Text style={[styles.guidance, { color: colors.textSecondary }]}>
-        {snapshot.guidance}
-      </Text>
+        <Text style={[styles.guidance, { color: colors.textSecondary }]}>
+          {snapshot.guidance}
+        </Text>
+      </TouchableOpacity>
 
-      <View style={[styles.actionPill, { backgroundColor: `${tone}14` }]}>
+      <TouchableOpacity
+        activeOpacity={0.72}
+        onPress={() => openHabitPlan(task.id)}
+        accessibilityRole="button"
+        accessibilityLabel={`${snapshot.nextActionLabel} for ${task.title}`}
+        style={[styles.actionPill, { backgroundColor: `${tone}14` }]}
+        testID="habit-engine-action"
+      >
         <Text style={[styles.actionText, { color: tone }]}>{snapshot.nextActionLabel}</Text>
-      </View>
-    </TouchableOpacity>
+      </TouchableOpacity>
+    </View>
   );
 }
 
