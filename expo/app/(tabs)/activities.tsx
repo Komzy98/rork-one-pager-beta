@@ -99,6 +99,7 @@ import TodayCoachCard from '@/components/TodayCoachCard';
 import DecisionMomentsCard from '@/components/DecisionMomentsCard';
 import PeakPerformanceScheduler from '@/components/PeakPerformanceScheduler';
 import HabitFormationCoach from '@/components/HabitFormationCoach';
+import HabitEngineTodayCard from '@/components/HabitEngineTodayCard';
 import RecoveryModePanel from '@/components/RecoveryModePanel';
 import JoySourcesNudgeCard from '@/components/JoySourcesNudgeCard';
 import { useRecoveryMode } from '@/hooks/useRecoveryMode';
@@ -2469,6 +2470,8 @@ export default function ActivitiesScreen() {
                 onViewAll={() => router.push('/tasks' as any)}
               />
             </View>
+
+            <HabitEngineTodayCard />
 
             {/* Habit Formation Coach */}
             <HabitFormationCoach 
