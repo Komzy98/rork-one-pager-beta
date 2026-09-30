@@ -1,6 +1,7 @@
 import { describe, it } from 'node:test';
 import assert from 'node:assert/strict';
 import {
+  applyFootballVisibilityRules,
   buildFootballQueryContext,
   computeExploreLeagueScope,
   computeForYouLeagueScope,
@@ -148,5 +149,66 @@ describe('buildFootballQueryContext', () => {
   it('Explore includes top-league bundle', () => {
     const ctx = buildFootballQueryContext({ ...baseInput, smartFilter: 'explore' });
     assert.ok(TOP_LEAGUE_BUNDLE_IDS.every((id) => ctx.leagueIds?.includes(id)));
+  });
+});
+
+
+describe('applyFootballVisibilityRules feed semantics', () => {
+  const fixtures = [
+    { leagueId: 39, homeTeamId: 33, awayTeamId: 50, homeTeam: 'Manchester United', awayTeam: 'Brighton' },
+    { leagueId: 39, homeTeamId: 40, awayTeamId: 49, homeTeam: 'Liverpool', awayTeam: 'Chelsea' },
+    { leagueId: 140, homeTeamId: 529, awayTeamId: 530, homeTeam: 'Barcelona', awayTeam: 'Atletico Madrid' },
+    { leagueId: 667, homeTeamId: 1000, awayTeamId: 1001, homeTeam: 'Nigeria', awayTeam: 'Ghana' },
+  ];
+
+  it('For You only shows explicitly followed club/national-team matches', () => {
+    const visible = applyFootballVisibilityRules(fixtures, {
+      smartFilter: 'for-you',
+      manualLeagueIds: [],
+      favoriteTeamIds: new Set([33]),
+      favoriteTeamNamesLower: ['manchester united'],
+      nationalTeamIds: new Set(),
+      nationalityNamesLower: ['nigeria'],
+      scopedLeagueIds: [39, 140, 667],
+    });
+
+    assert.deepEqual(
+      visible.map((m) => [m.homeTeam, m.awayTeam]),
+      [
+        ['Manchester United', 'Brighton'],
+        ['Nigeria', 'Ghana'],
+      ],
+    );
+  });
+
+  it('Explore shows non-favourite matches only from manually selected leagues', () => {
+    const visible = applyFootballVisibilityRules(fixtures, {
+      smartFilter: 'explore',
+      manualLeagueIds: [39],
+      favoriteTeamIds: new Set([33]),
+      favoriteTeamNamesLower: ['manchester united'],
+      nationalTeamIds: new Set(),
+      nationalityNamesLower: ['nigeria'],
+      scopedLeagueIds: [39],
+    });
+
+    assert.deepEqual(
+      visible.map((m) => [m.homeTeam, m.awayTeam]),
+      [['Liverpool', 'Chelsea']],
+    );
+  });
+
+  it('Explore does not fall back to unrelated fixtures when a selected league has no matches', () => {
+    const visible = applyFootballVisibilityRules(fixtures, {
+      smartFilter: 'explore',
+      manualLeagueIds: [78],
+      favoriteTeamIds: new Set([33]),
+      favoriteTeamNamesLower: ['manchester united'],
+      nationalTeamIds: new Set(),
+      nationalityNamesLower: ['nigeria'],
+      scopedLeagueIds: [78],
+    });
+
+    assert.equal(visible.length, 0);
   });
 });
