@@ -1,5 +1,7 @@
-import { buildFootballInterestSignals } from '@/utils/interestSignalEngine';
-import type { LiveFootballMatch } from '@/types/habit';
+import { describe, it } from 'node:test';
+import assert from 'node:assert/strict';
+import { buildFootballInterestSignals } from '../interestSignalEngine.ts';
+import type { LiveFootballMatch } from '../../types/habit.ts';
 
 function match(overrides: Partial<LiveFootballMatch>): LiveFootballMatch {
   return {
@@ -26,8 +28,8 @@ describe('buildFootballInterestSignals', () => {
       now,
     });
 
-    expect(signals[0]?.title).toContain('Nigeria');
-    expect(signals[0]?.reason).toContain('follow Nigeria');
+    assert.match(signals[0]?.title ?? '', /Nigeria/);
+    assert.match(signals[0]?.reason ?? '', /follow Nigeria/);
   });
 
   it('surfaces a recently completed followed match so the user can catch up', () => {
@@ -47,8 +49,8 @@ describe('buildFootballInterestSignals', () => {
       now,
     });
 
-    expect(signals[0]?.kind).toBe('football_recent_result');
-    expect(signals[0]?.subtitle).toContain('2–1');
+    assert.equal(signals[0]?.kind, 'football_recent_result');
+    assert.match(signals[0]?.subtitle ?? '', /2–1/);
   });
 
   it('ranks live matches above upcoming matches', () => {
@@ -67,6 +69,6 @@ describe('buildFootballInterestSignals', () => {
       now,
     });
 
-    expect(signals[0]?.kind).toBe('football_live');
+    assert.equal(signals[0]?.kind, 'football_live');
   });
 });
