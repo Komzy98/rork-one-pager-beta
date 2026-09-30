@@ -328,7 +328,7 @@ const styles = StyleSheet.create({
     flexShrink: 1,
     fontSize: 16,
     lineHeight: 21,
-    fontWeight: '750',
+    fontWeight: '700',
     letterSpacing: -0.2,
   },
   subtitle: {
@@ -397,7 +397,7 @@ const styles = StyleSheet.create({
   primaryActionText: {
     fontSize: 11.5,
     lineHeight: 15,
-    fontWeight: '750',
+    fontWeight: '700',
     color: '#FFFFFF',
   },
   moreRow: {
