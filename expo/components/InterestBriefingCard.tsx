@@ -141,7 +141,7 @@ const styles = StyleSheet.create({
   signalTitle: {
     fontSize: 14,
     lineHeight: 19,
-    fontWeight: '750',
+    fontWeight: '700',
   },
   subtitle: {
     fontSize: 12,
