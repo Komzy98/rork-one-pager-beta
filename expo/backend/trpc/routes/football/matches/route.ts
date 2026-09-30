@@ -473,8 +473,11 @@ async function fetchMatchesByType(input: GetMatchesInput) {
         url = `${BASE_URL}/fixtures?date=${today}&team=${teamId}`;
         ck = `national:${teamId}:today:${today}`;
       } else if (type === 'results') {
-        url = `${BASE_URL}/fixtures?team=${teamId}&season=${season}&from=${fromDate}&to=${toDate}&status=FT-AET-PEN`;
-        ck = `national:${teamId}:results:${fromDate}:${toDate}:${season}`;
+        // National-team competitions use tournament calendar seasons inconsistently.
+        // Pull recent fixtures by team and let the common result/date filter below
+        // enforce the requested lookback window.
+        url = `${BASE_URL}/fixtures?team=${teamId}&last=20`;
+        ck = `national:${teamId}:results:last20`;
       } else {
         url = `${BASE_URL}/fixtures?team=${teamId}&next=10`;
         ck = `national:${teamId}:upcoming:next10`;
