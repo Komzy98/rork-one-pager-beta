@@ -158,7 +158,7 @@ describe('applyFootballVisibilityRules feed semantics', () => {
     { leagueId: 39, homeTeamId: 33, awayTeamId: 50, homeTeam: 'Manchester United', awayTeam: 'Brighton' },
     { leagueId: 39, homeTeamId: 40, awayTeamId: 49, homeTeam: 'Liverpool', awayTeam: 'Chelsea' },
     { leagueId: 140, homeTeamId: 529, awayTeamId: 530, homeTeam: 'Barcelona', awayTeam: 'Atletico Madrid' },
-    { leagueId: 667, homeTeamId: 1000, awayTeamId: 1001, homeTeam: 'Nigeria', awayTeam: 'Ghana' },
+    { leagueId: 6, homeTeamId: 1000, awayTeamId: 1001, homeTeam: 'Nigeria', awayTeam: 'Ghana' },
   ];
 
   it('For You only shows explicitly followed club/national-team matches', () => {
@@ -169,7 +169,7 @@ describe('applyFootballVisibilityRules feed semantics', () => {
       favoriteTeamNamesLower: ['manchester united'],
       nationalTeamIds: new Set(),
       nationalityNamesLower: ['nigeria'],
-      scopedLeagueIds: [39, 140, 667],
+      scopedLeagueIds: [39, 140, 6],
     });
 
     assert.deepEqual(
@@ -210,5 +210,26 @@ describe('applyFootballVisibilityRules feed semantics', () => {
     });
 
     assert.equal(visible.length, 0);
+  });
+});
+
+
+describe('Explore explicit league completeness', () => {
+  it('keeps non-favourite friendlies when that league was explicitly selected', () => {
+    const visible = applyFootballVisibilityRules(
+      [
+        { leagueId: 667, homeTeamId: 501, awayTeamId: 502, homeTeam: 'Club A', awayTeam: 'Club B' },
+      ],
+      {
+        smartFilter: 'explore',
+        manualLeagueIds: [667],
+        favoriteTeamIds: new Set([33]),
+        favoriteTeamNamesLower: ['manchester united'],
+        nationalTeamIds: new Set(),
+        nationalityNamesLower: ['nigeria'],
+        scopedLeagueIds: [667],
+      },
+    );
+    assert.equal(visible.length, 1);
   });
 });
