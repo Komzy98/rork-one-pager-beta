@@ -102,6 +102,9 @@ import HabitFormationCoach from '@/components/HabitFormationCoach';
 import HabitEngineTodayCard from '@/components/HabitEngineTodayCard';
 import RecoveryModePanel from '@/components/RecoveryModePanel';
 import JoySourcesNudgeCard from '@/components/JoySourcesNudgeCard';
+import InterestBriefingCard from '@/components/InterestBriefingCard';
+import { buildFootballInterestSignals } from '@/utils/interestSignalEngine';
+import { useInterestReminderSync } from '@/hooks/useInterestReminderSync';
 import { useRecoveryMode } from '@/hooks/useRecoveryMode';
 import { resolveEffectiveJoySources } from '@/utils/joySources';
 import { detectRecoveryPatternInsight } from '@/utils/recoveryPatterns';
@@ -831,6 +834,32 @@ export default function ActivitiesScreen() {
     if (__DEV__) console.log(`📊 [Activities] Completed matches: ${result.length}`);
     return result;
   }, [rawCompletedMatches, filterMatchesForFavoriteTeams]);
+
+  const followedFootballNames = useMemo(
+    () => [
+      ...(profile?.favoriteTeams ?? []).map((team) => team.name),
+      ...(profile?.nationalities ?? []).map((nation) => nation.name),
+    ],
+    [profile?.favoriteTeams, profile?.nationalities],
+  );
+
+  const footballInterestSignals = useMemo(
+    () =>
+      buildFootballInterestSignals({
+        liveMatches,
+        upcomingMatches,
+        completedMatches: completedTodayMatches,
+        followedNames: followedFootballNames,
+        limit: 3,
+      }),
+    [liveMatches, upcomingMatches, completedTodayMatches, followedFootballNames],
+  );
+
+  useInterestReminderSync({
+    matches: upcomingMatches,
+    enabled: profile?.notificationSettings?.matchReminders ?? true,
+    userId: user?.id,
+  });
 
   const hasAnyFootballBundleData = useMemo(
     () =>
@@ -2329,6 +2358,13 @@ export default function ActivitiesScreen() {
                   </View>
                 </TouchableOpacity>
               </Animated.View>
+            )}
+
+            {hasSportsInterest && footballInterestSignals.length > 0 && (
+              <InterestBriefingCard
+                signals={footballInterestSignals}
+                onOpenSignal={() => router.push('/sports' as any)}
+              />
             )}
 
             {/* View Toggle */}
