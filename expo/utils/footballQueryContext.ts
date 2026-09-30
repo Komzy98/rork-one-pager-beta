@@ -423,13 +423,15 @@ export function applyFootballVisibilityRules<T extends FootballMatchForVisibilit
     filtered = filtered.filter((match) => !isFollowedMatch(match, input));
   }
 
+  if (input.smartFilter === 'explore') {
+    // Explore is explicit discovery. If the user selected a league, show its matches rather
+    // than applying the favourite-only friendly safety rule used by For You.
+    return filtered;
+  }
+
   const afterFriendlies = filtered.filter((match) =>
     shouldShowFriendlyMatch(match, input.favoriteTeamIds, input.nationalTeamIds),
   );
 
-  if (input.smartFilter === 'for-you') {
-    return pinFavorites(afterFriendlies, input.favoriteTeamIds, input.nationalTeamIds);
-  }
-
-  return afterFriendlies;
+  return pinFavorites(afterFriendlies, input.favoriteTeamIds, input.nationalTeamIds);
 }
