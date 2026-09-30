@@ -26,7 +26,8 @@ export interface NotificationData {
     | 'social'
     | 'challenge'
     | 'achievement'
-    | 'event_reminder';
+    | 'event_reminder'
+    | 'interest_reminder';
   id?: string;
   payload?: Record<string, any>;
 }
