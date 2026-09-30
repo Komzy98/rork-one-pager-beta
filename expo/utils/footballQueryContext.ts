@@ -302,6 +302,44 @@ function isFavoriteTeamMatch(
   return false;
 }
 
+function normalizeClubName(value: string | undefined): string {
+  return (value ?? '')
+    .toLowerCase()
+    .replace(/\b(fc|cf|afc|sc)\b/g, ' ')
+    .replace(/[^a-z0-9]+/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
+function matchInvolvesFavoriteClubByName(
+  match: FootballMatchForVisibility,
+  favoriteTeamNamesLower: readonly string[],
+): boolean {
+  if (favoriteTeamNamesLower.length === 0) return false;
+  const home = normalizeClubName(match.homeTeam);
+  const away = normalizeClubName(match.awayTeam);
+  if (!home && !away) return false;
+  return favoriteTeamNamesLower.some((rawName) => {
+    const favorite = normalizeClubName(rawName);
+    if (!favorite) return false;
+    return home === favorite || away === favorite;
+  });
+}
+
+function isFollowedMatch(
+  match: FootballMatchForVisibility,
+  input: Pick<
+    ApplyFootballVisibilityRulesInput,
+    'favoriteTeamIds' | 'favoriteTeamNamesLower' | 'nationalTeamIds' | 'nationalityNamesLower'
+  >,
+): boolean {
+  return (
+    isFavoriteTeamMatch(match, input.favoriteTeamIds, input.nationalTeamIds)
+    || matchInvolvesFavoriteClubByName(match, input.favoriteTeamNamesLower ?? [])
+    || matchInvolvesNationalityByName(match, input.nationalityNamesLower ?? [])
+  );
+}
+
 function matchInvolvesNationalityByName(
   match: FootballMatchForVisibility,
   nationalityNamesLower: readonly string[],
@@ -338,6 +376,8 @@ export interface ApplyFootballVisibilityRulesInput {
   /** Only applied when `smartFilter === 'explore'` */
   manualLeagueIds: readonly number[];
   favoriteTeamIds: ReadonlySet<number>;
+  /** Favorite club names (lowercase) — fallback for stale/missing API ids. */
+  favoriteTeamNamesLower?: readonly string[];
   /** National team API ids from profile nationalities — used for Following filter */
   nationalTeamIds?: ReadonlySet<number>;
   /** Profile nationality names (lowercase) — fallback when stored apiId is stale */
@@ -358,62 +398,38 @@ export function applyFootballVisibilityRules<T extends FootballMatchForVisibilit
 ): T[] {
   let filtered: T[] = [...matches];
 
-  const alwaysKeep = (m: T) =>
-    isWorldCupMatch(m) || ALWAYS_VISIBLE_INTERNATIONAL_LEAGUE_IDS.has(m.leagueId);
+  /**
+   * Product semantics:
+   * - For You = fixtures involving teams/countries the user explicitly follows.
+   * - Explore = non-followed fixtures from the leagues the user selected.
+   *
+   * Do not silently fall back to unrelated fixtures when a selected league has no matches.
+   */
+  if (input.smartFilter === 'for-you') {
+    filtered = filtered.filter((match) => isFollowedMatch(match, input));
+  } else if (input.smartFilter === 'explore') {
+    const leagueScope =
+      input.manualLeagueIds.length > 0
+        ? expandCompetitionSelection(input.manualLeagueIds)
+        : new Set(input.scopedLeagueIds ?? []);
 
-  if (input.smartFilter === 'explore' && input.manualLeagueIds.length > 0) {
-    const set = expandCompetitionSelection(input.manualLeagueIds);
-    const narrowed = filtered.filter((m) => set.has(m.leagueId));
-    if (narrowed.length > 0) {
-      filtered = narrowed;
+    if (leagueScope.size > 0) {
+      filtered = filtered.filter((match) => leagueScope.has(match.leagueId));
+    } else {
+      filtered = [];
     }
-  } else if (input.smartFilter === 'for-you' && input.scopedLeagueIds && input.scopedLeagueIds.length > 0) {
-    const leagueSet = new Set(input.scopedLeagueIds);
-    const includeNationalTeams = input.prioritizeNationalTeams !== false;
-    filtered = filtered.filter(
-      (m) =>
-        alwaysKeep(m) ||
-        leagueSet.has(m.leagueId) ||
-        isFavoriteTeamMatch(
-          m,
-          input.favoriteTeamIds,
-          includeNationalTeams ? input.nationalTeamIds : undefined,
-        ) ||
-        (includeNationalTeams &&
-          matchInvolvesNationalityByName(m, input.nationalityNamesLower ?? [])),
-    );
-  } else if (
-    input.smartFilter === 'explore' &&
-    input.scopedLeagueIds &&
-    input.scopedLeagueIds.length > 0
-  ) {
-    const leagueSet = new Set(input.scopedLeagueIds);
-    filtered = filtered.filter(
-      (m) =>
-        alwaysKeep(m) ||
-        leagueSet.has(m.leagueId) ||
-        isFavoriteTeamMatch(m, input.favoriteTeamIds, input.nationalTeamIds),
-    );
+
+    // Explore is intentionally complementary to For You: don't duplicate followed teams.
+    filtered = filtered.filter((match) => !isFollowedMatch(match, input));
   }
 
-  /** Safety net: never drop World Cup / key international fixtures from the raw bundle. */
-  const kept = new Map<string, T>();
-  const matchKey = (m: T) =>
-    `${m.leagueId ?? 0}:${m.homeTeamId ?? ''}:${m.awayTeamId ?? ''}:${(m as { date?: string }).date ?? ''}`;
-  filtered.forEach((m) => kept.set(matchKey(m), m));
-  if (input.smartFilter === 'for-you' || input.smartFilter === 'explore') {
-    matches.forEach((m) => {
-      if (alwaysKeep(m)) kept.set(matchKey(m), m);
-    });
-  } else {
-    matches.forEach((m) => {
-      if (isWorldCupMatch(m)) kept.set(matchKey(m), m);
-    });
-  }
-
-  const afterFriendlies = [...kept.values()].filter((m) =>
-    shouldShowFriendlyMatch(m, input.favoriteTeamIds, input.nationalTeamIds),
+  const afterFriendlies = filtered.filter((match) =>
+    shouldShowFriendlyMatch(match, input.favoriteTeamIds, input.nationalTeamIds),
   );
 
-  return pinFavorites(afterFriendlies, input.favoriteTeamIds, input.nationalTeamIds);
+  if (input.smartFilter === 'for-you') {
+    return pinFavorites(afterFriendlies, input.favoriteTeamIds, input.nationalTeamIds);
+  }
+
+  return afterFriendlies;
 }
