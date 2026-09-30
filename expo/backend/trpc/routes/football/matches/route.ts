@@ -245,6 +245,7 @@ const getMatchesInputSchema = z.object({
   leagueIds: z.array(z.number().int().positive().max(99999)).max(100).optional(),
   teamIds: z.array(z.number().int().positive().max(99999)).max(30).optional(),
   nationalTeamIds: z.array(z.number().int().positive().max(99999)).max(30).optional(),
+  nationalTeamNames: z.array(z.string().trim().min(2).max(80)).max(12).optional(),
   includeAfcon: z.boolean().optional(),
 });
 
@@ -252,7 +253,7 @@ type GetMatchesInput = z.infer<typeof getMatchesInputSchema>;
 
 /** Shared implementation; per-type response cache inside keeps repeated calls cheap. */
 async function fetchMatchesByType(input: GetMatchesInput) {
-    const { type, days = 14, leagueIds, teamIds, nationalTeamIds, includeAfcon } = input;
+    const { type, days = 14, leagueIds, teamIds, nationalTeamIds, nationalTeamNames, includeAfcon } = input;
 
     /** Bump when fetch/filter logic changes — avoids serving stale empty bundles from cache. */
     const topLevelCacheKey = getCacheKey(type, {
@@ -260,8 +261,9 @@ async function fetchMatchesByType(input: GetMatchesInput) {
       leagueIds,
       teamIds,
       nationalTeamIds,
+      nationalTeamNames,
       includeAfcon,
-      _filterRev: 'intl-season-v7-results-date-cutoff',
+      _filterRev: 'intl-season-v8-national-name-resolution',
     });
     const topLevelTtl = CACHE_TTL[type] || 60000;
     const cachedResult = getFromCache(topLevelCacheKey, topLevelTtl);
@@ -405,6 +407,65 @@ async function fetchMatchesByType(input: GetMatchesInput) {
       return matches;
     };
 
+    const normalizeTeamName = (value: string): string =>
+      value
+        .trim()
+        .toLowerCase()
+        .normalize('NFD')
+        .replace(/[\u0300-\u036f]/g, '')
+        .replace(/[^a-z0-9]+/g, ' ')
+        .trim();
+
+    const resolveNationalTeamIdByName = async (name: string): Promise<number | null> => {
+      const normalizedExpected = normalizeTeamName(name);
+      if (!normalizedExpected) return null;
+
+      const url = `${BASE_URL}/teams?search=${encodeURIComponent(name)}`;
+      const ck = `national-team-name:${normalizedExpected}`;
+      const data = await cachedFetch(url, headers, ck, 24 * 60 * 60 * 1000);
+      noteFetchErrors(data);
+
+      const rows = Array.isArray(data.response) ? data.response : [];
+      const exactNational = rows.find((row: any) => {
+        const team = row?.team;
+        return (
+          team?.national === true
+          && typeof team?.id === 'number'
+          && normalizeTeamName(String(team?.name ?? '')) === normalizedExpected
+        );
+      });
+
+      if (exactNational?.team?.id) {
+        console.log(`🌍 Resolved national team "${name}" -> API team ${exactNational.team.id}`);
+        return exactNational.team.id;
+      }
+
+      const exactAny = rows.find((row: any) => {
+        const team = row?.team;
+        return (
+          typeof team?.id === 'number'
+          && normalizeTeamName(String(team?.name ?? '')) === normalizedExpected
+        );
+      });
+
+      if (exactAny?.team?.id) {
+        console.warn(
+          `⚠️ Exact team name match for "${name}" was not marked national; refusing unsafe ID ${exactAny.team.id}`,
+        );
+      } else {
+        console.warn(`⚠️ Could not resolve national team by name: "${name}"`);
+      }
+      return null;
+    };
+
+    const resolveNationalTeamIdsByName = async (): Promise<number[]> => {
+      if (!nationalTeamNames?.length) return [];
+      const resolved = await Promise.all(
+        nationalTeamNames.slice(0, 8).map((name) => resolveNationalTeamIdByName(name)),
+      );
+      return [...new Set(resolved.filter((id): id is number => typeof id === 'number' && id > 0))];
+    };
+
     const fetchNationalTeamMatches = async (teamId: number): Promise<any[]> => {
       let url = '';
       let ck = '';
@@ -458,6 +519,11 @@ async function fetchMatchesByType(input: GetMatchesInput) {
     };
 
     try {
+      const resolvedNationalTeamIds = await resolveNationalTeamIdsByName();
+      const effectiveNationalTeamIds = Array.from(
+        new Set([...(nationalTeamIds ?? []), ...resolvedNationalTeamIds]),
+      );
+
       const allPromises: Promise<any[]>[] = [];
 
       /** World Cup first — parallel batch timeouts / rate limits must not drop tomorrow's fixtures. */
@@ -497,8 +563,8 @@ async function fetchMatchesByType(input: GetMatchesInput) {
       // tournament window, and deduped/cached so the extra call is cheap.
       DEFAULT_INTERNATIONAL_IDS.forEach(id => allPromises.push(fetchIntlLeague(id)));
 
-      if (nationalTeamIds && nationalTeamIds.length > 0) {
-        const limitedNationals = nationalTeamIds.slice(0, 8);
+      if (effectiveNationalTeamIds.length > 0) {
+        const limitedNationals = effectiveNationalTeamIds.slice(0, 8);
         limitedNationals.forEach(id => allPromises.push(fetchNationalTeamMatches(id)));
       }
 
@@ -626,6 +692,7 @@ const getMatchesBundleInputSchema = z.object({
   leagueIds: z.array(z.number().int().positive().max(99999)).max(100).optional(),
   teamIds: z.array(z.number().int().positive().max(99999)).max(30).optional(),
   nationalTeamIds: z.array(z.number().int().positive().max(99999)).max(30).optional(),
+  nationalTeamNames: z.array(z.string().trim().min(2).max(80)).max(12).optional(),
   includeAfcon: z.boolean().optional(),
   /** When false, only live + upcoming are fetched (one client round-trip, fewer upstream calls). */
   includeResults: z.boolean(),
@@ -634,12 +701,13 @@ const getMatchesBundleInputSchema = z.object({
 export const getMatchesBundleRoute = publicProcedure
   .input(getMatchesBundleInputSchema)
   .query(async ({ input }) => {
-    const { includeResults, days, leagueIds, teamIds, nationalTeamIds, includeAfcon } = input;
+    const { includeResults, days, leagueIds, teamIds, nationalTeamIds, nationalTeamNames, includeAfcon } = input;
     const shared: Omit<GetMatchesInput, 'type'> = {
       days,
       leagueIds,
       teamIds,
       nationalTeamIds,
+      nationalTeamNames,
       includeAfcon,
     };
     const [live, upcoming, results] = await Promise.all([
