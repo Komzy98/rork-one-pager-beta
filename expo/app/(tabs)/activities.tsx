@@ -102,6 +102,10 @@ import HabitFormationCoach from '@/components/HabitFormationCoach';
 import HabitEngineTodayCard from '@/components/HabitEngineTodayCard';
 import RecoveryModePanel from '@/components/RecoveryModePanel';
 import JoySourcesNudgeCard from '@/components/JoySourcesNudgeCard';
+import InterestBriefingCard from '@/components/InterestBriefingCard';
+import { buildFootballInterestSignals } from '@/utils/interestSignalEngine';
+import { useInterestReminderSync } from '@/hooks/useInterestReminderSync';
+import { notificationService } from '@/utils/notificationService';
 import { useRecoveryMode } from '@/hooks/useRecoveryMode';
 import { resolveEffectiveJoySources } from '@/utils/joySources';
 import { detectRecoveryPatternInsight } from '@/utils/recoveryPatterns';
@@ -281,6 +285,8 @@ export default function ActivitiesScreen() {
   const eventKit = calendarData?.eventKit || { isEventKitAvailable: false, hasPermission: false };
   
   const [isLoadingMatches, setIsLoadingMatches] = useState<boolean>(false);
+  const [interestMatchDetails, setInterestMatchDetails] = useState<LiveFootballMatch | null>(null);
+  const [showInterestMatchDetails, setShowInterestMatchDetails] = useState(false);
   const [showCalendarImporter, setShowCalendarImporter] = useState<boolean>(false);
   const [showEventKitManager, setShowEventKitManager] = useState<boolean>(false);
   const [refreshing, setRefreshing] = useState<boolean>(false);
@@ -695,6 +701,60 @@ export default function ActivitiesScreen() {
   const { query: footballBundleQuery, requestIncludeResults, setPollLive } = useFootballBundle();
   const { isPinned, togglePin, resolvePinnedMatches, records } = usePinnedMatches();
 
+  const openInterestSignal = useCallback(async (signal: { match: LiveFootballMatch }) => {
+    if (Platform.OS !== 'web') {
+      await Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+    }
+    setInterestMatchDetails(signal.match);
+    setShowInterestMatchDetails(true);
+  }, []);
+
+  const remindAboutInterestMatch = useCallback(
+    async (signal: { match: LiveFootballMatch }) => {
+      const match = signal.match;
+      const kickoff = new Date(match.date);
+      if (!Number.isFinite(kickoff.getTime()) || kickoff.getTime() <= Date.now()) {
+        Alert.alert('Match already started', 'This fixture is no longer eligible for a reminder.');
+        return false;
+      }
+
+      notificationService.setActiveUser(user?.id);
+      const minutesUntilKickoff = Math.max(1, Math.round((kickoff.getTime() - Date.now()) / 60000));
+      const reminderLeadMinutes =
+        minutesUntilKickoff > 90 ? 60 : minutesUntilKickoff > 30 ? 15 : Math.max(1, Math.floor(minutesUntilKickoff / 2));
+
+      const identifier = await notificationService.scheduleMatchReminder(
+        match.id,
+        match.homeTeam,
+        match.awayTeam,
+        kickoff,
+        reminderLeadMinutes,
+      );
+
+      if (!identifier) {
+        Alert.alert(
+          'Reminder not set',
+          'Enable notifications for One Pager in iPhone Settings, then try again.',
+        );
+        return false;
+      }
+
+      Alert.alert(
+        'Reminder set',
+        `We’ll remind you ${reminderLeadMinutes} minute${reminderLeadMinutes === 1 ? '' : 's'} before kickoff.`,
+      );
+      return true;
+    },
+    [user?.id],
+  );
+
+  const toggleInterestPin = useCallback(
+    async (signal: { match: LiveFootballMatch }) => {
+      await togglePin(signal.match);
+    },
+    [togglePin],
+  );
+
   useEffect(() => {
     requestIncludeResults();
   }, [requestIncludeResults]);
@@ -831,6 +891,32 @@ export default function ActivitiesScreen() {
     if (__DEV__) console.log(`📊 [Activities] Completed matches: ${result.length}`);
     return result;
   }, [rawCompletedMatches, filterMatchesForFavoriteTeams]);
+
+  const followedFootballNames = useMemo(
+    () => [
+      ...(profile?.favoriteTeams ?? []).map((team) => team.name),
+      ...(profile?.nationalities ?? []).map((nation) => nation.name),
+    ],
+    [profile?.favoriteTeams, profile?.nationalities],
+  );
+
+  const footballInterestSignals = useMemo(
+    () =>
+      buildFootballInterestSignals({
+        liveMatches,
+        upcomingMatches,
+        completedMatches: completedTodayMatches,
+        followedNames: followedFootballNames,
+        limit: 3,
+      }),
+    [liveMatches, upcomingMatches, completedTodayMatches, followedFootballNames],
+  );
+
+  useInterestReminderSync({
+    matches: upcomingMatches,
+    enabled: profile?.notificationSettings?.matchReminders ?? true,
+    userId: user?.id,
+  });
 
   const hasAnyFootballBundleData = useMemo(
     () =>
@@ -2389,6 +2475,35 @@ export default function ActivitiesScreen() {
               currentUserId={user?.id}
               onCheer={(eventId) => void partnerActivity.cheer(eventId, true)}
             />
+            {hasSportsInterest && footballInterestSignals.length > 0 && (
+              <>
+                <InterestBriefingCard
+                  signals={footballInterestSignals}
+                  onOpenSignal={(signal) => void openInterestSignal(signal)}
+                  onViewAll={() => router.push('/(tabs)/sports' as any)}
+                  onRemind={remindAboutInterestMatch}
+                  onTogglePin={toggleInterestPin}
+                  isPinned={(signal) => isPinned(signal.match.id)}
+                />
+                {interestMatchDetails ? (
+                  <MatchDetailsModal
+                    visible={showInterestMatchDetails}
+                    onClose={() => setShowInterestMatchDetails(false)}
+                    fixtureId={parseInt(interestMatchDetails.id, 10)}
+                    homeTeam={interestMatchDetails.homeTeam}
+                    awayTeam={interestMatchDetails.awayTeam}
+                    homeScore={interestMatchDetails.homeScore}
+                    awayScore={interestMatchDetails.awayScore}
+                    league={interestMatchDetails.league}
+                    leagueLogo={interestMatchDetails.leagueLogo}
+                    round={interestMatchDetails.round}
+                    homeTeamLogo={interestMatchDetails.homeTeamLogo}
+                    awayTeamLogo={interestMatchDetails.awayTeamLogo}
+                  />
+                ) : null}
+              </>
+            )}
+
             <JoySourcesNudgeCard />
 
             {recovery.isActive ? (
