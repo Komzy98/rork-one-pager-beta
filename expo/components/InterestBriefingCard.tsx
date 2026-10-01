@@ -1,5 +1,13 @@
 import React, { useMemo, useState } from 'react';
-import { ActivityIndicator, Platform, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
+import {
+  ActivityIndicator,
+  Alert,
+  Platform,
+  StyleSheet,
+  Text,
+  TouchableOpacity,
+  View,
+} from 'react-native';
 import {
   Bell,
   BellRing,
@@ -44,13 +52,18 @@ export default function InterestBriefingCard({
   const [busyId, setBusyId] = useState<string | null>(null);
   const [remindedIds, setRemindedIds] = useState<Set<string>>(new Set());
 
-  const visibleSignals = useMemo(() => signals.slice(0, 4), [signals]);
+  // Today should stay scannable. Deeper browsing belongs in Sports.
+  const visibleSignals = useMemo(() => signals.slice(0, 3), [signals]);
   if (visibleSignals.length === 0) return null;
 
-  const press = async (fn: () => void | Promise<void>) => {
+  const haptic = () => {
     if (Platform.OS !== 'web') {
-      await Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+      void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light).catch(() => undefined);
     }
+  };
+
+  const press = async (fn: () => void | Promise<void>) => {
+    haptic();
     await fn();
   };
 
@@ -62,21 +75,29 @@ export default function InterestBriefingCard({
       if (success) {
         setRemindedIds((current) => new Set(current).add(signal.id));
       }
+    } catch (error) {
+      console.warn('[InterestBriefing] Failed to set reminder', error);
+      Alert.alert('Couldn’t set reminder', 'Please try again in a moment.');
+    } finally {
+      setBusyId(null);
+    }
+  };
+
+  const handlePin = async (signal: PersonalSignal) => {
+    if (!onTogglePin || busyId) return;
+    setBusyId(signal.id);
+    try {
+      await onTogglePin(signal);
+    } catch (error) {
+      console.warn('[InterestBriefing] Failed to update pin', error);
+      Alert.alert('Couldn’t update pin', 'Please try again in a moment.');
     } finally {
       setBusyId(null);
     }
   };
 
   return (
-    <View
-      style={[
-        styles.card,
-        {
-          backgroundColor: isDark ? colors.surfaceSecondary : 'rgba(255,255,255,0.96)',
-          borderColor: isDark ? colors.border : 'rgba(22,34,55,0.08)',
-        },
-      ]}
-    >
+    <View style={styles.wrap}>
       <View style={styles.header}>
         <View style={styles.headerCopy}>
           <Text style={[styles.eyebrow, { color: colors.textTertiary }]}>YOUR INTERESTS</Text>
@@ -86,48 +107,57 @@ export default function InterestBriefingCard({
         <TouchableOpacity
           accessibilityRole="button"
           accessibilityLabel="View all sports interests"
-          activeOpacity={0.7}
+          activeOpacity={0.72}
           onPress={() => void press(onViewAll)}
-          style={[styles.viewAllButton, { backgroundColor: isDark ? colors.surface : '#F4F6FA' }]}
+          style={[
+            styles.viewAllButton,
+            { backgroundColor: isDark ? colors.surfaceSecondary : '#F4F6FA' },
+          ]}
+          testID="interest-briefing-view-all"
         >
           <Text style={styles.viewAllText}>View all</Text>
-          <ChevronRight size={14} color="#4F46E5" strokeWidth={2.4} />
+          <ChevronRight size={15} color="#4F46E5" strokeWidth={2.4} />
         </TouchableOpacity>
       </View>
 
       <View style={styles.list}>
-        {visibleSignals.map((signal, index) => {
+        {visibleSignals.map((signal) => {
           const pinned = isPinned?.(signal) ?? false;
           const reminded = remindedIds.has(signal.id);
           const canRemind = signal.kind === 'football_upcoming' && Boolean(onRemind);
           const busy = busyId === signal.id;
+          const live = signal.kind === 'football_live';
 
           return (
             <View
               key={signal.id}
               style={[
-                styles.rowShell,
-                index > 0 && {
-                  borderTopWidth: StyleSheet.hairlineWidth,
-                  borderTopColor: isDark ? colors.border : 'rgba(22,34,55,0.08)',
+                styles.signalCard,
+                {
+                  backgroundColor: colors.card,
+                  borderColor: live
+                    ? isDark
+                      ? 'rgba(248,113,113,0.28)'
+                      : 'rgba(239,68,68,0.16)'
+                    : colors.border,
                 },
               ]}
             >
               <TouchableOpacity
                 accessibilityRole="button"
                 accessibilityLabel={`Open details for ${signal.title}`}
-                activeOpacity={0.72}
+                activeOpacity={0.78}
                 onPress={() => void press(() => onOpenSignal(signal))}
                 style={styles.rowMain}
+                testID={`interest-signal-${signal.id}`}
               >
                 <View
                   style={[
                     styles.iconWrap,
                     {
-                      backgroundColor:
-                        signal.kind === 'football_live'
-                          ? 'rgba(239,68,68,0.09)'
-                          : 'rgba(79,70,229,0.08)',
+                      backgroundColor: live
+                        ? 'rgba(239,68,68,0.09)'
+                        : 'rgba(79,70,229,0.08)',
                     },
                   ]}
                 >
@@ -139,7 +169,7 @@ export default function InterestBriefingCard({
                     <Text style={[styles.signalTitle, { color: colors.text }]} numberOfLines={1}>
                       {signal.title}
                     </Text>
-                    {signal.kind === 'football_live' ? (
+                    {live ? (
                       <View style={styles.livePill}>
                         <View style={styles.liveDot} />
                         <Text style={styles.liveText}>LIVE</Text>
@@ -147,7 +177,10 @@ export default function InterestBriefingCard({
                     ) : null}
                   </View>
 
-                  <Text style={[styles.subtitle, { color: colors.textSecondary }]} numberOfLines={1}>
+                  <Text
+                    style={[styles.subtitle, { color: colors.textSecondary }]}
+                    numberOfLines={1}
+                  >
                     {signal.subtitle}
                   </Text>
                   <Text style={[styles.reason, { color: colors.textTertiary }]} numberOfLines={1}>
@@ -162,9 +195,17 @@ export default function InterestBriefingCard({
                 <TouchableOpacity
                   accessibilityRole="button"
                   accessibilityLabel={`Open ${signal.title} details`}
-                  activeOpacity={0.68}
+                  activeOpacity={0.7}
                   onPress={() => void press(() => onOpenSignal(signal))}
-                  style={[styles.actionButton, { backgroundColor: isDark ? colors.surface : '#F4F6FA' }]}
+                  style={[
+                    styles.actionButton,
+                    styles.secondaryAction,
+                    {
+                      backgroundColor: isDark ? colors.surfaceSecondary : '#F5F6F8',
+                      borderColor: isDark ? colors.border : 'rgba(22,34,55,0.06)',
+                    },
+                  ]}
+                  testID={`interest-details-${signal.id}`}
                 >
                   <Text style={[styles.actionText, { color: colors.textSecondary }]}>Details</Text>
                 </TouchableOpacity>
@@ -173,25 +214,28 @@ export default function InterestBriefingCard({
                   <TouchableOpacity
                     accessibilityRole="button"
                     accessibilityLabel={reminded ? 'Reminder set' : `Remind me about ${signal.title}`}
+                    accessibilityState={{ disabled: busy || reminded }}
                     disabled={busy || reminded}
-                    activeOpacity={0.68}
+                    activeOpacity={0.72}
                     onPress={() => void press(() => handleRemind(signal))}
                     style={[
                       styles.actionButton,
                       styles.primaryAction,
                       reminded && styles.successAction,
+                      (busy || reminded) && styles.disabledAction,
                     ]}
+                    testID={`interest-remind-${signal.id}`}
                   >
                     {busy ? (
                       <ActivityIndicator size="small" color="#FFFFFF" />
                     ) : reminded ? (
                       <>
-                        <Check size={13} color="#FFFFFF" strokeWidth={2.8} />
+                        <Check size={14} color="#FFFFFF" strokeWidth={2.8} />
                         <Text style={styles.primaryActionText}>Reminder set</Text>
                       </>
                     ) : (
                       <>
-                        <Bell size={13} color="#FFFFFF" strokeWidth={2.3} />
+                        <Bell size={14} color="#FFFFFF" strokeWidth={2.3} />
                         <Text style={styles.primaryActionText}>Remind me</Text>
                       </>
                     )}
@@ -200,24 +244,47 @@ export default function InterestBriefingCard({
                   <TouchableOpacity
                     accessibilityRole="button"
                     accessibilityLabel={pinned ? `Unpin ${signal.title}` : `Pin ${signal.title}`}
-                    activeOpacity={0.68}
-                    onPress={() => void press(async () => {
-                      await onTogglePin(signal);
-                    })}
+                    accessibilityState={{ busy }}
+                    disabled={busy}
+                    activeOpacity={0.72}
+                    onPress={() => void press(() => handlePin(signal))}
                     style={[
                       styles.actionButton,
-                      pinned && styles.pinnedAction,
-                      { backgroundColor: pinned ? 'rgba(245,158,11,0.12)' : isDark ? colors.surface : '#F4F6FA' },
+                      styles.pinAction,
+                      {
+                        backgroundColor: pinned
+                          ? 'rgba(245,158,11,0.12)'
+                          : isDark
+                            ? colors.surfaceSecondary
+                            : '#F5F6F8',
+                        borderColor: pinned
+                          ? 'rgba(217,119,6,0.18)'
+                          : isDark
+                            ? colors.border
+                            : 'rgba(22,34,55,0.06)',
+                      },
                     ]}
+                    testID={`interest-pin-${signal.id}`}
                   >
-                    <Pin
-                      size={13}
-                      color={pinned ? '#D97706' : colors.textSecondary}
-                      fill={pinned ? '#F59E0B' : 'transparent'}
-                    />
-                    <Text style={[styles.actionText, { color: pinned ? '#D97706' : colors.textSecondary }]}>
-                      {pinned ? 'Pinned' : 'Pin'}
-                    </Text>
+                    {busy ? (
+                      <ActivityIndicator size="small" color={pinned ? '#D97706' : colors.textSecondary} />
+                    ) : (
+                      <>
+                        <Pin
+                          size={14}
+                          color={pinned ? '#D97706' : colors.textSecondary}
+                          fill={pinned ? '#F59E0B' : 'transparent'}
+                        />
+                        <Text
+                          style={[
+                            styles.actionText,
+                            { color: pinned ? '#D97706' : colors.textSecondary },
+                          ]}
+                        >
+                          {pinned ? 'Pinned' : 'Pin'}
+                        </Text>
+                      </>
+                    )}
                   </TouchableOpacity>
                 ) : null}
               </View>
@@ -230,12 +297,15 @@ export default function InterestBriefingCard({
         <TouchableOpacity
           accessibilityRole="button"
           accessibilityLabel={`View ${signals.length - visibleSignals.length} more interest updates`}
-          activeOpacity={0.7}
+          activeOpacity={0.72}
           onPress={() => void press(onViewAll)}
-          style={[styles.moreRow, { borderTopColor: isDark ? colors.border : 'rgba(22,34,55,0.08)' }]}
+          style={styles.moreRow}
+          testID="interest-briefing-more"
         >
-          <Text style={styles.moreText}>See {signals.length - visibleSignals.length} more</Text>
-          <ChevronRight size={15} color="#4F46E5" />
+          <Text style={[styles.moreText, { color: colors.primary }]}>
+            See {signals.length - visibleSignals.length} more
+          </Text>
+          <ChevronRight size={15} color={colors.primary} />
         </TouchableOpacity>
       ) : null}
     </View>
@@ -243,22 +313,15 @@ export default function InterestBriefingCard({
 }
 
 const styles = StyleSheet.create({
-  card: {
-    marginHorizontal: 20,
-    marginTop: 16,
-    borderWidth: 1,
-    borderRadius: 22,
-    overflow: 'hidden',
-    shadowColor: '#0F172A',
-    shadowOpacity: 0.06,
-    shadowRadius: 18,
-    shadowOffset: { width: 0, height: 8 },
-    elevation: 2,
+  wrap: {
+    paddingHorizontal: 20,
+    paddingTop: 16,
+    paddingBottom: 4,
+    gap: 10,
   },
   header: {
-    paddingHorizontal: 18,
-    paddingTop: 17,
-    paddingBottom: 11,
+    minHeight: 48,
+    paddingHorizontal: 2,
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
@@ -271,45 +334,54 @@ const styles = StyleSheet.create({
     fontSize: 10,
     lineHeight: 13,
     fontWeight: '800',
-    letterSpacing: 1.15,
+    letterSpacing: 1.1,
   },
   title: {
-    fontSize: 22,
-    lineHeight: 27,
+    fontSize: 20,
+    lineHeight: 25,
     fontWeight: '800',
-    letterSpacing: -0.55,
+    letterSpacing: -0.45,
     marginTop: 1,
   },
   viewAllButton: {
-    minHeight: 36,
-    paddingHorizontal: 11,
-    borderRadius: 12,
+    minHeight: 44,
+    paddingHorizontal: 13,
+    borderRadius: 14,
     flexDirection: 'row',
     alignItems: 'center',
+    justifyContent: 'center',
     gap: 3,
   },
   viewAllText: {
-    fontSize: 12,
-    lineHeight: 16,
-    fontWeight: '700',
+    fontSize: 13,
+    lineHeight: 17,
+    fontWeight: '750',
     color: '#4F46E5',
   },
   list: {
-    paddingHorizontal: 18,
+    gap: 9,
   },
-  rowShell: {
-    paddingVertical: 13,
+  signalCard: {
+    borderWidth: 1,
+    borderRadius: 16,
+    paddingHorizontal: 14,
+    paddingVertical: 12,
+    shadowColor: '#0F172A',
+    shadowOpacity: 0.035,
+    shadowRadius: 12,
+    shadowOffset: { width: 0, height: 5 },
+    elevation: 1,
   },
   rowMain: {
-    minHeight: 62,
+    minHeight: 58,
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 12,
+    gap: 11,
   },
   iconWrap: {
-    width: 42,
-    height: 42,
-    borderRadius: 13,
+    width: 40,
+    height: 40,
+    borderRadius: 12,
     alignItems: 'center',
     justifyContent: 'center',
     flexShrink: 0,
@@ -326,28 +398,28 @@ const styles = StyleSheet.create({
   },
   signalTitle: {
     flexShrink: 1,
-    fontSize: 16,
-    lineHeight: 21,
-    fontWeight: '700',
-    letterSpacing: -0.2,
+    fontSize: 15.5,
+    lineHeight: 20,
+    fontWeight: '750',
+    letterSpacing: -0.18,
   },
   subtitle: {
-    fontSize: 13,
-    lineHeight: 18,
+    fontSize: 12.5,
+    lineHeight: 17,
     marginTop: 2,
     fontWeight: '500',
   },
   reason: {
-    fontSize: 11.5,
-    lineHeight: 16,
-    marginTop: 3,
+    fontSize: 11,
+    lineHeight: 15,
+    marginTop: 2,
     fontWeight: '500',
   },
   livePill: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: 4,
-    paddingHorizontal: 6,
+    paddingHorizontal: 7,
     height: 20,
     borderRadius: 10,
     backgroundColor: 'rgba(239,68,68,0.10)',
@@ -366,53 +438,60 @@ const styles = StyleSheet.create({
     letterSpacing: 0.35,
   },
   actions: {
-    marginLeft: 54,
-    paddingTop: 8,
+    marginLeft: 51,
+    paddingTop: 9,
     flexDirection: 'row',
     gap: 8,
   },
   actionButton: {
-    minHeight: 32,
-    paddingHorizontal: 11,
-    borderRadius: 10,
+    minHeight: 40,
+    minWidth: 76,
+    paddingHorizontal: 13,
+    borderRadius: 12,
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
-    gap: 5,
+    gap: 6,
+  },
+  secondaryAction: {
+    borderWidth: 1,
+  },
+  pinAction: {
+    borderWidth: 1,
   },
   actionText: {
-    fontSize: 11.5,
-    lineHeight: 15,
+    fontSize: 12,
+    lineHeight: 16,
     fontWeight: '700',
   },
   primaryAction: {
+    minWidth: 112,
     backgroundColor: '#4F46E5',
   },
   successAction: {
     backgroundColor: '#16A34A',
   },
-  pinnedAction: {
-    borderWidth: 0,
+  disabledAction: {
+    opacity: 0.78,
   },
   primaryActionText: {
-    fontSize: 11.5,
-    lineHeight: 15,
-    fontWeight: '700',
+    fontSize: 12,
+    lineHeight: 16,
+    fontWeight: '750',
     color: '#FFFFFF',
   },
   moreRow: {
-    borderTopWidth: StyleSheet.hairlineWidth,
-    minHeight: 46,
-    marginHorizontal: 18,
+    alignSelf: 'center',
+    minHeight: 44,
+    paddingHorizontal: 14,
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
-    gap: 4,
+    gap: 3,
   },
   moreText: {
-    fontSize: 12,
-    lineHeight: 16,
+    fontSize: 12.5,
+    lineHeight: 17,
     fontWeight: '700',
-    color: '#4F46E5',
   },
 });
