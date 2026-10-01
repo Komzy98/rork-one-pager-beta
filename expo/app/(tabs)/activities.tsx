@@ -2480,7 +2480,7 @@ export default function ActivitiesScreen() {
                 <InterestBriefingCard
                   signals={footballInterestSignals}
                   onOpenSignal={(signal) => void openInterestSignal(signal)}
-                  onViewAll={() => router.push('/sports' as any)}
+                  onViewAll={() => router.push('/(tabs)/sports' as any)}
                   onRemind={remindAboutInterestMatch}
                   onTogglePin={toggleInterestPin}
                   isPinned={(signal) => isPinned(signal.match.id)}
