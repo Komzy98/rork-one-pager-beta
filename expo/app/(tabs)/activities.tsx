@@ -2417,35 +2417,6 @@ export default function ActivitiesScreen() {
               </Animated.View>
             )}
 
-            {hasSportsInterest && footballInterestSignals.length > 0 && (
-              <>
-                <InterestBriefingCard
-                  signals={footballInterestSignals}
-                  onOpenSignal={(signal) => void openInterestSignal(signal)}
-                  onViewAll={() => router.push('/sports' as any)}
-                  onRemind={remindAboutInterestMatch}
-                  onTogglePin={toggleInterestPin}
-                  isPinned={(signal) => isPinned(signal.match.id)}
-                />
-                {interestMatchDetails ? (
-                  <MatchDetailsModal
-                    visible={showInterestMatchDetails}
-                    onClose={() => setShowInterestMatchDetails(false)}
-                    fixtureId={parseInt(interestMatchDetails.id, 10)}
-                    homeTeam={interestMatchDetails.homeTeam}
-                    awayTeam={interestMatchDetails.awayTeam}
-                    homeScore={interestMatchDetails.homeScore}
-                    awayScore={interestMatchDetails.awayScore}
-                    league={interestMatchDetails.league}
-                    leagueLogo={interestMatchDetails.leagueLogo}
-                    round={interestMatchDetails.round}
-                    homeTeamLogo={interestMatchDetails.homeTeamLogo}
-                    awayTeamLogo={interestMatchDetails.awayTeamLogo}
-                  />
-                ) : null}
-              </>
-            )}
-
             {/* View Toggle */}
             <View style={styles.viewToggleContainer}>
               <TouchableOpacity 
@@ -2504,6 +2475,35 @@ export default function ActivitiesScreen() {
               currentUserId={user?.id}
               onCheer={(eventId) => void partnerActivity.cheer(eventId, true)}
             />
+            {hasSportsInterest && footballInterestSignals.length > 0 && (
+              <>
+                <InterestBriefingCard
+                  signals={footballInterestSignals}
+                  onOpenSignal={(signal) => void openInterestSignal(signal)}
+                  onViewAll={() => router.push('/sports' as any)}
+                  onRemind={remindAboutInterestMatch}
+                  onTogglePin={toggleInterestPin}
+                  isPinned={(signal) => isPinned(signal.match.id)}
+                />
+                {interestMatchDetails ? (
+                  <MatchDetailsModal
+                    visible={showInterestMatchDetails}
+                    onClose={() => setShowInterestMatchDetails(false)}
+                    fixtureId={parseInt(interestMatchDetails.id, 10)}
+                    homeTeam={interestMatchDetails.homeTeam}
+                    awayTeam={interestMatchDetails.awayTeam}
+                    homeScore={interestMatchDetails.homeScore}
+                    awayScore={interestMatchDetails.awayScore}
+                    league={interestMatchDetails.league}
+                    leagueLogo={interestMatchDetails.leagueLogo}
+                    round={interestMatchDetails.round}
+                    homeTeamLogo={interestMatchDetails.homeTeamLogo}
+                    awayTeamLogo={interestMatchDetails.awayTeamLogo}
+                  />
+                ) : null}
+              </>
+            )}
+
             <JoySourcesNudgeCard />
 
             {recovery.isActive ? (
