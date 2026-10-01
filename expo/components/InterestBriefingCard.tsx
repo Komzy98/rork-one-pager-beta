@@ -355,7 +355,7 @@ const styles = StyleSheet.create({
   viewAllText: {
     fontSize: 13,
     lineHeight: 17,
-    fontWeight: '750',
+    fontWeight: '700',
     color: '#4F46E5',
   },
   list: {
@@ -400,7 +400,7 @@ const styles = StyleSheet.create({
     flexShrink: 1,
     fontSize: 15.5,
     lineHeight: 20,
-    fontWeight: '750',
+    fontWeight: '700',
     letterSpacing: -0.18,
   },
   subtitle: {
@@ -477,7 +477,7 @@ const styles = StyleSheet.create({
   primaryActionText: {
     fontSize: 12,
     lineHeight: 16,
-    fontWeight: '750',
+    fontWeight: '700',
     color: '#FFFFFF',
   },
   moreRow: {
