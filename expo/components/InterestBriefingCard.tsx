@@ -30,14 +30,14 @@ interface Props {
   isPinned?: (signal: PersonalSignal) => boolean;
 }
 
-function SignalIcon({ signal }: { signal: PersonalSignal }) {
+function SignalIcon({ signal, accent }: { signal: PersonalSignal; accent: string }) {
   if (signal.kind === 'football_live') {
     return <Radio size={18} color="#EF4444" strokeWidth={2.4} />;
   }
   if (signal.kind === 'football_recent_result') {
-    return <Trophy size={18} color="#5B5BD6" strokeWidth={2.2} />;
+    return <Trophy size={18} color={accent} strokeWidth={2.2} />;
   }
-  return <BellRing size={18} color="#5B5BD6" strokeWidth={2.2} />;
+  return <BellRing size={18} color={accent} strokeWidth={2.2} />;
 }
 
 export default function InterestBriefingCard({
@@ -115,8 +115,8 @@ export default function InterestBriefingCard({
           ]}
           testID="interest-briefing-view-all"
         >
-          <Text style={styles.viewAllText}>View all</Text>
-          <ChevronRight size={15} color="#4F46E5" strokeWidth={2.4} />
+          <Text style={[styles.viewAllText, { color: colors.primary }]}>View all</Text>
+          <ChevronRight size={15} color={colors.primary} strokeWidth={2.4} />
         </TouchableOpacity>
       </View>
 
@@ -161,7 +161,7 @@ export default function InterestBriefingCard({
                     },
                   ]}
                 >
-                  <SignalIcon signal={signal} />
+                  <SignalIcon signal={signal} accent={colors.primary} />
                 </View>
 
                 <View style={styles.copy}>
@@ -221,6 +221,7 @@ export default function InterestBriefingCard({
                     style={[
                       styles.actionButton,
                       styles.primaryAction,
+                      { backgroundColor: colors.primary },
                       reminded && styles.successAction,
                       (busy || reminded) && styles.disabledAction,
                     ]}
@@ -356,7 +357,6 @@ const styles = StyleSheet.create({
     fontSize: 13,
     lineHeight: 17,
     fontWeight: '700',
-    color: '#4F46E5',
   },
   list: {
     gap: 9,
@@ -466,7 +466,6 @@ const styles = StyleSheet.create({
   },
   primaryAction: {
     minWidth: 112,
-    backgroundColor: '#4F46E5',
   },
   successAction: {
     backgroundColor: '#16A34A',
