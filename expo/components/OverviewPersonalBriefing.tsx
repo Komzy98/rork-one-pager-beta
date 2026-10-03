@@ -622,7 +622,7 @@ const styles = StyleSheet.create({
     color: '#FFFFFF',
     fontSize: 13.5,
     lineHeight: 18,
-    fontWeight: '750',
+    fontWeight: '700',
   },
   secondaryButton: {
     minHeight: 44,
@@ -722,7 +722,7 @@ const styles = StyleSheet.create({
   interestTitle: {
     fontSize: 15,
     lineHeight: 20,
-    fontWeight: '750',
+    fontWeight: '700',
     marginTop: 2,
   },
   interestMeta: {
@@ -831,7 +831,7 @@ const styles = StyleSheet.create({
   progressTitle: {
     fontSize: 14,
     lineHeight: 18,
-    fontWeight: '750',
+    fontWeight: '700',
   },
   progressMeta: {
     fontSize: 11,
