@@ -103,6 +103,7 @@ import HabitEngineTodayCard from '@/components/HabitEngineTodayCard';
 import RecoveryModePanel from '@/components/RecoveryModePanel';
 import JoySourcesNudgeCard from '@/components/JoySourcesNudgeCard';
 import InterestBriefingCard from '@/components/InterestBriefingCard';
+import OverviewPersonalBriefing from '@/components/OverviewPersonalBriefing';
 import { buildFootballInterestSignals } from '@/utils/interestSignalEngine';
 import { useInterestReminderSync } from '@/hooks/useInterestReminderSync';
 import { notificationService } from '@/utils/notificationService';
@@ -246,10 +247,29 @@ export default function ActivitiesScreen() {
     }
   }, [devCoachPhaseParam]);
 
-  const heroLivingWellTagline = useMemo(
-    () => getHeroLivingWellTagline(coachPhase),
-    [coachPhase],
-  );
+  const overviewHeroLine = useMemo(() => {
+    const allTasks = tasksContext?.allTasks ?? [];
+    const today = getTodayYmd();
+    const openToday = allTasks.filter((task) => {
+      if (task.isHabit || task.status === 'completed' || task.status === 'cancelled' || !task.dueDate) {
+        return false;
+      }
+      const due = new Date(task.dueDate);
+      if (!Number.isFinite(due.getTime())) return false;
+      const dueYmd = [
+        due.getFullYear(),
+        String(due.getMonth() + 1).padStart(2, '0'),
+        String(due.getDate()).padStart(2, '0'),
+      ].join('-');
+      return dueYmd === today;
+    }).length;
+
+    if (openToday > 0) {
+      return `${openToday} task${openToday === 1 ? '' : 's'} still matter today.`;
+    }
+
+    return 'Your day, filtered to what matters.';
+  }, [tasksContext?.allTasks]);
   const { colors, isDark } = useTheme();
   const appContext = useApp();
   const tasksContext = useTasks();
@@ -2295,7 +2315,7 @@ export default function ActivitiesScreen() {
                 <View style={styles.greetingTextContainer}>
                   <Text style={[styles.greetingText, { color: getHeroTextColor() }]}>{getGreeting()}</Text>
                   <Text style={[styles.dailyFocusText, { color: getHeroSecondaryTextColor() }]}>
-                    {heroLivingWellTagline}
+                    {overviewHeroLine}
                   </Text>
                   <Text style={[styles.dateText, { color: getHeroSecondaryTextColor() }]} numberOfLines={2}>
                     {getTodayDate()}{getHeroSubtitle() ? `  · ${getHeroSubtitle()}` : ''}
@@ -2324,98 +2344,7 @@ export default function ActivitiesScreen() {
               </View>
             </Animated.View>
 
-            {/* Quick Stats Row */}
-            <Animated.View 
-              style={[
-                styles.quickStatsRow,
-                {
-                  opacity: fadeAnim,
-                  transform: [{ translateY: slideAnim }]
-                }
-              ]}
-            >
-              <TouchableOpacity style={styles.quickStatCard} onPress={navigateToHabits}>
-                <View style={[styles.quickStatIcon, { backgroundColor: 'rgba(16, 185, 129, 0.15)' }]}>
-                  <CheckCircle2 size={20} color="#10B981" strokeWidth={2.8} />
-                </View>
-                <Text style={[styles.quickStatValue, { color: getHeroTextColor() }]}>{stats.completedHabits}/{stats.totalHabits}</Text>
-                <Text style={[styles.quickStatLabel, { color: getHeroSecondaryTextColor() }]}>Show up</Text>
-              </TouchableOpacity>
-
-              <TouchableOpacity style={styles.quickStatCard} onPress={navigateToHabits}>
-                <View style={[styles.quickStatIcon, { backgroundColor: 'rgba(245, 158, 11, 0.15)' }]}>
-                  <Flame size={20} color="#F59E0B" strokeWidth={2.8} />
-                </View>
-                <Text style={[styles.quickStatValue, { color: getHeroTextColor() }]}>{stats.currentStreak}</Text>
-                <Text style={[styles.quickStatLabel, { color: getHeroSecondaryTextColor() }]}>Streak</Text>
-              </TouchableOpacity>
-
-              <TouchableOpacity style={styles.quickStatCard} onPress={navigateToHabits}>
-                <View style={[styles.quickStatIcon, { backgroundColor: 'rgba(139, 92, 246, 0.15)' }]}>
-                  <Target size={22} color="#A78BFA" strokeWidth={2.8} />
-                </View>
-                <Text style={[styles.quickStatValue, { color: getHeroTextColor() }]}>{stats.habitCompletionRate}%</Text>
-                <Text style={[styles.quickStatLabel, { color: getHeroSecondaryTextColor() }]}>On track</Text>
-              </TouchableOpacity>
-            </Animated.View>
-
-            {/* Live Match Alert */}
-            {hasSportsInterest && liveMatches.length > 0 && !liveBannerDismissed && (
-              <Animated.View 
-                style={[
-                  styles.liveMatchAlert,
-                  {
-                    opacity: fadeAnim,
-                    transform: [{ translateY: slideAnim }]
-                  }
-                ]}
-              >
-                <TouchableOpacity 
-                  style={styles.liveMatchAlertContent}
-                  onPress={() => {
-                    if (Platform.OS !== 'web') void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
-                    setShowLiveMatchModal(true);
-                  }}
-                  activeOpacity={0.8}
-                >
-                  <View style={styles.liveMatchAlertLeft}>
-                    <View style={styles.livePulseContainer}>
-                      <View style={styles.livePulseOuter} />
-                      <View style={styles.livePulseInner} />
-                      <Radio size={14} color="#fff" />
-                    </View>
-                    <View style={styles.liveMatchInfo}>
-                      <Text style={styles.liveMatchAlertTitle}>
-                        {liveMatches.length === 1 
-                          ? 'Your team is playing NOW!' 
-                          : `${liveMatches.length} of your teams are playing!`}
-                      </Text>
-                      <Text style={styles.liveMatchAlertTeams} numberOfLines={1}>
-                        {liveMatches.slice(0, 2).map(m => 
-                          `${m.homeTeam} ${m.homeScore ?? 0}-${m.awayScore ?? 0} ${m.awayTeam}`
-                        ).join(' • ')}
-                      </Text>
-                    </View>
-                  </View>
-                  <View style={styles.liveMatchAlertRight}>
-                    <Text style={styles.liveMatchAlertScore}>
-                      {liveMatches[0]?.elapsed ? `${liveMatches[0].elapsed}'` : 'LIVE'}
-                    </Text>
-                    <TouchableOpacity
-                      style={styles.liveBannerClose}
-                      onPress={(e) => {
-                        e.stopPropagation();
-                        if (Platform.OS !== 'web') void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-                        setLiveBannerDismissed(true);
-                      }}
-                      hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
-                    >
-                      <X size={16} color="#fff" strokeWidth={2.5} />
-                    </TouchableOpacity>
-                  </View>
-                </TouchableOpacity>
-              </Animated.View>
-            )}
+            {/* Progress and sports awareness now live in the personal briefing below. */}
 
             {/* View Toggle */}
             <View style={styles.viewToggleContainer}>
@@ -2455,56 +2384,47 @@ export default function ActivitiesScreen() {
           <ActivitiesAIView onRequestPeakScheduler={() => setShowPeakScheduler(true)} />
         ) : (
           <View style={{ backgroundColor: colors.background }}>
-            <AddInterestsLaterCard />
-            <DailyStackCard
-              habitCount={stats.totalHabits}
-              completedHabits={stats.completedHabits}
-              continueWatchingTitle={dailyStackContinueTitle}
-              tonightMatchLabel={dailyStackTonightMatch}
-              partnerCount={partnerList.length}
+            <OverviewPersonalBriefing
+              tasks={tasksContext?.allTasks ?? []}
+              todayYmd={todayYmd}
+              calendarItems={upcomingCalendarPreview}
+              interestSignals={hasSportsInterest ? footballInterestSignals : []}
+              patternInsight={recoveryPatternInsight}
+              habitProgress={{
+                completed: stats.completedHabits,
+                total: stats.totalHabits,
+                rate: stats.habitCompletionRate,
+              }}
+              onStartTask={(task) => {
+                if (task.status !== 'in-progress') {
+                  tasksContext?.updateTask(task.id, { status: 'in-progress' });
+                }
+                tasksContext?.startTimer(task.id);
+              }}
+              onOpenTasks={() => router.push('/tasks' as any)}
+              onOpenCalendar={() => router.push('/(tabs)/events' as any)}
+              onOpenInterest={(signal) => void openInterestSignal(signal)}
+              onViewInterests={() => router.push('/(tabs)/sports' as any)}
+              onRemindInterest={remindAboutInterestMatch}
+              onOpenInsights={() => router.push('/(root)/analytics' as any)}
             />
-            <DecisionMomentsCard
-              completedHabits={stats.completedHabits}
-              totalHabits={stats.totalHabits}
-              chronotypeId={profile?.chronotype}
-              tonightMatchLabel={dailyStackTonightMatch}
-              matchKickoffTime={dailyStackMatchKickoff}
-              weather={weather}
-              continueWatchingTitle={dailyStackContinueTitle}
-              partnerFeed={partnerActivity.feed}
-              currentUserId={user?.id}
-              onCheer={(eventId) => void partnerActivity.cheer(eventId, true)}
-            />
-            {hasSportsInterest && footballInterestSignals.length > 0 && (
-              <>
-                <InterestBriefingCard
-                  signals={footballInterestSignals}
-                  onOpenSignal={(signal) => void openInterestSignal(signal)}
-                  onViewAll={() => router.push('/(tabs)/sports' as any)}
-                  onRemind={remindAboutInterestMatch}
-                  onTogglePin={toggleInterestPin}
-                  isPinned={(signal) => isPinned(signal.match.id)}
-                />
-                {interestMatchDetails ? (
-                  <MatchDetailsModal
-                    visible={showInterestMatchDetails}
-                    onClose={() => setShowInterestMatchDetails(false)}
-                    fixtureId={parseInt(interestMatchDetails.id, 10)}
-                    homeTeam={interestMatchDetails.homeTeam}
-                    awayTeam={interestMatchDetails.awayTeam}
-                    homeScore={interestMatchDetails.homeScore}
-                    awayScore={interestMatchDetails.awayScore}
-                    league={interestMatchDetails.league}
-                    leagueLogo={interestMatchDetails.leagueLogo}
-                    round={interestMatchDetails.round}
-                    homeTeamLogo={interestMatchDetails.homeTeamLogo}
-                    awayTeamLogo={interestMatchDetails.awayTeamLogo}
-                  />
-                ) : null}
-              </>
-            )}
 
-            <JoySourcesNudgeCard />
+            {interestMatchDetails ? (
+              <MatchDetailsModal
+                visible={showInterestMatchDetails}
+                onClose={() => setShowInterestMatchDetails(false)}
+                fixtureId={parseInt(interestMatchDetails.id, 10)}
+                homeTeam={interestMatchDetails.homeTeam}
+                awayTeam={interestMatchDetails.awayTeam}
+                homeScore={interestMatchDetails.homeScore}
+                awayScore={interestMatchDetails.awayScore}
+                league={interestMatchDetails.league}
+                leagueLogo={interestMatchDetails.leagueLogo}
+                round={interestMatchDetails.round}
+                homeTeamLogo={interestMatchDetails.homeTeamLogo}
+                awayTeamLogo={interestMatchDetails.awayTeamLogo}
+              />
+            ) : null}
 
             {recovery.isActive ? (
               <RecoveryModePanel
@@ -2524,442 +2444,6 @@ export default function ActivitiesScreen() {
                 onExit={() => recovery.exitManual(7)}
               />
             ) : null}
-
-            <TodayCoachCard
-              coachPhase={coachPhase}
-              chronotypeId={profile?.chronotype}
-              dailySummary={dailySummary}
-              isGenerating={isGeneratingSummary}
-              isSpeaking={isSpeaking}
-              isVoicePending={generateVoiceMutation.isPending}
-              recoveryActive={recovery.isActive}
-              autoSummaryHintDismissed={autoSummaryHintDismissed}
-              autoSummaryScheduleLabel={autoSummaryScheduleLabel || null}
-              yesterdayDelta={yesterdayDelta}
-              onGenerate={generateDailySummary}
-              onDismissSummary={() => {
-                void stopSummarySpeech();
-                void markDailySummaryDismissed(userId, getTodayYmd());
-                setDailySummary(null);
-              }}
-              onToggleListen={() => {
-                if (isSpeaking) {
-                  void stopSummarySpeech();
-                } else if (dailySummary) {
-                  void speakDailySummary(dailySummary.summary);
-                }
-              }}
-              onShareSummary={() => {
-                if (!dailySummary) return;
-                setSummarySharePayload(
-                  buildSummaryPayload(
-                    dailySummary.score,
-                    dailySummary.summary,
-                    (profile?.name || user?.email?.split('@')[0] || '').trim() || undefined,
-                  ),
-                );
-              }}
-              onDismissAutoSummaryHint={handleDismissAutoSummaryHint}
-            />
-
-            {eventsNeedingFeedback[0] ? (
-              <EventFeedbackPrompt
-                snapshot={eventsNeedingFeedback[0]}
-                colors={{
-                  text: colors.text,
-                  textSecondary: colors.textSecondary,
-                  card: colors.card,
-                  border: colors.border,
-                  primary: colors.primary,
-                  primaryLight: `${colors.primary}18`,
-                }}
-                onRate={recordEventFeedback}
-                onDismiss={dismissEventFeedback}
-              />
-            ) : null}
-
-            {/* Today's Routine Section - Combined with Progress */}
-            <View style={styles.routineSection}>
-              <TodaysRoutine 
-                maxItems={5}
-                onViewAll={() => router.push('/tasks' as any)}
-              />
-            </View>
-
-            <HabitEngineTodayCard />
-
-            {/* Habit Formation Coach */}
-            <HabitFormationCoach 
-              maxItems={3}
-              recoveryMode={recovery.isActive}
-              onComplete={(habitId) => {
-                if (__DEV__) console.log('Quick completed habit:', habitId);
-              }}
-            />
-
-            <OnePagerSavedFitSection
-              events={upcomingSaved}
-              recommendationInput={eventRecommendationInput}
-              timeFormat={eventTimeFormat}
-              colors={{
-                text: colors.text,
-                textSecondary: colors.textSecondary,
-                textMuted: colors.textMuted,
-                card: colors.card,
-                border: colors.border,
-                primary: colors.primary,
-                primaryLight: `${colors.primary}18`,
-              }}
-            />
-
-            {showCalendarSection ? (
-            <View style={styles.section}>
-              <View style={styles.sectionHeaderRow}>
-                <View style={{ flex: 1, paddingRight: 8 }}>
-                  <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
-                    <Calendar size={20} color={colors.text} strokeWidth={2} />
-                    <Text style={[styles.sectionTitle, { color: colors.text }]}>
-                      {hasCalendarSource ? 'From your calendar' : 'Calendar'}
-                    </Text>
-                  </View>
-                  <Text style={[styles.sectionSubtitle, { color: colors.textSecondary }]}>
-                    {hasCalendarSource
-                      ? savedEventsCount > 0
-                        ? 'Device calendar — saved Events live in One Pager above'
-                        : 'Your imported or Apple Calendar schedule'
-                      : 'Connect Apple Calendar or import a file to see events here'}
-                  </Text>
-                </View>
-                {eventKit.isEventKitAvailable && hasCalendarSource && (
-                  <TouchableOpacity 
-                    onPress={() => setShowEventKitManager(true)}
-                    style={styles.viewAllBtn}
-                  >
-                    <Text style={styles.viewAllText}>Manage</Text>
-                    <ChevronRight size={16} color={colors.primary} />
-                  </TouchableOpacity>
-                )}
-              </View>
-
-              {!hasCalendarSource ? (
-                <View style={[styles.emptyCalendarCard, { backgroundColor: colors.card, borderColor: colors.border }]}>
-                  <Calendar size={40} color={colors.textMuted} />
-                  <Text style={[styles.emptyCalendarTitle, { color: colors.text }]}>No calendar connected</Text>
-                  <Text style={[styles.emptyCalendarText, { color: colors.textSecondary }]}>
-                    {savedEventsCount > 0
-                      ? 'You still have saved events under “On your One Pager” above. Connect a calendar for work and personal plans too.'
-                      : 'Connect your calendar or add events from the Events tab'}
-                  </Text>
-                  <View style={styles.calendarActions}>
-                    {eventKit.isEventKitAvailable && (
-                      <TouchableOpacity 
-                        style={styles.primaryBtn}
-                        onPress={() => setShowEventKitManager(true)}
-                      >
-                        <Text style={styles.primaryBtnText}>Connect Calendar</Text>
-                      </TouchableOpacity>
-                    )}
-                    <TouchableOpacity 
-                      style={styles.secondaryBtn}
-                      onPress={() => setShowCalendarImporter(true)}
-                    >
-                      <Text style={styles.secondaryBtnText}>Import File</Text>
-                    </TouchableOpacity>
-                  </View>
-                </View>
-              ) : (
-              <View style={styles.eventsContainer}>
-                {upcomingCalendarPreview.length === 0 ? (
-                  <View style={[styles.emptyCalendarCard, { backgroundColor: colors.card, borderColor: colors.border }]}>
-                    <Calendar size={32} color={colors.textMuted} />
-                    <Text style={[styles.emptyCalendarText, { color: colors.textSecondary }]}>
-                      No calendar events in the next 90 days
-                    </Text>
-                  </View>
-                ) : (
-                  upcomingCalendarPreview.map((event, index) => (
-                    <View
-                      key={`${event.id}-${index}`}
-                      style={[styles.eventCard, { backgroundColor: colors.card, borderColor: colors.border }]}
-                    >
-                      <View style={[styles.eventIndicator, { backgroundColor: colors.textMuted }]} />
-                      <View style={styles.eventInfo}>
-                        <Text style={[styles.eventTitle, { color: colors.text }]}>{event.title}</Text>
-                        <Text style={[styles.eventTime, { color: colors.textSecondary }]}>
-                          {new Date(event.startDate).toLocaleDateString('en-GB', {
-                            weekday: 'short',
-                            month: 'short',
-                            day: 'numeric',
-                            hour: 'numeric',
-                            minute: '2-digit',
-                            hour12: eventTimeFormat !== '24h',
-                          })}
-                        </Text>
-                      </View>
-                    </View>
-                  ))
-                )}
-              </View>
-              )}
-            </View>
-            ) : null}
-
-            {/* New Episode Releases for Tracked Shows */}
-            {hasShowsInterest && (() => {
-              if (visibleNewEpisodes.length === 0) return null;
-              return (
-              <View style={styles.newEpisodesSection}>
-                <View style={styles.newEpisodesHeader}>
-                  <View style={styles.newEpisodesHeaderLeft}>
-                    <View style={styles.newEpisodesIconWrap}>
-                      <BellRing size={16} color="#E50914" />
-                    </View>
-                    <Text style={[styles.newEpisodesTitle, { color: colors.text }]}>New Episodes</Text>
-                    <View style={styles.newEpisodesCountPill}>
-                      <Text style={styles.newEpisodesCountText}>{visibleNewEpisodes.length}</Text>
-                    </View>
-                  </View>
-                  <TouchableOpacity onPress={() => router.push(SHOWS_HREF.streaming as any)} hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}>
-                    <Text style={styles.newEpisodesSeeAll}>See All</Text>
-                  </TouchableOpacity>
-                </View>
-
-                <View style={[styles.newEpisodesList, { backgroundColor: colors.card, borderWidth: StyleSheet.hairlineWidth, borderColor: colors.border }]}>
-                  {visibleNewEpisodes.slice(0, 5).map((item, index) => {
-                    const isRecentRelease = item.latestEpisode?.airDate && new Date(item.latestEpisode.airDate) >= new Date(Date.now() - 7 * 24 * 60 * 60 * 1000);
-                    const episode = isRecentRelease ? item.latestEpisode : item.nextEpisode;
-                    if (!episode) return null;
-
-                    const airDate = episode.airDate ? new Date(episode.airDate) : null;
-                    const isToday = airDate && airDate.toDateString() === new Date().toDateString();
-                    const isPast = airDate && airDate < new Date();
-                    const daysUntil = airDate ? Math.ceil((airDate.getTime() - Date.now()) / (1000 * 60 * 60 * 24)) : null;
-
-                    let statusText = '';
-                    let statusColor = '#94A3B8';
-                    if (isToday) {
-                      statusText = 'OUT TODAY';
-                      statusColor = '#E50914';
-                    } else if (isPast) {
-                      statusText = 'NOW STREAMING';
-                      statusColor = '#10B981';
-                    } else if (daysUntil !== null && daysUntil <= 1) {
-                      statusText = 'TOMORROW';
-                      statusColor = '#F59E0B';
-                    } else if (daysUntil !== null) {
-                      statusText = `IN ${daysUntil} DAYS`;
-                      statusColor = '#6366F1';
-                    }
-
-                    const dismissKey = `${item.tmdbId}-s${episode.seasonNumber}e${episode.episodeNumber}`;
-                    return (
-                      <TouchableOpacity
-                        key={`${item.showId}-${index}`}
-                        style={[
-                          styles.newEpisodeCard,
-                          { borderBottomColor: colors.border },
-                          index === (visibleNewEpisodes.slice(0, 5).length ?? 0) - 1 && { borderBottomWidth: 0 },
-                        ]}
-                        onPress={() => void handleOpenNewEpisode(item)}
-                        onLongPress={() => confirmDismissEpisode(dismissKey, item.showTitle)}
-                        delayLongPress={350}
-                        activeOpacity={0.7}
-                        testID={`new-episode-card-${item.tmdbId}`}
-                      >
-                        <View style={styles.newEpisodePosterWrap}>
-                          {item.posterUrl ? (
-                            <Image
-                              source={{ uri: item.posterUrl }}
-                              style={styles.newEpisodePoster}
-                              resizeMode="cover"
-                            />
-                          ) : (
-                            <View style={[styles.newEpisodePosterFallback, { backgroundColor: '#E5091420' }]}>
-                              <Tv size={16} color="#E50914" />
-                            </View>
-                          )}
-                          {(isToday || isPast) && (
-                            <View style={styles.newEpisodeLiveDot} />
-                          )}
-                        </View>
-                        <View style={styles.newEpisodeInfo}>
-                          <Text style={[styles.newEpisodeShowTitle, { color: colors.text }]} numberOfLines={1}>{item.showTitle}</Text>
-                          <Text style={[styles.newEpisodeDetail, { color: colors.textSecondary }]} numberOfLines={1}>
-                            S{episode.seasonNumber}E{episode.episodeNumber}: {episode.name}
-                          </Text>
-                          <View style={styles.newEpisodeMetaRow}>
-                            <View style={[styles.newEpisodeStatusBadge, { backgroundColor: statusColor + '18' }]}>
-                              <Text style={[styles.newEpisodeStatusText, { color: statusColor }]}>{statusText}</Text>
-                            </View>
-                            {airDate && (
-                              <Text style={styles.newEpisodeDateText}>
-                                {airDate.toLocaleDateString('en-GB', { day: 'numeric', month: 'short' })}
-                              </Text>
-                            )}
-                          </View>
-                        </View>
-                      </TouchableOpacity>
-                    );
-                  })}
-                </View>
-              </View>
-              );
-            })()}
-
-            {/* My Shows - Premium Continue Watching */}
-            {hasShowsInterest && (
-            <View style={styles.cwSection}>
-              <View style={styles.cwHeader}>
-                <View style={styles.cwHeaderLeft}>
-                  <Text style={[styles.cwTitle, { color: colors.text }]}>Continue Watching</Text>
-                  {continueWatchingItems.length > 0 && (
-                    <View style={[styles.cwCountPill, { backgroundColor: colors.primary }]}>
-                      <Text style={styles.cwCountText}>{continueWatchingItems.length}</Text>
-                    </View>
-                  )}
-                </View>
-                <TouchableOpacity onPress={() => router.push(SHOWS_HREF.streaming as any)} hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}>
-                  <Text style={styles.cwSeeAll}>See All</Text>
-                </TouchableOpacity>
-              </View>
-                
-              {continueWatchingItems.length > 0 ? (
-                <FlatList
-                  data={continueWatchingItems}
-                  horizontal
-                  keyExtractor={(item, idx) => (item.kind === 'local' ? `local-${item.show.id}` : `younify-${item.key}-${idx}`)}
-                  renderItem={renderContinueWatchingCard}
-                  initialNumToRender={4}
-                  maxToRenderPerBatch={4}
-                  windowSize={5}
-                  removeClippedSubviews
-                  showsHorizontalScrollIndicator={false}
-                  contentContainerStyle={styles.cwScroll}
-                  getItemLayout={(_, index) => ({ length: CW_CARD_WIDTH + 12, offset: (CW_CARD_WIDTH + 12) * index, index })}
-                  ListFooterComponent={
-                    <TouchableOpacity
-                      style={[styles.cwAddCard, { backgroundColor: colors.surfaceSecondary }]}
-                      onPress={() => router.push(SHOWS_HREF.watchlist as any)}
-                      activeOpacity={0.7}
-                    >
-                      <View style={styles.cwAddInner}>
-                        <View style={[styles.cwAddIcon, { backgroundColor: isDark ? colors.border : '#E2E8F0' }]}>
-                          <Tv size={20} color={colors.textMuted} />
-                        </View>
-                        <Text style={[styles.cwAddText, { color: colors.textSecondary }]}>Add Show</Text>
-                      </View>
-                    </TouchableOpacity>
-                  }
-                />
-              ) : (
-                <TouchableOpacity 
-                  style={[
-                    styles.cwEmptyCard,
-                    { backgroundColor: colors.card, borderColor: colors.border },
-                  ]}
-                  onPress={() => router.push(SHOWS_HREF.watchlist as any)}
-                  activeOpacity={0.8}
-                >
-                  <View style={styles.cwEmptyInner}>
-                    <View style={[styles.cwEmptyIconWrap, { backgroundColor: isDark ? 'rgba(99, 102, 241, 0.15)' : '#EEF2FF' }]}>
-                      <Tv size={24} color={colors.textSecondary} />
-                    </View>
-                    <View style={styles.cwEmptyTextWrap}>
-                      <Text style={[styles.cwEmptyTitle, { color: colors.text }]}>Track what you watch</Text>
-                      <Text style={[styles.cwEmptyDesc, { color: colors.textSecondary }]}>Add shows and movies to your watchlist</Text>
-                    </View>
-                    <ChevronRight size={18} color={colors.textMuted} />
-                  </View>
-                </TouchableOpacity>
-              )}
-            </View>
-            )}
-
-            {/* Plan to Watch - Up Next Section */}
-            {hasShowsInterest && rankedUpNextShows.length > 0 && (
-              <View style={styles.upNextSection}>
-                <View style={styles.upNextHeader}>
-                  <View style={styles.upNextHeaderLeft}>
-                    <Text style={[styles.upNextTitle, { color: colors.text }]}>Up Next</Text>
-                    <View style={styles.upNextCountPill}>
-                      <Text style={styles.upNextCountText}>{rankedUpNextShows.length}</Text>
-                    </View>
-                  </View>
-                  <TouchableOpacity onPress={() => router.push(SHOWS_HREF.watchlist as any)} hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}>
-                    <Text style={styles.upNextSeeAll}>View All</Text>
-                  </TouchableOpacity>
-                </View>
-                
-                <View style={[styles.upNextList, { backgroundColor: colors.card, borderWidth: StyleSheet.hairlineWidth, borderColor: colors.border }]}>
-                  {rankedUpNextShows.map((show, index) => (
-                    <TouchableOpacity 
-                      key={show.id} 
-                      style={[styles.upNextCard, { borderBottomColor: colors.border }, index === rankedUpNextShows.length - 1 && { borderBottomWidth: 0 }]}
-                      onPress={() => {
-                        if (show.tmdbId && show.mediaType) {
-                          setShowInfoModal({ visible: true, tmdbId: show.tmdbId, mediaType: show.mediaType, title: show.title, platform: show.platform });
-                        } else {
-                          handleStartWatching(show);
-                        }
-                      }}
-                      onLongPress={() => handleRemoveShow(show.id, show.title)}
-                      delayLongPress={350}
-                      activeOpacity={0.7}
-                      testID={`upnext-card-${show.id}`}
-                    >
-                      <View style={styles.upNextPosterWrap}>
-                        {show.posterUrl ? (
-                          <Image 
-                            source={{ uri: show.posterUrl }}
-                            style={styles.upNextPoster}
-                            resizeMode="cover"
-                          />
-                        ) : (
-                          <View style={[styles.upNextPosterFallback, { backgroundColor: getPlatformColor(show.platform) + '30' }]}>
-                            <Tv size={16} color={getPlatformColor(show.platform)} />
-                          </View>
-                        )}
-                      </View>
-                      <View style={styles.upNextInfo}>
-                        <Text style={[styles.upNextShowTitle, { color: colors.text }]} numberOfLines={1}>{show.title}</Text>
-                        <Text style={[styles.upNextShowMeta, { color: colors.textSecondary }]}>
-                          {show.type === 'Series' ? 'TV Series' : show.type} · {show.platform}
-                        </Text>
-                      </View>
-                      <View style={styles.upNextAction}>
-                        <Play size={14} color="#F59E0B" fill="#F59E0B" />
-                      </View>
-                    </TouchableOpacity>
-                  ))}
-                </View>
-              </View>
-            )}
-
-            {/* My Sports */}
-            {hasSportsInterest && (
-            <ModernSportsSection
-              liveMatches={rawLiveMatches}
-              completedMatches={rawCompletedMatches}
-              upcomingMatches={rawUpcomingMatches}
-              isLoading={isLoadingMatches}
-              pinnedMatches={pinnedMatchesForSection}
-              isPinned={isPinned}
-              onTogglePin={togglePin}
-              onViewAll={() => router.push('/sports' as any)}
-              onRefresh={async () => {
-                setRefreshing(true);
-                await fetchMatches();
-                setRefreshing(false);
-              }}
-              rawUpcomingCount={footballBundleQuery.data?.upcoming?.response?.length || 0}
-            />
-            )}
-
-            {/* NBA Section */}
-            {hasNBAInterest && (
-              <NBAUpcomingSection favoriteNBATeams={favoriteNBATeams} />
-            )}
-
           </View>
         )}
       </Animated.ScrollView>
@@ -3041,14 +2525,14 @@ const styles = StyleSheet.create({
   
   // Hero Section
   heroSection: {
-    paddingBottom: 48,
-    minHeight: 330,
+    paddingBottom: 24,
+    minHeight: 230,
   },
   heroContent: {
     paddingHorizontal: 22,
   },
   greetingContainer: {
-    marginBottom: 26,
+    marginBottom: 18,
   },
   greetingRow: {
     flexDirection: 'row',
