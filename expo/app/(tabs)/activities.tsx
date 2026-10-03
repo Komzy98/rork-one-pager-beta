@@ -247,6 +247,9 @@ export default function ActivitiesScreen() {
     }
   }, [devCoachPhaseParam]);
 
+  const { colors, isDark } = useTheme();
+  const appContext = useApp();
+  const tasksContext = useTasks();
   const overviewHeroLine = useMemo(() => {
     const allTasks = tasksContext?.allTasks ?? [];
     const today = getTodayYmd();
@@ -270,9 +273,6 @@ export default function ActivitiesScreen() {
 
     return 'Your day, filtered to what matters.';
   }, [tasksContext?.allTasks]);
-  const { colors, isDark } = useTheme();
-  const appContext = useApp();
-  const tasksContext = useTasks();
   const userProfileData = useUserProfile();
   const profile = userProfileData?.profile;
   const { upcomingSaved, eventsNeedingFeedback, recordEventFeedback, dismissEventFeedback } =
