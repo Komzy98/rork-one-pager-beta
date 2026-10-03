@@ -1,4 +1,4 @@
-import React, { useMemo, useState } from 'react';
+import React, { useState } from 'react';
 import {
   ActivityIndicator,
   Alert,
@@ -8,15 +8,7 @@ import {
   TouchableOpacity,
   View,
 } from 'react-native';
-import {
-  Bell,
-  BellRing,
-  Check,
-  ChevronRight,
-  Pin,
-  Radio,
-  Trophy,
-} from 'lucide-react-native';
+import { Bell, Check, ChevronRight, Radio, Trophy } from 'lucide-react-native';
 import * as Haptics from 'expo-haptics';
 import { useTheme } from '@/hooks/useTheme';
 import type { PersonalSignal } from '@/utils/interestSignalEngine';
@@ -32,12 +24,12 @@ interface Props {
 
 function SignalIcon({ signal, accent }: { signal: PersonalSignal; accent: string }) {
   if (signal.kind === 'football_live') {
-    return <Radio size={18} color="#EF4444" strokeWidth={2.4} />;
+    return <Radio size={17} color="#EF4444" strokeWidth={2.4} />;
   }
   if (signal.kind === 'football_recent_result') {
-    return <Trophy size={18} color={accent} strokeWidth={2.2} />;
+    return <Trophy size={17} color={accent} strokeWidth={2.2} />;
   }
-  return <BellRing size={18} color={accent} strokeWidth={2.2} />;
+  return <Bell size={17} color={accent} strokeWidth={2.2} />;
 }
 
 export default function InterestBriefingCard({
@@ -45,16 +37,17 @@ export default function InterestBriefingCard({
   onOpenSignal,
   onViewAll,
   onRemind,
-  onTogglePin,
-  isPinned,
 }: Props) {
   const { colors, isDark } = useTheme();
-  const [busyId, setBusyId] = useState<string | null>(null);
-  const [remindedIds, setRemindedIds] = useState<Set<string>>(new Set());
+  const [busy, setBusy] = useState(false);
+  const [reminderSet, setReminderSet] = useState(false);
 
-  // Today should stay scannable. Deeper browsing belongs in Sports.
-  const visibleSignals = useMemo(() => signals.slice(0, 3), [signals]);
-  if (visibleSignals.length === 0) return null;
+  const signal = signals[0];
+  if (!signal) return null;
+
+  const remaining = Math.max(0, signals.length - 1);
+  const canRemind = signal.kind === 'football_upcoming' && Boolean(onRemind);
+  const live = signal.kind === 'football_live';
 
   const haptic = () => {
     if (Platform.OS !== 'web') {
@@ -62,251 +55,134 @@ export default function InterestBriefingCard({
     }
   };
 
-  const press = async (fn: () => void | Promise<void>) => {
+  const open = () => {
     haptic();
-    await fn();
+    onOpenSignal(signal);
   };
 
-  const handleRemind = async (signal: PersonalSignal) => {
-    if (!onRemind || busyId) return;
-    setBusyId(signal.id);
+  const remind = async () => {
+    if (!onRemind || busy || reminderSet) return;
+    haptic();
+    setBusy(true);
     try {
-      const success = await onRemind(signal);
-      if (success) {
-        setRemindedIds((current) => new Set(current).add(signal.id));
-      }
+      const ok = await onRemind(signal);
+      if (ok) setReminderSet(true);
     } catch (error) {
       console.warn('[InterestBriefing] Failed to set reminder', error);
       Alert.alert('Couldn’t set reminder', 'Please try again in a moment.');
     } finally {
-      setBusyId(null);
-    }
-  };
-
-  const handlePin = async (signal: PersonalSignal) => {
-    if (!onTogglePin || busyId) return;
-    setBusyId(signal.id);
-    try {
-      await onTogglePin(signal);
-    } catch (error) {
-      console.warn('[InterestBriefing] Failed to update pin', error);
-      Alert.alert('Couldn’t update pin', 'Please try again in a moment.');
-    } finally {
-      setBusyId(null);
+      setBusy(false);
     }
   };
 
   return (
-    <View style={styles.wrap}>
-      <View style={styles.header}>
-        <View style={styles.headerCopy}>
-          <Text style={[styles.eyebrow, { color: colors.textTertiary }]}>YOUR INTERESTS</Text>
-          <Text style={[styles.title, { color: colors.text }]}>Worth knowing</Text>
+    <View
+      style={[
+        styles.shell,
+        {
+          backgroundColor: isDark ? colors.surfaceSecondary : 'rgba(255,255,255,0.84)',
+          borderColor: isDark ? colors.border : 'rgba(22,34,55,0.08)',
+        },
+      ]}
+      testID="interest-briefing-compact"
+    >
+      <TouchableOpacity
+        accessibilityRole="button"
+        accessibilityLabel={`Open details for ${signal.title}`}
+        activeOpacity={0.76}
+        onPress={open}
+        style={styles.main}
+      >
+        <View
+          style={[
+            styles.iconWrap,
+            {
+              backgroundColor: live
+                ? 'rgba(239,68,68,0.10)'
+                : isDark
+                  ? 'rgba(129,140,248,0.14)'
+                  : 'rgba(79,70,229,0.08)',
+            },
+          ]}
+        >
+          <SignalIcon signal={signal} accent={colors.primary} />
         </View>
 
-        <TouchableOpacity
-          accessibilityRole="button"
-          accessibilityLabel="View all sports interests"
-          activeOpacity={0.72}
-          onPress={() => void press(onViewAll)}
-          style={[
-            styles.viewAllButton,
-            { backgroundColor: isDark ? colors.surfaceSecondary : '#F4F6FA' },
-          ]}
-          testID="interest-briefing-view-all"
-        >
-          <Text style={[styles.viewAllText, { color: colors.primary }]}>View all</Text>
-          <ChevronRight size={15} color={colors.primary} strokeWidth={2.4} />
-        </TouchableOpacity>
-      </View>
-
-      <View style={styles.list}>
-        {visibleSignals.map((signal) => {
-          const pinned = isPinned?.(signal) ?? false;
-          const reminded = remindedIds.has(signal.id);
-          const canRemind = signal.kind === 'football_upcoming' && Boolean(onRemind);
-          const busy = busyId === signal.id;
-          const live = signal.kind === 'football_live';
-
-          return (
-            <View
-              key={signal.id}
-              style={[
-                styles.signalCard,
-                {
-                  backgroundColor: colors.card,
-                  borderColor: live
-                    ? isDark
-                      ? 'rgba(248,113,113,0.28)'
-                      : 'rgba(239,68,68,0.16)'
-                    : colors.border,
-                },
-              ]}
-            >
+        <View style={styles.copy}>
+          <View style={styles.metaRow}>
+            <Text style={[styles.kicker, { color: colors.textTertiary }]}>
+              {live ? 'LIVE NOW' : signal.kind === 'football_recent_result' ? 'RECENT' : 'COMING UP'}
+            </Text>
+            {remaining > 0 ? (
               <TouchableOpacity
                 accessibilityRole="button"
-                accessibilityLabel={`Open details for ${signal.title}`}
-                activeOpacity={0.78}
-                onPress={() => void press(() => onOpenSignal(signal))}
-                style={styles.rowMain}
-                testID={`interest-signal-${signal.id}`}
+                accessibilityLabel={`View ${remaining} more interest update${remaining === 1 ? '' : 's'}`}
+                activeOpacity={0.7}
+                onPress={(event) => {
+                  event.stopPropagation();
+                  haptic();
+                  onViewAll();
+                }}
+                style={[
+                  styles.morePill,
+                  { backgroundColor: isDark ? colors.surface : '#F3F4F6' },
+                ]}
               >
-                <View
-                  style={[
-                    styles.iconWrap,
-                    {
-                      backgroundColor: live
-                        ? 'rgba(239,68,68,0.09)'
-                        : 'rgba(79,70,229,0.08)',
-                    },
-                  ]}
-                >
-                  <SignalIcon signal={signal} accent={colors.primary} />
-                </View>
-
-                <View style={styles.copy}>
-                  <View style={styles.titleLine}>
-                    <Text style={[styles.signalTitle, { color: colors.text }]} numberOfLines={1}>
-                      {signal.title}
-                    </Text>
-                    {live ? (
-                      <View style={styles.livePill}>
-                        <View style={styles.liveDot} />
-                        <Text style={styles.liveText}>LIVE</Text>
-                      </View>
-                    ) : null}
-                  </View>
-
-                  <Text
-                    style={[styles.subtitle, { color: colors.textSecondary }]}
-                    numberOfLines={1}
-                  >
-                    {signal.subtitle}
-                  </Text>
-                  <Text style={[styles.reason, { color: colors.textTertiary }]} numberOfLines={1}>
-                    {signal.reason}
-                  </Text>
-                </View>
-
-                <ChevronRight size={18} color={colors.textTertiary} strokeWidth={2.1} />
+                <Text style={[styles.moreText, { color: colors.textSecondary }]}>
+                  +{remaining}
+                </Text>
               </TouchableOpacity>
+            ) : null}
+          </View>
 
-              <View style={styles.actions}>
-                <TouchableOpacity
-                  accessibilityRole="button"
-                  accessibilityLabel={`Open ${signal.title} details`}
-                  activeOpacity={0.7}
-                  onPress={() => void press(() => onOpenSignal(signal))}
-                  style={[
-                    styles.actionButton,
-                    styles.secondaryAction,
-                    {
-                      backgroundColor: isDark ? colors.surfaceSecondary : '#F5F6F8',
-                      borderColor: isDark ? colors.border : 'rgba(22,34,55,0.06)',
-                    },
-                  ]}
-                  testID={`interest-details-${signal.id}`}
-                >
-                  <Text style={[styles.actionText, { color: colors.textSecondary }]}>Details</Text>
-                </TouchableOpacity>
+          <Text style={[styles.title, { color: colors.text }]} numberOfLines={1}>
+            {signal.title}
+          </Text>
+          <Text style={[styles.subtitle, { color: colors.textSecondary }]} numberOfLines={1}>
+            {signal.subtitle}
+          </Text>
+        </View>
 
-                {canRemind ? (
-                  <TouchableOpacity
-                    accessibilityRole="button"
-                    accessibilityLabel={reminded ? 'Reminder set' : `Remind me about ${signal.title}`}
-                    accessibilityState={{ disabled: busy || reminded }}
-                    disabled={busy || reminded}
-                    activeOpacity={0.72}
-                    onPress={() => void press(() => handleRemind(signal))}
-                    style={[
-                      styles.actionButton,
-                      styles.primaryAction,
-                      { backgroundColor: colors.primary },
-                      reminded && styles.successAction,
-                      (busy || reminded) && styles.disabledAction,
-                    ]}
-                    testID={`interest-remind-${signal.id}`}
-                  >
-                    {busy ? (
-                      <ActivityIndicator size="small" color="#FFFFFF" />
-                    ) : reminded ? (
-                      <>
-                        <Check size={14} color="#FFFFFF" strokeWidth={2.8} />
-                        <Text style={styles.primaryActionText}>Reminder set</Text>
-                      </>
-                    ) : (
-                      <>
-                        <Bell size={14} color="#FFFFFF" strokeWidth={2.3} />
-                        <Text style={styles.primaryActionText}>Remind me</Text>
-                      </>
-                    )}
-                  </TouchableOpacity>
-                ) : onTogglePin ? (
-                  <TouchableOpacity
-                    accessibilityRole="button"
-                    accessibilityLabel={pinned ? `Unpin ${signal.title}` : `Pin ${signal.title}`}
-                    accessibilityState={{ busy }}
-                    disabled={busy}
-                    activeOpacity={0.72}
-                    onPress={() => void press(() => handlePin(signal))}
-                    style={[
-                      styles.actionButton,
-                      styles.pinAction,
-                      {
-                        backgroundColor: pinned
-                          ? 'rgba(245,158,11,0.12)'
-                          : isDark
-                            ? colors.surfaceSecondary
-                            : '#F5F6F8',
-                        borderColor: pinned
-                          ? 'rgba(217,119,6,0.18)'
-                          : isDark
-                            ? colors.border
-                            : 'rgba(22,34,55,0.06)',
-                      },
-                    ]}
-                    testID={`interest-pin-${signal.id}`}
-                  >
-                    {busy ? (
-                      <ActivityIndicator size="small" color={pinned ? '#D97706' : colors.textSecondary} />
-                    ) : (
-                      <>
-                        <Pin
-                          size={14}
-                          color={pinned ? '#D97706' : colors.textSecondary}
-                          fill={pinned ? '#F59E0B' : 'transparent'}
-                        />
-                        <Text
-                          style={[
-                            styles.actionText,
-                            { color: pinned ? '#D97706' : colors.textSecondary },
-                          ]}
-                        >
-                          {pinned ? 'Pinned' : 'Pin'}
-                        </Text>
-                      </>
-                    )}
-                  </TouchableOpacity>
-                ) : null}
-              </View>
-            </View>
-          );
-        })}
-      </View>
+        <ChevronRight size={18} color={colors.textTertiary} strokeWidth={2.1} />
+      </TouchableOpacity>
 
-      {signals.length > visibleSignals.length ? (
+      {canRemind ? (
         <TouchableOpacity
           accessibilityRole="button"
-          accessibilityLabel={`View ${signals.length - visibleSignals.length} more interest updates`}
+          accessibilityLabel={reminderSet ? 'Reminder set' : `Remind me about ${signal.title}`}
+          disabled={busy || reminderSet}
           activeOpacity={0.72}
-          onPress={() => void press(onViewAll)}
-          style={styles.moreRow}
-          testID="interest-briefing-more"
+          onPress={() => void remind()}
+          style={[
+            styles.reminderButton,
+            {
+              backgroundColor: reminderSet
+                ? '#16A34A'
+                : isDark
+                  ? 'rgba(99,102,241,0.18)'
+                  : 'rgba(79,70,229,0.08)',
+              borderColor: reminderSet
+                ? '#16A34A'
+                : isDark
+                  ? 'rgba(129,140,248,0.28)'
+                  : 'rgba(79,70,229,0.12)',
+            },
+          ]}
+          testID={`interest-remind-${signal.id}`}
         >
-          <Text style={[styles.moreText, { color: colors.primary }]}>
-            See {signals.length - visibleSignals.length} more
-          </Text>
-          <ChevronRight size={15} color={colors.primary} />
+          {busy ? (
+            <ActivityIndicator size="small" color={reminderSet ? '#FFFFFF' : colors.primary} />
+          ) : reminderSet ? (
+            <>
+              <Check size={13} color="#FFFFFF" strokeWidth={2.8} />
+              <Text style={styles.reminderSetText}>Reminder set</Text>
+            </>
+          ) : (
+            <>
+              <Bell size={13} color={colors.primary} strokeWidth={2.2} />
+              <Text style={[styles.reminderText, { color: colors.primary }]}>Remind me</Text>
+            </>
+          )}
         </TouchableOpacity>
       ) : null}
     </View>
@@ -314,66 +190,20 @@ export default function InterestBriefingCard({
 }
 
 const styles = StyleSheet.create({
-  wrap: {
-    paddingHorizontal: 20,
-    paddingTop: 16,
-    paddingBottom: 4,
-    gap: 10,
-  },
-  header: {
-    minHeight: 48,
-    paddingHorizontal: 2,
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    gap: 12,
-  },
-  headerCopy: {
-    flex: 1,
-  },
-  eyebrow: {
-    fontSize: 10,
-    lineHeight: 13,
-    fontWeight: '800',
-    letterSpacing: 1.1,
-  },
-  title: {
-    fontSize: 20,
-    lineHeight: 25,
-    fontWeight: '800',
-    letterSpacing: -0.45,
-    marginTop: 1,
-  },
-  viewAllButton: {
-    minHeight: 44,
-    paddingHorizontal: 13,
-    borderRadius: 14,
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    gap: 3,
-  },
-  viewAllText: {
-    fontSize: 13,
-    lineHeight: 17,
-    fontWeight: '700',
-  },
-  list: {
-    gap: 9,
-  },
-  signalCard: {
+  shell: {
+    marginHorizontal: 20,
+    marginTop: 14,
     borderWidth: 1,
-    borderRadius: 16,
-    paddingHorizontal: 14,
-    paddingVertical: 12,
+    borderRadius: 18,
+    padding: 12,
     shadowColor: '#0F172A',
     shadowOpacity: 0.035,
-    shadowRadius: 12,
-    shadowOffset: { width: 0, height: 5 },
+    shadowRadius: 10,
+    shadowOffset: { width: 0, height: 4 },
     elevation: 1,
   },
-  rowMain: {
-    minHeight: 58,
+  main: {
+    minHeight: 60,
     flexDirection: 'row',
     alignItems: 'center',
     gap: 11,
@@ -390,18 +220,36 @@ const styles = StyleSheet.create({
     flex: 1,
     minWidth: 0,
   },
-  titleLine: {
+  metaRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 7,
-    minWidth: 0,
+    gap: 6,
+    marginBottom: 2,
   },
-  signalTitle: {
-    flexShrink: 1,
+  kicker: {
+    fontSize: 9.5,
+    lineHeight: 12,
+    fontWeight: '800',
+    letterSpacing: 0.9,
+  },
+  morePill: {
+    minWidth: 24,
+    height: 20,
+    paddingHorizontal: 7,
+    borderRadius: 10,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  moreText: {
+    fontSize: 10,
+    lineHeight: 12,
+    fontWeight: '700',
+  },
+  title: {
     fontSize: 15.5,
     lineHeight: 20,
     fontWeight: '700',
-    letterSpacing: -0.18,
+    letterSpacing: -0.2,
   },
   subtitle: {
     fontSize: 12.5,
@@ -409,88 +257,28 @@ const styles = StyleSheet.create({
     marginTop: 2,
     fontWeight: '500',
   },
-  reason: {
-    fontSize: 11,
-    lineHeight: 15,
-    marginTop: 2,
-    fontWeight: '500',
-  },
-  livePill: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 4,
-    paddingHorizontal: 7,
-    height: 20,
-    borderRadius: 10,
-    backgroundColor: 'rgba(239,68,68,0.10)',
-  },
-  liveDot: {
-    width: 5,
-    height: 5,
-    borderRadius: 3,
-    backgroundColor: '#EF4444',
-  },
-  liveText: {
-    fontSize: 9,
-    lineHeight: 11,
-    fontWeight: '800',
-    color: '#EF4444',
-    letterSpacing: 0.35,
-  },
-  actions: {
+  reminderButton: {
+    alignSelf: 'flex-start',
     marginLeft: 51,
-    paddingTop: 9,
-    flexDirection: 'row',
-    gap: 8,
-  },
-  actionButton: {
-    minHeight: 40,
-    minWidth: 76,
-    paddingHorizontal: 13,
-    borderRadius: 12,
+    marginTop: 8,
+    minHeight: 34,
+    paddingHorizontal: 11,
+    borderRadius: 11,
+    borderWidth: 1,
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
-    gap: 6,
+    gap: 5,
   },
-  secondaryAction: {
-    borderWidth: 1,
-  },
-  pinAction: {
-    borderWidth: 1,
-  },
-  actionText: {
-    fontSize: 12,
-    lineHeight: 16,
+  reminderText: {
+    fontSize: 11.5,
+    lineHeight: 15,
     fontWeight: '700',
   },
-  primaryAction: {
-    minWidth: 112,
-  },
-  successAction: {
-    backgroundColor: '#16A34A',
-  },
-  disabledAction: {
-    opacity: 0.78,
-  },
-  primaryActionText: {
-    fontSize: 12,
-    lineHeight: 16,
+  reminderSetText: {
+    fontSize: 11.5,
+    lineHeight: 15,
     fontWeight: '700',
     color: '#FFFFFF',
-  },
-  moreRow: {
-    alignSelf: 'center',
-    minHeight: 44,
-    paddingHorizontal: 14,
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    gap: 3,
-  },
-  moreText: {
-    fontSize: 12.5,
-    lineHeight: 17,
-    fontWeight: '700',
   },
 });
