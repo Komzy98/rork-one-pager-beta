@@ -1,6 +1,6 @@
 import React, { useMemo, useState, useEffect, useCallback, useRef } from 'react';
 import { StyleSheet, View, Text, ScrollView, TouchableOpacity, Image, Platform, RefreshControl, Animated, Alert, FlatList } from 'react-native';
-import { Play, ChevronRight, Sparkles, Calendar, CheckCircle2, Target, Flame, Tv, Radio, X, Clock, BarChart3, BellRing, PartyPopper, Users } from 'lucide-react-native';
+import { Play, ChevronRight, Calendar, CheckCircle2, Target, Flame, Tv, Radio, X, Clock, BellRing, PartyPopper, Users } from 'lucide-react-native';
 import * as Speech from 'expo-speech';
 import * as Haptics from 'expo-haptics';
 import { setAudioModeAsync, useAudioPlayer, useAudioPlayerStatus } from 'expo-audio';
@@ -90,14 +90,11 @@ import {
 } from '@/utils/dailySummaryStats';
 import { useActivityIntelligence } from '@/hooks/useBackgroundServices';
 import { useQuery } from '@tanstack/react-query';
-import ActivitiesAIView from '@/components/activities/ActivitiesAIView';
-import FlyingBirds from '@/components/FlyingBirds';
 import TodaysRoutine from '@/components/TodaysRoutine';
 import AddInterestsLaterCard from '@/components/AddInterestsLaterCard';
 import DailyStackCard from '@/components/DailyStackCard';
 import TodayCoachCard from '@/components/TodayCoachCard';
 import DecisionMomentsCard from '@/components/DecisionMomentsCard';
-import PeakPerformanceScheduler from '@/components/PeakPerformanceScheduler';
 import HabitFormationCoach from '@/components/HabitFormationCoach';
 import HabitEngineTodayCard from '@/components/HabitEngineTodayCard';
 import RecoveryModePanel from '@/components/RecoveryModePanel';
@@ -110,8 +107,6 @@ import { notificationService } from '@/utils/notificationService';
 import { useRecoveryMode } from '@/hooks/useRecoveryMode';
 import { resolveEffectiveJoySources } from '@/utils/joySources';
 import { detectRecoveryPatternInsight } from '@/utils/recoveryPatterns';
-import { getChronotypeInfo } from '@/constants/chronotypes';
-import { getLivingWellChronotypeTip } from '@/utils/todayCoach';
 import {
   getHeroLivingWellTagline,
   resolveTodayCoachPhase,
@@ -328,12 +323,10 @@ export default function ActivitiesScreen() {
   const [linkedStreamingCount, setLinkedStreamingCount] = useState(0);
   const [linkedProviderIds, setLinkedProviderIds] = useState<number[]>([]);
   const [younifyBrowseSections, setYounifyBrowseSections] = useState<YounifyBrowseSection[]>([]);
-  const [showUnifiedView, setShowUnifiedView] = useState<boolean>(false);
   const [showLiveMatchModal, setShowLiveMatchModal] = useState<boolean>(false);
   const [liveBannerDismissed, setLiveBannerDismissed] = useState<boolean>(false);
 
   const [showWeatherModal, setShowWeatherModal] = useState<boolean>(false);
-  const [showPeakScheduler, setShowPeakScheduler] = useState<boolean>(false);
   const [showInfoModal, setShowInfoModal] = useState<{ visible: boolean; tmdbId: number | null; mediaType: 'movie' | 'tv'; title: string; platform: string }>({ visible: false, tmdbId: null, mediaType: 'tv', title: '', platform: '' });
   const [sportsSelectedLeagues, setSportsSelectedLeagues] = useState<number[]>([]);
   const [dismissedEpisodes, setDismissedEpisodes] = useState<string[]>([]);
@@ -1700,7 +1693,7 @@ export default function ActivitiesScreen() {
   useFocusEffect(
     useCallback(() => {
       const tick = async () => {
-        if (showUnifiedView || isGeneratingSummary || autoSummaryInFlightRef.current) return;
+        if (isGeneratingSummary || autoSummaryInFlightRef.current) return;
         const todayYmd = getTodayYmd();
         const dismissed = await isDailySummaryDismissed(userId, todayYmd);
         const existing = await loadDailySummaryCache(userId, todayYmd);
@@ -1720,7 +1713,7 @@ export default function ActivitiesScreen() {
       void tick();
       const interval = setInterval(() => void tick(), 60_000);
       return () => clearInterval(interval);
-    }, [showUnifiedView, isGeneratingSummary, userId, generateDailySummary])
+    }, [isGeneratingSummary, userId, generateDailySummary])
   );
   
   const navigateToHabits = () => {
@@ -1736,16 +1729,6 @@ export default function ActivitiesScreen() {
     return `Good evening, ${name}`;
   };
 
-  const getChronotypeSubtitle = (): string | null => {
-    if (!profile?.chronotype) return null;
-    const chronoInfo = getChronotypeInfo(profile.chronotype);
-    if (!chronoInfo) return null;
-    const tip = getLivingWellChronotypeTip(chronoInfo);
-    return tip || null;
-  };
-
-  const getHeroSubtitle = (): string | null => getChronotypeSubtitle();
-  
   const getTimeEmoji = () => {
     if (weather) {
       const condition = weather.condition?.toLowerCase() || '';
@@ -2175,161 +2158,7 @@ export default function ActivitiesScreen() {
           <View style={styles.decorativeOrb1} />
           <View style={styles.decorativeOrb2} />
           <View style={styles.decorativeOrb3} />
-          {/* Weather Effects */}
-          {weather?.isStormy && (
-            <Animated.View 
-              style={[
-                styles.lightningOverlay,
-                {
-                  opacity: lightning.interpolate({
-                    inputRange: [0, 1],
-                    outputRange: [0, 0.7]
-                  })
-                }
-              ]} 
-            />
-          )}
-
-          {weather?.isRaining && (
-            <>
-              {rainDrops.map((drop, index) => (
-                <Animated.View
-                  key={`rain-${index}`}
-                  style={[
-                    styles.rainDrop,
-                    {
-                      left: (index * 25) % 380,
-                      transform: [
-                        {
-                          translateY: drop.interpolate({
-                            inputRange: [0, 1],
-                            outputRange: [-50, 400]
-                          })
-                        }
-                      ],
-                      opacity: drop.interpolate({
-                        inputRange: [0, 0.5, 1],
-                        outputRange: [0, 0.6, 0]
-                      })
-                    }
-                  ]}
-                >
-                  <Text style={styles.rainEmoji}>💧</Text>
-                </Animated.View>
-              ))}
-            </>
-          )}
-
-          {weather?.isSnowing && (
-            <>
-              {snowFlakes.map((flake, index) => (
-                <Animated.View
-                  key={`snow-${index}`}
-                  style={[
-                    styles.snowFlake,
-                    {
-                      left: (index * 20) % 380,
-                      transform: [
-                        {
-                          translateY: flake.interpolate({
-                            inputRange: [0, 1],
-                            outputRange: [-50, 400]
-                          })
-                        },
-                        {
-                          translateX: flake.interpolate({
-                            inputRange: [0, 0.5, 1],
-                            outputRange: [0, 15, -15]
-                          })
-                        },
-                        {
-                          rotate: flake.interpolate({
-                            inputRange: [0, 1],
-                            outputRange: ['0deg', '360deg']
-                          })
-                        }
-                      ],
-                      opacity: flake.interpolate({
-                        inputRange: [0, 0.2, 0.8, 1],
-                        outputRange: [0, 0.8, 0.8, 0]
-                      })
-                    }
-                  ]}
-                >
-                  <Text style={styles.snowEmoji}>❄️</Text>
-                </Animated.View>
-              ))}
-            </>
-          )}
-
-          {/* Animated Clouds (Night/Rainy) or Birds (Clear Day) */}
-          {(!isDayTime() || weather?.isCloudy || weather?.isRaining || weather?.isStormy) ? (
-            <>
-              <Animated.View
-                style={[
-                  styles.cloud,
-                  styles.cloud1,
-                  {
-                    transform: [
-                      {
-                        translateX: cloud1X.interpolate({
-                          inputRange: [0, 1],
-                          outputRange: [-100, 400]
-                        })
-                      }
-                    ]
-                  }
-                ]}
-              >
-                <Text style={styles.cloudEmoji}>☁️</Text>
-              </Animated.View>
-              <Animated.View
-                style={[
-                  styles.cloud,
-                  styles.cloud2,
-                  {
-                    transform: [
-                      {
-                        translateX: cloud2X.interpolate({
-                          inputRange: [0, 1],
-                          outputRange: [-150, 450]
-                        })
-                      }
-                    ]
-                  }
-                ]}
-              >
-                <Text style={styles.cloudEmoji}>☁️</Text>
-              </Animated.View>
-              <Animated.View
-                style={[
-                  styles.cloud,
-                  styles.cloud3,
-                  {
-                    transform: [
-                      {
-                        translateX: cloud3X.interpolate({
-                          inputRange: [0, 1],
-                          outputRange: [-80, 420]
-                        })
-                      }
-                    ]
-                  }
-                ]}
-              >
-                <Text style={styles.cloudEmoji}>☁️</Text>
-              </Animated.View>
-            </>
-          ) : null}
-          
-          {/* Always show flying birds - Matching Morning Dashboard */}
-          <FlyingBirds 
-            count={8}
-            colors={getTimeOfDay() === 'night' || weather?.isStormy || weather?.isRaining 
-              ? ['rgba(255,255,255,0.35)', 'rgba(255,255,255,0.25)', 'rgba(255,255,255,0.2)']
-              : ['rgba(30,30,30,0.35)', 'rgba(50,50,50,0.25)', 'rgba(70,70,70,0.2)']}
-            speed="medium"
-          />
+          {/* VNext keeps the hero calm: weather is information, not decoration. */}
 
           <View style={[styles.heroContent, { paddingTop: insets.top + 16 }]}>
             <Animated.View 
@@ -2360,7 +2189,7 @@ export default function ActivitiesScreen() {
                     {overviewHeroLine}
                   </Text>
                   <Text style={[styles.dateText, { color: getHeroSecondaryTextColor() }]} numberOfLines={2}>
-                    {getTodayDate()}{getHeroSubtitle() ? `  · ${getHeroSubtitle()}` : ''}
+                    {getTodayDate()}
                   </Text>
                 </View>
                 {/* Weather Info Badge */}
@@ -2386,46 +2215,12 @@ export default function ActivitiesScreen() {
               </View>
             </Animated.View>
 
-            {/* Progress and sports awareness now live in the personal briefing below. */}
-
-            {/* View Toggle */}
-            <View style={styles.viewToggleContainer}>
-              <TouchableOpacity 
-                style={[styles.viewToggleBtn, !showUnifiedView && styles.viewToggleBtnActive]}
-                onPress={() => setShowUnifiedView(false)}
-              >
-                <Text style={[styles.viewToggleText, { color: !showUnifiedView ? getHeroTextColor() : getHeroSecondaryTextColor() }]}>
-                  Today
-                </Text>
-              </TouchableOpacity>
-              <TouchableOpacity 
-                style={[styles.viewToggleBtn, showUnifiedView && styles.viewToggleBtnActive]}
-                onPress={() => setShowUnifiedView(true)}
-              >
-                <Sparkles size={14} color={showUnifiedView ? getHeroTextColor() : getHeroSecondaryTextColor()} />
-                <Text style={[styles.viewToggleText, { color: showUnifiedView ? getHeroTextColor() : getHeroSecondaryTextColor() }]}>
-                  AI View
-                </Text>
-              </TouchableOpacity>
-              <TouchableOpacity 
-                style={[styles.viewToggleBtn]}
-                onPress={() => router.push('/(root)/analytics' as any)}
-                testID="analytics-btn"
-              >
-                <BarChart3 size={14} color={getHeroSecondaryTextColor()} />
-                <Text style={[styles.viewToggleText, { color: getHeroSecondaryTextColor() }]}>
-                  Insights
-                </Text>
-              </TouchableOpacity>
-            </View>
+            {/* The Overview itself is the intelligent view. */}
           </View>
         </LinearGradient>
         </View>
 
-        {showUnifiedView ? (
-          <ActivitiesAIView onRequestPeakScheduler={() => setShowPeakScheduler(true)} />
-        ) : (
-          <View style={{ backgroundColor: colors.background }}>
+        <View style={{ backgroundColor: colors.background }}>
             <OverviewPersonalBriefing
               tasks={tasksContext?.allTasks ?? []}
               todayYmd={todayYmd}
@@ -2502,7 +2297,6 @@ export default function ActivitiesScreen() {
               />
             ) : null}
           </View>
-        )}
       </Animated.ScrollView>
       
       <CalendarImporter 
@@ -2529,12 +2323,7 @@ export default function ActivitiesScreen() {
         } : undefined}
       />
       
-      <PeakPerformanceScheduler
-        visible={showPeakScheduler}
-        onClose={() => setShowPeakScheduler(false)}
-        peakStartHour={9}
-        peakEndHour={11}
-      />
+
 
       <ShowInfoModal
         visible={showInfoModal.visible}
@@ -2582,8 +2371,8 @@ const styles = StyleSheet.create({
   
   // Hero Section
   heroSection: {
-    paddingBottom: 24,
-    minHeight: 230,
+    paddingBottom: 18,
+    minHeight: 188,
   },
   heroContent: {
     paddingHorizontal: 22,
