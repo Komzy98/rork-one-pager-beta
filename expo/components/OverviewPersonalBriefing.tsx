@@ -25,6 +25,12 @@ import * as Haptics from 'expo-haptics';
 import { useTheme } from '@/hooks/useTheme';
 import type { Task } from '@/types/task';
 import type { OverviewInterestSignal } from '@/utils/overviewInterestRanking';
+import {
+  OP_RADIUS,
+  OP_SPACING,
+  OP_SURFACE,
+  OP_TYPE,
+} from '@/constants/designSystem';
 
 export interface OverviewCalendarItem {
   id: string;
@@ -121,7 +127,9 @@ function pickFocusTask(tasks: readonly Task[], todayYmd: string): Task | null {
     })
     .sort((a, b) => b.score - a.score || a.due - b.due);
 
-  return candidates[0]?.task ?? null;
+  const best = candidates[0];
+  if (!best || best.score < 36) return null;
+  return best.task;
 }
 
 function buildTimeline(
@@ -272,8 +280,8 @@ export default function OverviewPersonalBriefing({
   };
 
   const card = {
-    backgroundColor: isDark ? colors.surfaceSecondary : '#FFFFFF',
-    borderColor: isDark ? colors.border : 'rgba(15,23,42,0.08)',
+    backgroundColor: isDark ? colors.surfaceSecondary : OP_SURFACE.lightCard,
+    borderColor: isDark ? colors.border : OP_SURFACE.borderLight,
   };
 
   return (
@@ -284,7 +292,7 @@ export default function OverviewPersonalBriefing({
             <View style={[styles.kickerIcon, { backgroundColor: 'rgba(37,99,235,0.10)' }]}>
               <Sparkles size={14} color="#2563EB" strokeWidth={2.3} />
             </View>
-            <Text style={[styles.kicker, { color: '#2563EB' }]}>MOST IMPORTANT</Text>
+            <Text style={[styles.kicker, { color: OP_SURFACE.primary }]}>MOST IMPORTANT</Text>
           </View>
 
           <Text style={[styles.focusTitle, { color: colors.text }]} numberOfLines={2}>
@@ -329,7 +337,7 @@ export default function OverviewPersonalBriefing({
               }}
               style={[
                 styles.secondaryButton,
-                { backgroundColor: isDark ? colors.surface : '#F3F5F8' },
+                { backgroundColor: isDark ? colors.surface : OP_SURFACE.lightMuted },
               ]}
             >
               <Text style={[styles.secondaryButtonText, { color: colors.text }]}>View task</Text>
@@ -359,7 +367,7 @@ export default function OverviewPersonalBriefing({
                     : ListChecks;
               const tint =
                 item.kind === 'calendar'
-                  ? '#2563EB'
+                  ? OP_SURFACE.primary
                   : item.kind === 'habit'
                     ? '#10B981'
                     : '#7C3AED';
@@ -444,7 +452,7 @@ export default function OverviewPersonalBriefing({
                   styles.remindButton,
                   {
                     backgroundColor: reminderSet
-                      ? '#16A34A'
+                      ? OP_SURFACE.positive
                       : isDark
                         ? 'rgba(99,102,241,0.16)'
                         : 'rgba(79,70,229,0.08)',
@@ -493,7 +501,7 @@ export default function OverviewPersonalBriefing({
             <Lightbulb size={17} color="#D97706" strokeWidth={2.2} />
           </View>
           <View style={styles.insightCopy}>
-            <Text style={[styles.kicker, { color: '#D97706' }]}>PATTERN</Text>
+            <Text style={[styles.kicker, { color: OP_SURFACE.warning }]}>PATTERN</Text>
             <Text style={[styles.insightText, { color: colors.text }]}>{patternInsight}</Text>
           </View>
           <TouchableOpacity
@@ -505,7 +513,7 @@ export default function OverviewPersonalBriefing({
             }}
             style={[
               styles.whyButton,
-              { backgroundColor: isDark ? colors.surface : '#F3F5F8' },
+              { backgroundColor: isDark ? colors.surface : OP_SURFACE.lightMuted },
             ]}
           >
             <Text style={[styles.whyText, { color: colors.text }]}>See why</Text>
@@ -544,15 +552,15 @@ export default function OverviewPersonalBriefing({
 
 const styles = StyleSheet.create({
   root: {
-    paddingHorizontal: 20,
-    paddingTop: 18,
-    paddingBottom: 30,
-    gap: 12,
+    paddingHorizontal: OP_SPACING.xl,
+    paddingTop: OP_SPACING.lg,
+    paddingBottom: OP_SPACING.xxxl,
+    gap: OP_SPACING.md,
   },
   card: {
     borderWidth: 1,
-    borderRadius: 20,
-    padding: 16,
+    borderRadius: OP_RADIUS.card,
+    padding: OP_SPACING.lg,
     shadowColor: '#0F172A',
     shadowOpacity: 0.035,
     shadowRadius: 14,
@@ -561,8 +569,8 @@ const styles = StyleSheet.create({
   },
   focusCard: {
     borderWidth: 1,
-    borderRadius: 22,
-    padding: 18,
+    borderRadius: OP_RADIUS.featureCard,
+    padding: OP_SPACING.xl,
     shadowColor: '#0F172A',
     shadowOpacity: 0.055,
     shadowRadius: 18,
@@ -583,16 +591,10 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
   },
   kicker: {
-    fontSize: 9.5,
-    lineHeight: 12,
-    fontWeight: '800',
-    letterSpacing: 1.0,
+    ...OP_TYPE.kicker,
   },
   focusTitle: {
-    fontSize: 23,
-    lineHeight: 28,
-    fontWeight: '800',
-    letterSpacing: -0.6,
+    ...OP_TYPE.featureTitle,
   },
   focusMeta: {
     flexDirection: 'row',
@@ -619,7 +621,7 @@ const styles = StyleSheet.create({
     minHeight: 44,
     paddingHorizontal: 16,
     borderRadius: 14,
-    backgroundColor: '#2563EB',
+    backgroundColor: OP_SURFACE.primary,
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
@@ -650,10 +652,7 @@ const styles = StyleSheet.create({
     marginBottom: 7,
   },
   sectionTitle: {
-    fontSize: 18,
-    lineHeight: 23,
-    fontWeight: '800',
-    letterSpacing: -0.4,
+    ...OP_TYPE.sectionTitle,
   },
   sectionSubtitle: {
     fontSize: 11.5,
@@ -681,9 +680,7 @@ const styles = StyleSheet.create({
     minWidth: 0,
   },
   timelineTitle: {
-    fontSize: 14,
-    lineHeight: 18,
-    fontWeight: '700',
+    ...OP_TYPE.rowTitle,
   },
   timelineMeta: {
     fontSize: 10.5,
@@ -756,7 +753,7 @@ const styles = StyleSheet.create({
     fontSize: 11.5,
     lineHeight: 15,
     fontWeight: '700',
-    color: '#4F46E5',
+    color: OP_SURFACE.interest,
   },
   reminderSetText: {
     fontSize: 11.5,
