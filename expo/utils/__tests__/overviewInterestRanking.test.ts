@@ -10,7 +10,7 @@ const match: LiveFootballMatch = {
   awayTeam: 'Tottenham',
   date: '2026-10-10T17:30:00+01:00',
   time: '17:30',
-  status: 'Scheduled',
+  status: 'Upcoming',
   league: 'Premier League',
 };
 
@@ -32,6 +32,7 @@ const showInput = {
   showTitle: 'Dark Matter',
   tmdbId: 196322,
   platform: 'Apple TV+',
+  posterUrl: null,
   showStatus: 'Watching',
   latestEpisode: {
     name: 'Episode 4',
