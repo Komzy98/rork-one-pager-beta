@@ -1,6 +1,6 @@
 import React, { useMemo, useState, useEffect, useCallback, useRef } from 'react';
 import { StyleSheet, View, Text, ScrollView, TouchableOpacity, Image, Platform, RefreshControl, Animated, Alert, FlatList } from 'react-native';
-import { Play, ChevronRight, Sparkles, Calendar, CheckCircle2, Target, Flame, Tv, Radio, X, Clock, BarChart3, BellRing, PartyPopper, Users } from 'lucide-react-native';
+import { Play, ChevronRight, Calendar, CheckCircle2, Target, Flame, Tv, Radio, X, Clock, BellRing, PartyPopper, Users } from 'lucide-react-native';
 import * as Speech from 'expo-speech';
 import * as Haptics from 'expo-haptics';
 import { setAudioModeAsync, useAudioPlayer, useAudioPlayerStatus } from 'expo-audio';
@@ -90,27 +90,23 @@ import {
 } from '@/utils/dailySummaryStats';
 import { useActivityIntelligence } from '@/hooks/useBackgroundServices';
 import { useQuery } from '@tanstack/react-query';
-import ActivitiesAIView from '@/components/activities/ActivitiesAIView';
-import FlyingBirds from '@/components/FlyingBirds';
 import TodaysRoutine from '@/components/TodaysRoutine';
 import AddInterestsLaterCard from '@/components/AddInterestsLaterCard';
 import DailyStackCard from '@/components/DailyStackCard';
 import TodayCoachCard from '@/components/TodayCoachCard';
 import DecisionMomentsCard from '@/components/DecisionMomentsCard';
-import PeakPerformanceScheduler from '@/components/PeakPerformanceScheduler';
 import HabitFormationCoach from '@/components/HabitFormationCoach';
 import HabitEngineTodayCard from '@/components/HabitEngineTodayCard';
 import RecoveryModePanel from '@/components/RecoveryModePanel';
 import JoySourcesNudgeCard from '@/components/JoySourcesNudgeCard';
 import InterestBriefingCard from '@/components/InterestBriefingCard';
+import OverviewPersonalBriefing from '@/components/OverviewPersonalBriefing';
 import { buildFootballInterestSignals } from '@/utils/interestSignalEngine';
 import { useInterestReminderSync } from '@/hooks/useInterestReminderSync';
 import { notificationService } from '@/utils/notificationService';
 import { useRecoveryMode } from '@/hooks/useRecoveryMode';
 import { resolveEffectiveJoySources } from '@/utils/joySources';
 import { detectRecoveryPatternInsight } from '@/utils/recoveryPatterns';
-import { getChronotypeInfo } from '@/constants/chronotypes';
-import { getLivingWellChronotypeTip } from '@/utils/todayCoach';
 import {
   getHeroLivingWellTagline,
   resolveTodayCoachPhase,
@@ -141,6 +137,11 @@ import {
 import { buildYounifyProviderIndex, pickBestYounifyRowForEpisode } from '@/utils/younifyProviderIndex';
 import { formatShowEpisodeLabel, formatYounifyContinueEpisodeLabel } from '@/utils/showEpisodeLabel';
 import { SHOWS_HREF } from '@/constants/showsNavigation';
+import {
+  classifyEpisodeTiming,
+  resolveEpisodeForSurface,
+} from '@/utils/episodeReleaseTiming';
+import { buildOverviewInterestSignals } from '@/utils/overviewInterestRanking';
 
 type AvailableSpeechVoice = Awaited<ReturnType<typeof Speech.getAvailableVoicesAsync>>[number];
 
@@ -246,13 +247,32 @@ export default function ActivitiesScreen() {
     }
   }, [devCoachPhaseParam]);
 
-  const heroLivingWellTagline = useMemo(
-    () => getHeroLivingWellTagline(coachPhase),
-    [coachPhase],
-  );
   const { colors, isDark } = useTheme();
   const appContext = useApp();
   const tasksContext = useTasks();
+  const overviewHeroLine = useMemo(() => {
+    const allTasks = tasksContext?.allTasks ?? [];
+    const today = getTodayYmd();
+    const openToday = allTasks.filter((task) => {
+      if (task.isHabit || task.status === 'completed' || task.status === 'cancelled' || !task.dueDate) {
+        return false;
+      }
+      const due = new Date(task.dueDate);
+      if (!Number.isFinite(due.getTime())) return false;
+      const dueYmd = [
+        due.getFullYear(),
+        String(due.getMonth() + 1).padStart(2, '0'),
+        String(due.getDate()).padStart(2, '0'),
+      ].join('-');
+      return dueYmd === today;
+    }).length;
+
+    if (openToday > 0) {
+      return `${openToday} task${openToday === 1 ? '' : 's'} still matter today.`;
+    }
+
+    return 'Your day, filtered to what matters.';
+  }, [tasksContext?.allTasks]);
   const userProfileData = useUserProfile();
   const profile = userProfileData?.profile;
   const { upcomingSaved, eventsNeedingFeedback, recordEventFeedback, dismissEventFeedback } =
@@ -303,12 +323,10 @@ export default function ActivitiesScreen() {
   const [linkedStreamingCount, setLinkedStreamingCount] = useState(0);
   const [linkedProviderIds, setLinkedProviderIds] = useState<number[]>([]);
   const [younifyBrowseSections, setYounifyBrowseSections] = useState<YounifyBrowseSection[]>([]);
-  const [showUnifiedView, setShowUnifiedView] = useState<boolean>(false);
   const [showLiveMatchModal, setShowLiveMatchModal] = useState<boolean>(false);
   const [liveBannerDismissed, setLiveBannerDismissed] = useState<boolean>(false);
 
   const [showWeatherModal, setShowWeatherModal] = useState<boolean>(false);
-  const [showPeakScheduler, setShowPeakScheduler] = useState<boolean>(false);
   const [showInfoModal, setShowInfoModal] = useState<{ visible: boolean; tmdbId: number | null; mediaType: 'movie' | 'tv'; title: string; platform: string }>({ visible: false, tmdbId: null, mediaType: 'tv', title: '', platform: '' });
   const [sportsSelectedLeagues, setSportsSelectedLeagues] = useState<number[]>([]);
   const [dismissedEpisodes, setDismissedEpisodes] = useState<string[]>([]);
@@ -972,15 +990,12 @@ export default function ActivitiesScreen() {
   const trackedShowIds = useMemo(() => trackedTVShows.map(s => s.tmdbId).join(','), [trackedTVShows]);
 
   const newEpisodesForMyShows = useQuery({
-    queryKey: ['my-shows-new-episodes', trackedShowIds],
+    queryKey: ['my-shows-new-episodes', trackedShowIds, todayYmd],
     queryFn: async (): Promise<TrackedShowEpisode[]> => {
       if (trackedTVShows.length === 0) return [];
       console.log('📺 [Activities] Checking new episodes for', trackedTVShows.length, 'tracked shows');
 
       const results: TrackedShowEpisode[] = [];
-      const now = new Date();
-      const sevenDaysAgo = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000);
-      const fourteenDaysAhead = new Date(now.getTime() + 14 * 24 * 60 * 60 * 1000);
 
       const promises = trackedTVShows.map(async (show) => {
         try {
@@ -988,10 +1003,27 @@ export default function ActivitiesScreen() {
           const lastEp = details.last_episode_to_air;
           const nextEp = details.next_episode_to_air;
 
-          const hasRecentEpisode = lastEp?.air_date && new Date(lastEp.air_date) >= sevenDaysAgo;
-          const hasUpcomingEpisode = nextEp?.air_date && new Date(nextEp.air_date) <= fourteenDaysAhead;
+          const resolvedEpisode = resolveEpisodeForSurface(
+            lastEp
+              ? {
+                  name: lastEp.name,
+                  seasonNumber: lastEp.season_number,
+                  episodeNumber: lastEp.episode_number,
+                  airDate: lastEp.air_date,
+                }
+              : null,
+            nextEp
+              ? {
+                  name: nextEp.name,
+                  seasonNumber: nextEp.season_number,
+                  episodeNumber: nextEp.episode_number,
+                  airDate: nextEp.air_date,
+                }
+              : null,
+            todayYmd,
+          );
 
-          if (hasRecentEpisode || hasUpcomingEpisode) {
+          if (resolvedEpisode) {
             const posterUrl = tmdbApi.getImageUrl(details.poster_path, 'w300');
             results.push({
               showId: show.id,
@@ -1026,9 +1058,11 @@ export default function ActivitiesScreen() {
       await Promise.all(promises);
 
       results.sort((a, b) => {
-        const dateA = a.latestEpisode?.airDate || a.nextEpisode?.airDate || '';
-        const dateB = b.latestEpisode?.airDate || b.nextEpisode?.airDate || '';
-        return dateB.localeCompare(dateA);
+        const aResolved = resolveEpisodeForSurface(a.latestEpisode, a.nextEpisode, todayYmd);
+        const bResolved = resolveEpisodeForSurface(b.latestEpisode, b.nextEpisode, todayYmd);
+        const aDistance = Math.abs(aResolved?.daysFromToday ?? 99);
+        const bDistance = Math.abs(bResolved?.daysFromToday ?? 99);
+        return aDistance - bDistance;
       });
 
       console.log('📺 [Activities] Found', results.length, 'shows with new/upcoming episodes');
@@ -1198,13 +1232,30 @@ export default function ActivitiesScreen() {
 
   const visibleNewEpisodes = useMemo(() => {
     return (newEpisodesForMyShows.data ?? []).filter((item) => {
-      const isRecentRelease = item.latestEpisode?.airDate && new Date(item.latestEpisode.airDate) >= new Date(Date.now() - 7 * 24 * 60 * 60 * 1000);
-      const ep = isRecentRelease ? item.latestEpisode : item.nextEpisode;
-      if (!ep) return false;
+      const resolved = resolveEpisodeForSurface(item.latestEpisode, item.nextEpisode, todayYmd);
+      if (!resolved) return false;
+      const ep = resolved.episode;
       const key = `${item.tmdbId}-s${ep.seasonNumber}e${ep.episodeNumber}`;
       return !dismissedEpisodes.includes(key);
     });
-  }, [newEpisodesForMyShows.data, dismissedEpisodes]);
+  }, [newEpisodesForMyShows.data, dismissedEpisodes, todayYmd]);
+
+  const overviewInterestSignals = useMemo(
+    () =>
+      buildOverviewInterestSignals({
+        footballSignals: hasSportsInterest ? footballInterestSignals : [],
+        showEpisodes: hasShowsInterest ? visibleNewEpisodes : [],
+        todayYmd,
+        limit: 4,
+      }),
+    [
+      footballInterestSignals,
+      hasSportsInterest,
+      hasShowsInterest,
+      visibleNewEpisodes,
+      todayYmd,
+    ],
+  );
 
   const recoveryHopeInput = useMemo(() => {
     const calendarEvents = getUpcomingCalendarEvents(14);
@@ -1257,9 +1308,11 @@ export default function ActivitiesScreen() {
     });
 
     const newEpisodes = visibleNewEpisodes.slice(0, 3).map((item) => {
-      const ep = item.latestEpisode ?? item.nextEpisode;
+      const resolved = resolveEpisodeForSurface(item.latestEpisode, item.nextEpisode, todayYmd);
+      const ep = resolved?.episode;
+      const timing = ep?.airDate ? classifyEpisodeTiming(ep.airDate, todayYmd).timing : 'unknown';
       const epLabel = ep
-        ? `S${ep.seasonNumber}E${ep.episodeNumber}`
+        ? `S${ep.seasonNumber}E${ep.episodeNumber}${timing === 'tomorrow' ? ' · tomorrow' : timing === 'today' ? ' · today' : ''}`
         : undefined;
       return {
         title: item.showTitle || 'Show',
@@ -1640,7 +1693,7 @@ export default function ActivitiesScreen() {
   useFocusEffect(
     useCallback(() => {
       const tick = async () => {
-        if (showUnifiedView || isGeneratingSummary || autoSummaryInFlightRef.current) return;
+        if (isGeneratingSummary || autoSummaryInFlightRef.current) return;
         const todayYmd = getTodayYmd();
         const dismissed = await isDailySummaryDismissed(userId, todayYmd);
         const existing = await loadDailySummaryCache(userId, todayYmd);
@@ -1660,7 +1713,7 @@ export default function ActivitiesScreen() {
       void tick();
       const interval = setInterval(() => void tick(), 60_000);
       return () => clearInterval(interval);
-    }, [showUnifiedView, isGeneratingSummary, userId, generateDailySummary])
+    }, [isGeneratingSummary, userId, generateDailySummary])
   );
   
   const navigateToHabits = () => {
@@ -1676,16 +1729,6 @@ export default function ActivitiesScreen() {
     return `Good evening, ${name}`;
   };
 
-  const getChronotypeSubtitle = (): string | null => {
-    if (!profile?.chronotype) return null;
-    const chronoInfo = getChronotypeInfo(profile.chronotype);
-    if (!chronoInfo) return null;
-    const tip = getLivingWellChronotypeTip(chronoInfo);
-    return tip || null;
-  };
-
-  const getHeroSubtitle = (): string | null => getChronotypeSubtitle();
-  
   const getTimeEmoji = () => {
     if (weather) {
       const condition = weather.condition?.toLowerCase() || '';
@@ -1988,10 +2031,12 @@ export default function ActivitiesScreen() {
 
   const handleOpenNewEpisode = useCallback(
     async (item: TrackedShowEpisode) => {
-      const isRecentRelease =
-        item.latestEpisode?.airDate &&
-        new Date(item.latestEpisode.airDate) >= new Date(Date.now() - 7 * 24 * 60 * 60 * 1000);
-      const ep = isRecentRelease ? item.latestEpisode : item.nextEpisode;
+      const resolved = resolveEpisodeForSurface(
+        item.latestEpisode,
+        item.nextEpisode,
+        todayYmd,
+      );
+      const ep = resolved?.episode ?? null;
 
       if (Platform.OS !== 'web') {
         await Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
@@ -2049,7 +2094,7 @@ export default function ActivitiesScreen() {
         router.push(SHOWS_HREF.streaming as any);
       }
     },
-    [linkedStreamingCount, younifyEpisodeIndex, router],
+    [linkedStreamingCount, younifyEpisodeIndex, router, todayYmd],
   );
 
   const renderLoadingState = () => (
@@ -2113,163 +2158,9 @@ export default function ActivitiesScreen() {
           <View style={styles.decorativeOrb1} />
           <View style={styles.decorativeOrb2} />
           <View style={styles.decorativeOrb3} />
-          {/* Weather Effects */}
-          {weather?.isStormy && (
-            <Animated.View 
-              style={[
-                styles.lightningOverlay,
-                {
-                  opacity: lightning.interpolate({
-                    inputRange: [0, 1],
-                    outputRange: [0, 0.7]
-                  })
-                }
-              ]} 
-            />
-          )}
+          {/* VNext keeps the hero calm: weather is information, not decoration. */}
 
-          {weather?.isRaining && (
-            <>
-              {rainDrops.map((drop, index) => (
-                <Animated.View
-                  key={`rain-${index}`}
-                  style={[
-                    styles.rainDrop,
-                    {
-                      left: (index * 25) % 380,
-                      transform: [
-                        {
-                          translateY: drop.interpolate({
-                            inputRange: [0, 1],
-                            outputRange: [-50, 400]
-                          })
-                        }
-                      ],
-                      opacity: drop.interpolate({
-                        inputRange: [0, 0.5, 1],
-                        outputRange: [0, 0.6, 0]
-                      })
-                    }
-                  ]}
-                >
-                  <Text style={styles.rainEmoji}>💧</Text>
-                </Animated.View>
-              ))}
-            </>
-          )}
-
-          {weather?.isSnowing && (
-            <>
-              {snowFlakes.map((flake, index) => (
-                <Animated.View
-                  key={`snow-${index}`}
-                  style={[
-                    styles.snowFlake,
-                    {
-                      left: (index * 20) % 380,
-                      transform: [
-                        {
-                          translateY: flake.interpolate({
-                            inputRange: [0, 1],
-                            outputRange: [-50, 400]
-                          })
-                        },
-                        {
-                          translateX: flake.interpolate({
-                            inputRange: [0, 0.5, 1],
-                            outputRange: [0, 15, -15]
-                          })
-                        },
-                        {
-                          rotate: flake.interpolate({
-                            inputRange: [0, 1],
-                            outputRange: ['0deg', '360deg']
-                          })
-                        }
-                      ],
-                      opacity: flake.interpolate({
-                        inputRange: [0, 0.2, 0.8, 1],
-                        outputRange: [0, 0.8, 0.8, 0]
-                      })
-                    }
-                  ]}
-                >
-                  <Text style={styles.snowEmoji}>❄️</Text>
-                </Animated.View>
-              ))}
-            </>
-          )}
-
-          {/* Animated Clouds (Night/Rainy) or Birds (Clear Day) */}
-          {(!isDayTime() || weather?.isCloudy || weather?.isRaining || weather?.isStormy) ? (
-            <>
-              <Animated.View
-                style={[
-                  styles.cloud,
-                  styles.cloud1,
-                  {
-                    transform: [
-                      {
-                        translateX: cloud1X.interpolate({
-                          inputRange: [0, 1],
-                          outputRange: [-100, 400]
-                        })
-                      }
-                    ]
-                  }
-                ]}
-              >
-                <Text style={styles.cloudEmoji}>☁️</Text>
-              </Animated.View>
-              <Animated.View
-                style={[
-                  styles.cloud,
-                  styles.cloud2,
-                  {
-                    transform: [
-                      {
-                        translateX: cloud2X.interpolate({
-                          inputRange: [0, 1],
-                          outputRange: [-150, 450]
-                        })
-                      }
-                    ]
-                  }
-                ]}
-              >
-                <Text style={styles.cloudEmoji}>☁️</Text>
-              </Animated.View>
-              <Animated.View
-                style={[
-                  styles.cloud,
-                  styles.cloud3,
-                  {
-                    transform: [
-                      {
-                        translateX: cloud3X.interpolate({
-                          inputRange: [0, 1],
-                          outputRange: [-80, 420]
-                        })
-                      }
-                    ]
-                  }
-                ]}
-              >
-                <Text style={styles.cloudEmoji}>☁️</Text>
-              </Animated.View>
-            </>
-          ) : null}
-          
-          {/* Always show flying birds - Matching Morning Dashboard */}
-          <FlyingBirds 
-            count={8}
-            colors={getTimeOfDay() === 'night' || weather?.isStormy || weather?.isRaining 
-              ? ['rgba(255,255,255,0.35)', 'rgba(255,255,255,0.25)', 'rgba(255,255,255,0.2)']
-              : ['rgba(30,30,30,0.35)', 'rgba(50,50,50,0.25)', 'rgba(70,70,70,0.2)']}
-            speed="medium"
-          />
-
-          <View style={[styles.heroContent, { paddingTop: insets.top + 16 }]}>
+          <View style={[styles.heroContent, { paddingTop: insets.top + 8 }]}>
             <Animated.View 
               style={[
                 styles.greetingContainer,
@@ -2295,10 +2186,10 @@ export default function ActivitiesScreen() {
                 <View style={styles.greetingTextContainer}>
                   <Text style={[styles.greetingText, { color: getHeroTextColor() }]}>{getGreeting()}</Text>
                   <Text style={[styles.dailyFocusText, { color: getHeroSecondaryTextColor() }]}>
-                    {heroLivingWellTagline}
+                    {overviewHeroLine}
                   </Text>
                   <Text style={[styles.dateText, { color: getHeroSecondaryTextColor() }]} numberOfLines={2}>
-                    {getTodayDate()}{getHeroSubtitle() ? `  · ${getHeroSubtitle()}` : ''}
+                    {getTodayDate()}
                   </Text>
                 </View>
                 {/* Weather Info Badge */}
@@ -2324,187 +2215,76 @@ export default function ActivitiesScreen() {
               </View>
             </Animated.View>
 
-            {/* Quick Stats Row */}
-            <Animated.View 
-              style={[
-                styles.quickStatsRow,
-                {
-                  opacity: fadeAnim,
-                  transform: [{ translateY: slideAnim }]
-                }
-              ]}
-            >
-              <TouchableOpacity style={styles.quickStatCard} onPress={navigateToHabits}>
-                <View style={[styles.quickStatIcon, { backgroundColor: 'rgba(16, 185, 129, 0.15)' }]}>
-                  <CheckCircle2 size={20} color="#10B981" strokeWidth={2.8} />
-                </View>
-                <Text style={[styles.quickStatValue, { color: getHeroTextColor() }]}>{stats.completedHabits}/{stats.totalHabits}</Text>
-                <Text style={[styles.quickStatLabel, { color: getHeroSecondaryTextColor() }]}>Show up</Text>
-              </TouchableOpacity>
-
-              <TouchableOpacity style={styles.quickStatCard} onPress={navigateToHabits}>
-                <View style={[styles.quickStatIcon, { backgroundColor: 'rgba(245, 158, 11, 0.15)' }]}>
-                  <Flame size={20} color="#F59E0B" strokeWidth={2.8} />
-                </View>
-                <Text style={[styles.quickStatValue, { color: getHeroTextColor() }]}>{stats.currentStreak}</Text>
-                <Text style={[styles.quickStatLabel, { color: getHeroSecondaryTextColor() }]}>Streak</Text>
-              </TouchableOpacity>
-
-              <TouchableOpacity style={styles.quickStatCard} onPress={navigateToHabits}>
-                <View style={[styles.quickStatIcon, { backgroundColor: 'rgba(139, 92, 246, 0.15)' }]}>
-                  <Target size={22} color="#A78BFA" strokeWidth={2.8} />
-                </View>
-                <Text style={[styles.quickStatValue, { color: getHeroTextColor() }]}>{stats.habitCompletionRate}%</Text>
-                <Text style={[styles.quickStatLabel, { color: getHeroSecondaryTextColor() }]}>On track</Text>
-              </TouchableOpacity>
-            </Animated.View>
-
-            {/* Live Match Alert */}
-            {hasSportsInterest && liveMatches.length > 0 && !liveBannerDismissed && (
-              <Animated.View 
-                style={[
-                  styles.liveMatchAlert,
-                  {
-                    opacity: fadeAnim,
-                    transform: [{ translateY: slideAnim }]
-                  }
-                ]}
-              >
-                <TouchableOpacity 
-                  style={styles.liveMatchAlertContent}
-                  onPress={() => {
-                    if (Platform.OS !== 'web') void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
-                    setShowLiveMatchModal(true);
-                  }}
-                  activeOpacity={0.8}
-                >
-                  <View style={styles.liveMatchAlertLeft}>
-                    <View style={styles.livePulseContainer}>
-                      <View style={styles.livePulseOuter} />
-                      <View style={styles.livePulseInner} />
-                      <Radio size={14} color="#fff" />
-                    </View>
-                    <View style={styles.liveMatchInfo}>
-                      <Text style={styles.liveMatchAlertTitle}>
-                        {liveMatches.length === 1 
-                          ? 'Your team is playing NOW!' 
-                          : `${liveMatches.length} of your teams are playing!`}
-                      </Text>
-                      <Text style={styles.liveMatchAlertTeams} numberOfLines={1}>
-                        {liveMatches.slice(0, 2).map(m => 
-                          `${m.homeTeam} ${m.homeScore ?? 0}-${m.awayScore ?? 0} ${m.awayTeam}`
-                        ).join(' • ')}
-                      </Text>
-                    </View>
-                  </View>
-                  <View style={styles.liveMatchAlertRight}>
-                    <Text style={styles.liveMatchAlertScore}>
-                      {liveMatches[0]?.elapsed ? `${liveMatches[0].elapsed}'` : 'LIVE'}
-                    </Text>
-                    <TouchableOpacity
-                      style={styles.liveBannerClose}
-                      onPress={(e) => {
-                        e.stopPropagation();
-                        if (Platform.OS !== 'web') void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-                        setLiveBannerDismissed(true);
-                      }}
-                      hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
-                    >
-                      <X size={16} color="#fff" strokeWidth={2.5} />
-                    </TouchableOpacity>
-                  </View>
-                </TouchableOpacity>
-              </Animated.View>
-            )}
-
-            {/* View Toggle */}
-            <View style={styles.viewToggleContainer}>
-              <TouchableOpacity 
-                style={[styles.viewToggleBtn, !showUnifiedView && styles.viewToggleBtnActive]}
-                onPress={() => setShowUnifiedView(false)}
-              >
-                <Text style={[styles.viewToggleText, { color: !showUnifiedView ? getHeroTextColor() : getHeroSecondaryTextColor() }]}>
-                  Today
-                </Text>
-              </TouchableOpacity>
-              <TouchableOpacity 
-                style={[styles.viewToggleBtn, showUnifiedView && styles.viewToggleBtnActive]}
-                onPress={() => setShowUnifiedView(true)}
-              >
-                <Sparkles size={14} color={showUnifiedView ? getHeroTextColor() : getHeroSecondaryTextColor()} />
-                <Text style={[styles.viewToggleText, { color: showUnifiedView ? getHeroTextColor() : getHeroSecondaryTextColor() }]}>
-                  AI View
-                </Text>
-              </TouchableOpacity>
-              <TouchableOpacity 
-                style={[styles.viewToggleBtn]}
-                onPress={() => router.push('/(root)/analytics' as any)}
-                testID="analytics-btn"
-              >
-                <BarChart3 size={14} color={getHeroSecondaryTextColor()} />
-                <Text style={[styles.viewToggleText, { color: getHeroSecondaryTextColor() }]}>
-                  Insights
-                </Text>
-              </TouchableOpacity>
-            </View>
+            {/* The Overview itself is the intelligent view. */}
           </View>
         </LinearGradient>
         </View>
 
-        {showUnifiedView ? (
-          <ActivitiesAIView onRequestPeakScheduler={() => setShowPeakScheduler(true)} />
-        ) : (
-          <View style={{ backgroundColor: colors.background }}>
-            <AddInterestsLaterCard />
-            <DailyStackCard
-              habitCount={stats.totalHabits}
-              completedHabits={stats.completedHabits}
-              continueWatchingTitle={dailyStackContinueTitle}
-              tonightMatchLabel={dailyStackTonightMatch}
-              partnerCount={partnerList.length}
+        <View style={{ backgroundColor: colors.background }}>
+            <OverviewPersonalBriefing
+              tasks={tasksContext?.allTasks ?? []}
+              todayYmd={todayYmd}
+              calendarItems={upcomingCalendarPreview}
+              interestSignals={overviewInterestSignals}
+              patternInsight={recoveryPatternInsight}
+              habitProgress={{
+                completed: stats.completedHabits,
+                total: stats.totalHabits,
+                rate: stats.habitCompletionRate,
+              }}
+              onStartTask={(task) => {
+                if (task.status !== 'in-progress') {
+                  tasksContext?.updateTask(task.id, { status: 'in-progress' });
+                }
+                tasksContext?.startTimer(task.id);
+              }}
+              onCompleteHabit={(task) => {
+                tasksContext?.updateTask(task.id, {
+                  habitCompletions: {
+                    ...(task.habitCompletions ?? {}),
+                    [todayYmd]: true,
+                  },
+                });
+              }}
+              onOpenTasks={() => router.push('/tasks' as any)}
+              onOpenCalendar={() => router.push('/(tabs)/events' as any)}
+              onOpenInterest={(signal) => {
+                if (signal.kind === 'football') {
+                  void openInterestSignal(signal.football);
+                  return;
+                }
+                void handleOpenNewEpisode(signal.show);
+              }}
+              onViewInterests={(signal) => {
+                if (signal.category === 'sports') {
+                  router.push('/(tabs)/sports' as any);
+                } else {
+                  router.push(SHOWS_HREF.streaming as any);
+                }
+              }}
+              onRemindInterest={async (signal) => {
+                if (signal.kind !== 'football') return false;
+                return remindAboutInterestMatch(signal.football);
+              }}
+              onOpenInsights={() => router.push('/(root)/analytics' as any)}
             />
-            <DecisionMomentsCard
-              completedHabits={stats.completedHabits}
-              totalHabits={stats.totalHabits}
-              chronotypeId={profile?.chronotype}
-              tonightMatchLabel={dailyStackTonightMatch}
-              matchKickoffTime={dailyStackMatchKickoff}
-              weather={weather}
-              continueWatchingTitle={dailyStackContinueTitle}
-              partnerFeed={partnerActivity.feed}
-              currentUserId={user?.id}
-              onCheer={(eventId) => void partnerActivity.cheer(eventId, true)}
-            />
-            {hasSportsInterest && footballInterestSignals.length > 0 && (
-              <>
-                <InterestBriefingCard
-                  signals={footballInterestSignals}
-                  onOpenSignal={(signal) => void openInterestSignal(signal)}
-                  onViewAll={() => router.push('/(tabs)/sports' as any)}
-                  onRemind={remindAboutInterestMatch}
-                  onTogglePin={toggleInterestPin}
-                  isPinned={(signal) => isPinned(signal.match.id)}
-                />
-                {interestMatchDetails ? (
-                  <MatchDetailsModal
-                    visible={showInterestMatchDetails}
-                    onClose={() => setShowInterestMatchDetails(false)}
-                    fixtureId={parseInt(interestMatchDetails.id, 10)}
-                    homeTeam={interestMatchDetails.homeTeam}
-                    awayTeam={interestMatchDetails.awayTeam}
-                    homeScore={interestMatchDetails.homeScore}
-                    awayScore={interestMatchDetails.awayScore}
-                    league={interestMatchDetails.league}
-                    leagueLogo={interestMatchDetails.leagueLogo}
-                    round={interestMatchDetails.round}
-                    homeTeamLogo={interestMatchDetails.homeTeamLogo}
-                    awayTeamLogo={interestMatchDetails.awayTeamLogo}
-                  />
-                ) : null}
-              </>
-            )}
 
-            <JoySourcesNudgeCard />
+            {interestMatchDetails ? (
+              <MatchDetailsModal
+                visible={showInterestMatchDetails}
+                onClose={() => setShowInterestMatchDetails(false)}
+                fixtureId={parseInt(interestMatchDetails.id, 10)}
+                homeTeam={interestMatchDetails.homeTeam}
+                awayTeam={interestMatchDetails.awayTeam}
+                homeScore={interestMatchDetails.homeScore}
+                awayScore={interestMatchDetails.awayScore}
+                league={interestMatchDetails.league}
+                leagueLogo={interestMatchDetails.leagueLogo}
+                round={interestMatchDetails.round}
+                homeTeamLogo={interestMatchDetails.homeTeamLogo}
+                awayTeamLogo={interestMatchDetails.awayTeamLogo}
+              />
+            ) : null}
 
             {recovery.isActive ? (
               <RecoveryModePanel
@@ -2524,444 +2304,7 @@ export default function ActivitiesScreen() {
                 onExit={() => recovery.exitManual(7)}
               />
             ) : null}
-
-            <TodayCoachCard
-              coachPhase={coachPhase}
-              chronotypeId={profile?.chronotype}
-              dailySummary={dailySummary}
-              isGenerating={isGeneratingSummary}
-              isSpeaking={isSpeaking}
-              isVoicePending={generateVoiceMutation.isPending}
-              recoveryActive={recovery.isActive}
-              autoSummaryHintDismissed={autoSummaryHintDismissed}
-              autoSummaryScheduleLabel={autoSummaryScheduleLabel || null}
-              yesterdayDelta={yesterdayDelta}
-              onGenerate={generateDailySummary}
-              onDismissSummary={() => {
-                void stopSummarySpeech();
-                void markDailySummaryDismissed(userId, getTodayYmd());
-                setDailySummary(null);
-              }}
-              onToggleListen={() => {
-                if (isSpeaking) {
-                  void stopSummarySpeech();
-                } else if (dailySummary) {
-                  void speakDailySummary(dailySummary.summary);
-                }
-              }}
-              onShareSummary={() => {
-                if (!dailySummary) return;
-                setSummarySharePayload(
-                  buildSummaryPayload(
-                    dailySummary.score,
-                    dailySummary.summary,
-                    (profile?.name || user?.email?.split('@')[0] || '').trim() || undefined,
-                  ),
-                );
-              }}
-              onDismissAutoSummaryHint={handleDismissAutoSummaryHint}
-            />
-
-            {eventsNeedingFeedback[0] ? (
-              <EventFeedbackPrompt
-                snapshot={eventsNeedingFeedback[0]}
-                colors={{
-                  text: colors.text,
-                  textSecondary: colors.textSecondary,
-                  card: colors.card,
-                  border: colors.border,
-                  primary: colors.primary,
-                  primaryLight: `${colors.primary}18`,
-                }}
-                onRate={recordEventFeedback}
-                onDismiss={dismissEventFeedback}
-              />
-            ) : null}
-
-            {/* Today's Routine Section - Combined with Progress */}
-            <View style={styles.routineSection}>
-              <TodaysRoutine 
-                maxItems={5}
-                onViewAll={() => router.push('/tasks' as any)}
-              />
-            </View>
-
-            <HabitEngineTodayCard />
-
-            {/* Habit Formation Coach */}
-            <HabitFormationCoach 
-              maxItems={3}
-              recoveryMode={recovery.isActive}
-              onComplete={(habitId) => {
-                if (__DEV__) console.log('Quick completed habit:', habitId);
-              }}
-            />
-
-            <OnePagerSavedFitSection
-              events={upcomingSaved}
-              recommendationInput={eventRecommendationInput}
-              timeFormat={eventTimeFormat}
-              colors={{
-                text: colors.text,
-                textSecondary: colors.textSecondary,
-                textMuted: colors.textMuted,
-                card: colors.card,
-                border: colors.border,
-                primary: colors.primary,
-                primaryLight: `${colors.primary}18`,
-              }}
-            />
-
-            {showCalendarSection ? (
-            <View style={styles.section}>
-              <View style={styles.sectionHeaderRow}>
-                <View style={{ flex: 1, paddingRight: 8 }}>
-                  <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
-                    <Calendar size={20} color={colors.text} strokeWidth={2} />
-                    <Text style={[styles.sectionTitle, { color: colors.text }]}>
-                      {hasCalendarSource ? 'From your calendar' : 'Calendar'}
-                    </Text>
-                  </View>
-                  <Text style={[styles.sectionSubtitle, { color: colors.textSecondary }]}>
-                    {hasCalendarSource
-                      ? savedEventsCount > 0
-                        ? 'Device calendar — saved Events live in One Pager above'
-                        : 'Your imported or Apple Calendar schedule'
-                      : 'Connect Apple Calendar or import a file to see events here'}
-                  </Text>
-                </View>
-                {eventKit.isEventKitAvailable && hasCalendarSource && (
-                  <TouchableOpacity 
-                    onPress={() => setShowEventKitManager(true)}
-                    style={styles.viewAllBtn}
-                  >
-                    <Text style={styles.viewAllText}>Manage</Text>
-                    <ChevronRight size={16} color={colors.primary} />
-                  </TouchableOpacity>
-                )}
-              </View>
-
-              {!hasCalendarSource ? (
-                <View style={[styles.emptyCalendarCard, { backgroundColor: colors.card, borderColor: colors.border }]}>
-                  <Calendar size={40} color={colors.textMuted} />
-                  <Text style={[styles.emptyCalendarTitle, { color: colors.text }]}>No calendar connected</Text>
-                  <Text style={[styles.emptyCalendarText, { color: colors.textSecondary }]}>
-                    {savedEventsCount > 0
-                      ? 'You still have saved events under “On your One Pager” above. Connect a calendar for work and personal plans too.'
-                      : 'Connect your calendar or add events from the Events tab'}
-                  </Text>
-                  <View style={styles.calendarActions}>
-                    {eventKit.isEventKitAvailable && (
-                      <TouchableOpacity 
-                        style={styles.primaryBtn}
-                        onPress={() => setShowEventKitManager(true)}
-                      >
-                        <Text style={styles.primaryBtnText}>Connect Calendar</Text>
-                      </TouchableOpacity>
-                    )}
-                    <TouchableOpacity 
-                      style={styles.secondaryBtn}
-                      onPress={() => setShowCalendarImporter(true)}
-                    >
-                      <Text style={styles.secondaryBtnText}>Import File</Text>
-                    </TouchableOpacity>
-                  </View>
-                </View>
-              ) : (
-              <View style={styles.eventsContainer}>
-                {upcomingCalendarPreview.length === 0 ? (
-                  <View style={[styles.emptyCalendarCard, { backgroundColor: colors.card, borderColor: colors.border }]}>
-                    <Calendar size={32} color={colors.textMuted} />
-                    <Text style={[styles.emptyCalendarText, { color: colors.textSecondary }]}>
-                      No calendar events in the next 90 days
-                    </Text>
-                  </View>
-                ) : (
-                  upcomingCalendarPreview.map((event, index) => (
-                    <View
-                      key={`${event.id}-${index}`}
-                      style={[styles.eventCard, { backgroundColor: colors.card, borderColor: colors.border }]}
-                    >
-                      <View style={[styles.eventIndicator, { backgroundColor: colors.textMuted }]} />
-                      <View style={styles.eventInfo}>
-                        <Text style={[styles.eventTitle, { color: colors.text }]}>{event.title}</Text>
-                        <Text style={[styles.eventTime, { color: colors.textSecondary }]}>
-                          {new Date(event.startDate).toLocaleDateString('en-GB', {
-                            weekday: 'short',
-                            month: 'short',
-                            day: 'numeric',
-                            hour: 'numeric',
-                            minute: '2-digit',
-                            hour12: eventTimeFormat !== '24h',
-                          })}
-                        </Text>
-                      </View>
-                    </View>
-                  ))
-                )}
-              </View>
-              )}
-            </View>
-            ) : null}
-
-            {/* New Episode Releases for Tracked Shows */}
-            {hasShowsInterest && (() => {
-              if (visibleNewEpisodes.length === 0) return null;
-              return (
-              <View style={styles.newEpisodesSection}>
-                <View style={styles.newEpisodesHeader}>
-                  <View style={styles.newEpisodesHeaderLeft}>
-                    <View style={styles.newEpisodesIconWrap}>
-                      <BellRing size={16} color="#E50914" />
-                    </View>
-                    <Text style={[styles.newEpisodesTitle, { color: colors.text }]}>New Episodes</Text>
-                    <View style={styles.newEpisodesCountPill}>
-                      <Text style={styles.newEpisodesCountText}>{visibleNewEpisodes.length}</Text>
-                    </View>
-                  </View>
-                  <TouchableOpacity onPress={() => router.push(SHOWS_HREF.streaming as any)} hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}>
-                    <Text style={styles.newEpisodesSeeAll}>See All</Text>
-                  </TouchableOpacity>
-                </View>
-
-                <View style={[styles.newEpisodesList, { backgroundColor: colors.card, borderWidth: StyleSheet.hairlineWidth, borderColor: colors.border }]}>
-                  {visibleNewEpisodes.slice(0, 5).map((item, index) => {
-                    const isRecentRelease = item.latestEpisode?.airDate && new Date(item.latestEpisode.airDate) >= new Date(Date.now() - 7 * 24 * 60 * 60 * 1000);
-                    const episode = isRecentRelease ? item.latestEpisode : item.nextEpisode;
-                    if (!episode) return null;
-
-                    const airDate = episode.airDate ? new Date(episode.airDate) : null;
-                    const isToday = airDate && airDate.toDateString() === new Date().toDateString();
-                    const isPast = airDate && airDate < new Date();
-                    const daysUntil = airDate ? Math.ceil((airDate.getTime() - Date.now()) / (1000 * 60 * 60 * 24)) : null;
-
-                    let statusText = '';
-                    let statusColor = '#94A3B8';
-                    if (isToday) {
-                      statusText = 'OUT TODAY';
-                      statusColor = '#E50914';
-                    } else if (isPast) {
-                      statusText = 'NOW STREAMING';
-                      statusColor = '#10B981';
-                    } else if (daysUntil !== null && daysUntil <= 1) {
-                      statusText = 'TOMORROW';
-                      statusColor = '#F59E0B';
-                    } else if (daysUntil !== null) {
-                      statusText = `IN ${daysUntil} DAYS`;
-                      statusColor = '#6366F1';
-                    }
-
-                    const dismissKey = `${item.tmdbId}-s${episode.seasonNumber}e${episode.episodeNumber}`;
-                    return (
-                      <TouchableOpacity
-                        key={`${item.showId}-${index}`}
-                        style={[
-                          styles.newEpisodeCard,
-                          { borderBottomColor: colors.border },
-                          index === (visibleNewEpisodes.slice(0, 5).length ?? 0) - 1 && { borderBottomWidth: 0 },
-                        ]}
-                        onPress={() => void handleOpenNewEpisode(item)}
-                        onLongPress={() => confirmDismissEpisode(dismissKey, item.showTitle)}
-                        delayLongPress={350}
-                        activeOpacity={0.7}
-                        testID={`new-episode-card-${item.tmdbId}`}
-                      >
-                        <View style={styles.newEpisodePosterWrap}>
-                          {item.posterUrl ? (
-                            <Image
-                              source={{ uri: item.posterUrl }}
-                              style={styles.newEpisodePoster}
-                              resizeMode="cover"
-                            />
-                          ) : (
-                            <View style={[styles.newEpisodePosterFallback, { backgroundColor: '#E5091420' }]}>
-                              <Tv size={16} color="#E50914" />
-                            </View>
-                          )}
-                          {(isToday || isPast) && (
-                            <View style={styles.newEpisodeLiveDot} />
-                          )}
-                        </View>
-                        <View style={styles.newEpisodeInfo}>
-                          <Text style={[styles.newEpisodeShowTitle, { color: colors.text }]} numberOfLines={1}>{item.showTitle}</Text>
-                          <Text style={[styles.newEpisodeDetail, { color: colors.textSecondary }]} numberOfLines={1}>
-                            S{episode.seasonNumber}E{episode.episodeNumber}: {episode.name}
-                          </Text>
-                          <View style={styles.newEpisodeMetaRow}>
-                            <View style={[styles.newEpisodeStatusBadge, { backgroundColor: statusColor + '18' }]}>
-                              <Text style={[styles.newEpisodeStatusText, { color: statusColor }]}>{statusText}</Text>
-                            </View>
-                            {airDate && (
-                              <Text style={styles.newEpisodeDateText}>
-                                {airDate.toLocaleDateString('en-GB', { day: 'numeric', month: 'short' })}
-                              </Text>
-                            )}
-                          </View>
-                        </View>
-                      </TouchableOpacity>
-                    );
-                  })}
-                </View>
-              </View>
-              );
-            })()}
-
-            {/* My Shows - Premium Continue Watching */}
-            {hasShowsInterest && (
-            <View style={styles.cwSection}>
-              <View style={styles.cwHeader}>
-                <View style={styles.cwHeaderLeft}>
-                  <Text style={[styles.cwTitle, { color: colors.text }]}>Continue Watching</Text>
-                  {continueWatchingItems.length > 0 && (
-                    <View style={[styles.cwCountPill, { backgroundColor: colors.primary }]}>
-                      <Text style={styles.cwCountText}>{continueWatchingItems.length}</Text>
-                    </View>
-                  )}
-                </View>
-                <TouchableOpacity onPress={() => router.push(SHOWS_HREF.streaming as any)} hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}>
-                  <Text style={styles.cwSeeAll}>See All</Text>
-                </TouchableOpacity>
-              </View>
-                
-              {continueWatchingItems.length > 0 ? (
-                <FlatList
-                  data={continueWatchingItems}
-                  horizontal
-                  keyExtractor={(item, idx) => (item.kind === 'local' ? `local-${item.show.id}` : `younify-${item.key}-${idx}`)}
-                  renderItem={renderContinueWatchingCard}
-                  initialNumToRender={4}
-                  maxToRenderPerBatch={4}
-                  windowSize={5}
-                  removeClippedSubviews
-                  showsHorizontalScrollIndicator={false}
-                  contentContainerStyle={styles.cwScroll}
-                  getItemLayout={(_, index) => ({ length: CW_CARD_WIDTH + 12, offset: (CW_CARD_WIDTH + 12) * index, index })}
-                  ListFooterComponent={
-                    <TouchableOpacity
-                      style={[styles.cwAddCard, { backgroundColor: colors.surfaceSecondary }]}
-                      onPress={() => router.push(SHOWS_HREF.watchlist as any)}
-                      activeOpacity={0.7}
-                    >
-                      <View style={styles.cwAddInner}>
-                        <View style={[styles.cwAddIcon, { backgroundColor: isDark ? colors.border : '#E2E8F0' }]}>
-                          <Tv size={20} color={colors.textMuted} />
-                        </View>
-                        <Text style={[styles.cwAddText, { color: colors.textSecondary }]}>Add Show</Text>
-                      </View>
-                    </TouchableOpacity>
-                  }
-                />
-              ) : (
-                <TouchableOpacity 
-                  style={[
-                    styles.cwEmptyCard,
-                    { backgroundColor: colors.card, borderColor: colors.border },
-                  ]}
-                  onPress={() => router.push(SHOWS_HREF.watchlist as any)}
-                  activeOpacity={0.8}
-                >
-                  <View style={styles.cwEmptyInner}>
-                    <View style={[styles.cwEmptyIconWrap, { backgroundColor: isDark ? 'rgba(99, 102, 241, 0.15)' : '#EEF2FF' }]}>
-                      <Tv size={24} color={colors.textSecondary} />
-                    </View>
-                    <View style={styles.cwEmptyTextWrap}>
-                      <Text style={[styles.cwEmptyTitle, { color: colors.text }]}>Track what you watch</Text>
-                      <Text style={[styles.cwEmptyDesc, { color: colors.textSecondary }]}>Add shows and movies to your watchlist</Text>
-                    </View>
-                    <ChevronRight size={18} color={colors.textMuted} />
-                  </View>
-                </TouchableOpacity>
-              )}
-            </View>
-            )}
-
-            {/* Plan to Watch - Up Next Section */}
-            {hasShowsInterest && rankedUpNextShows.length > 0 && (
-              <View style={styles.upNextSection}>
-                <View style={styles.upNextHeader}>
-                  <View style={styles.upNextHeaderLeft}>
-                    <Text style={[styles.upNextTitle, { color: colors.text }]}>Up Next</Text>
-                    <View style={styles.upNextCountPill}>
-                      <Text style={styles.upNextCountText}>{rankedUpNextShows.length}</Text>
-                    </View>
-                  </View>
-                  <TouchableOpacity onPress={() => router.push(SHOWS_HREF.watchlist as any)} hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}>
-                    <Text style={styles.upNextSeeAll}>View All</Text>
-                  </TouchableOpacity>
-                </View>
-                
-                <View style={[styles.upNextList, { backgroundColor: colors.card, borderWidth: StyleSheet.hairlineWidth, borderColor: colors.border }]}>
-                  {rankedUpNextShows.map((show, index) => (
-                    <TouchableOpacity 
-                      key={show.id} 
-                      style={[styles.upNextCard, { borderBottomColor: colors.border }, index === rankedUpNextShows.length - 1 && { borderBottomWidth: 0 }]}
-                      onPress={() => {
-                        if (show.tmdbId && show.mediaType) {
-                          setShowInfoModal({ visible: true, tmdbId: show.tmdbId, mediaType: show.mediaType, title: show.title, platform: show.platform });
-                        } else {
-                          handleStartWatching(show);
-                        }
-                      }}
-                      onLongPress={() => handleRemoveShow(show.id, show.title)}
-                      delayLongPress={350}
-                      activeOpacity={0.7}
-                      testID={`upnext-card-${show.id}`}
-                    >
-                      <View style={styles.upNextPosterWrap}>
-                        {show.posterUrl ? (
-                          <Image 
-                            source={{ uri: show.posterUrl }}
-                            style={styles.upNextPoster}
-                            resizeMode="cover"
-                          />
-                        ) : (
-                          <View style={[styles.upNextPosterFallback, { backgroundColor: getPlatformColor(show.platform) + '30' }]}>
-                            <Tv size={16} color={getPlatformColor(show.platform)} />
-                          </View>
-                        )}
-                      </View>
-                      <View style={styles.upNextInfo}>
-                        <Text style={[styles.upNextShowTitle, { color: colors.text }]} numberOfLines={1}>{show.title}</Text>
-                        <Text style={[styles.upNextShowMeta, { color: colors.textSecondary }]}>
-                          {show.type === 'Series' ? 'TV Series' : show.type} · {show.platform}
-                        </Text>
-                      </View>
-                      <View style={styles.upNextAction}>
-                        <Play size={14} color="#F59E0B" fill="#F59E0B" />
-                      </View>
-                    </TouchableOpacity>
-                  ))}
-                </View>
-              </View>
-            )}
-
-            {/* My Sports */}
-            {hasSportsInterest && (
-            <ModernSportsSection
-              liveMatches={rawLiveMatches}
-              completedMatches={rawCompletedMatches}
-              upcomingMatches={rawUpcomingMatches}
-              isLoading={isLoadingMatches}
-              pinnedMatches={pinnedMatchesForSection}
-              isPinned={isPinned}
-              onTogglePin={togglePin}
-              onViewAll={() => router.push('/sports' as any)}
-              onRefresh={async () => {
-                setRefreshing(true);
-                await fetchMatches();
-                setRefreshing(false);
-              }}
-              rawUpcomingCount={footballBundleQuery.data?.upcoming?.response?.length || 0}
-            />
-            )}
-
-            {/* NBA Section */}
-            {hasNBAInterest && (
-              <NBAUpcomingSection favoriteNBATeams={favoriteNBATeams} />
-            )}
-
           </View>
-        )}
       </Animated.ScrollView>
       
       <CalendarImporter 
@@ -2988,12 +2331,7 @@ export default function ActivitiesScreen() {
         } : undefined}
       />
       
-      <PeakPerformanceScheduler
-        visible={showPeakScheduler}
-        onClose={() => setShowPeakScheduler(false)}
-        peakStartHour={9}
-        peakEndHour={11}
-      />
+
 
       <ShowInfoModal
         visible={showInfoModal.visible}
@@ -3041,14 +2379,14 @@ const styles = StyleSheet.create({
   
   // Hero Section
   heroSection: {
-    paddingBottom: 48,
-    minHeight: 330,
+    paddingBottom: 10,
+    minHeight: 158,
   },
   heroContent: {
-    paddingHorizontal: 22,
+    paddingHorizontal: 18,
   },
   greetingContainer: {
-    marginBottom: 26,
+    marginBottom: 8,
   },
   greetingRow: {
     flexDirection: 'row',
@@ -3058,8 +2396,8 @@ const styles = StyleSheet.create({
     flex: 1,
   },
   timeEmoji: {
-    fontSize: 26,
-    marginRight: 12,
+    fontSize: 23,
+    marginRight: 10,
   },
   cloud: {
     position: 'absolute',
@@ -3081,23 +2419,23 @@ const styles = StyleSheet.create({
     fontSize: 48,
   },
   greetingText: {
-    fontSize: 22,
+    fontSize: 21,
     fontWeight: '800' as const,
-    letterSpacing: -0.6,
+    letterSpacing: -0.55,
     flex: 1,
     flexShrink: 1,
   },
   dailyFocusText: {
-    fontSize: 13,
+    fontSize: 12,
     fontWeight: '600' as const,
-    marginTop: 2,
+    marginTop: 1,
     letterSpacing: -0.1,
     opacity: 0.92,
   },
   dateText: {
-    fontSize: 13,
+    fontSize: 12,
     fontWeight: '500' as const,
-    marginTop: 3,
+    marginTop: 2,
     letterSpacing: 0.1,
   },
   decorativeOrb1: {
@@ -4013,9 +3351,9 @@ const styles = StyleSheet.create({
   },
   weatherBadge: {
     backgroundColor: 'rgba(255, 255, 255, 0.18)',
-    borderRadius: 14,
-    paddingHorizontal: 14,
-    paddingVertical: 10,
+    borderRadius: 13,
+    paddingHorizontal: 12,
+    paddingVertical: 8,
     borderWidth: 1,
     borderColor: 'rgba(255, 255, 255, 0.12)',
     alignItems: 'center' as const,
@@ -4031,12 +3369,12 @@ const styles = StyleSheet.create({
     }),
   },
   weatherTemp: {
-    fontSize: 20,
+    fontSize: 18,
     fontWeight: '800' as const,
     letterSpacing: -0.5,
   },
   weatherDescription: {
-    fontSize: 9,
+    fontSize: 8.5,
     fontWeight: '600' as const,
     textTransform: 'uppercase' as const,
     marginTop: 2,
