@@ -7,53 +7,85 @@ function ymdOffset(baseYmd: string, days: number): string {
   return `${dt.getFullYear()}-${String(dt.getMonth() + 1).padStart(2, '0')}-${String(dt.getDate()).padStart(2, '0')}`;
 }
 
-function completionRate(task: Task, endYmd: string, days: number): number {
+function isScheduledOnDate(task: Task, date: Date): boolean {
+  const frequency = task.habitFrequency;
+  if (!frequency || frequency.type === 'times_per_week') return true;
+  return frequency.days.includes(date.getDay());
+}
+
+function completionRate(task: Task, endYmd: string, days: number): { done: number; scheduled: number; rate: number } {
   let scheduled = 0;
   let done = 0;
   for (let i = 0; i < days; i++) {
-    const ymd = ymdOffset(endYmd, -i);
+    const dayYmd = ymdOffset(endYmd, -i);
+    const [year, month, day] = dayYmd.split('-').map(Number);
+    const date = new Date(year, month - 1, day);
+    if (!isScheduledOnDate(task, date)) continue;
     scheduled++;
-    if (task.habitCompletions?.[ymd]) done++;
+    if (task.habitCompletions?.[dayYmd]) done++;
   }
-  return scheduled === 0 ? 0 : done / scheduled;
+
+  return {
+    done,
+    scheduled,
+    rate: scheduled === 0 ? 0 : done / scheduled,
+  };
 }
 
-/** One gentle pattern insight when habit attendance drops recently. */
+/**
+ * Returns one evidence-based behavioural pattern for Overview.
+ *
+ * This function deliberately avoids causal or emotional claims. It only reports
+ * a pattern when the user's own completion history supports it.
+ */
 export function detectRecoveryPatternInsight(
   habitTasks: Task[],
   todayYmd: string
 ): string | null {
-  const habits = habitTasks.filter((t) => t.isHabit && Object.keys(t.habitCompletions ?? {}).length >= 7);
+  const habits = habitTasks.filter(
+    (task) =>
+      task.isHabit &&
+      Object.keys(task.habitCompletions ?? {}).length >= 7,
+  );
   if (habits.length === 0) return null;
 
-  let best: { title: string; drop: number } | null = null;
+  let best:
+    | {
+        title: string;
+        recent: number;
+        prior: number;
+        drop: number;
+        recentScheduled: number;
+        priorScheduled: number;
+      }
+    | null = null;
 
   for (const task of habits) {
-    const recent = completionRate(task, todayYmd, 7);
-    const prior = completionRate(task, ymdOffset(todayYmd, -7), 7);
-    if (prior < 0.35) continue;
-    const drop = prior - recent;
+    const recentWindow = completionRate(task, todayYmd, 7);
+    const priorWindow = completionRate(task, ymdOffset(todayYmd, -7), 7);
+
+    // Require enough scheduled opportunities in both windows to avoid noisy claims.
+    if (recentWindow.scheduled < 2 || priorWindow.scheduled < 2) continue;
+    if (priorWindow.rate < 0.35) continue;
+
+    const drop = priorWindow.rate - recentWindow.rate;
     if (drop < 0.25) continue;
+
     if (!best || drop > best.drop) {
-      best = { title: task.title, drop };
+      best = {
+        title: task.title,
+        recent: recentWindow.rate,
+        prior: priorWindow.rate,
+        drop,
+        recentScheduled: recentWindow.scheduled,
+        priorScheduled: priorWindow.scheduled,
+      };
     }
   }
 
-  if (!best) {
-    const walkLike = habits.find((t) => /walk|steps|outside/i.test(t.title));
-    if (walkLike) {
-      return 'You usually feel better after a walk — even ten minutes counts.';
-    }
-    return null;
-  }
+  if (!best) return null;
 
-  const label = best.title.toLowerCase();
-  if (/gym|lift|workout|train/i.test(label)) {
-    return 'Whenever things get heavy, your gym attendance often dips first — that\'s a signal, not a failure.';
-  }
-  if (/walk|steps|outside/i.test(label)) {
-    return 'You usually feel better after a walk — it\'s okay if that\'s the only win today.';
-  }
-
-  return `When life gets loud, "${best.title}" is often the first thing to slip — be gentle with yourself around it.`;
+  const priorPercent = Math.round(best.prior * 100);
+  const recentPercent = Math.round(best.recent * 100);
+  return `Your “${best.title}” completion rate moved from ${priorPercent}% in the previous 7 days to ${recentPercent}% over the last 7 days.`;
 }
