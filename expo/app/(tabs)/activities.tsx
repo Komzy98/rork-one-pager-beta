@@ -142,6 +142,10 @@ import {
 import { buildYounifyProviderIndex, pickBestYounifyRowForEpisode } from '@/utils/younifyProviderIndex';
 import { formatShowEpisodeLabel, formatYounifyContinueEpisodeLabel } from '@/utils/showEpisodeLabel';
 import { SHOWS_HREF } from '@/constants/showsNavigation';
+import {
+  classifyEpisodeTiming,
+  resolveEpisodeForSurface,
+} from '@/utils/episodeReleaseTiming';
 
 type AvailableSpeechVoice = Awaited<ReturnType<typeof Speech.getAvailableVoicesAsync>>[number];
 
@@ -992,15 +996,12 @@ export default function ActivitiesScreen() {
   const trackedShowIds = useMemo(() => trackedTVShows.map(s => s.tmdbId).join(','), [trackedTVShows]);
 
   const newEpisodesForMyShows = useQuery({
-    queryKey: ['my-shows-new-episodes', trackedShowIds],
+    queryKey: ['my-shows-new-episodes', trackedShowIds, todayYmd],
     queryFn: async (): Promise<TrackedShowEpisode[]> => {
       if (trackedTVShows.length === 0) return [];
       console.log('📺 [Activities] Checking new episodes for', trackedTVShows.length, 'tracked shows');
 
       const results: TrackedShowEpisode[] = [];
-      const now = new Date();
-      const sevenDaysAgo = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000);
-      const fourteenDaysAhead = new Date(now.getTime() + 14 * 24 * 60 * 60 * 1000);
 
       const promises = trackedTVShows.map(async (show) => {
         try {
@@ -1008,10 +1009,27 @@ export default function ActivitiesScreen() {
           const lastEp = details.last_episode_to_air;
           const nextEp = details.next_episode_to_air;
 
-          const hasRecentEpisode = lastEp?.air_date && new Date(lastEp.air_date) >= sevenDaysAgo;
-          const hasUpcomingEpisode = nextEp?.air_date && new Date(nextEp.air_date) <= fourteenDaysAhead;
+          const resolvedEpisode = resolveEpisodeForSurface(
+            lastEp
+              ? {
+                  name: lastEp.name,
+                  seasonNumber: lastEp.season_number,
+                  episodeNumber: lastEp.episode_number,
+                  airDate: lastEp.air_date,
+                }
+              : null,
+            nextEp
+              ? {
+                  name: nextEp.name,
+                  seasonNumber: nextEp.season_number,
+                  episodeNumber: nextEp.episode_number,
+                  airDate: nextEp.air_date,
+                }
+              : null,
+            todayYmd,
+          );
 
-          if (hasRecentEpisode || hasUpcomingEpisode) {
+          if (resolvedEpisode) {
             const posterUrl = tmdbApi.getImageUrl(details.poster_path, 'w300');
             results.push({
               showId: show.id,
@@ -1046,9 +1064,11 @@ export default function ActivitiesScreen() {
       await Promise.all(promises);
 
       results.sort((a, b) => {
-        const dateA = a.latestEpisode?.airDate || a.nextEpisode?.airDate || '';
-        const dateB = b.latestEpisode?.airDate || b.nextEpisode?.airDate || '';
-        return dateB.localeCompare(dateA);
+        const aResolved = resolveEpisodeForSurface(a.latestEpisode, a.nextEpisode, todayYmd);
+        const bResolved = resolveEpisodeForSurface(b.latestEpisode, b.nextEpisode, todayYmd);
+        const aDistance = Math.abs(aResolved?.daysFromToday ?? 99);
+        const bDistance = Math.abs(bResolved?.daysFromToday ?? 99);
+        return aDistance - bDistance;
       });
 
       console.log('📺 [Activities] Found', results.length, 'shows with new/upcoming episodes');
@@ -1218,13 +1238,13 @@ export default function ActivitiesScreen() {
 
   const visibleNewEpisodes = useMemo(() => {
     return (newEpisodesForMyShows.data ?? []).filter((item) => {
-      const isRecentRelease = item.latestEpisode?.airDate && new Date(item.latestEpisode.airDate) >= new Date(Date.now() - 7 * 24 * 60 * 60 * 1000);
-      const ep = isRecentRelease ? item.latestEpisode : item.nextEpisode;
-      if (!ep) return false;
+      const resolved = resolveEpisodeForSurface(item.latestEpisode, item.nextEpisode, todayYmd);
+      if (!resolved) return false;
+      const ep = resolved.episode;
       const key = `${item.tmdbId}-s${ep.seasonNumber}e${ep.episodeNumber}`;
       return !dismissedEpisodes.includes(key);
     });
-  }, [newEpisodesForMyShows.data, dismissedEpisodes]);
+  }, [newEpisodesForMyShows.data, dismissedEpisodes, todayYmd]);
 
   const recoveryHopeInput = useMemo(() => {
     const calendarEvents = getUpcomingCalendarEvents(14);
@@ -1277,9 +1297,11 @@ export default function ActivitiesScreen() {
     });
 
     const newEpisodes = visibleNewEpisodes.slice(0, 3).map((item) => {
-      const ep = item.latestEpisode ?? item.nextEpisode;
+      const resolved = resolveEpisodeForSurface(item.latestEpisode, item.nextEpisode, todayYmd);
+      const ep = resolved?.episode;
+      const timing = ep?.airDate ? classifyEpisodeTiming(ep.airDate, todayYmd).timing : 'unknown';
       const epLabel = ep
-        ? `S${ep.seasonNumber}E${ep.episodeNumber}`
+        ? `S${ep.seasonNumber}E${ep.episodeNumber}${timing === 'tomorrow' ? ' · tomorrow' : timing === 'today' ? ' · today' : ''}`
         : undefined;
       return {
         title: item.showTitle || 'Show',
@@ -2008,10 +2030,12 @@ export default function ActivitiesScreen() {
 
   const handleOpenNewEpisode = useCallback(
     async (item: TrackedShowEpisode) => {
-      const isRecentRelease =
-        item.latestEpisode?.airDate &&
-        new Date(item.latestEpisode.airDate) >= new Date(Date.now() - 7 * 24 * 60 * 60 * 1000);
-      const ep = isRecentRelease ? item.latestEpisode : item.nextEpisode;
+      const resolved = resolveEpisodeForSurface(
+        item.latestEpisode,
+        item.nextEpisode,
+        todayYmd,
+      );
+      const ep = resolved?.episode ?? null;
 
       if (Platform.OS !== 'web') {
         await Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
@@ -2069,7 +2093,7 @@ export default function ActivitiesScreen() {
         router.push(SHOWS_HREF.streaming as any);
       }
     },
-    [linkedStreamingCount, younifyEpisodeIndex, router],
+    [linkedStreamingCount, younifyEpisodeIndex, router, todayYmd],
   );
 
   const renderLoadingState = () => (
