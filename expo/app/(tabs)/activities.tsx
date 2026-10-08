@@ -146,6 +146,7 @@ import {
   classifyEpisodeTiming,
   resolveEpisodeForSurface,
 } from '@/utils/episodeReleaseTiming';
+import { buildOverviewInterestSignals } from '@/utils/overviewInterestRanking';
 
 type AvailableSpeechVoice = Awaited<ReturnType<typeof Speech.getAvailableVoicesAsync>>[number];
 
@@ -1245,6 +1246,23 @@ export default function ActivitiesScreen() {
       return !dismissedEpisodes.includes(key);
     });
   }, [newEpisodesForMyShows.data, dismissedEpisodes, todayYmd]);
+
+  const overviewInterestSignals = useMemo(
+    () =>
+      buildOverviewInterestSignals({
+        footballSignals: hasSportsInterest ? footballInterestSignals : [],
+        showEpisodes: hasShowsInterest ? visibleNewEpisodes : [],
+        todayYmd,
+        limit: 4,
+      }),
+    [
+      footballInterestSignals,
+      hasSportsInterest,
+      hasShowsInterest,
+      visibleNewEpisodes,
+      todayYmd,
+    ],
+  );
 
   const recoveryHopeInput = useMemo(() => {
     const calendarEvents = getUpcomingCalendarEvents(14);
@@ -2412,7 +2430,7 @@ export default function ActivitiesScreen() {
               tasks={tasksContext?.allTasks ?? []}
               todayYmd={todayYmd}
               calendarItems={upcomingCalendarPreview}
-              interestSignals={hasSportsInterest ? footballInterestSignals : []}
+              interestSignals={overviewInterestSignals}
               patternInsight={recoveryPatternInsight}
               habitProgress={{
                 completed: stats.completedHabits,
@@ -2427,9 +2445,24 @@ export default function ActivitiesScreen() {
               }}
               onOpenTasks={() => router.push('/tasks' as any)}
               onOpenCalendar={() => router.push('/(tabs)/events' as any)}
-              onOpenInterest={(signal) => void openInterestSignal(signal)}
-              onViewInterests={() => router.push('/(tabs)/sports' as any)}
-              onRemindInterest={remindAboutInterestMatch}
+              onOpenInterest={(signal) => {
+                if (signal.kind === 'football') {
+                  void openInterestSignal(signal.football);
+                  return;
+                }
+                void handleOpenNewEpisode(signal.show);
+              }}
+              onViewInterests={(signal) => {
+                if (signal.category === 'sports') {
+                  router.push('/(tabs)/sports' as any);
+                } else {
+                  router.push(SHOWS_HREF.streaming as any);
+                }
+              }}
+              onRemindInterest={async (signal) => {
+                if (signal.kind !== 'football') return false;
+                return remindAboutInterestMatch(signal.football);
+              }}
               onOpenInsights={() => router.push('/(root)/analytics' as any)}
             />
 
