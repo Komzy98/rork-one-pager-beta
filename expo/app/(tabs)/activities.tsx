@@ -2160,7 +2160,7 @@ export default function ActivitiesScreen() {
           <View style={styles.decorativeOrb3} />
           {/* VNext keeps the hero calm: weather is information, not decoration. */}
 
-          <View style={[styles.heroContent, { paddingTop: insets.top + 16 }]}>
+          <View style={[styles.heroContent, { paddingTop: insets.top + 8 }]}>
             <Animated.View 
               style={[
                 styles.greetingContainer,
@@ -2237,6 +2237,14 @@ export default function ActivitiesScreen() {
                   tasksContext?.updateTask(task.id, { status: 'in-progress' });
                 }
                 tasksContext?.startTimer(task.id);
+              }}
+              onCompleteHabit={(task) => {
+                tasksContext?.updateTask(task.id, {
+                  habitCompletions: {
+                    ...(task.habitCompletions ?? {}),
+                    [todayYmd]: true,
+                  },
+                });
               }}
               onOpenTasks={() => router.push('/tasks' as any)}
               onOpenCalendar={() => router.push('/(tabs)/events' as any)}
@@ -2371,14 +2379,14 @@ const styles = StyleSheet.create({
   
   // Hero Section
   heroSection: {
-    paddingBottom: 18,
-    minHeight: 188,
+    paddingBottom: 10,
+    minHeight: 158,
   },
   heroContent: {
-    paddingHorizontal: 22,
+    paddingHorizontal: 18,
   },
   greetingContainer: {
-    marginBottom: 18,
+    marginBottom: 8,
   },
   greetingRow: {
     flexDirection: 'row',
@@ -2388,8 +2396,8 @@ const styles = StyleSheet.create({
     flex: 1,
   },
   timeEmoji: {
-    fontSize: 26,
-    marginRight: 12,
+    fontSize: 23,
+    marginRight: 10,
   },
   cloud: {
     position: 'absolute',
@@ -2411,23 +2419,23 @@ const styles = StyleSheet.create({
     fontSize: 48,
   },
   greetingText: {
-    fontSize: 22,
+    fontSize: 21,
     fontWeight: '800' as const,
-    letterSpacing: -0.6,
+    letterSpacing: -0.55,
     flex: 1,
     flexShrink: 1,
   },
   dailyFocusText: {
-    fontSize: 13,
+    fontSize: 12,
     fontWeight: '600' as const,
-    marginTop: 2,
+    marginTop: 1,
     letterSpacing: -0.1,
     opacity: 0.92,
   },
   dateText: {
-    fontSize: 13,
+    fontSize: 12,
     fontWeight: '500' as const,
-    marginTop: 3,
+    marginTop: 2,
     letterSpacing: 0.1,
   },
   decorativeOrb1: {
@@ -3343,9 +3351,9 @@ const styles = StyleSheet.create({
   },
   weatherBadge: {
     backgroundColor: 'rgba(255, 255, 255, 0.18)',
-    borderRadius: 14,
-    paddingHorizontal: 14,
-    paddingVertical: 10,
+    borderRadius: 13,
+    paddingHorizontal: 12,
+    paddingVertical: 8,
     borderWidth: 1,
     borderColor: 'rgba(255, 255, 255, 0.12)',
     alignItems: 'center' as const,
@@ -3361,12 +3369,12 @@ const styles = StyleSheet.create({
     }),
   },
   weatherTemp: {
-    fontSize: 20,
+    fontSize: 18,
     fontWeight: '800' as const,
     letterSpacing: -0.5,
   },
   weatherDescription: {
-    fontSize: 9,
+    fontSize: 8.5,
     fontWeight: '600' as const,
     textTransform: 'uppercase' as const,
     marginTop: 2,
