@@ -19,11 +19,12 @@ import {
   Radio,
   Sparkles,
   Trophy,
+  Tv,
 } from 'lucide-react-native';
 import * as Haptics from 'expo-haptics';
 import { useTheme } from '@/hooks/useTheme';
 import type { Task } from '@/types/task';
-import type { PersonalSignal } from '@/utils/interestSignalEngine';
+import type { OverviewInterestSignal } from '@/utils/overviewInterestRanking';
 
 export interface OverviewCalendarItem {
   id: string;
@@ -35,7 +36,7 @@ interface Props {
   tasks: readonly Task[];
   todayYmd: string;
   calendarItems: readonly OverviewCalendarItem[];
-  interestSignals: readonly PersonalSignal[];
+  interestSignals: readonly OverviewInterestSignal[];
   patternInsight?: string | null;
   habitProgress: {
     completed: number;
@@ -45,9 +46,9 @@ interface Props {
   onStartTask: (task: Task) => void;
   onOpenTasks: () => void;
   onOpenCalendar: () => void;
-  onOpenInterest: (signal: PersonalSignal) => void;
-  onViewInterests: () => void;
-  onRemindInterest?: (signal: PersonalSignal) => Promise<boolean>;
+  onOpenInterest: (signal: OverviewInterestSignal) => void;
+  onViewInterests: (signal: OverviewInterestSignal) => void;
+  onRemindInterest?: (signal: OverviewInterestSignal) => Promise<boolean>;
   onOpenInsights: () => void;
 }
 
@@ -196,11 +197,14 @@ function buildTimeline(
     .slice(0, 4);
 }
 
-function SignalIcon({ signal, color }: { signal: PersonalSignal; color: string }) {
-  if (signal.kind === 'football_live') {
+function SignalIcon({ signal, color }: { signal: OverviewInterestSignal; color: string }) {
+  if (signal.kind === 'episode') {
+    return <Tv size={17} color={color} strokeWidth={2.2} />;
+  }
+  if (signal.football.kind === 'football_live') {
     return <Radio size={17} color="#EF4444" strokeWidth={2.4} />;
   }
-  if (signal.kind === 'football_recent_result') {
+  if (signal.football.kind === 'football_recent_result') {
     return <Trophy size={17} color={color} strokeWidth={2.2} />;
   }
   return <Bell size={17} color={color} strokeWidth={2.2} />;
@@ -231,6 +235,9 @@ export default function OverviewPersonalBriefing({
     [tasks, calendarItems, todayYmd, focusTask?.id],
   );
   const interest = interestSignals[0] ?? null;
+  const sameCategoryMoreCount = interest
+    ? Math.max(0, interestSignals.filter((signal) => signal.category === interest.category).length - 1)
+    : 0;
 
   const todayTaskStats = useMemo(() => {
     const todayTasks = tasks.filter(
@@ -427,7 +434,7 @@ export default function OverviewPersonalBriefing({
           </TouchableOpacity>
 
           <View style={styles.interestActions}>
-            {interest.kind === 'football_upcoming' && onRemindInterest ? (
+            {interest.kind === 'football' && interest.football.kind === 'football_upcoming' && onRemindInterest ? (
               <TouchableOpacity
                 accessibilityRole="button"
                 disabled={reminderBusy || reminderSet}
@@ -460,18 +467,18 @@ export default function OverviewPersonalBriefing({
               </TouchableOpacity>
             ) : null}
 
-            {interestSignals.length > 1 ? (
+            {sameCategoryMoreCount > 0 ? (
               <TouchableOpacity
                 accessibilityRole="button"
                 activeOpacity={0.72}
                 onPress={() => {
                   haptic();
-                  onViewInterests();
+                  onViewInterests(interest);
                 }}
                 style={styles.moreInterestsButton}
               >
                 <Text style={[styles.moreInterestsText, { color: colors.textSecondary }]}>
-                  +{interestSignals.length - 1} more
+                  +{sameCategoryMoreCount} more
                 </Text>
                 <ChevronRight size={14} color={colors.textSecondary} />
               </TouchableOpacity>
