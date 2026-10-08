@@ -1,2 +1,5 @@
 # Force EAS to use npm (package-lock.json) — bun.lock is stale vs package.json
 bun.lock
+
+# Local build artifacts must never be uploaded to EAS
+*.ipa
