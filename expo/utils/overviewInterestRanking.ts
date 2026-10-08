@@ -37,6 +37,7 @@ export interface ShowEpisodeInterestInput {
   showTitle: string;
   tmdbId: number;
   platform: string;
+  posterUrl: string | null;
   showStatus: string;
   latestEpisode: EpisodeLike | null;
   nextEpisode: EpisodeLike | null;
