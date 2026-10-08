@@ -85,12 +85,12 @@ export function resolveEpisodeForSurface(
   }
 
   const ranked = Array.from(unique.values())
-    .map((episode) => {
+    .flatMap((episode) => {
       const classification = classifyEpisodeTiming(episode.airDate, todayYmd);
       const diff = classification.daysFromToday;
-      if (diff == null || diff < -7 || diff > 14) return null;
+      if (diff == null || diff < -7 || diff > 14) return [];
 
-      let score = 0;
+      let score: number | null = null;
       switch (classification.timing) {
         case 'today':
           score = 100;
@@ -105,17 +105,16 @@ export function resolveEpisodeForSurface(
           score = 88 - diff;
           break;
         default:
-          return null;
+          return [];
       }
 
-      return {
+      return [{
         episode,
         timing: classification.timing,
         daysFromToday: diff,
         score,
-      };
+      }];
     })
-    .filter((item): item is ResolvedEpisode & { score: number } => item !== null)
     .sort((a, b) => b.score - a.score);
 
   const chosen = ranked[0];
