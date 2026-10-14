@@ -1,5 +1,6 @@
 import { Hono } from "hono";
 import { fetchEventbriteAccountEvents } from "./services/eventbriteDiscovery";
+import { fetchBillettoPublicEvents } from "./services/billettoDiscovery";
 import type { Context } from "hono";
 import { cors } from "hono/cors";
 import { fetchRequestHandler } from "@trpc/server/adapters/fetch";
@@ -204,6 +205,21 @@ app.get("/health/eventbrite/events", async (c) => {
   } catch (error) {
     console.error("Eventbrite sync check failed", error instanceof Error ? error.message : "Unknown error");
     return c.json({ ok: false, configured: true, error: "Eventbrite event sync failed" }, 503);
+  }
+});
+
+/** Credential-free status output. Billetto secrets remain on the backend. */
+app.get("/health/billetto", async (c) => {
+  const id = process.env.BILLETTO_ACCESS_KEY_ID?.trim() || "";
+  const secret = process.env.BILLETTO_ACCESS_KEY_SECRET?.trim() || "";
+  if (!id || !secret) return c.json({ ok: false, configured: false, error: "Billetto credentials are not configured" }, 503);
+  try {
+    const events = await fetchBillettoPublicEvents(id, secret);
+    return c.json({ ok: true, configured: true, publicUpcomingEventsWithLocations: events.length, checkedAt: new Date().toISOString() });
+  } catch (error) {
+    const message = error instanceof Error ? error.message : "Unknown error";
+    const providerStatus = /HTTP (\d{3})/.exec(message)?.[1];
+    return c.json({ ok: false, configured: true, providerStatus: providerStatus ? Number(providerStatus) : undefined, error: "Billetto public events request failed" }, 503);
   }
 });
 
