@@ -120,6 +120,8 @@ import {
 import { ErrorBoundary } from '@/components/ErrorBoundary';
 
 const { width: SCREEN_WIDTH } = Dimensions.get('window');
+const EVENTS_SECTION_GUTTER = 20;
+
 
 function formatGlobalSearchSourceLabel(source: NearbyEventsSource): string {
   switch (source) {
@@ -1352,22 +1354,26 @@ function EventsScreenInner() {
         )}
 
         <View style={styles.section}>
-          {inSearchMode ? (
-            <DiscoveryScopeChip
-              label="Worldwide"
-              Icon={Globe}
-              color={palette.primary}
-              backgroundColor={palette.primaryLight}
-              borderColor={`${palette.primary}33`}
-            />
-          ) : areaLabel ? (
-            <DiscoveryScopeChip
-              label={`Near ${areaLabel.split(',')[0]?.trim() || areaLabel}`}
-              Icon={MapPin}
-              color={palette.secondary}
-              backgroundColor={palette.primaryLight}
-              borderColor={`${palette.primary}33`}
-            />
+          {inSearchMode || areaLabel ? (
+            <View style={styles.discoveryScopeRow}>
+              {inSearchMode ? (
+                <DiscoveryScopeChip
+                  label="Worldwide"
+                  Icon={Globe}
+                  color={palette.primary}
+                  backgroundColor={palette.primaryLight}
+                  borderColor={`${palette.primary}33`}
+                />
+              ) : (
+                <DiscoveryScopeChip
+                  label={`Near ${areaLabel?.split(',')[0]?.trim() || areaLabel}`}
+                  Icon={MapPin}
+                  color={palette.secondary}
+                  backgroundColor={palette.primaryLight}
+                  borderColor={`${palette.primary}33`}
+                />
+              )}
+            </View>
           ) : null}
           <View style={styles.sectionHeader}>
             <View style={styles.sectionTitleRow}>
@@ -1842,11 +1848,16 @@ const styles = StyleSheet.create({
   section: {
     marginBottom: 24,
   },
+  // The location scope and its section heading must share the SAME inset.
+  discoveryScopeRow: {
+    paddingHorizontal: EVENTS_SECTION_GUTTER,
+    alignItems: 'flex-start',
+  },
   sectionHeader: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    paddingHorizontal: 20,
+    paddingHorizontal: EVENTS_SECTION_GUTTER,
     marginBottom: 12,
   },
   sectionTitleRow: {
