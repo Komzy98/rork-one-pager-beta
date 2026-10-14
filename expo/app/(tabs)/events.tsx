@@ -1,3 +1,4 @@
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import React, { useState, useRef, useCallback, useEffect, useMemo } from 'react';
 import {
   Alert,
@@ -228,6 +229,23 @@ function EventsScreenInner() {
   const [planLoading, setPlanLoading] = useState<'tonight' | 'weekend' | null>(null);
   const [expandedCombinedDayKey, setExpandedCombinedDayKey] = useState<string | null>(null);
   const [dismissedCombinedDayKeys, setDismissedCombinedDayKeys] = useState<Set<string>>(new Set());
+  const [dismissedConciergeIds, setDismissedConciergeIds] = useState<Set<string>>(new Set());
+  useEffect(() => {
+    let active = true;
+    AsyncStorage.getItem('onepager:concierge:dismissed:v1').then((value) => {
+      if (active && value) setDismissedConciergeIds(new Set(JSON.parse(value) as string[]));
+    }).catch(() => {});
+    return () => { active = false; };
+  }, []);
+  const dismissConciergeEvent = useCallback((eventId: string) => {
+    setDismissedConciergeIds((previous) => {
+      const next = new Set(previous);
+      next.add(eventId);
+      void AsyncStorage.setItem('onepager:concierge:dismissed:v1', JSON.stringify([...next])).catch(() => {});
+      return next;
+    });
+  }, []);
+
   const [rsvpPendingByEventId, setRsvpPendingByEventId] = useState<Record<string, PlanRsvpStatus | null>>({});
   const [whyThisEvent, setWhyThisEvent] = useState<LocalEvent | null>(null);
   const [mapSearchCenter, setMapSearchCenter] = useState<{ latitude: number; longitude: number } | null>(null);
@@ -783,16 +801,16 @@ function EventsScreenInner() {
   );
 
   const heroEvents = useMemo(() => {
-    const pool =
-      forYouEvents.length > 0
-        ? forYouEvents
-        : featuredEvents.length > 0
-          ? featuredEvents
-          : nearYouEvents.length > 0
-            ? nearYouEvents
-            : events.slice(0, 3);
-    return boostEventsForConciergeContext(pool, conciergeContext).slice(0, 3);
-  }, [forYouEvents, featuredEvents, nearYouEvents, events, conciergeContext]);
+    // Ranked personal recommendations first, with other event sources replenishing dismissed items.
+    const candidates = [...forYouEvents, ...featuredEvents, ...nearYouEvents, ...events];
+    const seen = new Set<string>();
+    const pool = candidates.filter((event) => {
+      if (seen.has(event.id) || dismissedConciergeIds.has(event.id)) return false;
+      seen.add(event.id);
+      return true;
+    });
+    return boostEventsForConciergeContext(pool, conciergeContext).slice(0, 5);
+  }, [forYouEvents, featuredEvents, nearYouEvents, events, conciergeContext, dismissedConciergeIds]);
 
   const heroEventIdSet = useMemo(() => new Set(heroEvents.map((e) => e.id)), [heroEvents]);
 
@@ -884,6 +902,7 @@ function EventsScreenInner() {
           safeAreaTop={insets.top}
           onePagerThisWeekLabel={onePagerThisWeekLabel}
           concierge={eventConcierge}
+          onDismissEvent={dismissConciergeEvent}
           getRecommendationChipLabel={(event) => getChipLabel(event)}
           onPressEvent={openEventDetail}
           onAddToOnePager={handleAddToOnePager}

@@ -11,7 +11,7 @@ import {
   TouchableOpacity,
   View,
 } from 'react-native';
-import { Heart, Sparkles, Ticket } from 'lucide-react-native';
+import { Heart, Sparkles, Ticket, X } from 'lucide-react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import * as Haptics from 'expo-haptics';
 import type { LocalEvent } from '@/types/events';
@@ -22,7 +22,7 @@ import { EventRecommendationBadge } from '@/components/events/EventRecommendatio
 import { EventConciergeNarrative } from '@/components/events/EventConciergeNarrative';
 
 const { width: SCREEN_WIDTH } = Dimensions.get('window');
-const HERO_HEIGHT = 400;
+const HERO_HEIGHT = 360;
 const HERO_ROTATE_MS = 5500;
 const HERO_ROTATE_PAUSE_MS = 10000;
 
@@ -34,6 +34,7 @@ interface PremiumEventHeroCardProps {
   safeAreaTop?: number;
   onePagerThisWeekLabel?: string;
   concierge?: ConciergeCopy | null;
+  onDismissEvent?: (eventId: string) => void;
   getRecommendationChipLabel?: (event: LocalEvent) => string | undefined;
   onPressEvent: (eventId: string) => void;
   onAddToOnePager: (event: LocalEvent) => void;
@@ -51,6 +52,7 @@ interface HeroSlideProps {
   onAddToOnePager: (event: LocalEvent) => void;
   onInterested: (event: LocalEvent) => void;
   onOpenTickets: (event: LocalEvent) => void;
+  approvedImage?: boolean;
 }
 
 function HeroSlide({
@@ -63,6 +65,7 @@ function HeroSlide({
   onAddToOnePager,
   onInterested,
   onOpenTickets,
+  approvedImage,
 }: HeroSlideProps) {
   const scaleAnim = useRef(new Animated.Value(1)).current;
   const hasConcierge = index === 0 && !!concierge;
@@ -95,14 +98,14 @@ function HeroSlide({
       onPressOut={handlePressOut}
     >
       <Animated.View style={[styles.media, { transform: [{ scale: scaleAnim }] }]}>
-        {imageUri ? (
+        {imageUri && approvedImage ? (
           <Image source={{ uri: imageUri }} style={styles.image} resizeMode="cover" />
         ) : (
           <LinearGradient colors={[...palette.heroGradient]} style={styles.image} />
         )}
         <LinearGradient colors={[...palette.heroScrim]} style={styles.scrim} />
         <LinearGradient
-          colors={['rgba(232,67,147,0.35)', 'transparent']}
+          colors={['rgba(30,38,96,0.18)', 'transparent']}
           start={{ x: 0, y: 0 }}
           end={{ x: 1, y: 1 }}
           style={styles.colorWash}
@@ -188,6 +191,7 @@ export const PremiumEventHeroCard = React.memo(function PremiumEventHeroCard({
   safeAreaTop = 0,
   onePagerThisWeekLabel,
   concierge,
+  onDismissEvent,
   getRecommendationChipLabel,
   onPressEvent,
   onAddToOnePager,
@@ -197,13 +201,32 @@ export const PremiumEventHeroCard = React.memo(function PremiumEventHeroCard({
   const scrollRef = useRef<ScrollView>(null);
   const [activeIndex, setActiveIndex] = useState(0);
   const pauseRotateUntilRef = useRef(0);
+  const dismissedIndexRef = useRef<number | null>(null);
   const hasConcierge = !!concierge;
+  const [imageApproved, setImageApproved] = useState<Record<string, boolean>>({});
 
   const heroEventIds = events.map((event) => event.id).join(',');
+  useEffect(() => {
+    let valid = true;
+    events.forEach((event) => {
+      const uri = event.image?.trim();
+      if (!uri || !/^https?:\/\//i.test(uri)) return;
+      Image.getSize(uri, (width, height) => {
+        if (!valid) return;
+        const aspect = width / Math.max(1, height);
+        setImageApproved((prev) => ({ ...prev, [event.id]: width >= 1200 && height >= 700 && aspect >= 1.25 && aspect <= 2.8 }));
+      }, () => {
+        if (valid) setImageApproved((prev) => ({ ...prev, [event.id]: false }));
+      });
+    });
+    return () => { valid = false; };
+  }, [heroEventIds]);
 
   useEffect(() => {
-    setActiveIndex(0);
-    scrollRef.current?.scrollTo({ x: 0, animated: false });
+    const nextIndex = Math.min(dismissedIndexRef.current ?? 0, Math.max(0, events.length - 1));
+    dismissedIndexRef.current = null;
+    setActiveIndex(nextIndex);
+    scrollRef.current?.scrollTo({ x: nextIndex * SCREEN_WIDTH, animated: false });
   }, [heroEventIds]);
 
   useEffect(() => {
@@ -315,6 +338,23 @@ export const PremiumEventHeroCard = React.memo(function PremiumEventHeroCard({
             ))}
           </View>
         ) : null}
+        {onDismissEvent ? (
+          <TouchableOpacity
+            accessibilityRole="button"
+            accessibilityLabel="Not interested in this event"
+            hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}
+            style={styles.dismissButton}
+            onPress={() => {
+              void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+              const selected = events[activeIndex];
+              if (!selected) return;
+              dismissedIndexRef.current = activeIndex;
+              onDismissEvent(selected.id);
+            }}
+          >
+            <X size={18} color="#FFFFFF" />
+          </TouchableOpacity>
+        ) : null}
       </View>
 
       <ScrollView
@@ -338,6 +378,7 @@ export const PremiumEventHeroCard = React.memo(function PremiumEventHeroCard({
             index={index}
             palette={palette}
             concierge={concierge}
+            approvedImage={imageApproved[event.id] === true}
             recommendationChipLabel={getRecommendationChipLabel?.(event)}
             onPressEvent={onPressEvent}
             onAddToOnePager={onAddToOnePager}
@@ -392,6 +433,17 @@ const styles = StyleSheet.create({
   },
   colorWash: {
     ...StyleSheet.absoluteFillObject,
+  },
+  dismissButton: {
+    width: 34,
+    height: 34,
+    borderRadius: 17,
+    backgroundColor: 'rgba(0,0,0,0.48)',
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginLeft: 12,
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.25)',
   },
   topRow: {
     position: 'absolute',
