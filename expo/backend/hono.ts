@@ -323,14 +323,6 @@ app.get("/test", (c) => {
   });
 });
 
-app.get("/debug/env", (c) => {
-  const apiKey = getFootballApiKeyFromEnv();
-  return c.json({ 
-    footballApiKey: apiKey ? `configured (${apiKey.length} chars, starts with: ${apiKey.substring(0, 4)}...)` : 'NOT SET',
-    nodeEnv: process.env.NODE_ENV || 'not set',
-    timestamp: new Date().toISOString()
-  });
-});
 
 app.get("/football/test", async (c) => {
   const apiKey = getFootballApiKeyFromEnv();

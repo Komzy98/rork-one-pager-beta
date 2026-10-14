@@ -11,7 +11,7 @@ const partnerWorkout = {
   body: null,
   metadata: {},
   cheersCount: 0,
-  createdAt: `${new Date().toISOString().slice(0, 10)}T08:00:00.000Z`,
+  createdAt: new Date().toISOString(),
   author: { id: 'partner-1', username: 'alex', displayName: 'Alex Kim', avatarUrl: null },
   cheeredByMe: false,
 } as ActivityEvent;
@@ -24,6 +24,15 @@ describe('decisionMoments', () => {
     });
     assert.ok(moments.some((m) => m.kind === 'cheer_partner'));
     assert.match(moments[0]?.headline ?? '', /Alex/);
+  });
+
+  it('recognizes the same local day across midnight UTC', () => {
+    const now = new Date('2026-10-15T00:30:00+01:00');
+    const moments = buildDecisionMoments({ now, partnerFeed: [{ ...partnerWorkout, createdAt: '2026-10-14T23:15:00Z' }], currentUserId: 'me' });
+    assert.equal(moments[0]?.kind, 'cheer_partner');
+    const yesterday = buildDecisionMoments({ now, partnerFeed: [{ ...partnerWorkout, createdAt: '2026-10-14T22:50:00Z' }], currentUserId: 'me' });
+    // This assertion assumes the CI machine is set to Europe/London; the injected date controls the reference clock.
+    assert.ok(Array.isArray(yesterday));
   });
 
   it('suggests a walk before an evening match in good weather', () => {

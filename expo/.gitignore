@@ -46,3 +46,6 @@ node_modules
 .expo
 .env
 .env.*
+
+# Never commit compiled iOS release packages
+*.ipa
