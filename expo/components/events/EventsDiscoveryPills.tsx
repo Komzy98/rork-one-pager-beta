@@ -73,7 +73,6 @@ export const EventsDiscoveryPills = React.memo(function EventsDiscoveryPills({
       style={styles.scroll}
     >
       {tabs.map((tab) => {
-        const Icon = tab.icon;
         const isActive = activeTab === tab.key;
         return (
           <TouchableOpacity
@@ -90,11 +89,6 @@ export const EventsDiscoveryPills = React.memo(function EventsDiscoveryPills({
             onPress={() => void handlePress(tab.key)}
             activeOpacity={0.75}
           >
-            <Icon
-              size={14}
-              color={isActive ? tab.color : palette.textMuted}
-              strokeWidth={isActive ? 2.5 : 2}
-            />
             <Text
               style={[
                 styles.label,
