@@ -73,8 +73,9 @@ export const searchGlobalEventsRoute = publicProcedure
 
     const ticketmasterKey = getTicketmasterApiKeyFromEnv();
     const skiddleKey = getSkiddleApiKeyFromEnv();
+    const eventbriteKey = process.env.EVENTBRITE_TOKEN?.trim();
 
-    if (!ticketmasterKey && !skiddleKey) {
+    if (!ticketmasterKey && !skiddleKey && !eventbriteKey) {
       console.warn('⚠️ Global search: no TICKETMASTER_API_KEY / SKIDDLE_API_KEY');
       return { events: [], source: 'none' };
     }
@@ -90,7 +91,7 @@ export const searchGlobalEventsRoute = publicProcedure
         keyword: input.keyword,
         searchScope: 'worldwide',
       },
-      { ticketmaster: ticketmasterKey, skiddle: skiddleKey },
+      { ticketmaster: ticketmasterKey, skiddle: skiddleKey, eventbrite: eventbriteKey },
     );
 
     const withDistance = attachDistanceKm(events, {
