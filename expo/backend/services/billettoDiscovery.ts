@@ -8,6 +8,8 @@ const BASE = 'https://billetto.co.uk/api/v3/public/events';
 const TTL = 5 * 60 * 1000;
 const cache = new Map<string, { expires: number; events: LocalEvent[] }>();
 const inFlight = new Map<string, Promise<LocalEvent[]>>();
+let lastDiagnostics: { rawCount: number; mappedCount: number; sampleFields: string[]; locationFields: string[] } | null = null;
+export function getBillettoDiagnostics() { return lastDiagnostics; }
 
 function obj(value: unknown): JsonObject {
   return value && typeof value === 'object' && !Array.isArray(value) ? value as JsonObject : {};
@@ -103,6 +105,9 @@ export async function fetchBillettoPublicEvents(keyId: string, keySecret: string
   if (running) return running;
   const work = (async () => {
     const collected = new Map<string, LocalEvent>();
+    let rawCount = 0;
+    let sampleFields: string[] = [];
+    let locationFields: string[] = [];
     for (let page = 0; page < 3; page++) {
       const url = new URL(BASE);
       url.searchParams.set('limit', '100');
@@ -117,6 +122,12 @@ export async function fetchBillettoPublicEvents(keyId: string, keySecret: string
       } finally { clearTimeout(timeout); }
       if (!response.ok) throw new Error(`Billetto public API HTTP ${response.status}`);
       const parsed = unpack(await response.json());
+      rawCount += parsed.items.length;
+      if (parsed.items.length && sampleFields.length === 0) {
+        const sample = obj(parsed.items[0]);
+        sampleFields = Object.keys(sample).sort();
+        locationFields = Object.keys(obj(sample.location ?? sample.venue ?? sample.address ?? sample.physical_location)).sort();
+      }
       for (const item of parsed.items) {
         const event = mapBillettoPublicEvent(item);
         if (event) collected.set(event.id, event);
@@ -124,6 +135,7 @@ export async function fetchBillettoPublicEvents(keyId: string, keySecret: string
       if (!parsed.more || parsed.items.length < 100) break;
     }
     const events = [...collected.values()];
+    lastDiagnostics = { rawCount, mappedCount: events.length, sampleFields, locationFields };
     cache.set(key, { expires: Date.now() + TTL, events });
     return events;
   })();
