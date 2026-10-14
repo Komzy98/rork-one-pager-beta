@@ -99,15 +99,27 @@ export function parseSavedEventStartMs(
 }
 
 export function parseEventStartDateTime(event: LocalEvent, referenceMs = Date.now()): Date | null {
-  // Trust what the user sees in the UI (date + time labels) over raw ISO when both exist.
-  const fromLabels = parseEventStartFromLabels(event, referenceMs);
-  if (fromLabels) return fromLabels;
-
+  // Explicit provider dates carry the year. A yearless display label MUST NOT
+  // move a past 2026 event into 2027 simply because it is now October 2026.
   if (event.startIso) {
-    const d = new Date(event.startIso);
-    if (!Number.isNaN(d.getTime())) return d;
+    const providerDate = new Date(event.startIso);
+    if (!Number.isNaN(providerDate.getTime())) {
+      // Some providers use midnight UTC as a placeholder while supplying the
+      // actual local wall time in the display label. Only allow that override
+      // when the displayed day matches the provider's authoritative date.
+      if (/T00:00:00(?:\\.000)?Z$/i.test(event.startIso)) {
+        const labelDate = parseEventStartFromLabels(event, providerDate.getTime() - 86400000);
+        if (
+          labelDate &&
+          labelDate.getFullYear() === providerDate.getUTCFullYear() &&
+          labelDate.getMonth() === providerDate.getUTCMonth() &&
+          labelDate.getDate() === providerDate.getUTCDate()
+        ) return labelDate;
+      }
+      return providerDate;
+    }
   }
-  return null;
+  return parseEventStartFromLabels(event, referenceMs);
 }
 
 export function getDaysUntilEvent(event: LocalEvent): number | null {
@@ -231,6 +243,9 @@ export function filterHappeningNow(events: LocalEvent[]): LocalEvent[] {
 }
 
 export function isUpcomingEvent(event: LocalEvent, referenceMs = Date.now()): boolean {
+  // Do not let a yearless label or an "ongoing" banner override an expired provider timestamp.
+  const providerMs = event.startIso ? Date.parse(event.startIso) : NaN;
+  if (Number.isFinite(providerMs)) return providerMs >= referenceMs - EVENT_END_GRACE_MS;
   if (event.date?.toLowerCase().includes('ongoing')) return true;
   const start = parseEventStartDateTime(event, referenceMs);
   if (!start) return true;
