@@ -108,6 +108,7 @@ import { useSavedEventsSocial } from '@/hooks/useSavedEventsSocial';
 import { groupSavedEventsByDay, findMultiEventDays } from '@/utils/savedEventsWeek';
 import type { PlanRsvpStatus } from '@/utils/sharedPlansService';
 import { eventMatchesBentoCategory } from '@/utils/eventCategories';
+import { curateDiscoveryEvents, isAffordableEvent, isWeekendEvent } from '@/utils/eventsV2Discovery';
 import { registerDiscoveryEvents, registerSavedEvents } from '@/utils/eventCatalog';
 import { getEventCategoryMeta } from '@/utils/eventCategoryMeta';
 import {
@@ -194,6 +195,8 @@ const DISCOVERY_PILL_TABS = [
   { key: 'forYou' as const, label: 'For You', icon: Target, color: BRAND.light.primary },
   { key: 'friendsPicks' as const, label: 'Friends', icon: Users, color: BRAND.light.primaryLight },
   { key: 'thisWeek' as const, label: 'This Week', icon: CalendarDays, color: '#34C759' },
+  { key: 'weekend' as const, label: 'Weekend', icon: Calendar, color: BRAND.light.primary },
+  { key: 'budget' as const, label: 'Under £20', icon: Star, color: '#34C759' },
 ];
 
 
@@ -223,7 +226,7 @@ function EventsScreenInner() {
   const [mainTab, setMainTab] = useState<EventsMainTab>('discover');
   const [viewMode, setViewMode] = useState<ViewMode>('list');
   const [selectedMapEvent, setSelectedMapEvent] = useState<string | null>(null);
-  const [discoveryTab, setDiscoveryTab] = useState<DiscoveryTabKey>('now');
+  const [discoveryTab, setDiscoveryTab] = useState<DiscoveryTabKey>('forYou');
   const [toastMessage, setToastMessage] = useState<string | null>(null);
   const [planLoading, setPlanLoading] = useState<'tonight' | 'weekend' | null>(null);
   const [expandedCombinedDayKey, setExpandedCombinedDayKey] = useState<string | null>(null);
@@ -398,9 +401,9 @@ function EventsScreenInner() {
 
   const filteredEvents = useMemo(() => {
     if (inSearchMode) {
-      return events;
+      return curateDiscoveryEvents(events);
     }
-    let filtered = events;
+    let filtered = curateDiscoveryEvents(events);
     if (selectedCategory !== 'all') {
       filtered = filtered.filter((event) => eventMatchesBentoCategory(event, selectedCategory));
     }
@@ -744,7 +747,11 @@ function EventsScreenInner() {
   }, [addToOnePager, weekendCandidates]);
 
   const smartDiscoveryEvents =
-    discoveryTab === 'now'
+    discoveryTab === 'weekend'
+      ? rankEventsForYou(filteredEvents.filter(event => isWeekendEvent(event)), recommendationInput)
+      : discoveryTab === 'budget'
+        ? rankEventsForYou(filteredEvents.filter(event => isAffordableEvent(event, 20)), recommendationInput)
+      : discoveryTab === 'now'
       ? happeningNowEvents
       : discoveryTab === 'near'
         ? nearYouEvents
@@ -835,7 +842,11 @@ function EventsScreenInner() {
     mainTab === 'discover' && viewMode === 'list' && !inSearchMode;
 
   const discoveryRailTitle =
-    discoveryTab === 'now'
+    discoveryTab === 'weekend'
+      ? 'This Weekend'
+      : discoveryTab === 'budget'
+        ? 'Free & Under £20'
+      : discoveryTab === 'now'
       ? 'Happening Now'
       : discoveryTab === 'near'
         ? 'Near You'
