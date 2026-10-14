@@ -15,6 +15,7 @@ import { registerSupabaseDevProxy } from "./supabaseProxy";
 import { generalRateLimiter, authRateLimiter } from "./middleware/rate-limiter";
 import { payloadSizeLimiter, inputSanitizer } from "./middleware/sanitizer";
 import { registerEventInviteRoutes } from "./routes/eventInvite";
+import { registerEventbriteSyncRoutes } from "./routes/eventbriteSync";
 import { checkGuestRsvpHealth, isGuestRsvpConfigured } from "./services/guestRsvpService";
 
 const app = new Hono();
@@ -39,6 +40,7 @@ app.use("*", inputSanitizer());
 registerYounifyAuthRoutes(app);
 registerSupabaseDevProxy(app);
 registerEventInviteRoutes(app);
+registerEventbriteSyncRoutes(app);
 
 app.use("*", generalRateLimiter());
 
