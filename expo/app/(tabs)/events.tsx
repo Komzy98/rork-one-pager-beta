@@ -800,12 +800,12 @@ function EventsScreenInner() {
   );
 
   const editorialRows = useMemo(() => {
-    const rows = buildEditorialEventRows(filteredEvents, recommendationInput, 2, habitEventIds);
+    const rows = buildEditorialEventRows(filteredEvents, recommendationInput, 2, new Set([...habitEventIds, ...smartDiscoveryEvents.map((event) => event.id)]));
     return rows.map((row) => ({
       ...row,
       events: rankEventsForConciergeFeed(row.events, recommendationInput, conciergeContext),
     }));
-  }, [filteredEvents, recommendationInput, conciergeContext, habitEventIds]);
+  }, [filteredEvents, recommendationInput, conciergeContext, habitEventIds, smartDiscoveryEvents]);
 
   const editorialEventIds = useMemo(
     () => new Set(editorialRows.flatMap((row) => row.events.map((e) => e.id))),
@@ -1319,7 +1319,7 @@ function EventsScreenInner() {
                             habitEventRow.categoryId,
                           ),
                         )
-                      : getEditorialRowSecondaryChipLabel(habitEventRow.categoryId, event)
+                      : undefined
                   }
                   recommendationChipVariant={index === 0 ? 'featured-chip' : 'feed-chip'}
                   onWhyThis={openWhyThis}
@@ -1366,7 +1366,7 @@ function EventsScreenInner() {
                             row.categoryId,
                           ),
                         )
-                      : getEditorialRowSecondaryChipLabel(row.categoryId, event)
+                      : undefined
                   }
                   recommendationChipVariant={index === 0 ? 'featured-chip' : 'feed-chip'}
                   onWhyThis={openWhyThis}

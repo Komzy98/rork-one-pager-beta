@@ -222,6 +222,20 @@ describe('eventPersonalization', () => {
     assert.equal(row!.events[0]?.id, 'b');
   });
 
+  it('does not recommend boxing as a reading habit because of booking text', () => {
+    const input = {
+      profile: { interests: [], favoriteTeams: [] } as unknown as UserProfile,
+      habitKeywords: ['book', 'reading'],
+      habitLabels: ['Read a book'],
+      habitCategoryWeights: { sports: 5, arts: 3 },
+    };
+    const boxing = baseEvent({ id: 'boxing', category: 'sports', title: 'Fury vs Joshua Live Screening', description: 'Book tickets now for this sports screening' });
+    const reading = baseEvent({ id: 'reading', category: 'arts', title: 'Book club: modern fiction' });
+    const row = buildHabitBasedEventRow([boxing, reading], input);
+    assert.ok(row);
+    assert.deepEqual(row!.events.map((event) => event.id), ['reading']);
+  });
+
   it('routes profile-interest sports to editorial row, not habit row', () => {
     const profile = {
       interests: ['nba'],

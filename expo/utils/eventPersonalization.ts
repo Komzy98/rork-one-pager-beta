@@ -749,7 +749,7 @@ export function buildEventRecommendationReasons(
   }
 
   for (const habit of ctx.habitKeywords) {
-    if (habit.length >= 3 && text.includes(habit)) {
+    if (habit.length >= 4 && eventMatchesHabitSignals(event, input) && ` ${[event.title, ...(event.tags ?? []), event.subCategory ?? ''].join(' ').toLowerCase().replace(/[^a-z0-9]+/g, ' ').trim()} `.includes(` ${habit.toLowerCase()} `)) {
       reasons.push({
         kind: 'habit',
         label: `Fits your ${habit} habit`,
@@ -761,7 +761,7 @@ export function buildEventRecommendationReasons(
 
   for (const label of input.habitLabels ?? []) {
     const key = label.trim().toLowerCase();
-    if (key.length >= 3 && text.includes(key)) {
+    if (key.length >= 4 && eventMatchesHabitSignals(event, input) && ` ${event.title.toLowerCase().replace(/[^a-z0-9]+/g, ' ')} `.includes(` ${key} `)) {
       reasons.push({
         kind: 'habit',
         label: `Because you track ${label}`,
@@ -965,14 +965,14 @@ export function getEditorialRowChipLabel(
   }
 
   if (categoryId === 'sports') return 'Sports pick';
-  if (categoryId === 'habits') return 'Habit match';
+  if (categoryId === 'habits') return 'Inspired by your routines';
   return phrase.charAt(0).toUpperCase() + phrase.slice(1);
 }
 
 export function getEditorialRowSecondaryChipLabel(categoryId: string, event: LocalEvent): string {
   if (event.isHot || event.isLiveNow) return 'Trending now';
   if (categoryId === 'sports') return 'Sports pick';
-  if (categoryId === 'habits') return 'Habit match';
+  if (categoryId === 'habits') return 'Inspired by your routines';
   const phrase = EDITORIAL_CATEGORY_PHRASES[categoryId] ?? categoryId.replace(/_/g, ' ');
   return phrase.charAt(0).toUpperCase() + phrase.slice(1);
 }
@@ -1199,13 +1199,15 @@ export function buildEditorialEventRows(
   const categoryOrder = rankedCategories.length > 0 ? rankedCategories : fallbackCategories;
 
   const rows: EditorialEventRow[] = [];
+  const usedEventIds = new Set(excludeEventIds ?? []);
   for (const categoryId of categoryOrder) {
     if (rows.length >= maxRows) break;
     const matches = rankEventsForYou(
-      events.filter((e) => e.category === categoryId && !excludeEventIds?.has(e.id)),
+      events.filter((e) => e.category === categoryId && !usedEventIds.has(e.id)),
       input,
     );
     if (matches.length === 0) continue;
+    matches.slice(0, 4).forEach((event) => usedEventIds.add(event.id));
 
     const phrase = EDITORIAL_CATEGORY_PHRASES[categoryId] ?? categoryId.replace(/_/g, ' ');
     rows.push({
@@ -1261,28 +1263,20 @@ function getProfileDrivenCategories(profile: UserProfile | null | undefined): Se
   return categories;
 }
 
+/**
+ * Habit recommendations require event-specific evidence. Never infer reading,
+ * exercise or learning from a generic sports/arts category or boilerplate text.
+ */
 function eventMatchesHabitSignals(event: LocalEvent, input: EventRecommendationInput): boolean {
-  const text = haystack(event);
-  if (input.habitKeywords?.some((kw) => kw.length >= 3 && text.includes(kw))) {
-    return true;
-  }
-  if (input.habitLabels?.some((label) => {
-    const key = label.trim().toLowerCase();
-    return key.length >= 3 && text.includes(key);
-  })) {
-    return true;
-  }
-
-  const weightedCategories = Object.entries(input.habitCategoryWeights ?? {})
-    .filter(([, weight]) => weight >= 3)
-    .map(([category]) => category);
-  if (weightedCategories.length === 0) return false;
-
-  const profileCategories = getProfileDrivenCategories(input.profile);
-  const logical = getLogicalCategoryIds(event);
-  return weightedCategories.some(
-    (category) => logical.includes(category) && !profileCategories.has(category),
-  );
+  const eventText = ` ${[event.title, ...(event.tags ?? []), event.subCategory ?? ''].join(' ').toLowerCase().replace(/[^a-z0-9]+/g, ' ').trim()} `;
+  const habitKeywords = [...(input.habitKeywords ?? []), ...(input.habitLabels ?? [])];
+  const matched = habitKeywords.some((raw) => {
+    const keyword = raw.toLowerCase().replace(/[^a-z0-9]+/g, ' ').trim();
+    if (keyword.length < 4) return false;
+    // Broad activity words from tasks may match a real event, not its description boilerplate.
+    return eventText.includes(` ${keyword} `);
+  });
+  return matched;
 }
 
 export function rankEventsForHabits(
@@ -1317,7 +1311,7 @@ export function buildHabitBasedEventRow(
   const title =
     input.habitLabels?.length === 1
       ? `Because you track ${input.habitLabels[0]}`
-      : 'Based on your habits';
+      : 'Inspired by your routines';
 
   return {
     id: 'habits',
