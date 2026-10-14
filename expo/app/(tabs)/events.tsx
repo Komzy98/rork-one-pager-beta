@@ -28,6 +28,7 @@ import {
   CalendarDays,
   Users,
   ChevronLeft,
+  ChevronRight,
   Repeat,
   Globe,
 } from 'lucide-react-native';
@@ -66,6 +67,7 @@ import { EventsMapMarker } from '@/components/events/EventsMapMarker';
 import { EventsSaveToast } from '@/components/events/EventsSaveToast';
 import { EventsStatsRow } from '@/components/events/EventsStatsRow';
 import { EventPlanShortcuts } from '@/components/events/EventPlanShortcuts';
+import { EventsWeekendPlanner } from '@/components/events/EventsWeekendPlanner';
 import { EventFeedbackPrompt } from '@/components/events/EventFeedbackPrompt';
 import { SavedEventsWeekTimeline } from '@/components/events/SavedEventsWeekTimeline';
 import { CombinedNightOutPrompt } from '@/components/events/CombinedNightOutPrompt';
@@ -108,6 +110,7 @@ import { useSavedEventsSocial } from '@/hooks/useSavedEventsSocial';
 import { groupSavedEventsByDay, findMultiEventDays } from '@/utils/savedEventsWeek';
 import type { PlanRsvpStatus } from '@/utils/sharedPlansService';
 import { eventMatchesBentoCategory } from '@/utils/eventCategories';
+import { chooseExploreEvents, curateDiscoveryEvents, isAffordableEvent, isWeekendEvent } from '@/utils/eventsV2Discovery';
 import { registerDiscoveryEvents, registerSavedEvents } from '@/utils/eventCatalog';
 import { getEventCategoryMeta } from '@/utils/eventCategoryMeta';
 import {
@@ -194,6 +197,9 @@ const DISCOVERY_PILL_TABS = [
   { key: 'forYou' as const, label: 'For You', icon: Target, color: BRAND.light.primary },
   { key: 'friendsPicks' as const, label: 'Friends', icon: Users, color: BRAND.light.primaryLight },
   { key: 'thisWeek' as const, label: 'This Week', icon: CalendarDays, color: '#34C759' },
+  { key: 'weekend' as const, label: 'Weekend', icon: Calendar, color: BRAND.light.primary },
+  { key: 'budget' as const, label: 'Under £20', icon: Star, color: '#34C759' },
+  { key: 'explore' as const, label: 'Explore', icon: Globe, color: BRAND.light.primary },
 ];
 
 
@@ -211,6 +217,7 @@ function EventsScreenInner() {
     isSaved,
     toggleSaved,
     addToOnePager,
+    setPlanningStatus,
     savedSnapshots,
     eventsNeedingFeedback,
     recordEventFeedback,
@@ -223,9 +230,10 @@ function EventsScreenInner() {
   const [mainTab, setMainTab] = useState<EventsMainTab>('discover');
   const [viewMode, setViewMode] = useState<ViewMode>('list');
   const [selectedMapEvent, setSelectedMapEvent] = useState<string | null>(null);
-  const [discoveryTab, setDiscoveryTab] = useState<DiscoveryTabKey>('now');
+  const [discoveryTab, setDiscoveryTab] = useState<DiscoveryTabKey>('forYou');
   const [toastMessage, setToastMessage] = useState<string | null>(null);
   const [planLoading, setPlanLoading] = useState<'tonight' | 'weekend' | null>(null);
+  const [weekendPlannerOpen, setWeekendPlannerOpen] = useState(false);
   const [expandedCombinedDayKey, setExpandedCombinedDayKey] = useState<string | null>(null);
   const [dismissedCombinedDayKeys, setDismissedCombinedDayKeys] = useState<Set<string>>(new Set());
   const [rsvpPendingByEventId, setRsvpPendingByEventId] = useState<Record<string, PlanRsvpStatus | null>>({});
@@ -398,9 +406,9 @@ function EventsScreenInner() {
 
   const filteredEvents = useMemo(() => {
     if (inSearchMode) {
-      return events;
+      return curateDiscoveryEvents(events);
     }
-    let filtered = events;
+    let filtered = curateDiscoveryEvents(events);
     if (selectedCategory !== 'all') {
       filtered = filtered.filter((event) => eventMatchesBentoCategory(event, selectedCategory));
     }
@@ -503,7 +511,8 @@ function EventsScreenInner() {
   const mainText = palette.text;
   const secondaryBg = palette.surfaceLight;
 
-  const baseEvents = filteredEvents.length > 0 ? filteredEvents : events;
+  // Never reintroduce stale or duplicate listings when a filter returns no matches.
+  const baseEvents = filteredEvents;
   const savedEvents = savedAsLocalEvents;
   const savedEventsSocial = useSavedEventsSocial(savedEvents);
 
@@ -725,26 +734,19 @@ function EventsScreenInner() {
     }
   }, [addToOnePager, tonightCandidates]);
 
-  const handleBuildWeekend = useCallback(async () => {
-    if (weekendCandidates.length === 0) return;
-    setPlanLoading('weekend');
-    try {
-      for (const event of weekendCandidates) {
-        await addToOnePager(event);
-      }
-      setToastMessage(
-        weekendCandidates.length === 1
-          ? 'Added 1 event to build your weekend'
-          : `Added ${weekendCandidates.length} events to build your weekend`,
-      );
-      void Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
-    } finally {
-      setPlanLoading(null);
-    }
-  }, [addToOnePager, weekendCandidates]);
+  const handleBuildWeekend = useCallback(() => {
+    setWeekendPlannerOpen(true);
+  }, []);
+
 
   const smartDiscoveryEvents =
-    discoveryTab === 'now'
+    discoveryTab === 'explore'
+      ? chooseExploreEvents(filteredEvents)
+      : discoveryTab === 'weekend'
+      ? rankEventsForYou(filteredEvents.filter(event => isWeekendEvent(event)), recommendationInput)
+      : discoveryTab === 'budget'
+        ? rankEventsForYou(filteredEvents.filter(event => isAffordableEvent(event, 20)), recommendationInput)
+      : discoveryTab === 'now'
       ? happeningNowEvents
       : discoveryTab === 'near'
         ? nearYouEvents
@@ -835,7 +837,13 @@ function EventsScreenInner() {
     mainTab === 'discover' && viewMode === 'list' && !inSearchMode;
 
   const discoveryRailTitle =
-    discoveryTab === 'now'
+    discoveryTab === 'explore'
+      ? 'Try Something Different'
+      : discoveryTab === 'weekend'
+      ? 'This Weekend'
+      : discoveryTab === 'budget'
+        ? 'Free & Under £20'
+      : discoveryTab === 'now'
       ? 'Happening Now'
       : discoveryTab === 'near'
         ? 'Near You'
@@ -860,7 +868,7 @@ function EventsScreenInner() {
         contentContainerStyle={[
           styles.scrollContent,
           {
-            paddingTop: showCinematicHero ? 0 : insets.top + 8,
+            paddingTop: insets.top + 8,
             paddingBottom: 120 + insets.bottom,
           },
         ]}
@@ -872,29 +880,8 @@ function EventsScreenInner() {
         keyboardShouldPersistTaps="handled"
         nestedScrollEnabled
       >
-      {showCinematicHero && isPreviewLoading ? (
-        <EventsHeroSkeleton palette={palette} />
-      ) : null}
-      {showCinematicHero && !isPreviewLoading ? (
-        <PremiumEventHeroCard
-          events={heroEvents}
-          scrollY={scrollY}
-          palette={palette}
-          areaLabel={areaLabel ?? undefined}
-          safeAreaTop={insets.top}
-          onePagerThisWeekLabel={onePagerThisWeekLabel}
-          concierge={eventConcierge}
-          getRecommendationChipLabel={(event) => getChipLabel(event)}
-          onPressEvent={openEventDetail}
-          onAddToOnePager={handleAddToOnePager}
-          onInterested={handleToggleSavedWithToast}
-          onOpenTickets={handleOpenTickets}
-        />
-      ) : null}
-
       <View style={[styles.header, showCinematicHero && styles.headerCompact]}>
-        {!showCinematicHero ? (
-          <View style={styles.headerContent}>
+        <View style={styles.headerContent}>
             <View style={styles.headerLeft}>
               {mainTab === 'myEvents' ? (
                 <TouchableOpacity
@@ -924,34 +911,8 @@ function EventsScreenInner() {
                 </Text>
               </View>
             </View>
-            <View style={styles.headerActions}>
-              {mainTab === 'discover' ? (
-                <TouchableOpacity
-                  style={[styles.viewToggle, {
-                    backgroundColor: viewMode === 'map' ? accentColor : cardBg,
-                  }]}
-                  onPress={toggleViewMode}
-                  activeOpacity={0.7}
-                >
-                  <Animated.View style={{
-                    transform: [{
-                      rotate: viewToggleAnim.interpolate({
-                        inputRange: [0, 1],
-                        outputRange: ['0deg', '180deg'],
-                      }),
-                    }],
-                  }}>
-                    {viewMode === 'list' ? (
-                      <Map size={18} color={accentColor} />
-                    ) : (
-                      <List size={18} color={inverseText} />
-                    )}
-                  </Animated.View>
-                </TouchableOpacity>
-              ) : null}
-            </View>
+
           </View>
-        ) : null}
 
         <View style={[styles.searchBar, { backgroundColor: cardBg, borderColor: cardBorder }]}>
           <Search size={18} color={subtleText} />
@@ -967,6 +928,13 @@ function EventsScreenInner() {
               <X size={16} color={subtleText} />
             </TouchableOpacity>
           )}
+          {mainTab === 'discover' ? (
+            <TouchableOpacity accessibilityRole="button" accessibilityLabel={viewMode === 'list' ? 'View events on map' : 'View events as list'}
+              style={[styles.mapFab, { backgroundColor: viewMode === 'map' ? accentColor : cardBg, borderColor: cardBorder }]}
+              onPress={toggleViewMode}>
+              {viewMode === 'list' ? <Map size={18} color={accentColor} /> : <List size={18} color={inverseText} />}
+            </TouchableOpacity>
+          ) : null}
         </View>
 
         <View style={[styles.mainTabRow, showCinematicHero && styles.mainTabRowCompact]}>
@@ -996,21 +964,43 @@ function EventsScreenInner() {
               My Events{savedCount > 0 ? ` (${savedCount})` : ''}
             </Text>
           </TouchableOpacity>
-          {mainTab === 'discover' ? (
-            <TouchableOpacity
-              style={[styles.mapFab, { backgroundColor: viewMode === 'map' ? accentColor : cardBg, borderColor: cardBorder }]}
-              onPress={toggleViewMode}
-              activeOpacity={0.85}
-            >
-              {viewMode === 'list' ? (
-                <Map size={18} color={accentColor} />
-              ) : (
-                <List size={18} color={inverseText} />
-              )}
-            </TouchableOpacity>
-          ) : null}
-        </View>
+       </View>
       </View>
+
+      {showCinematicHero && isPreviewLoading ? (
+        <EventsHeroSkeleton palette={palette} />
+      ) : null}
+      {showCinematicHero && !isPreviewLoading ? (
+        <PremiumEventHeroCard
+          events={heroEvents}
+          scrollY={scrollY}
+          palette={palette}
+          areaLabel={areaLabel ?? undefined}
+          safeAreaTop={insets.top}
+          onePagerThisWeekLabel={onePagerThisWeekLabel}
+          concierge={eventConcierge}
+          getRecommendationChipLabel={(event) => getChipLabel(event)}
+          onPressEvent={openEventDetail}
+          onAddToOnePager={handleAddToOnePager}
+          onInterested={handleToggleSavedWithToast}
+          onOpenTickets={handleOpenTickets}
+        />
+      ) : null}
+
+      {mainTab === 'discover' && viewMode === 'list' && !inSearchMode ? (
+        <TouchableOpacity accessibilityRole="button" accessibilityLabel="Plan your weekend"
+          onPress={() => setWeekendPlannerOpen(true)}
+          style={{ marginHorizontal: 16, marginTop: 12, marginBottom: 8, borderRadius: 16,
+            borderWidth: 1, borderColor: cardBorder, backgroundColor: cardBg,
+            paddingHorizontal: 16, paddingVertical: 14, flexDirection: 'row', alignItems: 'center', gap: 12 }}>
+          <CalendarDays size={21} color={accentColor} />
+          <View style={{ flex: 1 }}>
+            <Text style={{ color: mainText, fontWeight: '700', fontSize: 15 }}>Plan your weekend</Text>
+            <Text style={{ color: subtleText, fontSize: 12, marginTop: 3 }}>Discover plans that fit your budget, mood and travel</Text>
+          </View>
+          <ChevronRight size={19} color={accentColor} />
+        </TouchableOpacity>
+      ) : null}
 
       {mainTab === 'discover' && eventsSource === 'fallback' && (
         <View style={[styles.liveBanner, { backgroundColor: secondaryBg, borderColor: cardBorder }]}>
@@ -1521,6 +1511,8 @@ function EventsScreenInner() {
                 rsvpLoading={!!rsvpPendingByEventId[event.id]}
                 pendingRsvpStatus={rsvpPendingByEventId[event.id] ?? null}
                 onPress={openEventDetail}
+                planningStatus={savedSnapshots.find(snapshot => snapshot.id === event.id)?.planningStatus ?? 'interested'}
+                onPlanningStatusChange={(eventId, status) => { void setPlanningStatus(eventId, status); }}
                 onAddToOnePager={handleAddToOnePager}
                 onRemind={handleRemind}
                 onAddToCalendar={handleAddToCalendar}
@@ -1533,6 +1525,16 @@ function EventsScreenInner() {
         </>
       )}
       </KeyboardAwareScrollView>
+
+      <EventsWeekendPlanner
+        visible={weekendPlannerOpen}
+        userCoords={permissionDenied ? null : userCoords}
+        events={rankEventsForYou(filteredEvents, recommendationInput)}
+        palette={palette}
+        isSaved={isSaved}
+        onClose={() => setWeekendPlannerOpen(false)}
+        onSave={async (event) => { await addToOnePager(event); setToastMessage('Event saved — choose Planning or Going in My Events'); }}
+      />
 
       <EventsSaveToast
         message={toastMessage}

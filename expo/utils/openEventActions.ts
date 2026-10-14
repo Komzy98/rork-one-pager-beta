@@ -16,6 +16,11 @@ export async function openEventTickets(event: LocalEvent): Promise<void> {
     );
     return;
   }
+  // Accept only web ticket destinations; never launch arbitrary URL schemes.
+  if (!/^https?:\/\//i.test(url)) {
+    Alert.alert('Tickets', 'This event has an invalid ticket link.');
+    return;
+  }
   const canOpen = await Linking.canOpenURL(url);
   if (!canOpen) {
     Alert.alert('Tickets', 'Unable to open the ticket link.');
