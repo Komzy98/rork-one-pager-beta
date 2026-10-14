@@ -24,7 +24,7 @@
     "ios": {
       "supportsTablet": true,
       "bundleIdentifier": "app.rork.OPbeta",
-      "buildNumber": "108",
+      "buildNumber": "109",
       "associatedDomains": [
         "applinks:join.onepagerapp.co.uk"
       ],
