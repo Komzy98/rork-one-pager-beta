@@ -19,6 +19,19 @@ async function getJson(url: string, token: string): Promise<any> {
     return response.json();
   } finally { clearTimeout(timeout); }
 }
+function mapCategory(id?: string): string {
+  switch (id) {
+    case '103': return 'music';
+    case '102': return 'tech';
+    case '105': return 'theatre';
+    case '108': return 'sports';
+    case '110': return 'food';
+    case '113': return 'networking';
+    case '115': return 'family';
+    case '104': case '106': return 'arts';
+    default: return 'other';
+  }
+}
 export async function fetchEventbriteAccountEvents(token: string): Promise<LocalEvent[]> {
   if (!token.trim()) return [];
   const cached = cache.get('published');
@@ -54,7 +67,7 @@ export async function fetchEventbriteAccountEvents(token: string): Promise<Local
       venue: item.venue?.name || 'Venue TBA', location: city,
       date: start.toLocaleDateString('en-GB', { weekday: 'short', day: 'numeric', month: 'short' }),
       time: start.toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' }),
-      category: 'other', price: item.is_free ? 'Free' : 'See tickets',
+      category: mapCategory(item.category_id), price: item.is_free ? 'Free' : 'See tickets',
       image: item.logo?.url || 'https://images.unsplash.com/photo-1492684223066-81342ee5ff30?w=600',
       isSaved: false, attendees: 0, rating: 0, tags: ['eventbrite', city.toLowerCase()],
       latitude, longitude, startIso: item.start.utc, ticketUrl: item.url,
