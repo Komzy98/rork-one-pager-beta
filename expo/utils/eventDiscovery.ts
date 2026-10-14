@@ -107,7 +107,7 @@ export function parseEventStartDateTime(event: LocalEvent, referenceMs = Date.no
       // Some providers use midnight UTC as a placeholder while supplying the
       // actual local wall time in the display label. Only allow that override
       // when the displayed day matches the provider's authoritative date.
-      if (/T00:00:00(?:\\.000)?Z$/i.test(event.startIso)) {
+      if (/T00:00:00(?:\.000)?Z$/i.test(event.startIso)) {
         const labelDate = parseEventStartFromLabels(event, providerDate.getTime() - 86400000);
         if (
           labelDate &&
