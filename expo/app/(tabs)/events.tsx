@@ -133,6 +133,8 @@ function formatGlobalSearchSourceLabel(source: NearbyEventsSource): string {
       return 'Skiddle';
     case 'eventbrite':
       return 'Eventbrite';
+    case 'billetto':
+      return 'Billetto';
     case 'fallback':
       return 'sample listings';
     default:

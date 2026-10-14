@@ -38,11 +38,12 @@ function setCached(key: string, data: NearbyEventsResult): void {
   }
 }
 
-function resolveSource(ticketmasterCount: number, skiddleCount: number, eventbriteCount = 0): NearbyEventsSource {
-  if (ticketmasterCount > 0 && skiddleCount > 0) return 'mixed';
+function resolveSource(ticketmasterCount: number, skiddleCount: number, eventbriteCount = 0, billettoCount = 0): NearbyEventsSource {
+  if ([ticketmasterCount, skiddleCount, eventbriteCount, billettoCount].filter(x => x > 0).length > 1) return 'mixed';
   if (ticketmasterCount > 0) return 'ticketmaster';
   if (skiddleCount > 0) return 'skiddle';
   if (eventbriteCount > 0) return 'eventbrite';
+  if (billettoCount > 0) return 'billetto';
   return 'none';
 }
 
@@ -75,15 +76,17 @@ export const searchGlobalEventsRoute = publicProcedure
     const ticketmasterKey = getTicketmasterApiKeyFromEnv();
     const skiddleKey = getSkiddleApiKeyFromEnv();
     const eventbriteKey = process.env.EVENTBRITE_TOKEN?.trim();
+    const billettoId = process.env.BILLETTO_ACCESS_KEY_ID?.trim();
+    const billettoSecret = process.env.BILLETTO_ACCESS_KEY_SECRET?.trim();
 
-    if (!ticketmasterKey && !skiddleKey && !eventbriteKey) {
+    if (!ticketmasterKey && !skiddleKey && !eventbriteKey && !(billettoId && billettoSecret)) {
       console.warn('⚠️ Global search: no TICKETMASTER_API_KEY / SKIDDLE_API_KEY');
       return { events: [], source: 'none' };
     }
 
     console.log(`🔎 Global event search: "${input.keyword}" (worldwide)`);
 
-    const { events, ticketmasterCount, skiddleCount, eventbriteCount } = await fetchMergedDiscoveryEvents(
+    const { events, ticketmasterCount, skiddleCount, eventbriteCount, billettoCount } = await fetchMergedDiscoveryEvents(
       {
         latitude: input.latitude,
         longitude: input.longitude,
@@ -92,7 +95,7 @@ export const searchGlobalEventsRoute = publicProcedure
         keyword: input.keyword,
         searchScope: 'worldwide',
       },
-      { ticketmaster: ticketmasterKey, skiddle: skiddleKey, eventbrite: eventbriteKey },
+      { ticketmaster: ticketmasterKey, skiddle: skiddleKey, eventbrite: eventbriteKey, billettoId, billettoSecret },
     );
 
     const withDistance = attachDistanceKm(events, {
@@ -105,7 +108,7 @@ export const searchGlobalEventsRoute = publicProcedure
     });
     const result: NearbyEventsResult = {
       events: ranked,
-      source: resolveSource(ticketmasterCount, skiddleCount, eventbriteCount),
+      source: resolveSource(ticketmasterCount, skiddleCount, eventbriteCount, billettoCount),
     };
 
     setCached(cacheKey, result);
