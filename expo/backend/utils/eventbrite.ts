@@ -30,16 +30,22 @@ export async function verifyEventbriteAuthentication(token = getEventbriteToken(
   return { id: String(user.id), connected: true };
 }
 
-/** Fetch only publicly listed, live events owned by the configured Eventbrite account. */
+type OrganisationResponse = { organizations?: { id: string }[] };
+
+/** Retrieve public live listings only from organisations accessible to this token. */
 export async function fetchOwnPublicEventbriteEvents(token = getEventbriteToken(), fetcher: typeof fetch = fetch): Promise<EventbriteEvent[]> {
-  const result: EventbriteEvent[] = [];
-  let continuation: string | undefined;
-  for (let page = 0; page < 3; page += 1) {
-    const query = '?expand=venue' + (continuation ? '&continuation=' + encodeURIComponent(continuation) : '');
-    const data = await eventbriteGet<OwnedResponse>('/users/me/owned_events/' + query, token, fetcher);
-    result.push(...(data.events ?? []).filter(e => e.listed === true && e.status === 'live' && !!e.url));
-    continuation = data.pagination?.continuation;
-    if (!data.pagination?.has_more_items || !continuation) break;
+  const organisations = await eventbriteGet<OrganisationResponse>('/users/me/organizations/', token, fetcher);
+  const results: EventbriteEvent[] = [];
+  for (const organisation of (organisations.organizations ?? []).slice(0, 10)) {
+    if (!/^\\d+$/.test(organisation.id)) continue;
+    let continuation: string | undefined;
+    for (let page = 0; page < 3; page += 1) {
+      const query = '?status=live&expand=venue' + (continuation ? '&continuation=' + encodeURIComponent(continuation) : '');
+      const data = await eventbriteGet<OwnedResponse>('/organizations/' + organisation.id + '/events/' + query, token, fetcher);
+      results.push(...(data.events ?? []).filter(e => e.listed === true && e.status === 'live' && !!e.url));
+      continuation = data.pagination?.continuation;
+      if (!data.pagination?.has_more_items || !continuation) break;
+    }
   }
-  return result;
+  return results;
 }
