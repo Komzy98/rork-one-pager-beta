@@ -154,6 +154,7 @@ export const getNearbyEventsRoute = publicProcedure
 
     const ticketmasterKey = getTicketmasterApiKeyFromEnv();
     const skiddleKey = getSkiddleApiKeyFromEnv();
+  const eventbriteKey = process.env.EVENTBRITE_TOKEN?.trim();
 
     if (!ticketmasterKey && !skiddleKey && !eventbriteKey) {
       console.warn(
@@ -199,6 +200,7 @@ export const getNearbyEventsBatchRoute = publicProcedure
 
     const ticketmasterKey = getTicketmasterApiKeyFromEnv();
     const skiddleKey = getSkiddleApiKeyFromEnv();
+  const eventbriteKey = process.env.EVENTBRITE_TOKEN?.trim();
 
     if (!ticketmasterKey && !skiddleKey && !eventbriteKey) {
       console.warn('⚠️ No event API keys set — batch returns empty');
@@ -273,6 +275,7 @@ export async function runEventsDiscoverySmokeCheck(): Promise<{
   const errors: string[] = [];
   const ticketmasterKey = getTicketmasterApiKeyFromEnv();
   const skiddleKey = getSkiddleApiKeyFromEnv();
+  const eventbriteKey = process.env.EVENTBRITE_TOKEN?.trim();
 
   if (!ticketmasterKey && !skiddleKey && !eventbriteKey) {
     errors.push('No event API keys configured (TICKETMASTER_API_KEY / SKIDDLE_API_KEY)');
