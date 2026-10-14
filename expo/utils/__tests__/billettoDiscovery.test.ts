@@ -26,6 +26,24 @@ describe('Billetto public event mapping', () => {
     assert.equal(e.marketCode, 'GB');
     assert.ok(e.ticketUrl?.startsWith('https://billetto.co.uk/'));
   });
+  it('supports the live Billetto API field names and GeoJSON location coordinates', () => {
+    const e = mapBillettoPublicEvent({
+      id: 'live-42',
+      title: 'Autumn Food Market',
+      startdate: '2026-11-05T19:00:00Z',
+      state: 'published',
+      branded_url: 'https://billetto.co.uk/e/autumn-food-market-tickets-live-42',
+      image_link: 'https://billetto.co.uk/media/autumn.jpg',
+      location: { city: 'Manchester', location_name: 'Town Hall', coordinates: [-2.244, 53.479] },
+      categorization: { category: 'Food & Drink' },
+    }, now);
+    assert.ok(e);
+    assert.equal(e.category, 'food');
+    assert.equal(e.latitude, 53.479);
+    assert.equal(e.longitude, -2.244);
+    assert.equal(e.venue, 'Town Hall');
+    assert.match(e.image, /autumn\.jpg/);
+  });
   it('rejects listings with no real coordinates or valid ticket link', () => {
     assert.equal(mapBillettoPublicEvent({ ...sample, venue: { name: 'Manchester Hall' } }, now), null);
     assert.equal(mapBillettoPublicEvent({ ...sample, url: 'https://invalid.example/test' }, now), null);
