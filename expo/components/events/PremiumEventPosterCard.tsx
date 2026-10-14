@@ -117,6 +117,16 @@ export const PremiumEventPosterCard = React.memo(function PremiumEventPosterCard
         activeOpacity={1}
       >
         <View style={isFeed ? styles.feedImageWrap : isHorizontal ? styles.horizontalImageWrap : styles.verticalImageWrap}>
+          {isFeed ? (
+            <Image
+              source={{ uri: displayPosterUri }}
+              style={styles.feedImageBackdrop}
+              contentFit="cover"
+              blurRadius={24}
+              recyclingKey={`${event.id}-backdrop-${displayPosterUri}`}
+              accessible={false}
+            />
+          ) : null}
           <Image
             source={{ uri: displayPosterUri }}
             style={isFeed ? styles.feedImage : isHorizontal ? styles.horizontalImage : styles.verticalImage}
@@ -314,6 +324,12 @@ const styles = StyleSheet.create({
   feedImage: {
     width: '100%',
     height: '100%',
+  },
+  // Blurred edge-to-edge artwork removes the dark empty bars that appear
+  // when narrow event posters are displayed in full with contentFit="contain".
+  feedImageBackdrop: {
+    ...StyleSheet.absoluteFillObject,
+    opacity: 0.85,
   },
   feedBody: {
     padding: 16,
