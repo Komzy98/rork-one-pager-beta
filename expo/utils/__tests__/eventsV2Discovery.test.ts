@@ -1,6 +1,6 @@
 import { describe, it } from 'node:test';
 import assert from 'node:assert/strict';
-import { curateDiscoveryEvents, isAffordableEvent, isPastListing, isWeekendEvent } from '../eventsV2Discovery';
+import { chooseExploreEvents, curateDiscoveryEvents, isAffordableEvent, isPastListing, isWeekendEvent } from '../eventsV2Discovery';
 import type { LocalEvent } from '@/types/events';
 
 const listing = (overrides: Partial<LocalEvent> = {}): LocalEvent => ({
@@ -41,6 +41,10 @@ describe('Events V2 discovery quality', () => {
     assert.equal(isAffordableEvent(listing({price:'From £19.50'})), true);
     assert.equal(isAffordableEvent(listing({price:'£35'})), false);
     assert.equal(isAffordableEvent(listing({price:'See tickets'})), false);
+  });
+  it('surfaces different categories before repeating favourites', () => {
+    const candidates = [listing(), listing({id:'other-comedy'}), listing({id:'music', category:'music'}), listing({id:'arts',category:'arts'})];
+    assert.deepEqual(chooseExploreEvents(candidates, 3).map(event => event.id), ['tm-1', 'music', 'arts']);
   });
   it('picks upcoming Friday–Sunday listings', () => {
     assert.equal(isWeekendEvent(listing(), new Date(now)), true);
