@@ -276,7 +276,7 @@ export type DiscoveryProviderKeys = {
 export async function fetchMergedDiscoveryEvents(
   input: DiscoveryFetchInput,
   keys: DiscoveryProviderKeys,
-): Promise<{ events: LocalEventPayload[]; ticketmasterCount: number; skiddleCount: number }> {
+): Promise<{ events: LocalEventPayload[]; ticketmasterCount: number; skiddleCount: number; eventbriteCount: number }> {
   const ticketmasterKey = keys.ticketmaster?.trim() || '';
   const skiddleKey = keys.skiddle?.trim() || '';
 
@@ -296,5 +296,6 @@ export async function fetchMergedDiscoveryEvents(
     events,
     ticketmasterCount: ticketmasterEvents.length,
     skiddleCount: skiddleEvents.length,
+    eventbriteCount: eventbriteEvents.length,
   };
 }
