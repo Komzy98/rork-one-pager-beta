@@ -14,7 +14,7 @@ export type EventCategory =
 
 export type EventPlanningStatus = 'interested' | 'planning' | 'going';
 
-export type OnePagerEventSource = 'mock' | 'ticketmaster' | 'skiddle' | 'manual';
+export type OnePagerEventSource = 'mock' | 'ticketmaster' | 'skiddle' | 'eventbrite' | 'manual';
 
 /** Normalised event shape used across discovery, detail, and AI. */
 export interface OnePagerEvent {
