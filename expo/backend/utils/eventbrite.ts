@@ -49,3 +49,53 @@ export async function fetchOwnPublicEventbriteEvents(token = getEventbriteToken(
   }
   return results;
 }
+
+type EventbriteOrder = {
+  id: string; status?: string; event_id?: string; event?: EventbriteEvent;
+};
+type OrderResponse = { orders?: EventbriteOrder[]; pagination?: { has_more_items?: boolean; continuation?: string; page_number?: number } };
+type EventbriteAccount = { id: string; emails?: { email?: string; primary?: boolean; verified?: boolean }[] };
+export type EventbriteBooking = {
+  id: string; title: string; startAt: string; endAt?: string; venueName: string;
+  city: string; address?: string; latitude: number; longitude: number;
+  imageUrl?: string; ticketUrl?: string; description?: string;
+};
+/** Never return order attendee details or purchaser email to the mobile app. */
+export function normaliseEventbriteOrders(orders: EventbriteOrder[]): EventbriteBooking[] {
+  const byEvent = new Map<string, EventbriteBooking>();
+  for (const order of orders) {
+    if (order.status !== 'placed') continue;
+    const e = order.event;
+    if (!e?.id || !e.start?.utc || !e.url) continue;
+    const venue = e.venue;
+    byEvent.set(e.id, {
+      id: 'eb-' + e.id,
+      title: e.name?.text || 'Eventbrite booking',
+      startAt: e.start.utc,
+      endAt: e.end?.utc,
+      venueName: venue?.name || (e.online_event ? 'Online event' : 'Venue TBC'),
+      city: venue?.address?.city || '',
+      address: venue?.address?.localized_address_display,
+      latitude: Number(venue?.latitude) || 0,
+      longitude: Number(venue?.longitude) || 0,
+      imageUrl: e.logo?.original?.url || e.logo?.url,
+      ticketUrl: e.url,
+      description: e.summary,
+    });
+  }
+  return [...byEvent.values()].sort((a, b) => a.startAt.localeCompare(b.startAt));
+}
+export async function getEventbriteAccount(token = getEventbriteToken(), fetcher: typeof fetch = fetch): Promise<EventbriteAccount> {
+  return eventbriteGet<EventbriteAccount>('/users/me/', token, fetcher);
+}
+export async function fetchEventbriteBookings(token = getEventbriteToken(), fetcher: typeof fetch = fetch): Promise<EventbriteBooking[]> {
+  const orders: EventbriteOrder[] = [];
+  for (let page = 1; page <= 10; page += 1) {
+    const data = await eventbriteGet<OrderResponse>(
+      '/users/me/orders/?expand=event.venue&page=' + page, token, fetcher,
+    );
+    orders.push(...(data.orders ?? []));
+    if (!data.pagination?.has_more_items) break;
+  }
+  return normaliseEventbriteOrders(orders);
+}
