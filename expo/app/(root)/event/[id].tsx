@@ -189,12 +189,17 @@ export default function EventDetailScreen() {
   const handleAddToOnePager = useCallback(async () => {
     if (!event || !localEvent) return;
     void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
-    if (saved) {
-      await removeFromOnePager(event.id);
-      return;
+    try {
+      if (saved) {
+        await removeFromOnePager(event.id);
+        return;
+      }
+      await addToOnePager(localEvent);
+      Alert.alert('Added to One Pager', `${event.title} is now in My Events with your night-out plan.`);
+    } catch (error) {
+      console.warn('[Event detail] Could not change saved event:', error);
+      Alert.alert('Could not update event', 'Please try again. Your account is still signed in.');
     }
-    await addToOnePager(localEvent);
-    Alert.alert('Added to One Pager', `${event.title} is now in My Events with your night-out plan.`);
   }, [addToOnePager, event, localEvent, removeFromOnePager, saved]);
 
   const handleCalendar = useCallback(async () => {
