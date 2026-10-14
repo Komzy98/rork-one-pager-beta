@@ -1,6 +1,6 @@
 import { Hono } from "hono";
 import { fetchEventbriteAccountEvents } from "./services/eventbriteDiscovery";
-import { fetchBillettoPublicEvents } from "./services/billettoDiscovery";
+import { fetchBillettoPublicEvents, getBillettoDiagnostics } from "./services/billettoDiscovery";
 import type { Context } from "hono";
 import { cors } from "hono/cors";
 import { fetchRequestHandler } from "@trpc/server/adapters/fetch";
@@ -215,7 +215,7 @@ app.get("/health/billetto", async (c) => {
   if (!id || !secret) return c.json({ ok: false, configured: false, error: "Billetto credentials are not configured" }, 503);
   try {
     const events = await fetchBillettoPublicEvents(id, secret);
-    return c.json({ ok: true, configured: true, publicUpcomingEventsWithLocations: events.length, checkedAt: new Date().toISOString() });
+    return c.json({ ok: true, configured: true, publicUpcomingEventsWithLocations: events.length, diagnostics: getBillettoDiagnostics(), checkedAt: new Date().toISOString() });
   } catch (error) {
     const message = error instanceof Error ? error.message : "Unknown error";
     const providerStatus = /HTTP (\d{3})/.exec(message)?.[1];
