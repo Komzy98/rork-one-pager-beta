@@ -221,6 +221,7 @@ export const [AuthProvider, useAuth] = createContextHook(() => {
   const [isInitialized, setIsInitialized] = useState<boolean>(false);
   const [isGuest, setIsGuest] = useState<boolean>(false);
   const [supabaseUser, setSupabaseUser] = useState<any>(null);
+  const [sessionRecoveryRequired, setSessionRecoveryRequired] = useState(false);
   const [supabaseSync, setSupabaseSync] = useState<SupabaseUserSync | null>(null);
   const [autoSyncEnabled, setAutoSyncEnabled] = useState<boolean>(false);
 
@@ -300,11 +301,13 @@ export const [AuthProvider, useAuth] = createContextHook(() => {
     // Reapplying sign-in used to wipe in-memory account caches on every refresh.
     if (activeSupabaseSessionUserIdRef.current === sessionUser.id) {
       setSupabaseUser(sessionUser);
+      setSessionRecoveryRequired(false);
       return;
     }
     const previousSessionId = activeSupabaseSessionUserIdRef.current;
     activeSupabaseSessionUserIdRef.current = sessionUser.id;
     explicitSignOutRef.current = false;
+    setSessionRecoveryRequired(false);
     await purgeAccountSessionState(previousSessionId ? 'switch' : 'sign_in');
     const meta = sessionUser.user_metadata || {};
     const firstName: string = meta.firstName || (meta.full_name ? String(meta.full_name).split(' ')[0] : '') || '';
@@ -430,13 +433,13 @@ export const [AuthProvider, useAuth] = createContextHook(() => {
           }
 
           if ((event as string) === 'TOKEN_REFRESH_FAILED') {
-            void (async () => {
-              const recovered = await recoverSupabaseSession();
-              if (recovered?.user && isMounted) {
-                console.log('🔐 Recovered session after token refresh failure');
-                await applySupabaseSession(recovered.user);
-              }
-            })();
+            setSessionRecoveryRequired(true);
+            // Supabase holds the auth lock while this callback runs.
+            setTimeout(() => {
+              void recoverSupabaseSession().then((recovered) => {
+                if (recovered?.user && isMounted) void applySupabaseSession(recovered.user);
+              }).catch((error) => console.warn('[Auth] Session refresh recovery failed:', error));
+            }, 0);
             return;
           }
 
@@ -447,6 +450,8 @@ export const [AuthProvider, useAuth] = createContextHook(() => {
               // mutation. Do not destroy the user's local session or profile.
               // Secure cloud operations still require a valid Supabase token.
               console.warn('[Auth] Unexpected SIGNED_OUT; retaining local session while attempting recovery');
+              setSessionRecoveryRequired(true);
+              setSupabaseUser(null);
               // Defer Supabase API calls until this auth callback has returned;
               // requesting a session while the auth lock is held can deadlock.
               setTimeout(() => {
@@ -459,6 +464,7 @@ export const [AuthProvider, useAuth] = createContextHook(() => {
               return;
             }
             activeSupabaseSessionUserIdRef.current = null;
+            setSessionRecoveryRequired(false);
             if (isMounted) {
               setUser(null);
               setSupabaseUser(null);
@@ -926,6 +932,7 @@ export const [AuthProvider, useAuth] = createContextHook(() => {
 
   const logout = useCallback(async () => {
     explicitSignOutRef.current = true;
+    setSessionRecoveryRequired(false);
     try {
       const currentUserId = user?.id;
       await purgeAccountSessionState('logout');
@@ -1454,6 +1461,7 @@ export const [AuthProvider, useAuth] = createContextHook(() => {
     isInitialized,
     isAuthenticated: !!user?.isAuthenticated,
     isGuest,
+    sessionRecoveryRequired,
     login,
     signup,
     logout,
@@ -1473,5 +1481,5 @@ export const [AuthProvider, useAuth] = createContextHook(() => {
     biometricAuth,
     googleAuthConfig,
     mfa,
-  }), [user, isLoading, isInitialized, isGuest, login, signup, logout, loginWithGoogle, loginWithGoogleOAuth, continueAsGuest, convertGuestToUser, updateUser, deleteAccount, createDemoUser, clearAllData, getSupabaseSync, isAutoSyncEnabled, supabaseUser, biometricAuth, googleAuthConfig, mfa]);
+  }), [user, isLoading, isInitialized, isGuest, sessionRecoveryRequired, login, signup, logout, loginWithGoogle, loginWithGoogleOAuth, continueAsGuest, convertGuestToUser, updateUser, deleteAccount, createDemoUser, clearAllData, getSupabaseSync, isAutoSyncEnabled, supabaseUser, biometricAuth, googleAuthConfig, mfa]);
 });

@@ -203,9 +203,10 @@ type ExpandedSection = 'favorites' | 'notifications' | 'recovery' | 'security' |
 
 export default function ProfileScreen() {
   const { colors, isDark, setThemeMode } = useTheme();
-  const { user, supabaseUser, logout, deleteAccount, isGuest, mfa } = useAuth();
+  const { user, supabaseUser, logout, deleteAccount, isGuest, mfa, sessionRecoveryRequired } = useAuth();
   const {
     profile,
+    profileSaveError,
     updateProfile,
     updateNotificationSettings,
     addFavoriteTeam,
@@ -964,6 +965,25 @@ export default function ProfileScreen() {
           showsVerticalScrollIndicator={false}
           contentContainerStyle={styles.scrollContent}
         >
+          {sessionRecoveryRequired && !isGuest ? (
+            <View style={[styles.guestBanner, { backgroundColor: '#FFF4E6', borderColor: '#DE8E22' }]}>
+              <View style={styles.guestBannerContent}>
+                <Text style={[styles.guestBannerTitle, { color: '#7A4200' }]}>Cloud session needs reconnection</Text>
+                <Text style={[styles.guestBannerText, { color: '#7A4200' }]}>Your saved data remains on this device. Please sign in again to resume secure cloud sync.</Text>
+              </View>
+              <TouchableOpacity accessibilityRole="button" accessibilityLabel="Reconnect cloud account" style={[styles.guestCreateButton, { backgroundColor: '#995800' }]} onPress={() => router.push('/(auth)/login' as any)}>
+                <Text style={[styles.guestCreateButtonText, { color: '#FFFFFF' }]}>Reconnect</Text>
+              </TouchableOpacity>
+            </View>
+          ) : null}
+          {profileSaveError ? (
+            <View style={[styles.guestBanner, { backgroundColor: '#FFF0F0', borderColor: '#CC3E3E' }]}>
+              <View style={styles.guestBannerContent}>
+                <Text style={[styles.guestBannerTitle, { color: '#992222' }]}>Changes not saved</Text>
+                <Text style={[styles.guestBannerText, { color: '#992222' }]}>{profileSaveError}</Text>
+              </View>
+            </View>
+          ) : null}
           {/* Guest Banner */}
           {isGuest && (
             <View style={[styles.guestBanner, { backgroundColor: colors.primary + '12', borderColor: colors.primary + '30' }]}>

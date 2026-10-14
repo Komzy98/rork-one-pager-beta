@@ -82,20 +82,29 @@ function parseEventStartFromLabels(
   return rollForwardIfPast(base, referenceMs);
 }
 
-/** Parse a saved snapshot using display labels when startAt may be a stale UTC instant. */
+/** A saved provider timestamp fixes the event YEAR; yearless UI labels cannot revive expired events. */
 export function parseSavedEventStartMs(
   snapshot: Pick<import('@/types/events').SavedEventSnapshot, 'startAt' | 'dateLabel' | 'timeLabel'>,
   referenceMs = Date.now()
 ): number | null {
-  if (snapshot.dateLabel && snapshot.timeLabel) {
-    const fromLabels = parseEventStartFromLabels(
-      { date: snapshot.dateLabel, time: snapshot.timeLabel },
-      referenceMs
-    );
-    if (fromLabels) return fromLabels.getTime();
-  }
   const parsed = Date.parse(snapshot.startAt);
-  return Number.isFinite(parsed) ? parsed : null;
+  if (Number.isFinite(parsed)) {
+    if (snapshot.dateLabel && snapshot.timeLabel) {
+      const authoritative = new Date(parsed);
+      const displayed = new Date(`${snapshot.dateLabel.trim()} ${authoritative.getFullYear()}`);
+      if (Number.isFinite(displayed.getTime()) &&
+          displayed.getMonth() === authoritative.getMonth() &&
+          displayed.getDate() === authoritative.getDate()) {
+        return applyTimeToDate(displayed, snapshot.timeLabel).getTime();
+      }
+    }
+    return parsed;
+  }
+  const fromLabels = parseEventStartFromLabels(
+    { date: snapshot.dateLabel || '', time: snapshot.timeLabel || '' },
+    referenceMs
+  );
+  return fromLabels?.getTime() ?? null;
 }
 
 export function parseEventStartDateTime(event: LocalEvent, referenceMs = Date.now()): Date | null {
@@ -119,11 +128,14 @@ export function parseEventStartDateTime(event: LocalEvent, referenceMs = Date.no
   }
   return parseEventStartFromLabels(event, referenceMs);
 }
-export function getDaysUntilEvent(event: LocalEvent): number | null {
-  const start = parseEventStartDateTime(event);
+/** Calendar-day distance, not rounded-up 24 hour periods (which mark tonight as tomorrow). */
+export function getDaysUntilEvent(event: LocalEvent, referenceMs = Date.now()): number | null {
+  const start = parseEventStartDateTime(event, referenceMs);
   if (!start) return null;
-  const diffMs = start.getTime() - Date.now();
-  return Math.ceil(diffMs / (1000 * 60 * 60 * 24));
+  const now = new Date(referenceMs);
+  const localMidnightDay = (d: Date) =>
+    Date.UTC(d.getFullYear(), d.getMonth(), d.getDate());
+  return Math.round((localMidnightDay(start) - localMidnightDay(now)) / (24 * 60 * 60 * 1000));
 }
 
 export function getEventCountdownLabel(event: LocalEvent): string {

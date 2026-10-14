@@ -1,3 +1,4 @@
+import { reconcileCloudCollections } from '@/utils/syncCollectionReconciliation';
 import React from 'react';
 import { supabase, supabaseConfigured } from './supabaseClient';
 import { unifiedStorage } from '@/utils/unifiedStorage';
@@ -147,29 +148,15 @@ export class SupabaseUserSync {
     return [...byId.values(), ...cloudWithoutId, ...localWithoutId];
   }
 
-  /**
-   * If Supabase has an empty array for a domain but local disk still has items,
-   * treat cloud as corrupted/out-of-sync and prefer local (self-heal).
-   * Does not replace non-empty cloud data with local (avoids wiping remote wins).
-   */
   private reconcileCloudWithLocalDisk(
     cloud: Partial<UserData> | null | undefined,
-    localDisk: Partial<UserData> | null | undefined
+    localDisk: Partial<UserData> | null | undefined,
   ): Partial<UserData> {
-    const c = removeUndefined({ ...(cloud || {}) }) as Partial<UserData>;
-    const l = removeUndefined({ ...(localDisk || {}) }) as Partial<UserData>;
-
-    for (const key of ARRAY_MERGE_KEYS) {
-      const cloudArr = Array.isArray(c[key]) ? (c[key] as any[]) : undefined;
-      const localArr = Array.isArray(l[key]) ? (l[key] as any[]) : undefined;
-      const cloudEmpty = !cloudArr || cloudArr.length === 0;
-      const localHas = !!(localArr && localArr.length > 0);
-      if (cloudEmpty && localHas) {
-        (c as any)[key] = localArr;
-      }
-    }
-
-    return c;
+    return reconcileCloudCollections(
+      removeUndefined({ ...(cloud || {}) }),
+      removeUndefined({ ...(localDisk || {}) }),
+      ARRAY_MERGE_KEYS,
+    ) as Partial<UserData>;
   }
 
   private mergePayload(existing: Partial<UserData> | null, incoming: Partial<UserData>): Partial<UserData> {
