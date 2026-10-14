@@ -212,7 +212,7 @@ async function fetchSkiddleEventsForCode(
   }
 
   const mapped = mapSkiddleResponse(payload);
-  const filtered = filterSkiddleEventsByCategory(mapped, input.category);
+  const filtered = input.includeOtherCategories ? mapped : filterSkiddleEventsByCategory(mapped, input.category);
   return sortEventsByStartDate(filterUpcomingEvents(filtered));
 }
 
