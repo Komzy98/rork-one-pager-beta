@@ -153,6 +153,46 @@ app.get("/health", (c) => {
   });
 });
 
+/** Eventbrite production credential check. Never exposes the token or private account details. */
+app.get("/health/eventbrite", async (c) => {
+  const token = (process.env.EVENTBRITE_TOKEN || "").trim();
+  if (!token) {
+    return c.json({ ok: false, configured: false, authenticated: false, error: "EVENTBRITE_TOKEN is not configured" }, 503);
+  }
+  try {
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), 10000);
+    let response: Response;
+    try {
+      response = await fetch("https://www.eventbriteapi.com/v3/users/me/", {
+        headers: { Authorization: `Bearer ${token}`, Accept: "application/json" },
+        signal: controller.signal,
+      });
+    } finally {
+      clearTimeout(timeout);
+    }
+    if (!response.ok) {
+      return c.json({
+        ok: false,
+        configured: true,
+        authenticated: false,
+        providerStatus: response.status,
+        error: "Eventbrite credential validation failed",
+      }, 503);
+    }
+    const profile = await response.json() as { id?: string };
+    return c.json({
+      ok: Boolean(profile.id),
+      configured: true,
+      authenticated: Boolean(profile.id),
+      check: "eventbrite-account-auth",
+      timestamp: new Date().toISOString(),
+    }, profile.id ? 200 : 503);
+  } catch {
+    return c.json({ ok: false, configured: true, authenticated: false, error: "Eventbrite request failed" }, 503);
+  }
+});
+
 /** Railway smoke: guest web RSVP needs service role key + 006_guest_rsvps.sql. */
 app.get("/health/invite", async (c) => {
   try {
