@@ -11,7 +11,8 @@ type Booking = {
   city: string; address?: string; latitude: number; longitude: number;
   imageUrl?: string; ticketUrl?: string; description?: string;
 };
-const API_BASE = (process.env.EXPO_PUBLIC_RORK_API_BASE_URL || '').trim().replace(/\\/$/, '');
+const configuredBase = (process.env.EXPO_PUBLIC_RORK_API_BASE_URL || '').trim();
+const API_BASE = configuredBase.endsWith('/') ? configuredBase.slice(0, -1) : configuredBase;
 
 export function EventbriteBookingSync() {
   const { supabaseUser, isGuest } = useAuth();
