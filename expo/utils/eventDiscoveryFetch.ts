@@ -39,6 +39,8 @@ export type DiscoveryFetchInput = {
   longitude: number;
   radiusMiles: number;
   category?: string;
+  /** Retain out-of-bucket items for server-side cross-category rebucketing. */
+  includeOtherCategories?: boolean;
   size: number;
   /** Artist, venue, or event name — forwarded to all configured providers. */
   keyword?: string;
@@ -288,7 +290,7 @@ export async function fetchMergedDiscoveryEvents(
 
   const merged = mergeDiscoveryEvents([eventbriteEvents, ticketmasterEvents, skiddleEvents], input.size);
   const events =
-    input.category && input.category !== 'all' && !input.keyword?.trim()
+    input.category && input.category !== 'all' && !input.keyword?.trim() && !input.includeOtherCategories
       ? merged.filter((event) => eventMatchesBentoCategory(event, input.category!))
       : merged;
 
