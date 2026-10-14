@@ -66,6 +66,7 @@ import { EventsMapMarker } from '@/components/events/EventsMapMarker';
 import { EventsSaveToast } from '@/components/events/EventsSaveToast';
 import { EventsStatsRow } from '@/components/events/EventsStatsRow';
 import { EventPlanShortcuts } from '@/components/events/EventPlanShortcuts';
+import { EventsWeekendPlanner } from '@/components/events/EventsWeekendPlanner';
 import { EventFeedbackPrompt } from '@/components/events/EventFeedbackPrompt';
 import { SavedEventsWeekTimeline } from '@/components/events/SavedEventsWeekTimeline';
 import { CombinedNightOutPrompt } from '@/components/events/CombinedNightOutPrompt';
@@ -230,6 +231,7 @@ function EventsScreenInner() {
   const [discoveryTab, setDiscoveryTab] = useState<DiscoveryTabKey>('forYou');
   const [toastMessage, setToastMessage] = useState<string | null>(null);
   const [planLoading, setPlanLoading] = useState<'tonight' | 'weekend' | null>(null);
+  const [weekendPlannerOpen, setWeekendPlannerOpen] = useState(false);
   const [expandedCombinedDayKey, setExpandedCombinedDayKey] = useState<string | null>(null);
   const [dismissedCombinedDayKeys, setDismissedCombinedDayKeys] = useState<Set<string>>(new Set());
   const [rsvpPendingByEventId, setRsvpPendingByEventId] = useState<Record<string, PlanRsvpStatus | null>>({});
@@ -730,23 +732,10 @@ function EventsScreenInner() {
     }
   }, [addToOnePager, tonightCandidates]);
 
-  const handleBuildWeekend = useCallback(async () => {
-    if (weekendCandidates.length === 0) return;
-    setPlanLoading('weekend');
-    try {
-      for (const event of weekendCandidates) {
-        await addToOnePager(event);
-      }
-      setToastMessage(
-        weekendCandidates.length === 1
-          ? 'Added 1 event to build your weekend'
-          : `Added ${weekendCandidates.length} events to build your weekend`,
-      );
-      void Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
-    } finally {
-      setPlanLoading(null);
-    }
-  }, [addToOnePager, weekendCandidates]);
+  const handleBuildWeekend = useCallback(() => {
+    setWeekendPlannerOpen(true);
+  }, []);
+
 
   const smartDiscoveryEvents =
     discoveryTab === 'weekend'
@@ -1548,6 +1537,15 @@ function EventsScreenInner() {
         </>
       )}
       </KeyboardAwareScrollView>
+
+      <EventsWeekendPlanner
+        visible={weekendPlannerOpen}
+        events={rankEventsForYou(filteredEvents, recommendationInput)}
+        palette={palette}
+        isSaved={isSaved}
+        onClose={() => setWeekendPlannerOpen(false)}
+        onSave={async (event) => { await addToOnePager(event); setToastMessage('Event saved — choose Planning or Going in My Events'); }}
+      />
 
       <EventsSaveToast
         message={toastMessage}
