@@ -43,6 +43,8 @@ export const [UserProfileProvider, useUserProfile] = createContextHook(() => {
   const loadedUserIdRef = useRef<string | null>(null);
   /** Latest profile for synchronous merges — avoids back-to-back updateProfile clobbering fields. */
   const profileRef = useRef<UserProfile | null>(null);
+  /** Serialize writes so rapid event updates cannot be persisted out of order. */
+  const profileWriteQueueRef = useRef<Promise<void>>(Promise.resolve());
 
   useEffect(() => {
     profileRef.current = profile;
@@ -427,56 +429,52 @@ export const [UserProfileProvider, useUserProfile] = createContextHook(() => {
     return undefined;
   }, [teamLogos]);
 
-  const saveProfile = async (newProfile: UserProfile) => {
+  const saveProfile = async (newProfile: UserProfile): Promise<void> => {
     if (!user) return;
     if (!dataOwnedBySession(user.id, newProfile.id)) {
-      console.error('❌ [Profile] Refusing to save — profile id does not match signed-in user');
-      return;
+      throw new Error('Cannot save a profile belonging to a different account.');
     }
+    const ownerId = user.id;
     const toSave: UserProfile = {
-      ...sanitizeUserProfileForSession(user.id, newProfile),
-      id: user.id,
+      ...sanitizeUserProfileForSession(ownerId, newProfile),
+      id: ownerId,
       email: user.email,
     };
 
+    // Publish the state immediately. Other operations use profileRef to see
+    // the latest savedEvents, even before React has committed a render.
     profileRef.current = toSave;
     setProfile(toSave);
-    console.log('✅ [Profile] Profile state updated optimistically');
-    
-    try {
-      const storageKey = `@user_profile_${user.id}`;
-      console.log('💾 [Profile] Saving profile:', {
-        platform: Platform.OS,
-        userId: user.id,
-        favoriteTeamsCount: toSave.favoriteTeams?.length || 0,
-        favoriteTeams: toSave.favoriteTeams?.map(t => t.name) || []
-      });
-      
+
+    const persist = async () => {
+      const storageKey = `@user_profile_${ownerId}`;
       await unifiedStorage.setItem(storageKey, JSON.stringify(toSave));
-      console.log('✅ [Profile] Profile saved to storage on', Platform.OS);
-      
-      if (userId && supabaseSync.saveToCloud) {
+      // Cloud sync is best effort; failure must not undo an on-device save.
+      if (supabaseSync.saveToCloud) {
         try {
           await supabaseSync.saveToCloud({ userProfile: toSave });
-          console.log('✅ [Profile] User profile synced to Supabase');
-        } catch (syncError) {
-          console.warn('⚠️ [Profile] Supabase sync failed for user profile, data saved locally:', syncError);
+        } catch (error) {
+          console.warn('[Profile] Cloud sync unavailable; local changes kept:', error);
         }
       }
-    } catch (error) {
-      console.error('❌ [Profile] Error saving user profile:', error);
-    }
+    };
+    const queued = profileWriteQueueRef.current.then(persist, persist);
+    // Keep the queue reusable even after an individual storage failure.
+    profileWriteQueueRef.current = queued.catch(() => {});
+    await queued;
   };
 
-  const updateProfile = (updates: Partial<UserProfile>) => {
+  const updateProfile = (updates: Partial<UserProfile> | ((current: UserProfile) => Partial<UserProfile>)): Promise<void> => {
     const current = profileRef.current ?? profile;
-    if (!current || !user?.id) return;
+    if (!current || !user?.id) return Promise.resolve();
     if (!dataOwnedBySession(user.id, current.id)) {
-      console.error('❌ [Profile] Refusing to update — loaded profile belongs to another user');
-      return;
+      return Promise.reject(new Error('Cannot update a profile belonging to another account.'));
     }
-    const updatedProfile = { ...current, ...updates, id: user.id, email: user.email };
-    void saveProfile(updatedProfile);
+    // Functional patches are evaluated against the latest in-memory profile,
+    // not a closure holding an older savedEvents array.
+    const patch = typeof updates === 'function' ? updates(current) : updates;
+    const updatedProfile = { ...current, ...patch, id: user.id, email: user.email };
+    return saveProfile(updatedProfile);
   };
 
   const addFavoriteTeam = (team: UserTeam) => {
