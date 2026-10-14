@@ -214,6 +214,7 @@ function EventsScreenInner() {
     isSaved,
     toggleSaved,
     addToOnePager,
+    setPlanningStatus,
     savedSnapshots,
     eventsNeedingFeedback,
     recordEventFeedback,
@@ -1533,6 +1534,8 @@ function EventsScreenInner() {
                 rsvpLoading={!!rsvpPendingByEventId[event.id]}
                 pendingRsvpStatus={rsvpPendingByEventId[event.id] ?? null}
                 onPress={openEventDetail}
+                planningStatus={savedSnapshots.find(snapshot => snapshot.id === event.id)?.planningStatus ?? 'interested'}
+                onPlanningStatusChange={(eventId, status) => { void setPlanningStatus(eventId, status); }}
                 onAddToOnePager={handleAddToOnePager}
                 onRemind={handleRemind}
                 onAddToCalendar={handleAddToCalendar}
