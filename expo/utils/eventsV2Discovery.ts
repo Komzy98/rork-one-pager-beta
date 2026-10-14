@@ -48,3 +48,25 @@ export function isWeekendEvent(event: LocalEvent, now = new Date()): boolean {
   monday.setDate(friday.getDate() + 3);
   return start >= now && start >= friday && start < monday;
 }
+
+
+/** Diversity-first discovery: surface one event per category before repeating categories. */
+export function chooseExploreEvents(events: LocalEvent[], limit = 8): LocalEvent[] {
+  const groups = new Map<string, LocalEvent[]>();
+  for (const event of events) {
+    const category = event.category || 'other';
+    const bucket = groups.get(category) ?? [];
+    bucket.push(event);
+    groups.set(category, bucket);
+  }
+  const result: LocalEvent[] = [];
+  while (result.length < limit && groups.size > 0) {
+    for (const [category, bucket] of groups) {
+      const next = bucket.shift();
+      if (next) result.push(next);
+      if (!bucket.length) groups.delete(category);
+      if (result.length >= limit) break;
+    }
+  }
+  return result;
+}
