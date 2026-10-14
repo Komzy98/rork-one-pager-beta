@@ -867,7 +867,7 @@ function EventsScreenInner() {
         contentContainerStyle={[
           styles.scrollContent,
           {
-            paddingTop: showCinematicHero ? 0 : insets.top + 8,
+            paddingTop: insets.top + 8,
             paddingBottom: 120 + insets.bottom,
           },
         ]}
@@ -879,29 +879,8 @@ function EventsScreenInner() {
         keyboardShouldPersistTaps="handled"
         nestedScrollEnabled
       >
-      {showCinematicHero && isPreviewLoading ? (
-        <EventsHeroSkeleton palette={palette} />
-      ) : null}
-      {showCinematicHero && !isPreviewLoading ? (
-        <PremiumEventHeroCard
-          events={heroEvents}
-          scrollY={scrollY}
-          palette={palette}
-          areaLabel={areaLabel ?? undefined}
-          safeAreaTop={insets.top}
-          onePagerThisWeekLabel={onePagerThisWeekLabel}
-          concierge={eventConcierge}
-          getRecommendationChipLabel={(event) => getChipLabel(event)}
-          onPressEvent={openEventDetail}
-          onAddToOnePager={handleAddToOnePager}
-          onInterested={handleToggleSavedWithToast}
-          onOpenTickets={handleOpenTickets}
-        />
-      ) : null}
-
       <View style={[styles.header, showCinematicHero && styles.headerCompact]}>
-        {!showCinematicHero ? (
-          <View style={styles.headerContent}>
+        <View style={styles.headerContent}>
             <View style={styles.headerLeft}>
               {mainTab === 'myEvents' ? (
                 <TouchableOpacity
@@ -931,34 +910,8 @@ function EventsScreenInner() {
                 </Text>
               </View>
             </View>
-            <View style={styles.headerActions}>
-              {mainTab === 'discover' ? (
-                <TouchableOpacity
-                  style={[styles.viewToggle, {
-                    backgroundColor: viewMode === 'map' ? accentColor : cardBg,
-                  }]}
-                  onPress={toggleViewMode}
-                  activeOpacity={0.7}
-                >
-                  <Animated.View style={{
-                    transform: [{
-                      rotate: viewToggleAnim.interpolate({
-                        inputRange: [0, 1],
-                        outputRange: ['0deg', '180deg'],
-                      }),
-                    }],
-                  }}>
-                    {viewMode === 'list' ? (
-                      <Map size={18} color={accentColor} />
-                    ) : (
-                      <List size={18} color={inverseText} />
-                    )}
-                  </Animated.View>
-                </TouchableOpacity>
-              ) : null}
-            </View>
+
           </View>
-        ) : null}
 
         <View style={[styles.searchBar, { backgroundColor: cardBg, borderColor: cardBorder }]}>
           <Search size={18} color={subtleText} />
@@ -974,6 +927,13 @@ function EventsScreenInner() {
               <X size={16} color={subtleText} />
             </TouchableOpacity>
           )}
+          {mainTab === 'discover' ? (
+            <TouchableOpacity accessibilityRole="button" accessibilityLabel={viewMode === 'list' ? 'View events on map' : 'View events as list'}
+              style={[styles.mapFab, { backgroundColor: viewMode === 'map' ? accentColor : cardBg, borderColor: cardBorder }]}
+              onPress={toggleViewMode}>
+              {viewMode === 'list' ? <Map size={18} color={accentColor} /> : <List size={18} color={inverseText} />}
+            </TouchableOpacity>
+          ) : null}
         </View>
 
         <View style={[styles.mainTabRow, showCinematicHero && styles.mainTabRowCompact]}>
@@ -1003,21 +963,43 @@ function EventsScreenInner() {
               My Events{savedCount > 0 ? ` (${savedCount})` : ''}
             </Text>
           </TouchableOpacity>
-          {mainTab === 'discover' ? (
-            <TouchableOpacity
-              style={[styles.mapFab, { backgroundColor: viewMode === 'map' ? accentColor : cardBg, borderColor: cardBorder }]}
-              onPress={toggleViewMode}
-              activeOpacity={0.85}
-            >
-              {viewMode === 'list' ? (
-                <Map size={18} color={accentColor} />
-              ) : (
-                <List size={18} color={inverseText} />
-              )}
-            </TouchableOpacity>
-          ) : null}
-        </View>
+       </View>
       </View>
+
+      {showCinematicHero && isPreviewLoading ? (
+        <EventsHeroSkeleton palette={palette} />
+      ) : null}
+      {showCinematicHero && !isPreviewLoading ? (
+        <PremiumEventHeroCard
+          events={heroEvents}
+          scrollY={scrollY}
+          palette={palette}
+          areaLabel={areaLabel ?? undefined}
+          safeAreaTop={insets.top}
+          onePagerThisWeekLabel={onePagerThisWeekLabel}
+          concierge={eventConcierge}
+          getRecommendationChipLabel={(event) => getChipLabel(event)}
+          onPressEvent={openEventDetail}
+          onAddToOnePager={handleAddToOnePager}
+          onInterested={handleToggleSavedWithToast}
+          onOpenTickets={handleOpenTickets}
+        />
+      ) : null}
+
+      {mainTab === 'discover' && viewMode === 'list' && !inSearchMode ? (
+        <TouchableOpacity accessibilityRole="button" accessibilityLabel="Plan your weekend"
+          onPress={() => setWeekendPlannerOpen(true)}
+          style={{ marginHorizontal: 16, marginTop: 12, marginBottom: 8, borderRadius: 16,
+            borderWidth: 1, borderColor: cardBorder, backgroundColor: cardBg,
+            paddingHorizontal: 16, paddingVertical: 14, flexDirection: 'row', alignItems: 'center', gap: 12 }}>
+          <CalendarDays size={21} color={accentColor} />
+          <View style={{ flex: 1 }}>
+            <Text style={{ color: mainText, fontWeight: '700', fontSize: 15 }}>Plan your weekend</Text>
+            <Text style={{ color: subtleText, fontSize: 12, marginTop: 3 }}>Discover plans that fit your budget, mood and travel</Text>
+          </View>
+          <ChevronRight size={19} color={accentColor} />
+        </TouchableOpacity>
+      ) : null}
 
       {mainTab === 'discover' && eventsSource === 'fallback' && (
         <View style={[styles.liveBanner, { backgroundColor: secondaryBg, borderColor: cardBorder }]}>
