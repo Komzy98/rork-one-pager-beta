@@ -8,7 +8,10 @@ import {
 
 describe('footballKickoffLabel', () => {
   it('includes kickoff time with Tomorrow', () => {
-    const label = formatFootballKickoffLabel('2026-07-06', '15:00');
+    const tomorrow = new Date();
+    tomorrow.setDate(tomorrow.getDate() + 1);
+    const date = [tomorrow.getFullYear(), String(tomorrow.getMonth() + 1).padStart(2, '0'), String(tomorrow.getDate()).padStart(2, '0')].join('-');
+    const label = formatFootballKickoffLabel(date, '15:00');
     assert.match(label, /Tomorrow/);
     assert.match(label, /15:00/);
   });
