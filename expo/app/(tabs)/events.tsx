@@ -1545,6 +1545,7 @@ function EventsScreenInner() {
 
       <EventsWeekendPlanner
         visible={weekendPlannerOpen}
+        userCoords={permissionDenied ? null : userCoords}
         events={rankEventsForYou(filteredEvents, recommendationInput)}
         palette={palette}
         isSaved={isSaved}
