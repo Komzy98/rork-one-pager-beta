@@ -2,7 +2,7 @@ import React, { useCallback, useMemo } from 'react';
 import { StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 import { Bell, Calendar, MapPin, Navigation, Sparkles } from 'lucide-react-native';
 import * as Haptics from 'expo-haptics';
-import type { LocalEvent } from '@/types/events';
+import type { LocalEvent, EventPlanningStatus } from '@/types/events';
 import { buildNightOutPlan } from '@/utils/eventNightOutPlanner';
 import { getEventCountdownLabel } from '@/utils/eventDiscovery';
 import { getEventCategoryMeta } from '@/utils/eventCategoryMeta';
@@ -26,6 +26,8 @@ interface PremiumSavedEventCardProps {
   onDirections: (event: LocalEvent) => void;
   onRsvp?: (event: LocalEvent, status: PlanRsvpStatus) => void | Promise<void>;
   onInviteFriends?: (event: LocalEvent) => void;
+  planningStatus?: EventPlanningStatus;
+  onPlanningStatusChange?: (eventId: string, status: EventPlanningStatus) => void;
 }
 
 export const PremiumSavedEventCard = React.memo(function PremiumSavedEventCard({
@@ -43,6 +45,8 @@ export const PremiumSavedEventCard = React.memo(function PremiumSavedEventCard({
   onDirections,
   onRsvp,
   onInviteFriends,
+  planningStatus = 'interested',
+  onPlanningStatusChange,
 }: PremiumSavedEventCardProps) {
   const categoryMeta = getEventCategoryMeta(event.category);
   const CategoryIcon = categoryMeta.icon;
@@ -91,6 +95,26 @@ export const PremiumSavedEventCard = React.memo(function PremiumSavedEventCard({
             onRsvp={onRsvp ? (status) => onRsvp(event, status) : undefined}
             onInviteFriends={onInviteFriends ? () => onInviteFriends(event) : undefined}
           />
+        </View>
+      ) : null}
+
+      {onPlanningStatusChange ? (
+        <View style={{ flexDirection: 'row', gap: 8, marginTop: 12, marginBottom: 4 }}>
+          {(['interested', 'planning', 'going'] as const).map(status => (
+            <TouchableOpacity
+              key={status}
+              accessibilityRole="button"
+              accessibilityState={{ selected: planningStatus === status }}
+              onPress={(e) => { e.stopPropagation(); onPlanningStatusChange(event.id, status); }}
+              style={{ paddingHorizontal: 12, paddingVertical: 8, borderRadius: 100, borderWidth: 1,
+                borderColor: planningStatus === status ? palette.primary : palette.border,
+                backgroundColor: planningStatus === status ? palette.primaryLight : palette.card }}
+            >
+              <Text style={{ color: planningStatus === status ? palette.primary : palette.textSecondary, fontSize: 12, fontWeight: '600' }}>
+                {status === 'interested' ? 'Interested' : status === 'planning' ? 'Planning' : 'Going'}
+              </Text>
+            </TouchableOpacity>
+          ))}
         </View>
       ) : null}
 
