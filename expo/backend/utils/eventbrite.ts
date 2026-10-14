@@ -37,7 +37,7 @@ export async function fetchOwnPublicEventbriteEvents(token = getEventbriteToken(
   const organisations = await eventbriteGet<OrganisationResponse>('/users/me/organizations/', token, fetcher);
   const results: EventbriteEvent[] = [];
   for (const organisation of (organisations.organizations ?? []).slice(0, 10)) {
-    if (!/^\\d+$/.test(organisation.id)) continue;
+    if (!/^[0-9]+$/.test(organisation.id)) continue;
     let continuation: string | undefined;
     for (let page = 0; page < 3; page += 1) {
       const query = '?status=live&expand=venue' + (continuation ? '&continuation=' + encodeURIComponent(continuation) : '');
