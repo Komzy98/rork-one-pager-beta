@@ -112,7 +112,7 @@ export interface LocalEvent {
   marketCode?: string;
 }
 
-export type NearbyEventsSource = 'ticketmaster' | 'skiddle' | 'mixed' | 'fallback' | 'none';
+export type NearbyEventsSource = 'ticketmaster' | 'skiddle' | 'eventbrite' | 'mixed' | 'fallback' | 'none';
 
 export interface NearbyEventsResult {
   events: LocalEvent[];
