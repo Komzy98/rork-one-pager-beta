@@ -2,7 +2,6 @@ import React, { useCallback, useEffect, useRef, useState } from 'react';
 import {
   Animated,
   Dimensions,
-  Image,
   NativeScrollEvent,
   NativeSyntheticEvent,
   ScrollView,
@@ -20,6 +19,7 @@ import type { EventConciergeNarrative as ConciergeCopy } from '@/utils/eventConc
 import type { EventsPalette } from '@/utils/eventsPalette';
 import { EventRecommendationBadge } from '@/components/events/EventRecommendationBadge';
 import { EventConciergeNarrative } from '@/components/events/EventConciergeNarrative';
+import { getLogicalCategoryIds } from '@/utils/eventCategories';
 
 const { width: SCREEN_WIDTH } = Dimensions.get('window');
 const HERO_HEIGHT = 360;
@@ -52,7 +52,6 @@ interface HeroSlideProps {
   onAddToOnePager: (event: LocalEvent) => void;
   onInterested: (event: LocalEvent) => void;
   onOpenTickets: (event: LocalEvent) => void;
-  approvedImage?: boolean;
 }
 
 function HeroSlide({
@@ -65,7 +64,6 @@ function HeroSlide({
   onAddToOnePager,
   onInterested,
   onOpenTickets,
-  approvedImage,
 }: HeroSlideProps) {
   const scaleAnim = useRef(new Animated.Value(1)).current;
   const hasConcierge = index === 0 && !!concierge;
@@ -87,7 +85,17 @@ function HeroSlide({
   const distanceText = formatDistanceKm(event.distanceKm ?? 0);
   const metaLine = [countdown, event.venue, distanceText].filter(Boolean).join(' · ');
   const heroTitle = shortenEventTitleForHero(event.title);
-  const imageUri = event.image?.trim() ?? '';
+  const category = getLogicalCategoryIds(event)[0] ?? 'events';
+  const themes: Record<string, { label: string; colors: [string, string, string]; glyph: string }> = {
+    sports: { label: 'SPORT & LIVE ACTION', colors: ['#0B1F34', '#153E58', '#091522'], glyph: '◈' },
+    music: { label: 'LIVE MUSIC', colors: ['#211A42', '#432967', '#101328'], glyph: '♫' },
+    nightlife: { label: 'AFTER DARK', colors: ['#27182F', '#522748', '#13111D'], glyph: '✦' },
+    comedy: { label: 'COMEDY & CULTURE', colors: ['#3B261A', '#6F402C', '#19181B'], glyph: '✳' },
+    arts: { label: 'ART & DESIGN', colors: ['#173E3D', '#305C52', '#111D22'], glyph: '◇' },
+    food: { label: 'FOOD & DRINK', colors: ['#3B2925', '#69513C', '#1A1B22'], glyph: '✳' },
+    theatre: { label: 'ON STAGE', colors: ['#2B1C35', '#583345', '#151525'], glyph: '✦' },
+  };
+  const theme = themes[category] ?? { label: 'CURATED EXPERIENCES', colors: ['#152A4A', '#273F64', '#101725'], glyph: '✦' };
 
   return (
     <TouchableOpacity
@@ -98,11 +106,13 @@ function HeroSlide({
       onPressOut={handlePressOut}
     >
       <Animated.View style={[styles.media, { transform: [{ scale: scaleAnim }] }]}>
-        {imageUri && approvedImage ? (
-          <Image source={{ uri: imageUri }} style={styles.image} resizeMode="cover" />
-        ) : (
-          <LinearGradient colors={[...palette.heroGradient]} style={styles.image} />
-        )}
+        <LinearGradient colors={theme.colors} style={styles.image} />
+        <View style={styles.artBackdrop} pointerEvents="none">
+          <Text style={styles.artGlyph}>{theme.glyph}</Text>
+          <View style={styles.artLine} />
+          <Text style={styles.artCategory}>{theme.label}</Text>
+          <Text style={styles.artBrand}>ONE PAGER / DISCOVER</Text>
+        </View>
         <LinearGradient colors={[...palette.heroScrim]} style={styles.scrim} />
         <LinearGradient
           colors={['rgba(30,38,96,0.18)', 'transparent']}
@@ -203,25 +213,8 @@ export const PremiumEventHeroCard = React.memo(function PremiumEventHeroCard({
   const pauseRotateUntilRef = useRef(0);
   const dismissedIndexRef = useRef<number | null>(null);
   const hasConcierge = !!concierge;
-  const [imageApproved, setImageApproved] = useState<Record<string, boolean>>({});
 
   const heroEventIds = events.map((event) => event.id).join(',');
-  useEffect(() => {
-    let valid = true;
-    events.forEach((event) => {
-      const uri = event.image?.trim();
-      if (!uri || !/^https?:\/\//i.test(uri)) return;
-      Image.getSize(uri, (width, height) => {
-        if (!valid) return;
-        const aspect = width / Math.max(1, height);
-        setImageApproved((prev) => ({ ...prev, [event.id]: width >= 1200 && height >= 700 && aspect >= 1.25 && aspect <= 2.8 }));
-      }, () => {
-        if (valid) setImageApproved((prev) => ({ ...prev, [event.id]: false }));
-      });
-    });
-    return () => { valid = false; };
-  }, [heroEventIds]);
-
   useEffect(() => {
     const nextIndex = Math.min(dismissedIndexRef.current ?? 0, Math.max(0, events.length - 1));
     dismissedIndexRef.current = null;
@@ -306,7 +299,36 @@ export const PremiumEventHeroCard = React.memo(function PremiumEventHeroCard({
         },
       ]}
     >
-      <View style={[styles.topRow, { paddingTop: safeAreaTop + 8 }]} pointerEvents="box-none">
+      <ScrollView
+        ref={scrollRef}
+        horizontal
+        pagingEnabled
+        nestedScrollEnabled
+        showsHorizontalScrollIndicator={false}
+        decelerationRate="fast"
+        bounces={events.length > 1}
+        onScrollBeginDrag={handleScrollBeginDrag}
+        onMomentumScrollEnd={handleMomentumScrollEnd}
+        scrollEventThrottle={16}
+        style={styles.carousel}
+        contentContainerStyle={events.length === 1 ? styles.carouselSingle : undefined}
+      >
+        {events.map((event, index) => (
+          <HeroSlide
+            key={event.id}
+            event={event}
+            index={index}
+            palette={palette}
+            concierge={concierge}
+            recommendationChipLabel={getRecommendationChipLabel?.(event)}
+            onPressEvent={onPressEvent}
+            onAddToOnePager={onAddToOnePager}
+            onInterested={onInterested}
+            onOpenTickets={onOpenTickets}
+          />
+        ))}
+      </ScrollView>
+      <View style={[styles.topRow, { paddingTop: 12 }]} pointerEvents="box-none">
         {hasConcierge ? (
           <View style={styles.conciergeEyebrow}>
             <Sparkles size={10} color="rgba(255,255,255,0.85)" />
@@ -352,41 +374,12 @@ export const PremiumEventHeroCard = React.memo(function PremiumEventHeroCard({
               onDismissEvent(selected.id);
             }}
           >
-            <X size={18} color="#FFFFFF" />
+            <X size={22} color="#15213A" strokeWidth={2.6} />
           </TouchableOpacity>
         ) : null}
       </View>
 
-      <ScrollView
-        ref={scrollRef}
-        horizontal
-        pagingEnabled
-        nestedScrollEnabled
-        showsHorizontalScrollIndicator={false}
-        decelerationRate="fast"
-        bounces={events.length > 1}
-        onScrollBeginDrag={handleScrollBeginDrag}
-        onMomentumScrollEnd={handleMomentumScrollEnd}
-        scrollEventThrottle={16}
-        style={styles.carousel}
-        contentContainerStyle={events.length === 1 ? styles.carouselSingle : undefined}
-      >
-        {events.map((event, index) => (
-          <HeroSlide
-            key={event.id}
-            event={event}
-            index={index}
-            palette={palette}
-            concierge={concierge}
-            approvedImage={imageApproved[event.id] === true}
-            recommendationChipLabel={getRecommendationChipLabel?.(event)}
-            onPressEvent={onPressEvent}
-            onAddToOnePager={onAddToOnePager}
-            onInterested={onInterested}
-            onOpenTickets={onOpenTickets}
-          />
-        ))}
-      </ScrollView>
+
     </Animated.View>
   );
 });
@@ -428,6 +421,41 @@ const styles = StyleSheet.create({
     width: '100%',
     height: '100%',
   },
+  artBackdrop: {
+    position: 'absolute',
+    top: 64,
+    left: 26,
+    right: 26,
+    height: 156,
+    overflow: 'hidden',
+  },
+  artGlyph: {
+    position: 'absolute',
+    right: -12,
+    top: -42,
+    fontSize: 184,
+    fontWeight: '200',
+    color: 'rgba(255,255,255,0.12)',
+  },
+  artLine: {
+    width: 38,
+    height: 2,
+    backgroundColor: 'rgba(255,255,255,0.5)',
+    marginBottom: 10,
+  },
+  artCategory: {
+    fontSize: 12,
+    letterSpacing: 2.1,
+    color: 'rgba(255,255,255,0.65)',
+    fontWeight: '800',
+  },
+  artBrand: {
+    marginTop: 9,
+    fontSize: 10,
+    letterSpacing: 1.7,
+    color: 'rgba(255,255,255,0.38)',
+    fontWeight: '700',
+  },
   scrim: {
     ...StyleSheet.absoluteFillObject,
   },
@@ -435,22 +463,23 @@ const styles = StyleSheet.create({
     ...StyleSheet.absoluteFillObject,
   },
   dismissButton: {
-    width: 34,
-    height: 34,
-    borderRadius: 17,
-    backgroundColor: 'rgba(0,0,0,0.48)',
+    width: 44,
+    height: 44,
+    borderRadius: 22,
+    backgroundColor: '#FFFFFF',
     alignItems: 'center',
     justifyContent: 'center',
     marginLeft: 12,
     borderWidth: 1,
-    borderColor: 'rgba(255,255,255,0.25)',
+    borderColor: 'rgba(19,33,59,0.15)',
   },
   topRow: {
     position: 'absolute',
     top: 0,
     left: 20,
     right: 20,
-    zIndex: 2,
+    zIndex: 20,
+    elevation: 20,
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'flex-start',
