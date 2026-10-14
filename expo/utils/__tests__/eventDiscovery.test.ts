@@ -153,6 +153,17 @@ describe('eventDiscovery', () => {
 });
 
 describe('ticketmasterTransform', () => {
+  it('does not promote uncertain ticket statuses as future events', () => {
+    for (const status of ['cancelled', 'postponed', 'rescheduled']) {
+      const event = mapTicketmasterEvent({
+        id: 'changed-1', name: 'Changed Event',
+        dates: { status: { code: status } },
+        _embedded: { venues: [{ name: 'Venue', location: { latitude: '53.4', longitude: '-2.2' } }] },
+      });
+      assert.equal(event, null);
+    }
+  });
+
   it('maps a Ticketmaster event payload', () => {
     const raw = {
       id: 'abc123',
