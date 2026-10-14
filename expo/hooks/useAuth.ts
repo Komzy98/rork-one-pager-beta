@@ -29,6 +29,7 @@ import {
 } from '@/utils/localToSupabaseMigration';
 import { resetYounifySession, setYounifyExternalUserId } from '@/services/younify';
 import { purgeAccountSessionState } from '@/utils/accountIsolation';
+import { shouldClearCachedIdentity } from '@/utils/authEventPolicy';
 import { likedContentService } from '@/utils/likedContentService';
 import { episodeNotificationService } from '@/utils/episodeNotificationService';
 import notificationService from '@/utils/notificationService';
@@ -230,6 +231,8 @@ export const [AuthProvider, useAuth] = createContextHook(() => {
   const [mfaLoading, setMfaLoading] = useState<boolean>(false);
   const authBootstrapDoneRef = useRef(false);
   const priorSignedInUserIdRef = useRef<string | null>(null);
+  const activeSupabaseSessionUserIdRef = useRef<string | null>(null);
+  const explicitSignOutRef = useRef(false);
 
   /** Purge caches + SDK state whenever the signed-in user id changes (including sign-out). */
   useEffect(() => {
@@ -293,7 +296,16 @@ export const [AuthProvider, useAuth] = createContextHook(() => {
 
   const applySupabaseSession = useCallback(async (sessionUser: any) => {
     if (!sessionUser) return;
-    await purgeAccountSessionState('sign_in');
+    // TOKEN_REFRESHED and SIGNED_IN can fire again for the SAME session.
+    // Reapplying sign-in used to wipe in-memory account caches on every refresh.
+    if (activeSupabaseSessionUserIdRef.current === sessionUser.id) {
+      setSupabaseUser(sessionUser);
+      return;
+    }
+    const previousSessionId = activeSupabaseSessionUserIdRef.current;
+    activeSupabaseSessionUserIdRef.current = sessionUser.id;
+    explicitSignOutRef.current = false;
+    await purgeAccountSessionState(previousSessionId ? 'switch' : 'sign_in');
     const meta = sessionUser.user_metadata || {};
     const firstName: string = meta.firstName || (meta.full_name ? String(meta.full_name).split(' ')[0] : '') || '';
     const lastName: string = meta.lastName || (meta.full_name ? String(meta.full_name).split(' ').slice(1).join(' ') : '') || '';
@@ -430,6 +442,23 @@ export const [AuthProvider, useAuth] = createContextHook(() => {
 
           if (event === 'SIGNED_OUT') {
             if (!authBootstrapDoneRef.current) return;
+            if (!shouldClearCachedIdentity(event, explicitSignOutRef.current)) {
+              // A failed token refresh may emit SIGNED_OUT during an unrelated
+              // mutation. Do not destroy the user's local session or profile.
+              // Secure cloud operations still require a valid Supabase token.
+              console.warn('[Auth] Unexpected SIGNED_OUT; retaining local session while attempting recovery');
+              // Defer Supabase API calls until this auth callback has returned;
+              // requesting a session while the auth lock is held can deadlock.
+              setTimeout(() => {
+                void recoverSupabaseSession().then((recovered) => {
+                  if (recovered?.user && isMounted) void applySupabaseSession(recovered.user);
+                }).catch((error) => {
+                  console.warn('[Auth] Session recovery unavailable:', error);
+                });
+              }, 0);
+              return;
+            }
+            activeSupabaseSessionUserIdRef.current = null;
             if (isMounted) {
               setUser(null);
               setSupabaseUser(null);
@@ -896,6 +925,7 @@ export const [AuthProvider, useAuth] = createContextHook(() => {
   }, []);
 
   const logout = useCallback(async () => {
+    explicitSignOutRef.current = true;
     try {
       const currentUserId = user?.id;
       await purgeAccountSessionState('logout');
@@ -1043,6 +1073,7 @@ export const [AuthProvider, useAuth] = createContextHook(() => {
       }
       setAutoSyncEnabled(false);
       if (supabaseConfigured) {
+        explicitSignOutRef.current = true;
         try {
           await supabase.auth.signOut();
         } catch (e) {

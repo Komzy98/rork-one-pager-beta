@@ -16,6 +16,7 @@ import { useAuth } from '@/hooks/useAuth';
 import { useFriends } from '@/hooks/useFriends';
 import { publishEventSave, unpublishEventSave } from '@/utils/sharedPlansService';
 import { mergeSocialPrivacy, shouldPublishEventSaves } from '@/utils/socialPrivacy';
+import { addSavedEvent, removeSavedEvent } from '@/utils/savedEventList';
 
 function eventExperienceTags(snapshot: Pick<SavedEventSnapshot, 'category' | 'tags' | 'subCategory'>) {
   return [snapshot.category, snapshot.subCategory, ...(snapshot.tags ?? [])].filter((value): value is string => Boolean(value));
@@ -48,53 +49,59 @@ export function useSavedEvents() {
 
   const addToOnePager = useCallback(
     async (event: LocalEvent) => {
-      const existing = savedSnapshots.find((e) => e.id === event.id);
-      if (existing) return existing;
-
       const snapshot = localEventToSavedSnapshot(event);
-      const next = [snapshot, ...savedSnapshots.filter((e) => e.id !== event.id)].slice(0, 50);
-      await updateProfile({ savedEvents: next });
-      await experience.record({
-        kind: 'event',
-        subjectId: snapshot.id,
-        title: snapshot.title,
-        action: 'chosen',
-        tags: eventExperienceTags(snapshot),
-        source: 'saved-event',
+      let added = false;
+      await updateProfile((current) => {
+        const snapshots = current.savedEvents ?? [];
+        if (snapshots.some((entry) => entry.id === event.id)) return {};
+        added = true;
+        return { savedEvents: addSavedEvent(snapshots, snapshot) };
       });
-      void Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+      if (!added) return snapshot;
+      await experience.record({
+        kind: 'event', subjectId: snapshot.id, title: snapshot.title,
+        action: 'chosen', tags: eventExperienceTags(snapshot), source: 'saved-event',
+      });
+      void Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success).catch(() => {});
       void logEventSaved(event);
       if (shareSavesWithFriends && supabaseUser?.id) {
         void publishEventSave(supabaseUser.id, snapshot).catch(() => {});
       }
       return snapshot;
     },
-    [savedSnapshots, updateProfile, experience.record, logEventSaved, shareSavesWithFriends, supabaseUser?.id]
+    [updateProfile, experience.record, logEventSaved, shareSavesWithFriends, supabaseUser?.id]
   );
 
   const setPlanningStatus = useCallback(
     async (eventId: string, status: EventPlanningStatus) => {
-      if (!savedIds.has(eventId)) return;
-      const next = savedSnapshots.map(snapshot =>
-        snapshot.id === eventId ? { ...snapshot, planningStatus: status } : snapshot
-      );
-      await updateProfile({ savedEvents: next });
-      void Haptics.selectionAsync();
+      await updateProfile((current) => {
+        const snapshots = current.savedEvents ?? [];
+        if (!snapshots.some((entry) => entry.id === eventId)) return {};
+        return { savedEvents: snapshots.map(snapshot =>
+          snapshot.id === eventId ? { ...snapshot, planningStatus: status } : snapshot
+        ) };
+      });
+      void Haptics.selectionAsync().catch(() => {});
     },
-    [savedIds, savedSnapshots, updateProfile],
+    [updateProfile],
   );
 
   const removeFromOnePager = useCallback(
     async (eventId: string) => {
-      if (!savedIds.has(eventId)) return;
-      const next = savedSnapshots.filter((e) => e.id !== eventId);
-      await updateProfile({ savedEvents: next });
-      void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+      let removed = false;
+      await updateProfile((current) => {
+        const snapshots = current.savedEvents ?? [];
+        if (!snapshots.some((entry) => entry.id === eventId)) return {};
+        removed = true;
+        return { savedEvents: removeSavedEvent(snapshots, eventId) };
+      });
+      if (!removed) return;
+      void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light).catch(() => {});
       if (shareSavesWithFriends && supabaseUser?.id) {
         void unpublishEventSave(supabaseUser.id, eventId).catch(() => {});
       }
     },
-    [savedIds, savedSnapshots, updateProfile, shareSavesWithFriends, supabaseUser?.id]
+    [updateProfile, shareSavesWithFriends, supabaseUser?.id]
   );
 
   const toggleSaved = useCallback(

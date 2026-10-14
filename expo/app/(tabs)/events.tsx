@@ -355,22 +355,31 @@ function EventsScreenInner() {
 
   const handleAddToOnePager = useCallback(
     async (event: Event) => {
-      if (isSaved(event.id)) {
-        await toggleSaved(event);
-        return;
+      try {
+        if (isSaved(event.id)) {
+          await toggleSaved(event);
+          setToastMessage('Removed from One Pager');
+          return;
+        }
+        await addToOnePager(event);
+        setToastMessage('Added to One Pager');
+      } catch (error) {
+        console.warn('[Events] Could not change saved event:', error);
+        setToastMessage('Could not update event. Please try again.');
       }
-      await addToOnePager(event);
-      setToastMessage('Added to One Pager');
     },
     [addToOnePager, isSaved, toggleSaved]
   );
 
   const handleToggleSavedWithToast = useCallback(
     async (event: Event) => {
-      const wasSaved = isSaved(event.id);
-      await toggleSaved(event);
-      if (!wasSaved) {
-        setToastMessage('Added to One Pager');
+      try {
+        const wasSaved = isSaved(event.id);
+        await toggleSaved(event);
+        setToastMessage(wasSaved ? 'Removed from One Pager' : 'Added to One Pager');
+      } catch (error) {
+        console.warn('[Events] Could not change saved event:', error);
+        setToastMessage('Could not update event. Please try again.');
       }
     },
     [isSaved, toggleSaved]
