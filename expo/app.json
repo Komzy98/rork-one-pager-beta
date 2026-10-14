@@ -24,7 +24,7 @@
     "ios": {
       "supportsTablet": true,
       "bundleIdentifier": "app.rork.OPbeta",
-      "buildNumber": "96",
+      "buildNumber": "98",
       "associatedDomains": [
         "applinks:join.onepagerapp.co.uk"
       ],
@@ -59,7 +59,8 @@
           "peacock",
           "paramountplus",
           "waze"
-        ]
+        ],
+        "NSHealthUpdateUsageDescription": "One Pager does not write or modify your Apple Health data. Health access is read-only and is used to read your step count for progress and relevant activity suggestions."
       },
       "config": {
         "usesNonExemptEncryption": false
