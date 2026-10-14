@@ -11,7 +11,7 @@ import type { LucideIcon } from 'lucide-react-native';
 import * as Haptics from 'expo-haptics';
 import type { EventsPalette } from '@/utils/eventsPalette';
 
-export type DiscoveryTabKey = 'now' | 'near' | 'forYou' | 'thisWeek' | 'friendsPicks' | 'weekend' | 'budget';
+export type DiscoveryTabKey = 'now' | 'near' | 'forYou' | 'thisWeek' | 'friendsPicks' | 'weekend' | 'budget' | 'explore';
 
 export interface DiscoveryPillTab {
   key: DiscoveryTabKey;
