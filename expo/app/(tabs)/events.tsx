@@ -72,6 +72,7 @@ import { EventFeedbackPrompt } from '@/components/events/EventFeedbackPrompt';
 import { SavedEventsWeekTimeline } from '@/components/events/SavedEventsWeekTimeline';
 import { CombinedNightOutPrompt } from '@/components/events/CombinedNightOutPrompt';
 import { PremiumSavedEventCard } from '@/components/events/PremiumSavedEventCard';
+import { EventbriteBookingSync } from '@/components/events/EventbriteBookingSync';
 import { EventConciergeFeedBanner } from '@/components/events/EventConciergeFeedBanner';
 import FeedRetryBanner from '@/components/FeedRetryBanner';
 import DiscoveryScopeChip from '@/components/events/DiscoveryScopeChip';
@@ -1437,6 +1438,7 @@ function EventsScreenInner() {
 
       {mainTab === 'myEvents' && (
         <>
+          <EventbriteBookingSync />
           {eventsNeedingFeedback[0] ? (
             <EventFeedbackPrompt
               snapshot={eventsNeedingFeedback[0]}
