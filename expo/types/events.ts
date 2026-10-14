@@ -12,6 +12,8 @@ export type EventCategory =
   | 'family'
   | 'other';
 
+export type EventPlanningStatus = 'interested' | 'planning' | 'going';
+
 export type OnePagerEventSource = 'mock' | 'ticketmaster' | 'skiddle' | 'manual';
 
 /** Normalised event shape used across discovery, detail, and AI. */
@@ -65,6 +67,7 @@ export interface SavedEventSnapshot {
   ticketUrl?: string;
   source: OnePagerEventSource;
   savedAt: string;
+  planningStatus?: EventPlanningStatus;
   dateLabel?: string;
   timeLabel?: string;
   tags?: string[];
