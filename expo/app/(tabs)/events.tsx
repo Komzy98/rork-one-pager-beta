@@ -506,7 +506,8 @@ function EventsScreenInner() {
   const mainText = palette.text;
   const secondaryBg = palette.surfaceLight;
 
-  const baseEvents = filteredEvents.length > 0 ? filteredEvents : events;
+  // Never reintroduce stale or duplicate listings when a filter returns no matches.
+  const baseEvents = filteredEvents;
   const savedEvents = savedAsLocalEvents;
   const savedEventsSocial = useSavedEventsSocial(savedEvents);
 
