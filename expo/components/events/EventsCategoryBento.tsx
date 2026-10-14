@@ -8,7 +8,6 @@ import {
   View,
 } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
-import { BlurView } from 'expo-blur';
 import * as Haptics from 'expo-haptics';
 import { Check } from 'lucide-react-native';
 import type { LocalEvent } from '@/types/events';
@@ -16,7 +15,6 @@ import { EVENT_CATEGORY_META } from '@/utils/eventCategoryMeta';
 import {
   countEventsByBentoCategory,
   countSubCategoriesForBento,
-  formatBentoCountLabel,
   getBentoCategoryId,
   SUB_CATEGORY_META,
   type BentoCategoryId,
@@ -27,7 +25,7 @@ import { EventsBentoSkeleton } from '@/components/events/EventsShimmer';
 const { width: SCREEN_WIDTH } = Dimensions.get('window');
 const GAP = 12;
 const TILE_WIDTH = (SCREEN_WIDTH - 40 - GAP) / 2;
-const TILE_HEIGHT = 132;
+const TILE_HEIGHT = 150;
 
 interface EventsCategoryBentoProps {
   events: LocalEvent[];
@@ -66,13 +64,13 @@ export const EventsCategoryBento = React.memo(function EventsCategoryBento({
 
   return (
     <View style={styles.grid}>
-      {categories.map((cat) => {
+      {categories.filter((cat) => (countsByCategory.get(cat.id) ?? 0) > 0 || selectedCategory === cat.id).map((cat, index, visibleCategories) => {
         const isActive = selectedCategory === cat.id;
         const cover = coverForCategory(cat.id);
         const CatIcon = cat.icon;
         const count = countsByCategory.get(cat.id) ?? 0;
         const subCounts = countSubCategoriesForBento(events, cat.id as BentoCategoryId);
-        const countLabel = formatBentoCountLabel(count, subCounts);
+        const countLabel = `${count} ${count === 1 ? 'event' : 'events'}`;
         const hasCover = Boolean(cover);
         const labelColor = hasCover ? palette.textOnImage : palette.text;
         const sublabelColor = hasCover ? palette.textOnImageSecondary : palette.textSecondary;
@@ -82,6 +80,7 @@ export const EventsCategoryBento = React.memo(function EventsCategoryBento({
             key={cat.id}
             style={[
               styles.tile,
+              visibleCategories.length % 2 === 1 && index === visibleCategories.length - 1 && styles.lastTileWide,
               {
                 borderColor: isActive ? cat.color : palette.border,
                 shadowColor: isActive ? cat.color : '#000',
@@ -106,7 +105,7 @@ export const EventsCategoryBento = React.memo(function EventsCategoryBento({
                   style={styles.tileGradient}
                 />
                 <LinearGradient
-                  colors={['transparent', 'rgba(0,0,0,0.72)']}
+                  colors={['transparent', 'rgba(0,0,0,0.85)']}
                   locations={[0.35, 1]}
                   style={styles.tileGradient}
                 />
@@ -139,13 +138,11 @@ export const EventsCategoryBento = React.memo(function EventsCategoryBento({
             ) : null}
 
             <View style={styles.footer}>
-              <BlurView
-                intensity={hasCover ? 42 : 28}
-                tint={palette.blurTint}
+              <View
                 style={[
                   styles.footerBlur,
                   {
-                    backgroundColor: hasCover ? 'rgba(8,8,12,0.28)' : `${palette.card}CC`,
+                    backgroundColor: hasCover ? 'rgba(13,17,27,0.78)' : palette.card,
                     borderColor: hasCover ? 'rgba(255,255,255,0.14)' : palette.border,
                   },
                 ]}
@@ -183,7 +180,7 @@ export const EventsCategoryBento = React.memo(function EventsCategoryBento({
                       ))}
                   </View>
                 ) : null}
-              </BlurView>
+              </View>
             </View>
 
             {isActive ? (
@@ -206,13 +203,16 @@ const styles = StyleSheet.create({
     paddingHorizontal: 20,
     gap: GAP,
   },
+  lastTileWide: {
+    width: SCREEN_WIDTH - 40,
+  },
   tile: {
     width: TILE_WIDTH,
     height: TILE_HEIGHT,
     borderRadius: 20,
     overflow: 'hidden',
     borderWidth: 1,
-    shadowOpacity: 0.08,
+    shadowOpacity: 0.04,
     shadowRadius: 14,
     shadowOffset: { width: 0, height: 8 },
     elevation: 3,
@@ -276,17 +276,19 @@ const styles = StyleSheet.create({
   footerBlur: {
     paddingHorizontal: 12,
     paddingVertical: 10,
-    gap: 2,
+    minHeight: 64,
+    justifyContent: 'center',
+    gap: 3,
     borderWidth: 1,
     borderRadius: 14,
   },
   tileLabel: {
-    fontSize: 15,
+    fontSize: 17,
     fontWeight: '800',
     letterSpacing: -0.35,
   },
   tileCount: {
-    fontSize: 11,
+    fontSize: 12,
     fontWeight: '600',
     letterSpacing: -0.1,
   },

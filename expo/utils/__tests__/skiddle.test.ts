@@ -111,12 +111,13 @@ describe('skiddleTransform', () => {
 
 describe('mergeDiscoveryEvents', () => {
   it('dedupes near-identical events from multiple providers', () => {
+    const upcoming = new Date(Date.now() + 14 * 24 * 60 * 60 * 1000);
     const base = {
       title: 'Comedy Night',
       venue: 'The Club',
       location: 'London',
-      date: 'Sat, 12 Jul',
-      time: '20:00',
+      date: upcoming.toLocaleDateString('en-GB', { weekday: 'short', day: 'numeric', month: 'short' }),
+      time: upcoming.toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' }),
       category: 'comedy',
       price: '£10+',
       image: '',
@@ -127,7 +128,7 @@ describe('mergeDiscoveryEvents', () => {
       description: '',
       latitude: 51.5,
       longitude: -0.1,
-      startIso: '2026-07-12T20:00:00',
+      startIso: upcoming.toISOString(),
     };
 
     const merged = mergeDiscoveryEvents(

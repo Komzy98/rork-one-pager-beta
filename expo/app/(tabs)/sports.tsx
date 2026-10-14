@@ -1733,6 +1733,10 @@ function SportsScreenInner() {
 
   const hasNationalTeams = nationalTeamApiIds.length > 0;
   const favoriteTeamApiIdSet = useMemo(() => new Set(teamApiIds), [teamApiIds]);
+  const favoriteTeamNamesLower = useMemo(
+    () => (profile?.favoriteTeams ?? []).map((team) => team.name.toLowerCase().trim()).filter(Boolean),
+    [profile?.favoriteTeams],
+  );
   const nationalitySignals = useMemo(() => getNationalitySignals(profile), [profile]);
   const countryInterestNamesLower = useMemo(() => {
     const fromNationalities = nationalitySignals.countryNamesLower;
@@ -1819,8 +1823,7 @@ function SportsScreenInner() {
     const scopeNationalTeamsOnApi =
       hasNationalTeams &&
       (footballSmartFilter === 'for-you' || footballSmartFilter === 'explore');
-    const narrowApiByFollowedTeams =
-      footballSmartFilter === 'for-you' && sportsFeedPrefs?.strictFollowing === true;
+    const narrowApiByFollowedTeams = footballSmartFilter === 'for-you';
     const resolvedTeamIds =
       queryTeamIds && queryTeamIds.length > 0
         ? queryTeamIds
@@ -1913,6 +1916,7 @@ function SportsScreenInner() {
         smartFilter: footballSmartFilter,
         manualLeagueIds: footballSmartFilter === 'explore' ? selectedLeagues : [],
         favoriteTeamIds: favoriteTeamApiIdSet,
+        favoriteTeamNamesLower,
         nationalTeamIds: hasNationalTeams ? nationalTeamApiIdSet : undefined,
         nationalityNamesLower: nationalitySignals.countryNamesLower,
         prioritizeNationalTeams: sportsFeedPrefs?.prioritizeNationalTeams ?? hasNationalTeams,
@@ -1922,6 +1926,7 @@ function SportsScreenInner() {
       footballSmartFilter,
       selectedLeagues,
       favoriteTeamApiIdSet,
+      favoriteTeamNamesLower,
       nationalTeamApiIdSet,
       nationalitySignals.countryNamesLower,
       queryLeagueIds,
@@ -3000,11 +3005,11 @@ function SportsScreenInner() {
   const footballFilterSummary = useMemo(() => {
     switch (footballSmartFilter) {
       case 'for-you':
-        return 'For You · your leagues & teams';
+        return 'For You · your teams';
       case 'explore':
         return footballQueryContext.manualLeagueScopeActive
           ? `Explore · ${selectedLeagues.length} competition${selectedLeagues.length === 1 ? '' : 's'}`
-          : 'Explore';
+          : 'Explore · selected leagues';
       default:
         return 'For You';
     }

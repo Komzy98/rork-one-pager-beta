@@ -12,7 +12,9 @@ export type EventCategory =
   | 'family'
   | 'other';
 
-export type OnePagerEventSource = 'mock' | 'ticketmaster' | 'skiddle' | 'manual';
+export type EventPlanningStatus = 'interested' | 'planning' | 'going';
+
+export type OnePagerEventSource = 'mock' | 'ticketmaster' | 'skiddle' | 'eventbrite' | 'billetto' | 'manual';
 
 /** Normalised event shape used across discovery, detail, and AI. */
 export interface OnePagerEvent {
@@ -65,6 +67,7 @@ export interface SavedEventSnapshot {
   ticketUrl?: string;
   source: OnePagerEventSource;
   savedAt: string;
+  planningStatus?: EventPlanningStatus;
   dateLabel?: string;
   timeLabel?: string;
   tags?: string[];
@@ -111,7 +114,7 @@ export interface LocalEvent {
   marketCode?: string;
 }
 
-export type NearbyEventsSource = 'ticketmaster' | 'skiddle' | 'mixed' | 'fallback' | 'none';
+export type NearbyEventsSource = 'ticketmaster' | 'skiddle' | 'eventbrite' | 'billetto' | 'mixed' | 'fallback' | 'none';
 
 export interface NearbyEventsResult {
   events: LocalEvent[];

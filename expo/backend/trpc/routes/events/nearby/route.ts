@@ -6,7 +6,7 @@ import type { NearbyEventsResult, NearbyEventsBatchResult, NearbyEventsSource } 
 import {
   EVENTS_PER_CATEGORY,
 } from '@/utils/eventDiscovery';
-import { BENTO_CATEGORY_IDS } from '@/utils/eventCategories';
+import { BENTO_CATEGORY_IDS, eventMatchesBentoCategory } from '@/utils/eventCategories';
 import { mergeDiscoveryEvents } from '@/utils/mergeDiscoveryEvents';
 import { fetchMergedDiscoveryEvents } from '@/utils/eventDiscoveryFetch';
 
@@ -30,7 +30,7 @@ function getCacheKey(input: Record<string, unknown>): string {
 }
 
 function getBatchCacheKey(input: Record<string, unknown>): string {
-  return `events:nearby:batch:v1:${JSON.stringify(input)}`;
+  return `events:nearby:batch:v2:${JSON.stringify(input)}`;
 }
 
 function getCached(key: string): NearbyEventsResult | null {
@@ -74,6 +74,7 @@ type FetchInput = {
   longitude: number;
   radiusMiles: number;
   category?: string;
+  includeOtherCategories?: boolean;
   size: number;
 };
 
@@ -82,10 +83,14 @@ type LocalEventPayload = NearbyEventsResult['events'][number];
 function resolveSource(
   ticketmasterCount: number,
   skiddleCount: number,
+  eventbriteCount = 0,
+  billettoCount = 0,
 ): NearbyEventsSource {
-  if (ticketmasterCount > 0 && skiddleCount > 0) return 'mixed';
+  if ([ticketmasterCount, skiddleCount, eventbriteCount, billettoCount].filter(count => count > 0).length > 1) return 'mixed';
   if (ticketmasterCount > 0) return 'ticketmaster';
   if (skiddleCount > 0) return 'skiddle';
+  if (eventbriteCount > 0) return 'eventbrite';
+  if (billettoCount > 0) return 'billetto';
   return 'none';
 }
 
@@ -95,6 +100,7 @@ async function resolveNearbyEvents(input: FetchInput): Promise<NearbyEventsResul
     lng: Math.round(input.longitude * 100) / 100,
     radius: input.radiusMiles,
     category: input.category ?? 'all',
+    includeOtherCategories: Boolean(input.includeOtherCategories),
     size: input.size,
   });
 
@@ -105,19 +111,22 @@ async function resolveNearbyEvents(input: FetchInput): Promise<NearbyEventsResul
 
   const ticketmasterKey = getTicketmasterApiKeyFromEnv();
   const skiddleKey = getSkiddleApiKeyFromEnv();
+  const eventbriteKey = process.env.EVENTBRITE_TOKEN?.trim();
+  const billettoId = process.env.BILLETTO_ACCESS_KEY_ID?.trim();
+  const billettoSecret = process.env.BILLETTO_ACCESS_KEY_SECRET?.trim();
 
-  if (!ticketmasterKey && !skiddleKey) {
+  if (!ticketmasterKey && !skiddleKey && !eventbriteKey && !(billettoId && billettoSecret)) {
     return { events: [], source: 'none' };
   }
 
-  const { events, ticketmasterCount, skiddleCount } = await fetchMergedDiscoveryEvents(
+  const { events, ticketmasterCount, skiddleCount, eventbriteCount, billettoCount } = await fetchMergedDiscoveryEvents(
     input,
-    { ticketmaster: ticketmasterKey, skiddle: skiddleKey },
+    { ticketmaster: ticketmasterKey, skiddle: skiddleKey, eventbrite: eventbriteKey, billettoId, billettoSecret },
   );
 
   const result: NearbyEventsResult = {
     events,
-    source: resolveSource(ticketmasterCount, skiddleCount),
+    source: resolveSource(ticketmasterCount, skiddleCount, eventbriteCount, billettoCount),
   };
 
   setCached(cacheKey, result);
@@ -151,8 +160,11 @@ export const getNearbyEventsRoute = publicProcedure
 
     const ticketmasterKey = getTicketmasterApiKeyFromEnv();
     const skiddleKey = getSkiddleApiKeyFromEnv();
+  const eventbriteKey = process.env.EVENTBRITE_TOKEN?.trim();
+  const billettoId = process.env.BILLETTO_ACCESS_KEY_ID?.trim();
+  const billettoSecret = process.env.BILLETTO_ACCESS_KEY_SECRET?.trim();
 
-    if (!ticketmasterKey && !skiddleKey) {
+    if (!ticketmasterKey && !skiddleKey && !eventbriteKey && !(billettoId && billettoSecret)) {
       console.warn(
         '⚠️ No event API keys set — add TICKETMASTER_API_KEY and/or SKIDDLE_API_KEY on the API server (Railway) or in expo/.env for local Metro',
       );
@@ -196,8 +208,11 @@ export const getNearbyEventsBatchRoute = publicProcedure
 
     const ticketmasterKey = getTicketmasterApiKeyFromEnv();
     const skiddleKey = getSkiddleApiKeyFromEnv();
+  const eventbriteKey = process.env.EVENTBRITE_TOKEN?.trim();
+  const billettoId = process.env.BILLETTO_ACCESS_KEY_ID?.trim();
+  const billettoSecret = process.env.BILLETTO_ACCESS_KEY_SECRET?.trim();
 
-    if (!ticketmasterKey && !skiddleKey) {
+    if (!ticketmasterKey && !skiddleKey && !eventbriteKey && !(billettoId && billettoSecret)) {
       console.warn('⚠️ No event API keys set — batch returns empty');
       return {
         categories: {},
@@ -218,35 +233,46 @@ export const getNearbyEventsBatchRoute = publicProcedure
           longitude: input.longitude,
           radiusMiles: input.radiusMiles,
           category,
+          includeOtherCategories: true,
           size: input.sizePerCategory,
         });
         return { category, result };
       }),
     );
 
+    // Providers can classify Food Fest as Arts. Merge first and re-bucket
+    // by our normalized category to prevent listings disappearing from both.
+    const discovered = mergeDiscoveryEvents(
+      categoryResults.map(({ result }) => result.events),
+      BENTO_CATEGORY_IDS.length * input.sizePerCategory * 2,
+    );
     const categories: NearbyEventsBatchResult['categories'] = {};
     const categoryCounts: Record<string, number> = {};
-    let hasTicketmaster = false;
-    let hasSkiddle = false;
-
-    for (const { category, result } of categoryResults) {
-      const count = result.events.length;
-      categories[category] = { events: result.events, count };
-      categoryCounts[category] = count;
-      if (result.source === 'ticketmaster' || result.source === 'mixed') hasTicketmaster = true;
-      if (result.source === 'skiddle' || result.source === 'mixed') hasSkiddle = true;
+    for (const category of BENTO_CATEGORY_IDS) {
+      const events = discovered
+        .filter(event => eventMatchesBentoCategory(event, category))
+        .slice(0, input.sizePerCategory);
+      categories[category] = { events, count: events.length };
+      categoryCounts[category] = events.length;
     }
-
     const allEvents = mergeDiscoveryEvents(
-      BENTO_CATEGORY_IDS.map((category) => categories[category]?.events ?? []),
+      BENTO_CATEGORY_IDS.map(category => categories[category]?.events ?? []),
       BENTO_CATEGORY_IDS.length * input.sizePerCategory,
     );
+    const sources = new Set(discovered.map(event => event.listingSource).filter(Boolean));
+    const source: NearbyEventsSource = sources.size > 1
+      ? 'mixed'
+      : sources.has('ticketmaster') ? 'ticketmaster'
+      : sources.has('skiddle') ? 'skiddle'
+      : sources.has('eventbrite') ? 'eventbrite'
+      : sources.has('billetto') ? 'billetto'
+      : 'none';
 
     const batchResult: NearbyEventsBatchResult = {
       categories,
       categoryCounts,
       allEvents,
-      source: resolveSource(hasTicketmaster ? 1 : 0, hasSkiddle ? 1 : 0),
+      source,
     };
 
     setBatchCached(batchCacheKey, batchResult);
@@ -270,8 +296,11 @@ export async function runEventsDiscoverySmokeCheck(): Promise<{
   const errors: string[] = [];
   const ticketmasterKey = getTicketmasterApiKeyFromEnv();
   const skiddleKey = getSkiddleApiKeyFromEnv();
+  const eventbriteKey = process.env.EVENTBRITE_TOKEN?.trim();
+  const billettoId = process.env.BILLETTO_ACCESS_KEY_ID?.trim();
+  const billettoSecret = process.env.BILLETTO_ACCESS_KEY_SECRET?.trim();
 
-  if (!ticketmasterKey && !skiddleKey) {
+  if (!ticketmasterKey && !skiddleKey && !eventbriteKey && !(billettoId && billettoSecret)) {
     errors.push('No event API keys configured (TICKETMASTER_API_KEY / SKIDDLE_API_KEY)');
   }
   if (!skiddleKey) {
@@ -287,7 +316,7 @@ export async function runEventsDiscoverySmokeCheck(): Promise<{
 
   const { events, ticketmasterCount, skiddleCount } = await fetchMergedDiscoveryEvents(
     input,
-    { ticketmaster: ticketmasterKey, skiddle: skiddleKey },
+    { ticketmaster: ticketmasterKey, skiddle: skiddleKey, eventbrite: eventbriteKey, billettoId, billettoSecret },
   );
   const source = resolveSource(ticketmasterCount, skiddleCount);
   const skiddle = events.filter((e) => e.id.startsWith('sk-')).length;

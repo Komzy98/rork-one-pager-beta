@@ -70,6 +70,15 @@ export const TaskEditModal: React.FC<TaskEditModalProps> = ({
   const [recurringType, setRecurringType] = useState<'daily' | 'weekly' | 'monthly' | 'custom'>('daily');
   const [recurringDays, setRecurringDays] = useState<number[]>([1, 2, 3, 4, 5]);
   const [showFrequencyPicker, setShowFrequencyPicker] = useState<boolean>(false);
+  const [habitAnchor, setHabitAnchor] = useState<string>('');
+  const [habitFirstStep, setHabitFirstStep] = useState<string>('');
+  const [habitLocation, setHabitLocation] = useState<string>('');
+  const [habitWindowStart, setHabitWindowStart] = useState<string>('');
+  const [habitWindowEnd, setHabitWindowEnd] = useState<string>('');
+  const [habitObstacle, setHabitObstacle] = useState<string>('');
+  const [habitMinimumVersion, setHabitMinimumVersion] = useState<string>('');
+  const [habitFallback, setHabitFallback] = useState<string>('');
+  const [habitReward, setHabitReward] = useState<string>('');
 
   const fadeAnim = useRef(new Animated.Value(0)).current;
 
@@ -101,6 +110,15 @@ export const TaskEditModal: React.FC<TaskEditModalProps> = ({
       if (task.icon) {
         setHabitIcon(task.icon);
       }
+      setHabitAnchor(task.habitEngine?.anchor || '');
+      setHabitFirstStep(task.habitEngine?.firstStep || '');
+      setHabitLocation(task.habitEngine?.location || '');
+      setHabitWindowStart(task.habitEngine?.windowStart || '');
+      setHabitWindowEnd(task.habitEngine?.windowEnd || '');
+      setHabitObstacle(task.habitEngine?.obstacle || '');
+      setHabitMinimumVersion(task.habitEngine?.minimumVersion || task.habitEngine?.fallback || '');
+      setHabitFallback(task.habitEngine?.fallback || '');
+      setHabitReward(task.habitEngine?.immediateReward || '');
       setIsRecurring(task.isRecurring || false);
       if (task.recurringPattern) {
         if (task.recurringPattern.type === 'weekly' && task.recurringPattern.daysOfWeek) {
@@ -123,6 +141,15 @@ export const TaskEditModal: React.FC<TaskEditModalProps> = ({
       setRecurringType('daily');
       setRecurringDays([1, 2, 3, 4, 5]);
       setShowFrequencyPicker(false);
+      setHabitAnchor('');
+      setHabitFirstStep('');
+      setHabitLocation('');
+      setHabitWindowStart('');
+      setHabitWindowEnd('');
+      setHabitObstacle('');
+      setHabitMinimumVersion('');
+      setHabitFallback('');
+      setHabitReward('');
     }
   }, [task]);
 
@@ -153,6 +180,26 @@ export const TaskEditModal: React.FC<TaskEditModalProps> = ({
       updates.habitFrequency = { days: selectedDays };
       updates.color = habitColor;
       updates.icon = habitIcon;
+      const completedPlan =
+        habitAnchor.trim().length > 1 &&
+        habitFirstStep.trim().length > 1 &&
+        habitMinimumVersion.trim().length > 1;
+      updates.habitEngine = {
+        ...(task?.habitEngine || {}),
+        version: 2,
+        anchor: habitAnchor.trim() || undefined,
+        firstStep: habitFirstStep.trim() || undefined,
+        location: habitLocation.trim() || undefined,
+        windowStart: habitWindowStart.trim() || undefined,
+        windowEnd: habitWindowEnd.trim() || undefined,
+        obstacle: habitObstacle.trim() || undefined,
+        minimumVersion: habitMinimumVersion.trim() || undefined,
+        fallback: habitFallback.trim() || undefined,
+        immediateReward: habitReward.trim() || undefined,
+        onboardingCompletedAt:
+          task?.habitEngine?.onboardingCompletedAt ||
+          (completedPlan ? new Date().toISOString() : undefined),
+      };
     } else {
       updates.dueDate = dueDate ? `${dueDate.getFullYear()}-${String(dueDate.getMonth() + 1).padStart(2, '0')}-${String(dueDate.getDate()).padStart(2, '0')}` : undefined;
       updates.isRecurring = isRecurring;
@@ -606,6 +653,93 @@ export const TaskEditModal: React.FC<TaskEditModalProps> = ({
                        `${selectedDays.length} day${selectedDays.length > 1 ? 's' : ''} per week`}
                     </Text>
                   </View>
+                </View>
+
+                <View style={styles.card}>
+                  {renderSectionHeader(
+                    <Clock size={16} color="#007AFF" />,
+                    'Habit Engine V2'
+                  )}
+                  <Text style={styles.scheduleHint}>
+                    Build a stable cue, a tiny first step and a minimum version for difficult days.
+                  </Text>
+                  <TextInput
+                    style={styles.engineInput}
+                    value={habitAnchor}
+                    onChangeText={setHabitAnchor}
+                    placeholder="Cue — e.g. After I close my work laptop"
+                    placeholderTextColor="#A1A1AA"
+                    testID="habit-engine-anchor"
+                  />
+                  <TextInput
+                    style={styles.engineInput}
+                    value={habitFirstStep}
+                    onChangeText={setHabitFirstStep}
+                    placeholder="First step — e.g. Put on gym clothes"
+                    placeholderTextColor="#A1A1AA"
+                    testID="habit-engine-first-step"
+                  />
+                  <TextInput
+                    style={styles.engineInput}
+                    value={habitLocation}
+                    onChangeText={setHabitLocation}
+                    placeholder="Location (optional)"
+                    placeholderTextColor="#A1A1AA"
+                    testID="habit-engine-location"
+                  />
+                  <View style={styles.engineTimeRow}>
+                    <TextInput
+                      style={[styles.engineInput, styles.engineTimeInput]}
+                      value={habitWindowStart}
+                      onChangeText={setHabitWindowStart}
+                      placeholder="17:30"
+                      placeholderTextColor="#A1A1AA"
+                      keyboardType="numbers-and-punctuation"
+                      testID="habit-engine-window-start"
+                    />
+                    <Text style={styles.engineTimeSeparator}>to</Text>
+                    <TextInput
+                      style={[styles.engineInput, styles.engineTimeInput]}
+                      value={habitWindowEnd}
+                      onChangeText={setHabitWindowEnd}
+                      placeholder="19:00"
+                      placeholderTextColor="#A1A1AA"
+                      keyboardType="numbers-and-punctuation"
+                      testID="habit-engine-window-end"
+                    />
+                  </View>
+                  <TextInput
+                    style={styles.engineInput}
+                    value={habitMinimumVersion}
+                    onChangeText={setHabitMinimumVersion}
+                    placeholder="Minimum version — e.g. One lift for 10 minutes"
+                    placeholderTextColor="#A1A1AA"
+                    testID="habit-engine-minimum"
+                  />
+                  <TextInput
+                    style={styles.engineInput}
+                    value={habitObstacle}
+                    onChangeText={setHabitObstacle}
+                    placeholder="What usually gets in the way?"
+                    placeholderTextColor="#A1A1AA"
+                    testID="habit-engine-obstacle"
+                  />
+                  <TextInput
+                    style={styles.engineInput}
+                    value={habitFallback}
+                    onChangeText={setHabitFallback}
+                    placeholder="Fallback — e.g. 10-minute home workout"
+                    placeholderTextColor="#A1A1AA"
+                    testID="habit-engine-fallback"
+                  />
+                  <TextInput
+                    style={styles.engineInput}
+                    value={habitReward}
+                    onChangeText={setHabitReward}
+                    placeholder="Immediate reward (optional)"
+                    placeholderTextColor="#A1A1AA"
+                    testID="habit-engine-reward"
+                  />
                 </View>
               </>
             ) : (
@@ -1072,6 +1206,31 @@ const styles = StyleSheet.create({
     shadowRadius: 4,
     elevation: 3,
     transform: [{ scale: 1.15 }],
+  },
+  engineInput: {
+    backgroundColor: '#F7F8FA',
+    borderWidth: 1,
+    borderColor: '#E5E7EB',
+    borderRadius: 12,
+    paddingHorizontal: 14,
+    paddingVertical: 12,
+    fontSize: 14,
+    color: '#111827',
+    marginTop: 10,
+  },
+  engineTimeRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+  },
+  engineTimeInput: {
+    flex: 1,
+  },
+  engineTimeSeparator: {
+    color: '#8E8E93',
+    fontSize: 13,
+    fontWeight: '600' as const,
+    marginTop: 10,
   },
   scheduleHint: {
     fontSize: 13,

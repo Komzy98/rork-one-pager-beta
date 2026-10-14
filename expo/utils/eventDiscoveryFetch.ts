@@ -4,6 +4,8 @@
  */
 
 import type { NearbyEventsResult } from '@/types/events';
+import { fetchEventbriteAccountEvents, filterEventbriteDiscovery } from '@/backend/services/eventbriteDiscovery';
+import { fetchBillettoPublicEvents, filterBillettoEvents } from '@/backend/services/billettoDiscovery';
 import {
   filterUpcomingEvents,
   sortEventsByStartDate,
@@ -38,6 +40,8 @@ export type DiscoveryFetchInput = {
   longitude: number;
   radiusMiles: number;
   category?: string;
+  /** Retain out-of-bucket items for server-side cross-category rebucketing. */
+  includeOtherCategories?: boolean;
   size: number;
   /** Artist, venue, or event name — forwarded to all configured providers. */
   keyword?: string;
@@ -209,7 +213,7 @@ async function fetchSkiddleEventsForCode(
   }
 
   const mapped = mapSkiddleResponse(payload);
-  const filtered = filterSkiddleEventsByCategory(mapped, input.category);
+  const filtered = input.includeOtherCategories ? mapped : filterSkiddleEventsByCategory(mapped, input.category);
   return sortEventsByStartDate(filterUpcomingEvents(filtered));
 }
 
@@ -269,23 +273,28 @@ async function fetchSkiddleEvents(
 export type DiscoveryProviderKeys = {
   ticketmaster?: string | null;
   skiddle?: string | null;
+  eventbrite?: string | null;
+  billettoId?: string | null;
+  billettoSecret?: string | null;
 };
 
 export async function fetchMergedDiscoveryEvents(
   input: DiscoveryFetchInput,
   keys: DiscoveryProviderKeys,
-): Promise<{ events: LocalEventPayload[]; ticketmasterCount: number; skiddleCount: number }> {
+): Promise<{ events: LocalEventPayload[]; ticketmasterCount: number; skiddleCount: number; eventbriteCount: number; billettoCount: number }> {
   const ticketmasterKey = keys.ticketmaster?.trim() || '';
   const skiddleKey = keys.skiddle?.trim() || '';
 
-  const [ticketmasterEvents, skiddleEvents] = await Promise.all([
+  const [ticketmasterEvents, skiddleEvents, eventbriteEvents, billettoEvents] = await Promise.all([
     ticketmasterKey ? fetchTicketmasterEvents(ticketmasterKey, input) : Promise.resolve([]),
     skiddleKey ? fetchSkiddleEvents(skiddleKey, input) : Promise.resolve([]),
+    keys.eventbrite?.trim() ? fetchEventbriteAccountEvents(keys.eventbrite.trim()).then(events => filterEventbriteDiscovery(events, input)).catch(error => { console.error('Eventbrite account discovery unavailable:', error instanceof Error ? error.message : 'Unknown error'); return [] as LocalEventPayload[]; }) : Promise.resolve([] as LocalEventPayload[]),
+    keys.billettoId?.trim() && keys.billettoSecret?.trim() ? fetchBillettoPublicEvents(keys.billettoId.trim(), keys.billettoSecret.trim()).then(events => filterBillettoEvents(events, input)).catch(error => { console.error('Billetto public discovery unavailable:', error instanceof Error ? error.message : 'Unknown error'); return [] as LocalEventPayload[]; }) : Promise.resolve([] as LocalEventPayload[]),
   ]);
 
-  const merged = mergeDiscoveryEvents([ticketmasterEvents, skiddleEvents], input.size);
+  const merged = mergeDiscoveryEvents([billettoEvents, eventbriteEvents, ticketmasterEvents, skiddleEvents], input.size);
   const events =
-    input.category && input.category !== 'all' && !input.keyword?.trim()
+    input.category && input.category !== 'all' && !input.keyword?.trim() && !input.includeOtherCategories
       ? merged.filter((event) => eventMatchesBentoCategory(event, input.category!))
       : merged;
 
@@ -293,5 +302,7 @@ export async function fetchMergedDiscoveryEvents(
     events,
     ticketmasterCount: ticketmasterEvents.length,
     skiddleCount: skiddleEvents.length,
+    eventbriteCount: eventbriteEvents.length,
+    billettoCount: billettoEvents.length,
   };
 }

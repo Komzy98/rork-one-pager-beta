@@ -98,6 +98,7 @@ export function localEventToSavedSnapshot(event: LocalEvent): SavedEventSnapshot
     ticketUrl: event.ticketUrl,
     source: inferSource(event.id),
     savedAt: new Date().toISOString(),
+    planningStatus: 'interested',
     dateLabel: event.date,
     timeLabel: event.time,
     tags: event.tags,

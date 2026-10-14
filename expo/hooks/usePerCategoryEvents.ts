@@ -141,6 +141,8 @@ export function usePerCategoryEvents(options: UsePerCategoryEventsOptions) {
     }
     if (previewQuery.data?.source === 'ticketmaster' ||
         previewQuery.data?.source === 'skiddle' ||
+        previewQuery.data?.source === 'eventbrite' ||
+        previewQuery.data?.source === 'billetto' ||
         previewQuery.data?.source === 'mixed') {
       return previewQuery.data.source;
     }

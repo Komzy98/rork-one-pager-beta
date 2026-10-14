@@ -68,7 +68,7 @@ export function getLivingWellChronotypeTip(chronotype: ChronotypeInfo, now = new
   const inSecondary = secondary ? hour >= secondary.start && hour < secondary.end : false;
 
   if (inPeak || inSecondary) {
-    return 'You’re in a strong energy window — good time for something that matters to you.';
+    return 'Your chronotype often has a stronger window around now — if that matches how you feel, use it for something that matters to you.';
   }
 
   switch (chronotype.id) {

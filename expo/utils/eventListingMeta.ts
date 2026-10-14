@@ -37,6 +37,8 @@ const EU_MARKET_CODES = new Set([
 export function inferListingSourceFromEventId(id: string): OnePagerEventSource | null {
   if (id.startsWith('tm-')) return 'ticketmaster';
   if (id.startsWith('sk-')) return 'skiddle';
+  if (id.startsWith('eb-')) return 'eventbrite';
+  if (id.startsWith('bl-')) return 'billetto';
   return null;
 }
 
@@ -48,6 +50,8 @@ export function getEventListingSource(event: LocalEvent): OnePagerEventSource | 
 export function getListingSourceLabel(source: OnePagerEventSource | null): string | null {
   if (source === 'ticketmaster') return 'Ticketmaster';
   if (source === 'skiddle') return 'Skiddle';
+  if (source === 'eventbrite') return 'Eventbrite';
+  if (source === 'billetto') return 'Billetto';
   return null;
 }
 

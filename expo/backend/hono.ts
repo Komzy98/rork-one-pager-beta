@@ -1,4 +1,6 @@
 import { Hono } from "hono";
+import { fetchEventbriteAccountEvents } from "./services/eventbriteDiscovery";
+import { fetchBillettoPublicEvents, getBillettoDiagnostics } from "./services/billettoDiscovery";
 import type { Context } from "hono";
 import { cors } from "hono/cors";
 import { fetchRequestHandler } from "@trpc/server/adapters/fetch";
@@ -151,6 +153,74 @@ app.get("/health", (c) => {
     guestRsvpConfigured: isGuestRsvpConfigured(),
     timestamp: new Date().toISOString(),
   });
+});
+
+/** Eventbrite production credential check. Never exposes the token or private account details. */
+app.get("/health/eventbrite", async (c) => {
+  const token = (process.env.EVENTBRITE_TOKEN || "").trim();
+  if (!token) {
+    return c.json({ ok: false, configured: false, authenticated: false, error: "EVENTBRITE_TOKEN is not configured" }, 503);
+  }
+  try {
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), 10000);
+    let response: Response;
+    try {
+      response = await fetch("https://www.eventbriteapi.com/v3/users/me/", {
+        headers: { Authorization: `Bearer ${token}`, Accept: "application/json" },
+        signal: controller.signal,
+      });
+    } finally {
+      clearTimeout(timeout);
+    }
+    if (!response.ok) {
+      return c.json({
+        ok: false,
+        configured: true,
+        authenticated: false,
+        providerStatus: response.status,
+        error: "Eventbrite credential validation failed",
+      }, 503);
+    }
+    const profile = await response.json() as { id?: string };
+    return c.json({
+      ok: Boolean(profile.id),
+      configured: true,
+      authenticated: Boolean(profile.id),
+      check: "eventbrite-account-auth",
+      timestamp: new Date().toISOString(),
+    }, profile.id ? 200 : 503);
+  } catch {
+    return c.json({ ok: false, configured: true, authenticated: false, error: "Eventbrite request failed" }, 503);
+  }
+});
+
+/** Summarised production sync check; exposes no private account records. */
+app.get("/health/eventbrite/events", async (c) => {
+  try {
+    const token = process.env.EVENTBRITE_TOKEN || "";
+    if (!token.trim()) return c.json({ ok: false, configured: false }, 503);
+    const events = await fetchEventbriteAccountEvents(token);
+    return c.json({ ok: true, configured: true, publicUpcomingEvents: events.length, timestamp: new Date().toISOString() });
+  } catch (error) {
+    console.error("Eventbrite sync check failed", error instanceof Error ? error.message : "Unknown error");
+    return c.json({ ok: false, configured: true, error: "Eventbrite event sync failed" }, 503);
+  }
+});
+
+/** Credential-free status output. Billetto secrets remain on the backend. */
+app.get("/health/billetto", async (c) => {
+  const id = process.env.BILLETTO_ACCESS_KEY_ID?.trim() || "";
+  const secret = process.env.BILLETTO_ACCESS_KEY_SECRET?.trim() || "";
+  if (!id || !secret) return c.json({ ok: false, configured: false, error: "Billetto credentials are not configured" }, 503);
+  try {
+    const events = await fetchBillettoPublicEvents(id, secret);
+    return c.json({ ok: true, configured: true, publicUpcomingEventsWithLocations: events.length, diagnostics: getBillettoDiagnostics(), checkedAt: new Date().toISOString() });
+  } catch (error) {
+    const message = error instanceof Error ? error.message : "Unknown error";
+    const providerStatus = /HTTP (\d{3})/.exec(message)?.[1];
+    return c.json({ ok: false, configured: true, providerStatus: providerStatus ? Number(providerStatus) : undefined, error: "Billetto public events request failed" }, 503);
+  }
 });
 
 /** Railway smoke: guest web RSVP needs service role key + 006_guest_rsvps.sql. */

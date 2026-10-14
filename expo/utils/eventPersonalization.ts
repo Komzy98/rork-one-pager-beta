@@ -59,7 +59,7 @@ export interface EventRecommendationReason {
   priority: number;
 }
 
-export type EventDiscoveryTabKey = 'now' | 'near' | 'forYou' | 'friendsPicks' | 'thisWeek';
+export type EventDiscoveryTabKey = 'now' | 'near' | 'forYou' | 'friendsPicks' | 'thisWeek' | 'weekend' | 'budget' | 'explore';
 
 export interface EventRecommendationInput {
   profile: UserProfile | null | undefined;

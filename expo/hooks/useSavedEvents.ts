@@ -2,7 +2,7 @@ import { useCallback, useMemo } from 'react';
 import * as Haptics from 'expo-haptics';
 import { useUserProfile } from '@/hooks/useUserProfile';
 import { useExperienceFeedback } from '@/hooks/useExperienceFeedback';
-import type { LocalEvent, SavedEventSnapshot } from '@/types/events';
+import type { EventPlanningStatus, LocalEvent, SavedEventSnapshot } from '@/types/events';
 import { localEventToSavedSnapshot, savedSnapshotToLocalEvent } from '@/utils/eventMappers';
 import { getDaysUntilEvent } from '@/utils/eventDiscovery';
 import {
@@ -72,6 +72,18 @@ export function useSavedEvents() {
     [savedSnapshots, updateProfile, experience.record, logEventSaved, shareSavesWithFriends, supabaseUser?.id]
   );
 
+  const setPlanningStatus = useCallback(
+    async (eventId: string, status: EventPlanningStatus) => {
+      if (!savedIds.has(eventId)) return;
+      const next = savedSnapshots.map(snapshot =>
+        snapshot.id === eventId ? { ...snapshot, planningStatus: status } : snapshot
+      );
+      await updateProfile({ savedEvents: next });
+      void Haptics.selectionAsync();
+    },
+    [savedIds, savedSnapshots, updateProfile],
+  );
+
   const removeFromOnePager = useCallback(
     async (eventId: string) => {
       if (!savedIds.has(eventId)) return;
@@ -123,7 +135,7 @@ export function useSavedEvents() {
   }, [savedAsLocalEvents]);
 
   const eventsNeedingFeedback = useMemo(
-    () => getEventsNeedingFeedback(savedSnapshots),
+    () => getEventsNeedingFeedback(savedSnapshots.filter(event => event.planningStatus === 'going' || Boolean(event.attendedAt))),
     [savedSnapshots],
   );
 
@@ -237,6 +249,7 @@ export function useSavedEvents() {
     savedCount: savedSnapshots.length,
     isSaved,
     addToOnePager,
+    setPlanningStatus,
     removeFromOnePager,
     toggleSaved,
     getSnapshotById,

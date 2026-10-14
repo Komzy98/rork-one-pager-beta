@@ -19,6 +19,7 @@ import EventListingBadges from '@/components/events/EventListingBadges';
 import { EventSocialProofRow } from '@/components/events/EventSocialProofRow';
 import type { EventFriendProfile } from '@/utils/eventSocialProof';
 import { resolveEventPosterUrl } from '@/utils/eventPosterImage';
+import { getEventListingSource, getListingSourceLabel } from '@/utils/eventListingMeta';
 
 type PosterVariant = 'vertical' | 'horizontal' | 'feed';
 
@@ -116,10 +117,20 @@ export const PremiumEventPosterCard = React.memo(function PremiumEventPosterCard
         activeOpacity={1}
       >
         <View style={isFeed ? styles.feedImageWrap : isHorizontal ? styles.horizontalImageWrap : styles.verticalImageWrap}>
+          {isFeed ? (
+            <Image
+              source={{ uri: displayPosterUri }}
+              style={styles.feedImageBackdrop}
+              contentFit="cover"
+              blurRadius={24}
+              recyclingKey={`${event.id}-backdrop-${displayPosterUri}`}
+              accessible={false}
+            />
+          ) : null}
           <Image
             source={{ uri: displayPosterUri }}
             style={isFeed ? styles.feedImage : isHorizontal ? styles.horizontalImage : styles.verticalImage}
-            contentFit="cover"
+            contentFit={isFeed ? "contain" : "cover"}
             recyclingKey={`${event.id}-${displayPosterUri}`}
             onError={() => setPosterFailed(true)}
           />
@@ -203,7 +214,7 @@ export const PremiumEventPosterCard = React.memo(function PremiumEventPosterCard
             />
           ) : null}
 
-          {showListingBadges ? <EventListingBadges event={event} palette={palette} /> : null}
+          {showListingBadges || isFeed ? <EventListingBadges event={event} palette={palette} showMarket={!isFeed} /> : null}
 
           <View style={styles.metaRow}>
             <MapPin size={11} color={palette.textMuted} />
@@ -223,6 +234,12 @@ export const PremiumEventPosterCard = React.memo(function PremiumEventPosterCard
               <Text style={[styles.distance, { color: palette.textMuted }]}>{distanceText}</Text>
             ) : null}
           </View>
+
+          {isFeed && event.ticketUrl && getEventListingSource(event) ? (
+            <Text style={[styles.dateNote, { color: palette.textMuted }]}>
+              Date supplied by {getListingSourceLabel(getEventListingSource(event))} · Verify on ticket page
+            </Text>
+          ) : null}
 
           {isFeed && onAddToOnePager ? (
             <View style={styles.feedActions}>
@@ -295,21 +312,28 @@ const styles = StyleSheet.create({
     width: '100%',
   },
   feedCard: {
-    borderRadius: 20,
+    borderRadius: 18,
     borderWidth: 1,
     overflow: 'hidden',
   },
   feedImageWrap: {
-    height: 180,
+    height: 184,
+    backgroundColor: '#141924',
     position: 'relative',
   },
   feedImage: {
     width: '100%',
     height: '100%',
   },
+  // Blurred edge-to-edge artwork removes the dark empty bars that appear
+  // when narrow event posters are displayed in full with contentFit="contain".
+  feedImageBackdrop: {
+    ...StyleSheet.absoluteFillObject,
+    opacity: 0.85,
+  },
   feedBody: {
-    padding: 14,
-    gap: 7,
+    padding: 16,
+    gap: 8,
   },
   chipRow: {
     flexDirection: 'row',
@@ -510,6 +534,11 @@ const styles = StyleSheet.create({
   distance: {
     fontSize: 10,
     fontWeight: '600',
+  },
+  dateNote: {
+    fontSize: 10,
+    fontWeight: '500',
+    lineHeight: 15,
   },
 });
 

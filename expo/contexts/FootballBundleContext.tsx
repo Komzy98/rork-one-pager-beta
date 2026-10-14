@@ -11,7 +11,7 @@ import type { inferRouterInputs, inferRouterOutputs } from '@trpc/server';
 import type { AppRouter } from '@/backend/trpc/app-router';
 import { trpc } from '@/lib/trpc';
 import { useUserProfile } from '@/hooks/useUserProfile';
-import { collectNationalTeamApiIds } from '@/utils/nationalTeamApiIds';
+import { collectNationalTeamApiIds, collectNationalTeamNames } from '@/utils/nationalTeamApiIds';
 import {
   mergeFollowedClubTeamIds,
   mergeFollowedNationalTeamIds,
@@ -46,14 +46,16 @@ const BUNDLE_DAYS = 14;
 function buildProfileFallbackInput(params: {
   favoriteTeamApiIds: readonly number[];
   nationalTeamApiIds: readonly number[];
+  nationalTeamNames: readonly string[];
   includeResults: boolean;
 }): FootballBundleInput {
-  const { favoriteTeamApiIds, nationalTeamApiIds, includeResults } = params;
+  const { favoriteTeamApiIds, nationalTeamApiIds, nationalTeamNames, includeResults } = params;
   return {
     days: BUNDLE_DAYS,
     teamIds: favoriteTeamApiIds.length > 0 ? [...favoriteTeamApiIds] : undefined,
     nationalTeamIds: nationalTeamApiIds.length > 0 ? [...nationalTeamApiIds] : undefined,
-    includeAfcon: nationalTeamApiIds.length > 0 ? true : undefined,
+    nationalTeamNames: nationalTeamNames.length > 0 ? [...nationalTeamNames] : undefined,
+    includeAfcon: nationalTeamNames.length > 0 || nationalTeamApiIds.length > 0 ? true : undefined,
     includeResults,
   };
 }
@@ -78,23 +80,38 @@ export function FootballBundleProvider({ children }: { children: ReactNode }) {
     [profile?.nationalities],
   );
 
+  const nationalTeamNames = useMemo(
+    () => collectNationalTeamNames(profile?.nationalities),
+    [profile?.nationalities],
+  );
+
   const fallbackInput = useMemo(
     () =>
       buildProfileFallbackInput({
         favoriteTeamApiIds,
         nationalTeamApiIds,
+        nationalTeamNames,
         includeResults,
       }),
-    [favoriteTeamApiIds, nationalTeamApiIds, includeResults],
+    [favoriteTeamApiIds, nationalTeamApiIds, nationalTeamNames, includeResults],
   );
 
   const effectiveInput = useMemo(() => {
     const base = publishedInput ?? fallbackInput;
-    return mergeFollowedNationalTeamIds(
+    const withTeams = mergeFollowedNationalTeamIds(
       mergeFollowedClubTeamIds(base, favoriteTeamApiIds),
       nationalTeamApiIds,
     );
-  }, [publishedInput, fallbackInput, favoriteTeamApiIds, nationalTeamApiIds]);
+    const mergedNationalNames = Array.from(
+      new Set([...(withTeams.nationalTeamNames ?? []), ...nationalTeamNames]),
+    );
+    return {
+      ...withTeams,
+      nationalTeamNames: mergedNationalNames.length > 0 ? mergedNationalNames : undefined,
+      includeAfcon:
+        withTeams.includeAfcon ?? (mergedNationalNames.length > 0 ? true : undefined),
+    };
+  }, [publishedInput, fallbackInput, favoriteTeamApiIds, nationalTeamApiIds, nationalTeamNames]);
 
   const query = trpc.football.getMatchesBundle.useQuery(effectiveInput, {
     staleTime: 45 * 1000,
