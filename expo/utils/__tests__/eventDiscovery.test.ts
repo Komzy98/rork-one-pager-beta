@@ -131,6 +131,19 @@ describe('eventDiscovery', () => {
     assert.equal(parsed!.getDate(), 12);
   });
 
+  it('never rolls a past provider timestamp to next year because its label lacks a year', () => {
+    const sample = {
+      id: 'sk-expired', title: 'Manchester Food Fest', venue: 'Street Market',
+      location: 'Manchester', date: 'Fri 25 Sep', time: '10:00', category: 'food',
+      price: 'Free', image: '', isSaved: false, attendees: 0, rating: 0, tags: [],
+      description: '', latitude: 53.48, longitude: -2.24,
+      startIso: '2026-09-25T10:00:00Z',
+    } satisfies LocalEvent;
+    const referenceMs = Date.parse('2026-10-14T18:00:00Z');
+    assert.equal(filterUpcomingEvents([sample], referenceMs).length, 0);
+    assert.equal(parseEventStartDateTime(sample, referenceMs)?.getFullYear(), 2026);
+  });
+
   it('fallback sample events are always in the future', () => {
     const now = new Date('2026-07-05T12:00:00');
     const samples = getFallbackEvents(now);

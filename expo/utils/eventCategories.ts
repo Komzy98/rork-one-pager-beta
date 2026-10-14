@@ -131,11 +131,22 @@ export function inferSubCategory(
   return undefined;
 }
 
+/**
+ * Provider categories are broad. Correct only unambiguous, title-led food events,
+ * never inferred from a description of refreshments offered at another event.
+ */
+export function isClearlyFoodEvent(title: string): boolean {
+  return /\b(?:food\s+(?:festival|fest|market|fair)|street\s+food|food\s*(?:&|and)\s*drink|supper\s+club|wine\s+tasting|beer\s+tasting|culinary\s+festival|restaurant\s+week)\b/i.test(title);
+}
+
 export function normalizeEventCategories<T extends LocalEvent>(event: T): T {
-  const subCategory = inferSubCategory(event);
+  const category = isClearlyFoodEvent(event.title) && ['arts', 'other', 'family'].includes(String(event.category))
+    ? 'food'
+    : event.category;
+  const subCategory = inferSubCategory({ ...event, category });
   const bentoCategory = subCategory
     ? SUB_CATEGORY_META[subCategory].parent
-    : getBentoCategoryId({ ...event, subCategory: undefined });
+    : getBentoCategoryId({ ...event, category, subCategory: undefined });
 
   const tags = new Set(event.tags ?? []);
   if (subCategory) tags.add(SUB_CATEGORY_META[subCategory].tag);

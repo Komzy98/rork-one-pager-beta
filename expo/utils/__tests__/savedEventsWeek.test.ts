@@ -48,11 +48,17 @@ describe('savedEventsWeek', () => {
   });
 
   it('finds days with multiple events', () => {
-    const referenceMs = new Date('2026-07-10T12:00:00').getTime();
+    const next = new Date();
+    next.setDate(next.getDate() + 3);
+    next.setHours(19, 0, 0, 0);
+    const later = new Date(next);
+    later.setHours(22);
+    const anotherDay = new Date(next);
+    anotherDay.setDate(anotherDay.getDate() + 1);
     const multi = findMultiEventDays([
-      baseEvent({ id: 'a', startIso: '2026-07-12T19:00:00' }),
-      baseEvent({ id: 'b', startIso: '2026-07-12T22:00:00' }),
-      baseEvent({ id: 'c', startIso: '2026-07-13T20:00:00' }),
+      baseEvent({ id: 'a', startIso: next.toISOString() }),
+      baseEvent({ id: 'b', startIso: later.toISOString() }),
+      baseEvent({ id: 'c', startIso: anotherDay.toISOString() }),
     ]);
     assert.equal(multi.length, 1);
     assert.equal(multi[0]?.events.length, 2);

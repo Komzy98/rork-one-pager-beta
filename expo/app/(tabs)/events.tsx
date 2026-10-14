@@ -124,11 +124,13 @@ const { width: SCREEN_WIDTH } = Dimensions.get('window');
 function formatGlobalSearchSourceLabel(source: NearbyEventsSource): string {
   switch (source) {
     case 'mixed':
-      return 'Ticketmaster & Skiddle';
+      return 'ticketing partners';
     case 'ticketmaster':
       return 'Ticketmaster';
     case 'skiddle':
       return 'Skiddle';
+    case 'eventbrite':
+      return 'Eventbrite';
     case 'fallback':
       return 'sample listings';
     default:
@@ -184,7 +186,7 @@ function sampleEventsBannerMessage(): string {
       ? 'Showing sample events — add TICKETMASTER_API_KEY and/or SKIDDLE_API_KEY to your Railway API service, redeploy, then pull to refresh.'
       : 'Showing sample events — add TICKETMASTER_API_KEY and/or SKIDDLE_API_KEY to expo/.env and restart Metro for live listings.';
   }
-  return 'Sample events for now — connect live Ticketmaster and Skiddle listings when your area is supported.';
+  return 'Sample events for now — no live listings found for this area.';
 }
 
 type ViewMode = 'list' | 'map';

@@ -32,6 +32,22 @@ function baseEvent(overrides: Partial<LocalEvent> = {}): LocalEvent {
 }
 
 describe('eventCategories', () => {
+  it('reclassifies obvious food festivals when a provider calls them arts', () => {
+    const corrected = normalizeEventCategories(
+      baseEvent({ id: 'sk-900', category: 'arts', title: 'The Manchester Food Fest' }),
+    );
+    assert.equal(corrected.category, 'food');
+    assert.equal(eventMatchesBentoCategory(corrected, 'food'), true);
+    assert.equal(eventMatchesBentoCategory(corrected, 'arts'), false);
+  });
+
+  it('does not recategorise an art exhibition simply because it serves food', () => {
+    const unchanged = normalizeEventCategories(
+      baseEvent({ category: 'arts', title: 'Gallery opening', description: 'Food and drinks available' }),
+    );
+    assert.equal(unchanged.category, 'arts');
+  });
+
   it('rolls family into arts with a family sub-tag', () => {
     const normalized = normalizeEventCategories(
       baseEvent({ category: 'family', title: 'Kids puppet show' }),

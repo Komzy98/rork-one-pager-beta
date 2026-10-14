@@ -7,9 +7,10 @@ import { getEventListingBadges } from '@/utils/eventListingMeta';
 type Props = {
   event: LocalEvent;
   palette: EventsPalette;
+  showMarket?: boolean;
 };
 
-export default function EventListingBadges({ event, palette }: Props) {
+export default function EventListingBadges({ event, palette, showMarket = true }: Props) {
   const { sourceLabel, marketBadge } = getEventListingBadges(event);
   if (!sourceLabel && !marketBadge) return null;
 
@@ -22,7 +23,7 @@ export default function EventListingBadges({ event, palette }: Props) {
           </Text>
         </View>
       ) : null}
-      {marketBadge ? (
+      {showMarket && marketBadge ? (
         <View style={[styles.pill, styles.marketPill, { borderColor: palette.border }]}>
           <Text style={[styles.marketText, { color: palette.textSecondary }]}>{marketBadge}</Text>
         </View>
