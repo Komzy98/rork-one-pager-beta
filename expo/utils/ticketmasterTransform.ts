@@ -119,6 +119,8 @@ function buildTags(classifications?: TmClassification[], city?: string): string[
 }
 
 export function mapTicketmasterEvent(raw: TmEvent): LocalEvent | null {
+  const statusCode = raw.dates?.status?.code?.toLowerCase();
+  if (['cancelled', 'postponed', 'rescheduled'].includes(statusCode ?? '')) return null;
   const venue = raw._embedded?.venues?.[0];
   const lat = Number(venue?.location?.latitude);
   const lng = Number(venue?.location?.longitude);
