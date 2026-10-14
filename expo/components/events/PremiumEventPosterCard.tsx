@@ -295,12 +295,12 @@ const styles = StyleSheet.create({
     width: '100%',
   },
   feedCard: {
-    borderRadius: 20,
+    borderRadius: 18,
     borderWidth: 1,
     overflow: 'hidden',
   },
   feedImageWrap: {
-    height: 180,
+    height: 156,
     position: 'relative',
   },
   feedImage: {
@@ -308,8 +308,8 @@ const styles = StyleSheet.create({
     height: '100%',
   },
   feedBody: {
-    padding: 14,
-    gap: 7,
+    padding: 16,
+    gap: 8,
   },
   chipRow: {
     flexDirection: 'row',
