@@ -15,7 +15,6 @@ import { EVENT_CATEGORY_META } from '@/utils/eventCategoryMeta';
 import {
   countEventsByBentoCategory,
   countSubCategoriesForBento,
-  formatBentoCountLabel,
   getBentoCategoryId,
   SUB_CATEGORY_META,
   type BentoCategoryId,
@@ -71,7 +70,7 @@ export const EventsCategoryBento = React.memo(function EventsCategoryBento({
         const CatIcon = cat.icon;
         const count = countsByCategory.get(cat.id) ?? 0;
         const subCounts = countSubCategoriesForBento(events, cat.id as BentoCategoryId);
-        const countLabel = formatBentoCountLabel(count, subCounts);
+        const countLabel = `${count} ${count === 1 ? 'event' : 'events'}`;
         const hasCover = Boolean(cover);
         const labelColor = hasCover ? palette.textOnImage : palette.text;
         const sublabelColor = hasCover ? palette.textOnImageSecondary : palette.textSecondary;
@@ -277,7 +276,9 @@ const styles = StyleSheet.create({
   footerBlur: {
     paddingHorizontal: 12,
     paddingVertical: 10,
-    gap: 2,
+    minHeight: 64,
+    justifyContent: 'center',
+    gap: 3,
     borderWidth: 1,
     borderRadius: 14,
   },
