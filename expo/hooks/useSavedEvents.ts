@@ -121,7 +121,7 @@ export function useSavedEvents() {
   }, [savedAsLocalEvents]);
 
   const eventsNeedingFeedback = useMemo(
-    () => getEventsNeedingFeedback(savedSnapshots),
+    () => getEventsNeedingFeedback(savedSnapshots.filter(event => event.planningStatus === 'going' || Boolean(event.attendedAt))),
     [savedSnapshots],
   );
 
