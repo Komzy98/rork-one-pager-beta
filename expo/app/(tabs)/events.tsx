@@ -109,7 +109,7 @@ import { useSavedEventsSocial } from '@/hooks/useSavedEventsSocial';
 import { groupSavedEventsByDay, findMultiEventDays } from '@/utils/savedEventsWeek';
 import type { PlanRsvpStatus } from '@/utils/sharedPlansService';
 import { eventMatchesBentoCategory } from '@/utils/eventCategories';
-import { curateDiscoveryEvents, isAffordableEvent, isWeekendEvent } from '@/utils/eventsV2Discovery';
+import { chooseExploreEvents, curateDiscoveryEvents, isAffordableEvent, isWeekendEvent } from '@/utils/eventsV2Discovery';
 import { registerDiscoveryEvents, registerSavedEvents } from '@/utils/eventCatalog';
 import { getEventCategoryMeta } from '@/utils/eventCategoryMeta';
 import {
@@ -198,6 +198,7 @@ const DISCOVERY_PILL_TABS = [
   { key: 'thisWeek' as const, label: 'This Week', icon: CalendarDays, color: '#34C759' },
   { key: 'weekend' as const, label: 'Weekend', icon: Calendar, color: BRAND.light.primary },
   { key: 'budget' as const, label: 'Under £20', icon: Star, color: '#34C759' },
+  { key: 'explore' as const, label: 'Explore', icon: Globe, color: BRAND.light.primary },
 ];
 
 
@@ -738,7 +739,9 @@ function EventsScreenInner() {
 
 
   const smartDiscoveryEvents =
-    discoveryTab === 'weekend'
+    discoveryTab === 'explore'
+      ? chooseExploreEvents(filteredEvents)
+      : discoveryTab === 'weekend'
       ? rankEventsForYou(filteredEvents.filter(event => isWeekendEvent(event)), recommendationInput)
       : discoveryTab === 'budget'
         ? rankEventsForYou(filteredEvents.filter(event => isAffordableEvent(event, 20)), recommendationInput)
@@ -833,7 +836,9 @@ function EventsScreenInner() {
     mainTab === 'discover' && viewMode === 'list' && !inSearchMode;
 
   const discoveryRailTitle =
-    discoveryTab === 'weekend'
+    discoveryTab === 'explore'
+      ? 'Try Something Different'
+      : discoveryTab === 'weekend'
       ? 'This Weekend'
       : discoveryTab === 'budget'
         ? 'Free & Under £20'
