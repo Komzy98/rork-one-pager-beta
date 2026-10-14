@@ -10,14 +10,23 @@ describe('Eventbrite backend integration', () => {
     }) as unknown as typeof fetch;
     assert.deepEqual(await verifyEventbriteAuthentication('TEST_TOKEN', fetcher), { id: 'user-1', connected: true });
   });
-  it('excludes unlisted and non-live events from account events', async () => {
-    const fetcher = (async () => ({ ok: true, json: async () => ({
-      events: [
-        { id: '1', listed: true, status: 'live', url: 'https://www.eventbrite.com/e/1' },
-        { id: '2', listed: false, status: 'live', url: 'https://www.eventbrite.com/e/2' },
-        { id: '3', listed: true, status: 'draft', url: 'https://www.eventbrite.com/e/3' },
-      ], pagination: { has_more_items: false }
-    }) })) as unknown as typeof fetch;
+  it('returns no events without an authorised organisation', async () => {
+    const fetcher = (async (url: string) => {
+      assert.ok(url.endsWith('/users/me/organizations/'));
+      return { ok: true, json: async () => ({ organizations: [] }) };
+    }) as unknown as typeof fetch;
+    assert.deepEqual(await fetchOwnPublicEventbriteEvents('TEST_TOKEN', fetcher), []);
+  });
+  it('excludes unlisted and non-live organisation events', async () => {
+    const fetcher = (async (url: string) => ({ ok: true, json: async () =>
+      url.endsWith('/users/me/organizations/')
+        ? { organizations: [{ id: '12345' }] }
+        : { events: [
+            { id: '1', listed: true, status: 'live', url: 'https://www.eventbrite.com/e/1' },
+            { id: '2', listed: false, status: 'live', url: 'https://www.eventbrite.com/e/2' },
+            { id: '3', listed: true, status: 'draft', url: 'https://www.eventbrite.com/e/3' },
+          ], pagination: { has_more_items: false } }
+    })) as unknown as typeof fetch;
     assert.deepEqual((await fetchOwnPublicEventbriteEvents('TEST_TOKEN', fetcher)).map(e => e.id), ['1']);
   });
 });
