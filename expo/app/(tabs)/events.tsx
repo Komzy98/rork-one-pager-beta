@@ -28,6 +28,7 @@ import {
   CalendarDays,
   Users,
   ChevronLeft,
+  ChevronRight,
   Repeat,
   Globe,
 } from 'lucide-react-native';
