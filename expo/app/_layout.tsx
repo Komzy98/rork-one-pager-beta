@@ -75,8 +75,8 @@ function SafeProvider({ provider: Provider, children }: { provider: React.Compon
 const queryClient = new QueryClient({
   defaultOptions: {
     queries: {
-      staleTime: 5 * 60 * 1000,
-      gcTime: 10 * 60 * 1000,
+      staleTime: 10 * 60 * 1000,
+      gcTime: 60 * 60 * 1000,
       retry: (failureCount, error) => {
         if (error && typeof error === 'object' && 'status' in error) {
           const status = error.status as number;
@@ -85,6 +85,7 @@ const queryClient = new QueryClient({
         return failureCount < 2;
       },
       refetchOnWindowFocus: false,
+      refetchOnReconnect: true,
     },
     mutations: {
       retry: 1,

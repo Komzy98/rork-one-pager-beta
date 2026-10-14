@@ -53,11 +53,10 @@ type LocalEventPayload = NearbyEventsResult['events'][number];
 
 async function fetchJsonWithTimeout(url: string, label: string): Promise<unknown | null> {
   const controller = new AbortController();
-  const timeoutId = setTimeout(() => controller.abort(), 15000);
+  const timeoutId = setTimeout(() => controller.abort(), 6500);
 
   try {
     const response = await fetch(url, { signal: controller.signal });
-    clearTimeout(timeoutId);
     const payload = await response.json().catch(() => null);
 
     if (!response.ok) {
@@ -67,9 +66,10 @@ async function fetchJsonWithTimeout(url: string, label: string): Promise<unknown
 
     return payload;
   } catch (error) {
-    clearTimeout(timeoutId);
     console.error(`💥 ${label} fetch error:`, error);
     return null;
+  } finally {
+    clearTimeout(timeoutId);
   }
 }
 

@@ -52,7 +52,7 @@ export function useNearbyEvents(options: UseNearbyEventsOptions = {}): UseNearby
     },
     {
       enabled,
-      staleTime: 5 * 60 * 1000,
+      staleTime: 15 * 60 * 1000,
       refetchOnWindowFocus: false,
     }
   );
@@ -90,7 +90,7 @@ export function useNearbyEvents(options: UseNearbyEventsOptions = {}): UseNearby
     source,
     userCoords: coords,
     areaLabel,
-    isLoading: query.isLoading || locationLoading,
+    isLoading: query.isLoading && events.length === 0,
     locationLoading,
     permissionDenied,
     refetch: query.refetch,

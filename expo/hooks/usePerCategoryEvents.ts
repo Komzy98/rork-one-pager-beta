@@ -61,13 +61,13 @@ export function usePerCategoryEvents(options: UsePerCategoryEventsOptions) {
     },
     {
       enabled,
-      staleTime: 5 * 60 * 1000,
+      staleTime: 15 * 60 * 1000,
       refetchOnWindowFocus: false,
     },
   );
 
   const batchEnabled =
-    enabled && (previewQuery.isSuccess || previewQuery.isError);
+    enabled;
 
   const batchQuery = trpc.events.getNearbyBatch.useQuery(
     {
@@ -78,7 +78,7 @@ export function usePerCategoryEvents(options: UsePerCategoryEventsOptions) {
     },
     {
       enabled: batchEnabled,
-      staleTime: 5 * 60 * 1000,
+      staleTime: 15 * 60 * 1000,
       refetchOnWindowFocus: false,
     },
   );

@@ -890,10 +890,10 @@ function EventsScreenInner() {
         keyboardShouldPersistTaps="handled"
         nestedScrollEnabled
       >
-      {showCinematicHero && isPreviewLoading ? (
+      {showCinematicHero && isPreviewLoading && heroEvents.length === 0 ? (
         <EventsHeroSkeleton palette={palette} />
       ) : null}
-      {showCinematicHero && !isPreviewLoading ? (
+      {showCinematicHero && heroEvents.length > 0 ? (
         <PremiumEventHeroCard
           events={heroEvents}
           scrollY={scrollY}
@@ -1141,7 +1141,7 @@ function EventsScreenInner() {
           showsHorizontalScrollIndicator={false}
           contentContainerStyle={styles.discoveryRailScroll}
         >
-          {isPreviewLoading ? (
+          {isPreviewLoading && smartDiscoveryEvents.length === 0 ? (
             <EventsRailSkeleton palette={palette} />
           ) : smartDiscoveryEvents.length === 0 ? (
             <View style={styles.smartDiscoveryEmpty}>
