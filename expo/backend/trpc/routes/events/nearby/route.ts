@@ -82,10 +82,12 @@ type LocalEventPayload = NearbyEventsResult['events'][number];
 function resolveSource(
   ticketmasterCount: number,
   skiddleCount: number,
+  eventbriteCount = 0,
 ): NearbyEventsSource {
   if (ticketmasterCount > 0 && skiddleCount > 0) return 'mixed';
   if (ticketmasterCount > 0) return 'ticketmaster';
   if (skiddleCount > 0) return 'skiddle';
+  if (eventbriteCount > 0) return 'eventbrite';
   return 'none';
 }
 
@@ -111,14 +113,14 @@ async function resolveNearbyEvents(input: FetchInput): Promise<NearbyEventsResul
     return { events: [], source: 'none' };
   }
 
-  const { events, ticketmasterCount, skiddleCount } = await fetchMergedDiscoveryEvents(
+  const { events, ticketmasterCount, skiddleCount, eventbriteCount } = await fetchMergedDiscoveryEvents(
     input,
     { ticketmaster: ticketmasterKey, skiddle: skiddleKey, eventbrite: eventbriteKey },
   );
 
   const result: NearbyEventsResult = {
     events,
-    source: resolveSource(ticketmasterCount, skiddleCount),
+    source: resolveSource(ticketmasterCount, skiddleCount, eventbriteCount),
   };
 
   setCached(cacheKey, result);
