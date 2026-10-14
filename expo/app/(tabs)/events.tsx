@@ -913,26 +913,6 @@ function EventsScreenInner() {
         keyboardShouldPersistTaps="handled"
         nestedScrollEnabled
       >
-      {showCinematicHero && isPreviewLoading && heroEvents.length === 0 ? (
-        <EventsHeroSkeleton palette={palette} />
-      ) : null}
-      {showCinematicHero && heroEvents.length > 0 ? (
-        <PremiumEventHeroCard
-          events={heroEvents}
-          scrollY={scrollY}
-          palette={palette}
-          areaLabel={areaLabel ?? undefined}
-          safeAreaTop={insets.top}
-          onePagerThisWeekLabel={onePagerThisWeekLabel}
-          concierge={eventConcierge}
-          onDismissEvent={dismissConciergeEvent}
-          getRecommendationChipLabel={(event) => getChipLabel(event)}
-          onPressEvent={openEventDetail}
-          onAddToOnePager={handleAddToOnePager}
-          onInterested={handleToggleSavedWithToast}
-          onOpenTickets={handleOpenTickets}
-        />
-      ) : null}
       <View style={[styles.header, showCinematicHero && styles.headerCompact]}>
         <View style={styles.headerContent}>
             <View style={styles.headerLeft}>
@@ -1020,18 +1000,31 @@ function EventsScreenInner() {
        </View>
       </View>
 
-      {showCinematicHero && isPreviewLoading ? (
+      {showCinematicHero ? (
+        <View style={{ paddingHorizontal: 20, marginTop: 10, marginBottom: 12 }}>
+          <EventsDiscoveryPills
+            tabs={DISCOVERY_PILL_TABS}
+            activeTab={discoveryTab}
+            onTabChange={setDiscoveryTab}
+            palette={palette}
+            compact
+          />
+        </View>
+      ) : null}
+
+      {showCinematicHero && isPreviewLoading && heroEvents.length === 0 ? (
         <EventsHeroSkeleton palette={palette} />
       ) : null}
-      {showCinematicHero && !isPreviewLoading ? (
+      {showCinematicHero && heroEvents.length > 0 ? (
         <PremiumEventHeroCard
           events={heroEvents}
           scrollY={scrollY}
           palette={palette}
           areaLabel={areaLabel ?? undefined}
-          safeAreaTop={insets.top}
+          safeAreaTop={0}
           onePagerThisWeekLabel={onePagerThisWeekLabel}
           concierge={eventConcierge}
+          onDismissEvent={dismissConciergeEvent}
           getRecommendationChipLabel={(event) => getChipLabel(event)}
           onPressEvent={openEventDetail}
           onAddToOnePager={handleAddToOnePager}
@@ -1121,13 +1114,6 @@ function EventsScreenInner() {
           </View>
         ) : null}
 
-        <EventsDiscoveryPills
-          tabs={DISCOVERY_PILL_TABS}
-          activeTab={discoveryTab}
-          onTabChange={setDiscoveryTab}
-          palette={palette}
-          compact
-        />
 
         {!showCinematicHero && eventConcierge ? (
           <EventConciergeFeedBanner
@@ -1685,9 +1671,9 @@ const styles = StyleSheet.create({
     marginTop: 4,
   },
   railTitle: {
-    fontSize: 16,
+    fontSize: 20,
     fontWeight: '800',
-    letterSpacing: -0.3,
+    letterSpacing: -0.65,
   },
   railCount: {
     fontSize: 13,
@@ -2552,7 +2538,7 @@ const styles = StyleSheet.create({
     paddingRight: 4,
   },
   sectionRailScroll: {
-    gap: 12,
+    gap: 14,
     paddingHorizontal: 20,
   },
   feedList: {

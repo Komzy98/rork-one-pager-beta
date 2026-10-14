@@ -172,7 +172,7 @@ export const PremiumEventPosterCard = React.memo(function PremiumEventPosterCard
                 palette={palette}
                 variant={recommendationChipVariant === 'featured-chip' ? 'featured-chip' : 'feed-chip'}
               />
-              {onWhyThis ? (
+              {onWhyThis && isFeed ? (
                 <TouchableOpacity
                   style={styles.whyThisBtn}
                   onPress={(e) => {
@@ -187,12 +187,12 @@ export const PremiumEventPosterCard = React.memo(function PremiumEventPosterCard
             </View>
           ) : null}
           <View style={styles.categoryRow}>
-            <View style={[styles.categoryChip, { backgroundColor: `${categoryMeta.color}22` }]}>
+            {!recommendationChipLabel ? <View style={[styles.categoryChip, { backgroundColor: `${categoryMeta.color}16` }]}>
               <CategoryIcon size={11} color={categoryMeta.color} />
               <Text style={[styles.categoryText, { color: categoryMeta.color }]}>
                 {categoryMeta.label}
               </Text>
-            </View>
+            </View> : null}
             <View style={[styles.priceBadge, { backgroundColor: priceBg }]}>
               <Text style={[styles.priceText, { color: priceColor }]}>{event.price}</Text>
             </View>
@@ -305,7 +305,7 @@ export const PremiumEventPosterCard = React.memo(function PremiumEventPosterCard
 const CARD_WIDTH = 168;
 const HORIZONTAL_WIDTH = 280;
 /** Image + body padding for horizontal poster cards (nested carousel height). */
-export const POSTER_HORIZONTAL_CARD_MIN_HEIGHT = 252;
+export const POSTER_HORIZONTAL_CARD_MIN_HEIGHT = 278;
 
 const styles = StyleSheet.create({
   feedWrap: {
@@ -411,12 +411,12 @@ const styles = StyleSheet.create({
     width: HORIZONTAL_WIDTH,
   },
   verticalCard: {
-    borderRadius: 18,
+    borderRadius: 22,
     borderWidth: 1,
     overflow: 'hidden',
   },
   horizontalCard: {
-    borderRadius: 18,
+    borderRadius: 22,
     borderWidth: 1,
     overflow: 'hidden',
   },
@@ -425,7 +425,7 @@ const styles = StyleSheet.create({
     position: 'relative',
   },
   horizontalImageWrap: {
-    height: 140,
+    height: 164,
     position: 'relative',
   },
   verticalImage: {
@@ -453,7 +453,7 @@ const styles = StyleSheet.create({
     paddingHorizontal: 7,
     paddingVertical: 4,
     borderRadius: 8,
-    backgroundColor: '#FF3B30',
+    backgroundColor: 'rgba(24,30,44,0.82)',
   },
   hotText: {
     color: '#FFF',
@@ -476,8 +476,8 @@ const styles = StyleSheet.create({
     gap: 6,
   },
   horizontalBody: {
-    padding: 12,
-    gap: 5,
+    padding: 14,
+    gap: 7,
   },
   categoryRow: {
     flexDirection: 'row',
@@ -510,8 +510,8 @@ const styles = StyleSheet.create({
   title: {
     fontSize: 15,
     fontWeight: '700',
-    letterSpacing: -0.3,
-    lineHeight: 19,
+    letterSpacing: -0.4,
+    lineHeight: 21,
   },
   metaRow: {
     flexDirection: 'row',

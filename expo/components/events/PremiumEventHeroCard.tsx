@@ -22,7 +22,7 @@ import { EventConciergeNarrative } from '@/components/events/EventConciergeNarra
 import { getLogicalCategoryIds } from '@/utils/eventCategories';
 
 const { width: SCREEN_WIDTH } = Dimensions.get('window');
-const HERO_HEIGHT = 360;
+const HERO_HEIGHT = 338;
 const HERO_ROTATE_MS = 5500;
 const HERO_ROTATE_PAUSE_MS = 10000;
 
