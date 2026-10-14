@@ -1,4 +1,5 @@
 import { Hono } from "hono";
+import { fetchEventbriteAccountEvents } from "./services/eventbriteDiscovery";
 import type { Context } from "hono";
 import { cors } from "hono/cors";
 import { fetchRequestHandler } from "@trpc/server/adapters/fetch";
@@ -190,6 +191,19 @@ app.get("/health/eventbrite", async (c) => {
     }, profile.id ? 200 : 503);
   } catch {
     return c.json({ ok: false, configured: true, authenticated: false, error: "Eventbrite request failed" }, 503);
+  }
+});
+
+/** Summarised production sync check; exposes no private account records. */
+app.get("/health/eventbrite/events", async (c) => {
+  try {
+    const token = process.env.EVENTBRITE_TOKEN || "";
+    if (!token.trim()) return c.json({ ok: false, configured: false }, 503);
+    const events = await fetchEventbriteAccountEvents(token);
+    return c.json({ ok: true, configured: true, publicUpcomingEvents: events.length, timestamp: new Date().toISOString() });
+  } catch (error) {
+    console.error("Eventbrite sync check failed", error instanceof Error ? error.message : "Unknown error");
+    return c.json({ ok: false, configured: true, error: "Eventbrite event sync failed" }, 503);
   }
 });
 

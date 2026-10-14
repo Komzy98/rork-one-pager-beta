@@ -38,10 +38,11 @@ function setCached(key: string, data: NearbyEventsResult): void {
   }
 }
 
-function resolveSource(ticketmasterCount: number, skiddleCount: number): NearbyEventsSource {
+function resolveSource(ticketmasterCount: number, skiddleCount: number, eventbriteCount = 0): NearbyEventsSource {
   if (ticketmasterCount > 0 && skiddleCount > 0) return 'mixed';
   if (ticketmasterCount > 0) return 'ticketmaster';
   if (skiddleCount > 0) return 'skiddle';
+  if (eventbriteCount > 0) return 'eventbrite';
   return 'none';
 }
 
@@ -73,15 +74,16 @@ export const searchGlobalEventsRoute = publicProcedure
 
     const ticketmasterKey = getTicketmasterApiKeyFromEnv();
     const skiddleKey = getSkiddleApiKeyFromEnv();
+    const eventbriteKey = process.env.EVENTBRITE_TOKEN?.trim();
 
-    if (!ticketmasterKey && !skiddleKey) {
+    if (!ticketmasterKey && !skiddleKey && !eventbriteKey) {
       console.warn('⚠️ Global search: no TICKETMASTER_API_KEY / SKIDDLE_API_KEY');
       return { events: [], source: 'none' };
     }
 
     console.log(`🔎 Global event search: "${input.keyword}" (worldwide)`);
 
-    const { events, ticketmasterCount, skiddleCount } = await fetchMergedDiscoveryEvents(
+    const { events, ticketmasterCount, skiddleCount, eventbriteCount } = await fetchMergedDiscoveryEvents(
       {
         latitude: input.latitude,
         longitude: input.longitude,
@@ -90,7 +92,7 @@ export const searchGlobalEventsRoute = publicProcedure
         keyword: input.keyword,
         searchScope: 'worldwide',
       },
-      { ticketmaster: ticketmasterKey, skiddle: skiddleKey },
+      { ticketmaster: ticketmasterKey, skiddle: skiddleKey, eventbrite: eventbriteKey },
     );
 
     const withDistance = attachDistanceKm(events, {
@@ -103,7 +105,7 @@ export const searchGlobalEventsRoute = publicProcedure
     });
     const result: NearbyEventsResult = {
       events: ranked,
-      source: resolveSource(ticketmasterCount, skiddleCount),
+      source: resolveSource(ticketmasterCount, skiddleCount, eventbriteCount),
     };
 
     setCached(cacheKey, result);
