@@ -19,6 +19,7 @@ import EventListingBadges from '@/components/events/EventListingBadges';
 import { EventSocialProofRow } from '@/components/events/EventSocialProofRow';
 import type { EventFriendProfile } from '@/utils/eventSocialProof';
 import { resolveEventPosterUrl } from '@/utils/eventPosterImage';
+import { getEventListingSource, getListingSourceLabel } from '@/utils/eventListingMeta';
 
 type PosterVariant = 'vertical' | 'horizontal' | 'feed';
 
@@ -119,7 +120,7 @@ export const PremiumEventPosterCard = React.memo(function PremiumEventPosterCard
           <Image
             source={{ uri: displayPosterUri }}
             style={isFeed ? styles.feedImage : isHorizontal ? styles.horizontalImage : styles.verticalImage}
-            contentFit="cover"
+            contentFit={isFeed ? "contain" : "cover"}
             recyclingKey={`${event.id}-${displayPosterUri}`}
             onError={() => setPosterFailed(true)}
           />
@@ -203,7 +204,7 @@ export const PremiumEventPosterCard = React.memo(function PremiumEventPosterCard
             />
           ) : null}
 
-          {showListingBadges ? <EventListingBadges event={event} palette={palette} /> : null}
+          {showListingBadges || isFeed ? <EventListingBadges event={event} palette={palette} showMarket={!isFeed} /> : null}
 
           <View style={styles.metaRow}>
             <MapPin size={11} color={palette.textMuted} />
@@ -223,6 +224,12 @@ export const PremiumEventPosterCard = React.memo(function PremiumEventPosterCard
               <Text style={[styles.distance, { color: palette.textMuted }]}>{distanceText}</Text>
             ) : null}
           </View>
+
+          {isFeed && event.ticketUrl && getEventListingSource(event) ? (
+            <Text style={[styles.dateNote, { color: palette.textMuted }]}>
+              Date supplied by {getListingSourceLabel(getEventListingSource(event))} · Verify on ticket page
+            </Text>
+          ) : null}
 
           {isFeed && onAddToOnePager ? (
             <View style={styles.feedActions}>
@@ -300,7 +307,8 @@ const styles = StyleSheet.create({
     overflow: 'hidden',
   },
   feedImageWrap: {
-    height: 156,
+    height: 184,
+    backgroundColor: '#141924',
     position: 'relative',
   },
   feedImage: {
@@ -510,6 +518,11 @@ const styles = StyleSheet.create({
   distance: {
     fontSize: 10,
     fontWeight: '600',
+  },
+  dateNote: {
+    fontSize: 10,
+    fontWeight: '500',
+    lineHeight: 15,
   },
 });
 
