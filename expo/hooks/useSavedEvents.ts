@@ -148,104 +148,101 @@ export function useSavedEvents() {
 
   const recordEventAttendance = useCallback(
     async (eventId: string, attended: boolean) => {
-      const snapshot = savedSnapshots.find((entry) => entry.id === eventId);
-      if (!snapshot) return;
+      let snapshot: SavedEventSnapshot | undefined;
       const now = new Date().toISOString();
-      const nextSaved = savedSnapshots.map((entry) =>
-        entry.id === eventId
-          ? {
-              ...entry,
-              attendanceStatus: attended ? 'attended' as const : 'missed' as const,
-              attendedAt: attended ? (entry.attendedAt ?? now) : undefined,
-            }
-          : entry,
-      );
-      await updateProfile({ savedEvents: nextSaved });
+      await updateProfile((current) => {
+        const events = current.savedEvents ?? [];
+        snapshot = events.find((entry) => entry.id === eventId);
+        if (!snapshot) return {};
+        return {
+          savedEvents: events.map((entry) =>
+            entry.id === eventId
+              ? {
+                  ...entry,
+                  attendanceStatus: attended ? 'attended' as const : 'missed' as const,
+                  attendedAt: attended ? (entry.attendedAt ?? now) : undefined,
+                }
+              : entry,
+          ),
+        };
+      });
+      if (!snapshot) return;
       const learned = experience.getEntry('event', snapshot.id);
       if (attended) {
         if ((learned?.completedCount ?? 0) === 0) {
           await experience.record({
-            kind: 'event',
-            subjectId: snapshot.id,
-            title: snapshot.title,
-            action: 'completed',
-            tags: eventExperienceTags(snapshot),
-            source: 'post-event',
+            kind: 'event', subjectId: snapshot.id, title: snapshot.title,
+            action: 'completed', tags: eventExperienceTags(snapshot), source: 'post-event',
           });
         }
       } else {
         await experience.record({
-          kind: 'event',
-          subjectId: snapshot.id,
-          title: snapshot.title,
-          action: 'skipped',
-          tags: eventExperienceTags(snapshot),
-          source: 'post-event',
+          kind: 'event', subjectId: snapshot.id, title: snapshot.title,
+          action: 'skipped', tags: eventExperienceTags(snapshot), source: 'post-event',
         });
       }
-      void Haptics.impactAsync(attended ? Haptics.ImpactFeedbackStyle.Medium : Haptics.ImpactFeedbackStyle.Light);
+      void Haptics.impactAsync(attended ? Haptics.ImpactFeedbackStyle.Medium : Haptics.ImpactFeedbackStyle.Light).catch(() => {});
     },
-    [savedSnapshots, updateProfile, experience.getEntry, experience.record],
+    [updateProfile, experience.getEntry, experience.record],
   );
 
   const recordEventFeedback = useCallback(
     async (eventId: string, rating: EventFeedbackRating) => {
-      const snapshot = savedSnapshots.find((entry) => entry.id === eventId);
-      if (!snapshot) return;
-
+      let snapshot: SavedEventSnapshot | undefined;
       const now = new Date().toISOString();
-      const patches = inferJoyPatchesFromSavedEvent(snapshot, rating);
-      const nextSaved = savedSnapshots.map((entry) =>
-        entry.id === eventId
-          ? {
-              ...entry,
-              attendanceStatus: 'attended' as const,
-              feedbackRating: rating,
-              attendedAt: entry.attendedAt ?? now,
-            }
-          : entry,
-      );
-
-      await updateProfile({
-        savedEvents: nextSaved,
-        ...(patches ? { joySources: applyJoyPatches(profile?.joySources, patches) } : {}),
+      await updateProfile((current) => {
+        const events = current.savedEvents ?? [];
+        snapshot = events.find((entry) => entry.id === eventId);
+        if (!snapshot) return {};
+        const patches = inferJoyPatchesFromSavedEvent(snapshot, rating);
+        return {
+          savedEvents: events.map((entry) =>
+            entry.id === eventId
+              ? {
+                  ...entry,
+                  attendanceStatus: 'attended' as const,
+                  feedbackRating: rating,
+                  attendedAt: entry.attendedAt ?? now,
+                }
+              : entry,
+          ),
+          ...(patches ? { joySources: applyJoyPatches(current.joySources, patches) } : {}),
+        };
       });
+      if (!snapshot) return;
       const learned = experience.getEntry('event', snapshot.id);
       if ((learned?.completedCount ?? 0) === 0) {
         await experience.record({
-          kind: 'event',
-          subjectId: snapshot.id,
-          title: snapshot.title,
-          action: 'completed',
-          tags: eventExperienceTags(snapshot),
-          source: 'post-event',
+          kind: 'event', subjectId: snapshot.id, title: snapshot.title,
+          action: 'completed', tags: eventExperienceTags(snapshot), source: 'post-event',
         });
       }
       await experience.record({
-        kind: 'event',
-        subjectId: snapshot.id,
-        title: snapshot.title,
-        action: 'enjoyed',
-        value: rating,
-        tags: eventExperienceTags(snapshot),
-        source: 'post-event',
+        kind: 'event', subjectId: snapshot.id, title: snapshot.title,
+        action: 'enjoyed', value: rating,
+        tags: eventExperienceTags(snapshot), source: 'post-event',
       });
-      void Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+      void Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success).catch(() => {});
     },
-    [savedSnapshots, profile?.joySources, updateProfile, experience.getEntry, experience.record],
+    [updateProfile, experience.getEntry, experience.record],
   );
 
   const dismissEventFeedback = useCallback(
     async (eventId: string) => {
-      const nextSaved = savedSnapshots.map((entry) =>
-        entry.id === eventId
-          ? { ...entry, feedbackDismissedAt: new Date().toISOString() }
-          : entry,
-      );
-      await updateProfile({ savedEvents: nextSaved });
-      void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+      await updateProfile((current) => {
+        const events = current.savedEvents ?? [];
+        if (!events.some((entry) => entry.id === eventId)) return {};
+        return {
+          savedEvents: events.map((entry) =>
+            entry.id === eventId
+              ? { ...entry, feedbackDismissedAt: new Date().toISOString() }
+              : entry,
+          ),
+        };
+      });
+      void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light).catch(() => {});
     },
-    [savedSnapshots, updateProfile],
+    [updateProfile],
   );
 
   return {

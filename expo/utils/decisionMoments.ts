@@ -1,6 +1,5 @@
 import type { ActivityEvent } from '@/utils/activityService';
 import type { ProcessedWeatherData } from '@/utils/weatherApi';
-import { getTodayFormatted } from '@/utils/dateUtils';
 import { isInPeakHours, getChronotypeInfo, getSecondaryPeakHours } from '@/constants/chronotypes';
 
 export type DecisionMomentKind =
@@ -43,8 +42,12 @@ function firstName(name: string): string {
   return name.split(/\s+/)[0] || name;
 }
 
-function isToday(iso: string): boolean {
-  return iso.slice(0, 10) === getTodayFormatted();
+function isToday(iso: string, now: Date): boolean {
+  const date = new Date(iso);
+  return Number.isFinite(date.getTime()) &&
+    date.getFullYear() === now.getFullYear() &&
+    date.getMonth() === now.getMonth() &&
+    date.getDate() === now.getDate();
 }
 
 function isWalkFriendlyWeather(weather: ProcessedWeatherData | null | undefined): boolean {
@@ -79,13 +82,14 @@ function isInEnergyWindow(chronotypeId: string | undefined, now: Date): boolean 
 
 function findPartnerHabitCompletion(
   feed: ActivityEvent[],
-  currentUserId?: string,
+  currentUserId: string | undefined,
+  now: Date,
 ): ActivityEvent | null {
   return (
     feed.find(
       (event) =>
         event.type === 'workout' &&
-        isToday(event.createdAt) &&
+        isToday(event.createdAt, now) &&
         event.userId !== currentUserId &&
         !event.cheeredByMe,
     ) ?? null
@@ -94,13 +98,14 @@ function findPartnerHabitCompletion(
 
 function findPartnerStreakMilestone(
   feed: ActivityEvent[],
-  currentUserId?: string,
+  currentUserId: string | undefined,
+  now: Date,
 ): ActivityEvent | null {
   return (
     feed.find(
       (event) =>
         event.type === 'streak_milestone' &&
-        isToday(event.createdAt) &&
+        isToday(event.createdAt, now) &&
         event.userId !== currentUserId &&
         !event.cheeredByMe,
     ) ?? null
@@ -112,7 +117,7 @@ export function buildDecisionMoments(input: BuildDecisionMomentsInput): Decision
   const hour = now.getHours();
   const moments: DecisionMoment[] = [];
 
-  const partnerHabit = findPartnerHabitCompletion(input.partnerFeed ?? [], input.currentUserId);
+  const partnerHabit = findPartnerHabitCompletion(input.partnerFeed ?? [], input.currentUserId, now);
   if (partnerHabit) {
     const name = firstName(
       partnerHabit.author?.displayName?.trim() ||
@@ -131,7 +136,7 @@ export function buildDecisionMoments(input: BuildDecisionMomentsInput): Decision
     });
   }
 
-  const partnerStreak = findPartnerStreakMilestone(input.partnerFeed ?? [], input.currentUserId);
+  const partnerStreak = findPartnerStreakMilestone(input.partnerFeed ?? [], input.currentUserId, now);
   if (partnerStreak) {
     const name = firstName(
       partnerStreak.author?.displayName?.trim() ||
