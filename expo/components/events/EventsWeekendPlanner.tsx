@@ -1,8 +1,10 @@
-import React, { useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import { Modal, ScrollView, Text, TouchableOpacity, View } from 'react-native';
 import type { LocalEvent } from '@/types/events';
 import type { EventsPalette } from '@/utils/eventsPalette';
 import { isAffordableEvent, isWeekendEvent } from '@/utils/eventsV2Discovery';
+import { getRealTravelLeg, findEventDeparture, validCoordinates, type Coordinates, type TravelLeg, type TravelMode } from '@/utils/eventTravelRouting';
+import { Linking } from 'react-native';
 
 type Day = 'any' | 'friday' | 'saturday' | 'sunday';
 type Mood = 'any' | 'social' | 'relaxed';
@@ -15,6 +17,7 @@ interface Props {
   onClose: () => void;
   onSave: (event: LocalEvent) => void | Promise<void>;
   isSaved: (id: string) => boolean;
+  userCoords: Coordinates | null;
 }
 
 const choices = <T extends string>(value: T, options: ReadonlyArray<{ value: T; label: string }>,
@@ -34,10 +37,12 @@ const choices = <T extends string>(value: T, options: ReadonlyArray<{ value: T; 
     </View>
   );
 
-export function EventsWeekendPlanner({ visible, events, palette, onClose, onSave, isSaved }: Props) {
+export function EventsWeekendPlanner({ visible, events, palette, onClose, onSave, isSaved, userCoords }: Props) {
   const [day, setDay] = useState<Day>('any');
   const [mood, setMood] = useState<Mood>('any');
   const [budget, setBudget] = useState<Budget>('any');
+  const [mode, setMode] = useState<TravelMode>('driving');
+  const [legs, setLegs] = useState<Record<string, TravelLeg | null>>({});
   const suggested = useMemo(() => events.filter(event => {
     if (!isWeekendEvent(event)) return false;
     if (day !== 'any' && event.startIso) {
@@ -49,6 +54,19 @@ export function EventsWeekendPlanner({ visible, events, palette, onClose, onSave
     if (mood === 'relaxed' && !['arts', 'theatre', 'food', 'fitness'].includes(event.category)) return false;
     return true;
   }).slice(0, 10), [events, day, budget, mood]);
+
+  useEffect(() => {
+    if (!visible || !validCoordinates(userCoords)) { setLegs({}); return; }
+    let cancelled = false;
+    const first = suggested.slice(0, 10);
+    void Promise.all(first.map(async event => ({
+      id: event.id,
+      leg: await getRealTravelLeg(userCoords, { latitude: event.latitude, longitude: event.longitude }, mode),
+    }))).then(results => {
+      if (!cancelled) setLegs(Object.fromEntries(results.map(result => [result.id, result.leg])));
+    });
+    return () => { cancelled = true; };
+  }, [visible, userCoords?.latitude, userCoords?.longitude, mode, suggested.map(event => event.id).join('|')]);
 
   return <Modal visible={visible} transparent animationType="slide" onRequestClose={onClose}>
     <View style={{ flex: 1, justifyContent: 'flex-end', backgroundColor: 'rgba(0,0,0,0.60)' }}>
@@ -71,6 +89,8 @@ export function EventsWeekendPlanner({ visible, events, palette, onClose, onSave
           <Text style={{ fontWeight: '700', color: palette.text }}>Your mood</Text>
           {choices(mood, [{value:'any',label:'Surprise me'},{value:'social',label:'Social'},
             {value:'relaxed',label:'Relaxed'}], setMood, palette)}
+          <Text style={{ fontWeight: '700', color: palette.text }}>Travel mode</Text>
+          {choices(mode, [{value:'driving',label:'Drive'},{value:'walking',label:'Walk'},{value:'cycling',label:'Cycle'}], setMode, palette)}
           <Text style={{ fontWeight: '800', fontSize: 18, color: palette.text, marginBottom: 12 }}>
             {suggested.length} matching event{suggested.length === 1 ? '' : 's'}
           </Text>
@@ -85,6 +105,22 @@ export function EventsWeekendPlanner({ visible, events, palette, onClose, onSave
             <Text style={{ color: palette.textSecondary, marginTop: 3 }}>
               {event.price || 'Price not provided'} · {event.location}
             </Text>
+            <Text style={{ color: palette.textSecondary, marginTop: 5 }}>
+              {legs[event.id]
+                ? mode + ' · ' + legs[event.id]!.minutes + ' min route · leave by ' +
+                  (findEventDeparture(event, legs[event.id])?.toLocaleTimeString('en-GB', { hour:'2-digit', minute:'2-digit' }) ?? 'time unknown')
+                : 'Route time not available — check directions'}
+            </Text>
+            <TouchableOpacity onPress={() => {
+              const origin = validCoordinates(userCoords) ? userCoords.latitude + ',' + userCoords.longitude : '';
+              const target = event.latitude + ',' + event.longitude;
+              const url = 'https://www.google.com/maps/dir/?api=1&destination=' + encodeURIComponent(target) +
+                (origin ? '&origin=' + encodeURIComponent(origin) : '') +
+                '&travelmode=' + (mode === 'cycling' ? 'bicycling' : mode);
+              void Linking.openURL(url);
+            }} style={{ marginTop: 8 }}>
+              <Text style={{ color: palette.primary, fontWeight: '600' }}>Open live directions</Text>
+            </TouchableOpacity>
             <TouchableOpacity disabled={isSaved(event.id)} onPress={() => void onSave(event)}
               style={{ marginTop: 12, alignSelf: 'flex-start', backgroundColor: palette.primary,
                 borderRadius: 12, paddingHorizontal: 14, paddingVertical: 9 }}>
