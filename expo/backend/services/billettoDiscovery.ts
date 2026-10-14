@@ -32,9 +32,10 @@ function validHttpUrl(value: unknown): string | null {
   catch { return null; }
 }
 function categoryFrom(raw: JsonObject, title: string): string {
-  const category = obj(raw.category);
-  const subCategory = obj(raw.subcategory);
-  const tags = [first(category.name, raw.category, raw.category_name), first(subCategory.name, raw.subcategory), first(obj(raw.type).name), title].join(' ').toLowerCase();
+  const categories = obj(raw.categorization);
+  const category = obj(raw.category ?? categories.category);
+  const subCategory = obj(raw.subcategory ?? categories.subcategory);
+  const tags = [first(category.name, raw.category, raw.category_name, categories.category), first(subCategory.name, raw.subcategory, categories.subcategory), first(obj(raw.type).name, obj(raw.kind).name, raw.kind), title].join(' ').toLowerCase();
   if (/\b(comedy|stand.up)\b/.test(tags)) return 'comedy';
   if (/\b(food|drink|dining|supper|brunch|tasting|culinary)\b/.test(tags)) return 'food';
   if (/\b(tech|startup|networking|conference|business)\b/.test(tags)) return 'networking';
@@ -51,7 +52,7 @@ export function mapBillettoPublicEvent(value: unknown, now = Date.now()): LocalE
   const raw = obj(value);
   const id = first(raw.id, raw.event_id);
   const title = first(raw.title, raw.name);
-  const starts = first(raw.starts_at, raw.start_at, raw.start_time, raw.start_date, raw.start, raw.startsAt, raw.startAt);
+  const starts = first(raw.starts_at, raw.start_at, raw.start_time, raw.start_date, raw.start, raw.startsAt, raw.startAt, raw.startdate);
   const time = Date.parse(starts);
   if (!id || !title || !Number.isFinite(time) || time < now - 6 * 60 * 60 * 1000) return null;
   const status = first(raw.state, raw.status).toLowerCase();
@@ -61,18 +62,27 @@ export function mapBillettoPublicEvent(value: unknown, now = Date.now()): LocalE
   const address = obj(raw.address);
   const physical = obj(raw.physical_location);
   const geo = obj(location.geo);
-  const geoCoordinates = Array.isArray(geo.coordinates) ? geo.coordinates : null;
-  const latitude = coord(raw.latitude ?? raw.lat ?? venue.latitude ?? venue.lat ?? location.latitude ?? location.lat ?? physical.latitude ?? address.latitude ?? (geoCoordinates ? geoCoordinates[1] : null));
-  const longitude = coord(raw.longitude ?? raw.lng ?? raw.lon ?? venue.longitude ?? venue.lng ?? location.longitude ?? location.lng ?? physical.longitude ?? address.longitude ?? (geoCoordinates ? geoCoordinates[0] : null));
+  const nested = location.coordinates ?? geo.coordinates;
+  const point = obj(nested);
+  const xy = Array.isArray(nested) ? nested
+    : Array.isArray(point.coordinates) ? point.coordinates : null;
+  // GeoJSON is usually [longitude, latitude], but providers can use [latitude, longitude].
+  // Accept only the ordering consistent with a physical UK event.
+  const a = xy ? coord(xy[0]) : NaN, b = xy ? coord(xy[1]) : NaN;
+  const uk = (lat: number, lon: number) => lat >= 49 && lat <= 61.5 && lon >= -11 && lon <= 3;
+  const arrayLatitude = uk(b, a) ? b : uk(a, b) ? a : NaN;
+  const arrayLongitude = uk(b, a) ? a : uk(a, b) ? b : NaN;
+  const latitude = coord(raw.latitude ?? raw.lat ?? venue.latitude ?? venue.lat ?? location.latitude ?? location.lat ?? physical.latitude ?? address.latitude ?? point.latitude ?? point.lat ?? point.y ?? arrayLatitude);
+  const longitude = coord(raw.longitude ?? raw.lng ?? raw.lon ?? venue.longitude ?? venue.lng ?? location.longitude ?? location.lng ?? physical.longitude ?? address.longitude ?? point.longitude ?? point.lng ?? point.lon ?? point.x ?? arrayLongitude);
   // Never turn an absent location into (0,0), or guess coordinates from a postcode.
   if (!Number.isFinite(latitude) || !Number.isFinite(longitude) || Math.abs(latitude) > 90 || Math.abs(longitude) > 180 || (latitude === 0 && longitude === 0)) return null;
-  const ticketUrl = validHttpUrl(first(raw.url, raw.public_url, raw.event_url, raw.ticket_url));
+  const ticketUrl = validHttpUrl(first(raw.url, raw.public_url, raw.branded_url, raw.event_url, raw.ticket_url));
   if (!ticketUrl || !/(^|\.)billetto\.(co\.uk|dk|se|no|de)$/i.test(new URL(ticketUrl).hostname)) return null;
   const image = obj(raw.image);
   const cover = obj(raw.cover_image);
-  const imageUrl = validHttpUrl(first(raw.image_url, raw.cover_image_url, raw.banner_url, image.url, cover.url)) || '';
+  const imageUrl = validHttpUrl(first(raw.image_url, raw.image_link, raw.cover_image_url, raw.banner_url, image.url, cover.url)) || '';
   const city = first(raw.city, venue.city, location.city, physical.city, address.city, 'Nearby');
-  const venueName = first(venue.name, raw.venue_name, physical.name, location.name, city);
+  const venueName = first(venue.name, raw.venue_name, physical.name, location.location_name, location.name, city);
   const date = new Date(time);
   const priceValue = raw.price_from ?? raw.minimum_price;
   const price = raw.is_free === true || priceValue === 0 ? 'Free'
