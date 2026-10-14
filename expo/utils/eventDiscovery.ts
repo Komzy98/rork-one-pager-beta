@@ -99,29 +99,26 @@ export function parseSavedEventStartMs(
 }
 
 export function parseEventStartDateTime(event: LocalEvent, referenceMs = Date.now()): Date | null {
-  // Explicit provider dates carry the year. A yearless display label MUST NOT
-  // move a past 2026 event into 2027 simply because it is now October 2026.
+  // A provider timestamp fixes the YEAR. A venue-local date/time label can
+  // override the clock time, but must refer to that same provider calendar day.
+  // Never roll a 2026 provider listing forward into 2027.
   if (event.startIso) {
     const providerDate = new Date(event.startIso);
     if (!Number.isNaN(providerDate.getTime())) {
-      // Some providers use midnight UTC as a placeholder while supplying the
-      // actual local wall time in the display label. Only allow that override
-      // when the displayed day matches the provider's authoritative date.
-      if (/T00:00:00(?:\.000)?Z$/i.test(event.startIso)) {
-        const labelDate = parseEventStartFromLabels(event, providerDate.getTime() - 86400000);
-        if (
-          labelDate &&
-          labelDate.getFullYear() === providerDate.getUTCFullYear() &&
-          labelDate.getMonth() === providerDate.getUTCMonth() &&
-          labelDate.getDate() === providerDate.getUTCDate()
-        ) return labelDate;
+      if (event.date && event.time) {
+        const labelDay = new Date(`${event.date.trim()} ${providerDate.getUTCFullYear()}`);
+        const sameProviderDay = !Number.isNaN(labelDay.getTime()) &&
+          ((labelDay.getMonth() === providerDate.getUTCMonth() &&
+            labelDay.getDate() === providerDate.getUTCDate()) ||
+           (labelDay.getMonth() === providerDate.getMonth() &&
+            labelDay.getDate() === providerDate.getDate()));
+        if (sameProviderDay) return applyTimeToDate(labelDay, event.time);
       }
       return providerDate;
     }
   }
   return parseEventStartFromLabels(event, referenceMs);
 }
-
 export function getDaysUntilEvent(event: LocalEvent): number | null {
   const start = parseEventStartDateTime(event);
   if (!start) return null;
@@ -245,7 +242,10 @@ export function filterHappeningNow(events: LocalEvent[]): LocalEvent[] {
 export function isUpcomingEvent(event: LocalEvent, referenceMs = Date.now()): boolean {
   // Do not let a yearless label or an "ongoing" banner override an expired provider timestamp.
   const providerMs = event.startIso ? Date.parse(event.startIso) : NaN;
-  if (Number.isFinite(providerMs)) return providerMs >= referenceMs - EVENT_END_GRACE_MS;
+  if (Number.isFinite(providerMs)) {
+    const start = parseEventStartDateTime(event, referenceMs);
+    return Boolean(start && start.getTime() >= referenceMs - EVENT_END_GRACE_MS);
+  }
   if (event.date?.toLowerCase().includes('ongoing')) return true;
   const start = parseEventStartDateTime(event, referenceMs);
   if (!start) return true;
