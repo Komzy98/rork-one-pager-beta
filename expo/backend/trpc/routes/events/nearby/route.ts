@@ -84,11 +84,13 @@ function resolveSource(
   ticketmasterCount: number,
   skiddleCount: number,
   eventbriteCount = 0,
+  billettoCount = 0,
 ): NearbyEventsSource {
-  if ([ticketmasterCount, skiddleCount, eventbriteCount].filter(count => count > 0).length > 1) return 'mixed';
+  if ([ticketmasterCount, skiddleCount, eventbriteCount, billettoCount].filter(count => count > 0).length > 1) return 'mixed';
   if (ticketmasterCount > 0) return 'ticketmaster';
   if (skiddleCount > 0) return 'skiddle';
   if (eventbriteCount > 0) return 'eventbrite';
+  if (billettoCount > 0) return 'billetto';
   return 'none';
 }
 
@@ -110,19 +112,21 @@ async function resolveNearbyEvents(input: FetchInput): Promise<NearbyEventsResul
   const ticketmasterKey = getTicketmasterApiKeyFromEnv();
   const skiddleKey = getSkiddleApiKeyFromEnv();
   const eventbriteKey = process.env.EVENTBRITE_TOKEN?.trim();
+  const billettoId = process.env.BILLETTO_ACCESS_KEY_ID?.trim();
+  const billettoSecret = process.env.BILLETTO_ACCESS_KEY_SECRET?.trim();
 
-  if (!ticketmasterKey && !skiddleKey && !eventbriteKey) {
+  if (!ticketmasterKey && !skiddleKey && !eventbriteKey && !(billettoId && billettoSecret)) {
     return { events: [], source: 'none' };
   }
 
-  const { events, ticketmasterCount, skiddleCount, eventbriteCount } = await fetchMergedDiscoveryEvents(
+  const { events, ticketmasterCount, skiddleCount, eventbriteCount, billettoCount } = await fetchMergedDiscoveryEvents(
     input,
-    { ticketmaster: ticketmasterKey, skiddle: skiddleKey, eventbrite: eventbriteKey },
+    { ticketmaster: ticketmasterKey, skiddle: skiddleKey, eventbrite: eventbriteKey, billettoId, billettoSecret },
   );
 
   const result: NearbyEventsResult = {
     events,
-    source: resolveSource(ticketmasterCount, skiddleCount, eventbriteCount),
+    source: resolveSource(ticketmasterCount, skiddleCount, eventbriteCount, billettoCount),
   };
 
   setCached(cacheKey, result);
@@ -157,8 +161,10 @@ export const getNearbyEventsRoute = publicProcedure
     const ticketmasterKey = getTicketmasterApiKeyFromEnv();
     const skiddleKey = getSkiddleApiKeyFromEnv();
   const eventbriteKey = process.env.EVENTBRITE_TOKEN?.trim();
+  const billettoId = process.env.BILLETTO_ACCESS_KEY_ID?.trim();
+  const billettoSecret = process.env.BILLETTO_ACCESS_KEY_SECRET?.trim();
 
-    if (!ticketmasterKey && !skiddleKey && !eventbriteKey) {
+    if (!ticketmasterKey && !skiddleKey && !eventbriteKey && !(billettoId && billettoSecret)) {
       console.warn(
         '⚠️ No event API keys set — add TICKETMASTER_API_KEY and/or SKIDDLE_API_KEY on the API server (Railway) or in expo/.env for local Metro',
       );
@@ -203,8 +209,10 @@ export const getNearbyEventsBatchRoute = publicProcedure
     const ticketmasterKey = getTicketmasterApiKeyFromEnv();
     const skiddleKey = getSkiddleApiKeyFromEnv();
   const eventbriteKey = process.env.EVENTBRITE_TOKEN?.trim();
+  const billettoId = process.env.BILLETTO_ACCESS_KEY_ID?.trim();
+  const billettoSecret = process.env.BILLETTO_ACCESS_KEY_SECRET?.trim();
 
-    if (!ticketmasterKey && !skiddleKey && !eventbriteKey) {
+    if (!ticketmasterKey && !skiddleKey && !eventbriteKey && !(billettoId && billettoSecret)) {
       console.warn('⚠️ No event API keys set — batch returns empty');
       return {
         categories: {},
@@ -257,6 +265,7 @@ export const getNearbyEventsBatchRoute = publicProcedure
       : sources.has('ticketmaster') ? 'ticketmaster'
       : sources.has('skiddle') ? 'skiddle'
       : sources.has('eventbrite') ? 'eventbrite'
+      : sources.has('billetto') ? 'billetto'
       : 'none';
 
     const batchResult: NearbyEventsBatchResult = {
@@ -288,8 +297,10 @@ export async function runEventsDiscoverySmokeCheck(): Promise<{
   const ticketmasterKey = getTicketmasterApiKeyFromEnv();
   const skiddleKey = getSkiddleApiKeyFromEnv();
   const eventbriteKey = process.env.EVENTBRITE_TOKEN?.trim();
+  const billettoId = process.env.BILLETTO_ACCESS_KEY_ID?.trim();
+  const billettoSecret = process.env.BILLETTO_ACCESS_KEY_SECRET?.trim();
 
-  if (!ticketmasterKey && !skiddleKey && !eventbriteKey) {
+  if (!ticketmasterKey && !skiddleKey && !eventbriteKey && !(billettoId && billettoSecret)) {
     errors.push('No event API keys configured (TICKETMASTER_API_KEY / SKIDDLE_API_KEY)');
   }
   if (!skiddleKey) {
@@ -305,7 +316,7 @@ export async function runEventsDiscoverySmokeCheck(): Promise<{
 
   const { events, ticketmasterCount, skiddleCount } = await fetchMergedDiscoveryEvents(
     input,
-    { ticketmaster: ticketmasterKey, skiddle: skiddleKey, eventbrite: eventbriteKey },
+    { ticketmaster: ticketmasterKey, skiddle: skiddleKey, eventbrite: eventbriteKey, billettoId, billettoSecret },
   );
   const source = resolveSource(ticketmasterCount, skiddleCount);
   const skiddle = events.filter((e) => e.id.startsWith('sk-')).length;
