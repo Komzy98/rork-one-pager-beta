@@ -85,12 +85,22 @@ function resolveSource(
   skiddleCount: number,
   eventbriteCount = 0,
   billettoCount = 0,
+  feverCount = 0,
+  fientaCount = 0,
+  dataThistleCount = 0,
+  ents24Count = 0,
+  meetupCount = 0,
 ): NearbyEventsSource {
-  if ([ticketmasterCount, skiddleCount, eventbriteCount, billettoCount].filter(count => count > 0).length > 1) return 'mixed';
+  if ([ticketmasterCount, skiddleCount, eventbriteCount, billettoCount, feverCount, fientaCount, dataThistleCount, ents24Count, meetupCount].filter(count => count > 0).length > 1) return 'mixed';
   if (ticketmasterCount > 0) return 'ticketmaster';
   if (skiddleCount > 0) return 'skiddle';
   if (eventbriteCount > 0) return 'eventbrite';
   if (billettoCount > 0) return 'billetto';
+  if (feverCount > 0) return 'fever';
+  if (fientaCount > 0) return 'fienta';
+  if (dataThistleCount > 0) return 'datathistle';
+  if (ents24Count > 0) return 'ents24';
+  if (meetupCount > 0) return 'meetup';
   return 'none';
 }
 
@@ -114,19 +124,24 @@ async function resolveNearbyEvents(input: FetchInput): Promise<NearbyEventsResul
   const eventbriteKey = process.env.EVENTBRITE_TOKEN?.trim();
   const billettoId = process.env.BILLETTO_ACCESS_KEY_ID?.trim();
   const billettoSecret = process.env.BILLETTO_ACCESS_KEY_SECRET?.trim();
+  const feverClientId = process.env.FEVER_CLIENT_ID?.trim();
+  const feverClientSecret = process.env.FEVER_CLIENT_SECRET?.trim();
+  const feverAudience = process.env.FEVER_AUDIENCE?.trim();
+  const dataThistleToken = process.env.DATATHISTLE_ACCESS_TOKEN?.trim();
+  const meetupToken = process.env.MEETUP_ACCESS_TOKEN?.trim();
+  const meetupNetwork = process.env.MEETUP_PRO_NETWORK?.trim();
+  const ents24EventsUrl = process.env.ENTS24_EVENTS_URL?.trim();
+  const ents24Authorization = process.env.ENTS24_AUTHORIZATION?.trim();
 
-  if (!ticketmasterKey && !skiddleKey && !eventbriteKey && !(billettoId && billettoSecret)) {
-    return { events: [], source: 'none' };
-  }
 
-  const { events, ticketmasterCount, skiddleCount, eventbriteCount, billettoCount } = await fetchMergedDiscoveryEvents(
+  const { events, ticketmasterCount, skiddleCount, eventbriteCount, billettoCount, feverCount, fientaCount, dataThistleCount, ents24Count, meetupCount } = await fetchMergedDiscoveryEvents(
     input,
-    { ticketmaster: ticketmasterKey, skiddle: skiddleKey, eventbrite: eventbriteKey, billettoId, billettoSecret },
+    { ticketmaster: ticketmasterKey, skiddle: skiddleKey, eventbrite: eventbriteKey, billettoId, billettoSecret, feverClientId, feverClientSecret, feverAudience, dataThistleToken, meetupToken, meetupNetwork, ents24EventsUrl, ents24Authorization },
   );
 
   const result: NearbyEventsResult = {
     events,
-    source: resolveSource(ticketmasterCount, skiddleCount, eventbriteCount, billettoCount),
+    source: resolveSource(ticketmasterCount, skiddleCount, eventbriteCount, billettoCount, feverCount, fientaCount, dataThistleCount, ents24Count, meetupCount),
   };
 
   setCached(cacheKey, result);
@@ -163,13 +178,15 @@ export const getNearbyEventsRoute = publicProcedure
   const eventbriteKey = process.env.EVENTBRITE_TOKEN?.trim();
   const billettoId = process.env.BILLETTO_ACCESS_KEY_ID?.trim();
   const billettoSecret = process.env.BILLETTO_ACCESS_KEY_SECRET?.trim();
+  const feverClientId = process.env.FEVER_CLIENT_ID?.trim();
+  const feverClientSecret = process.env.FEVER_CLIENT_SECRET?.trim();
+  const feverAudience = process.env.FEVER_AUDIENCE?.trim();
+  const dataThistleToken = process.env.DATATHISTLE_ACCESS_TOKEN?.trim();
+  const meetupToken = process.env.MEETUP_ACCESS_TOKEN?.trim();
+  const meetupNetwork = process.env.MEETUP_PRO_NETWORK?.trim();
+  const ents24EventsUrl = process.env.ENTS24_EVENTS_URL?.trim();
+  const ents24Authorization = process.env.ENTS24_AUTHORIZATION?.trim();
 
-    if (!ticketmasterKey && !skiddleKey && !eventbriteKey && !(billettoId && billettoSecret)) {
-      console.warn(
-        '⚠️ No event API keys set — add TICKETMASTER_API_KEY and/or SKIDDLE_API_KEY on the API server (Railway) or in expo/.env for local Metro',
-      );
-      return { events: [], source: 'none' };
-    }
 
     const result = await resolveNearbyEvents({
       latitude: input.latitude,
@@ -211,16 +228,15 @@ export const getNearbyEventsBatchRoute = publicProcedure
   const eventbriteKey = process.env.EVENTBRITE_TOKEN?.trim();
   const billettoId = process.env.BILLETTO_ACCESS_KEY_ID?.trim();
   const billettoSecret = process.env.BILLETTO_ACCESS_KEY_SECRET?.trim();
+  const feverClientId = process.env.FEVER_CLIENT_ID?.trim();
+  const feverClientSecret = process.env.FEVER_CLIENT_SECRET?.trim();
+  const feverAudience = process.env.FEVER_AUDIENCE?.trim();
+  const dataThistleToken = process.env.DATATHISTLE_ACCESS_TOKEN?.trim();
+  const meetupToken = process.env.MEETUP_ACCESS_TOKEN?.trim();
+  const meetupNetwork = process.env.MEETUP_PRO_NETWORK?.trim();
+  const ents24EventsUrl = process.env.ENTS24_EVENTS_URL?.trim();
+  const ents24Authorization = process.env.ENTS24_AUTHORIZATION?.trim();
 
-    if (!ticketmasterKey && !skiddleKey && !eventbriteKey && !(billettoId && billettoSecret)) {
-      console.warn('⚠️ No event API keys set — batch returns empty');
-      return {
-        categories: {},
-        categoryCounts: {},
-        allEvents: [],
-        source: 'none',
-      };
-    }
 
     console.log(
       `📦 Events batch: ${BENTO_CATEGORY_IDS.length} categories × ${input.sizePerCategory} (radius=${input.radiusMiles}mi)`,
@@ -266,6 +282,11 @@ export const getNearbyEventsBatchRoute = publicProcedure
       : sources.has('skiddle') ? 'skiddle'
       : sources.has('eventbrite') ? 'eventbrite'
       : sources.has('billetto') ? 'billetto'
+      : sources.has('fever') ? 'fever'
+      : sources.has('fienta') ? 'fienta'
+      : sources.has('datathistle') ? 'datathistle'
+      : sources.has('ents24') ? 'ents24'
+      : sources.has('meetup') ? 'meetup'
       : 'none';
 
     const batchResult: NearbyEventsBatchResult = {
@@ -299,8 +320,16 @@ export async function runEventsDiscoverySmokeCheck(): Promise<{
   const eventbriteKey = process.env.EVENTBRITE_TOKEN?.trim();
   const billettoId = process.env.BILLETTO_ACCESS_KEY_ID?.trim();
   const billettoSecret = process.env.BILLETTO_ACCESS_KEY_SECRET?.trim();
+  const feverClientId = process.env.FEVER_CLIENT_ID?.trim();
+  const feverClientSecret = process.env.FEVER_CLIENT_SECRET?.trim();
+  const feverAudience = process.env.FEVER_AUDIENCE?.trim();
+  const dataThistleToken = process.env.DATATHISTLE_ACCESS_TOKEN?.trim();
+  const meetupToken = process.env.MEETUP_ACCESS_TOKEN?.trim();
+  const meetupNetwork = process.env.MEETUP_PRO_NETWORK?.trim();
+  const ents24EventsUrl = process.env.ENTS24_EVENTS_URL?.trim();
+  const ents24Authorization = process.env.ENTS24_AUTHORIZATION?.trim();
 
-  if (!ticketmasterKey && !skiddleKey && !eventbriteKey && !(billettoId && billettoSecret)) {
+  if (!ticketmasterKey && !skiddleKey && !eventbriteKey && !(billettoId && billettoSecret) && !(feverClientId && feverClientSecret && feverAudience)) {
     errors.push('No event API keys configured (TICKETMASTER_API_KEY / SKIDDLE_API_KEY)');
   }
   if (!skiddleKey) {
@@ -316,7 +345,7 @@ export async function runEventsDiscoverySmokeCheck(): Promise<{
 
   const { events, ticketmasterCount, skiddleCount } = await fetchMergedDiscoveryEvents(
     input,
-    { ticketmaster: ticketmasterKey, skiddle: skiddleKey, eventbrite: eventbriteKey, billettoId, billettoSecret },
+    { ticketmaster: ticketmasterKey, skiddle: skiddleKey, eventbrite: eventbriteKey, billettoId, billettoSecret, feverClientId, feverClientSecret, feverAudience, dataThistleToken, meetupToken, meetupNetwork, ents24EventsUrl, ents24Authorization },
   );
   const source = resolveSource(ticketmasterCount, skiddleCount);
   const skiddle = events.filter((e) => e.id.startsWith('sk-')).length;

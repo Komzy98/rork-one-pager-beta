@@ -6,12 +6,18 @@
 import type { NearbyEventsResult } from '@/types/events';
 import { fetchEventbriteAccountEvents, filterEventbriteDiscovery } from '@/backend/services/eventbriteDiscovery';
 import { fetchBillettoPublicEvents, filterBillettoEvents } from '@/backend/services/billettoDiscovery';
+import { fetchFeverEvents, filterFeverEvents } from '@/backend/services/feverDiscovery';
+import { fetchFientaUkEvents } from '@/backend/services/fientaPublicDiscovery';
+import { fetchDataThistleEvents } from '@/backend/services/dataThistleDiscovery';
+import { fetchMeetupProEvents } from '@/backend/services/meetupProDiscovery';
+import { fetchEnts24LicensedEvents } from '@/backend/services/ents24PartnerDiscovery';
+import { rememberExtraEvents } from '@/backend/services/extraEventProviderCommon';
 import {
   filterUpcomingEvents,
   sortEventsByStartDate,
 } from '@/utils/eventDiscovery';
 import { eventMatchesBentoCategory } from '@/utils/eventCategories';
-import { mergeDiscoveryEvents } from '@/utils/mergeDiscoveryEvents';
+import { mergeDiscoveryEvents, mergeDiscoveryWithProviderDiversity } from '@/utils/mergeDiscoveryEvents';
 import {
   buildSkiddleEventsSearchUrl,
   parseSkiddleError,
@@ -276,23 +282,47 @@ export type DiscoveryProviderKeys = {
   eventbrite?: string | null;
   billettoId?: string | null;
   billettoSecret?: string | null;
+  feverClientId?: string | null;
+  feverClientSecret?: string | null;
+  feverAudience?: string | null;
+  dataThistleToken?: string | null;
+  meetupToken?: string | null;
+  meetupNetwork?: string | null;
+  ents24EventsUrl?: string | null;
+  ents24Authorization?: string | null;
 };
 
 export async function fetchMergedDiscoveryEvents(
   input: DiscoveryFetchInput,
   keys: DiscoveryProviderKeys,
-): Promise<{ events: LocalEventPayload[]; ticketmasterCount: number; skiddleCount: number; eventbriteCount: number; billettoCount: number }> {
+): Promise<{ events: LocalEventPayload[]; ticketmasterCount: number; skiddleCount: number; eventbriteCount: number; billettoCount: number; feverCount: number; fientaCount: number; dataThistleCount: number; ents24Count: number; meetupCount: number }> {
   const ticketmasterKey = keys.ticketmaster?.trim() || '';
   const skiddleKey = keys.skiddle?.trim() || '';
 
-  const [ticketmasterEvents, skiddleEvents, eventbriteEvents, billettoEvents] = await Promise.all([
+  const [ticketmasterEvents, skiddleEvents, eventbriteEvents, billettoEvents, feverEvents, fientaEvents, dataThistleEvents, ents24Events, meetupEvents] = await Promise.all([
     ticketmasterKey ? fetchTicketmasterEvents(ticketmasterKey, input) : Promise.resolve([]),
     skiddleKey ? fetchSkiddleEvents(skiddleKey, input) : Promise.resolve([]),
     keys.eventbrite?.trim() ? fetchEventbriteAccountEvents(keys.eventbrite.trim()).then(events => filterEventbriteDiscovery(events, input)).catch(error => { console.error('Eventbrite account discovery unavailable:', error instanceof Error ? error.message : 'Unknown error'); return [] as LocalEventPayload[]; }) : Promise.resolve([] as LocalEventPayload[]),
     keys.billettoId?.trim() && keys.billettoSecret?.trim() ? fetchBillettoPublicEvents(keys.billettoId.trim(), keys.billettoSecret.trim()).then(events => filterBillettoEvents(events, input)).catch(error => { console.error('Billetto public discovery unavailable:', error instanceof Error ? error.message : 'Unknown error'); return [] as LocalEventPayload[]; }) : Promise.resolve([] as LocalEventPayload[]),
+    keys.feverClientId?.trim() && keys.feverClientSecret?.trim() && keys.feverAudience?.trim()
+      ? fetchFeverEvents(input, { clientId: keys.feverClientId.trim(), clientSecret: keys.feverClientSecret.trim(), audience: keys.feverAudience.trim() })
+          .then(events => filterFeverEvents(events, input))
+          .catch(error => { console.error('Fever discovery unavailable:', error instanceof Error ? error.message : 'Unknown error'); return [] as LocalEventPayload[]; })
+      : Promise.resolve([] as LocalEventPayload[]),
+    fetchFientaUkEvents(input).catch(error => { console.warn('[Events] Fienta unavailable:', error instanceof Error ? error.message : 'Unknown'); return [] as LocalEventPayload[]; }),
+    keys.dataThistleToken?.trim()
+      ? fetchDataThistleEvents(input, keys.dataThistleToken.trim()).catch(error => { console.warn('[Events] Data Thistle unavailable:', error instanceof Error ? error.message : 'Unknown'); return [] as LocalEventPayload[]; })
+      : Promise.resolve([] as LocalEventPayload[]),
+    keys.ents24EventsUrl?.trim() && keys.ents24Authorization?.trim()
+      ? fetchEnts24LicensedEvents(input, keys.ents24EventsUrl.trim(), keys.ents24Authorization.trim()).catch(error => { console.warn('[Events] Ents24 unavailable:', error instanceof Error ? error.message : 'Unknown'); return [] as LocalEventPayload[]; })
+      : Promise.resolve([] as LocalEventPayload[]),
+    keys.meetupToken?.trim() && keys.meetupNetwork?.trim()
+      ? fetchMeetupProEvents(input, keys.meetupToken.trim(), keys.meetupNetwork.trim()).catch(error => { console.warn('[Events] Meetup unavailable:', error instanceof Error ? error.message : 'Unknown'); return [] as LocalEventPayload[]; })
+      : Promise.resolve([] as LocalEventPayload[]),
   ]);
 
-  const merged = mergeDiscoveryEvents([billettoEvents, eventbriteEvents, ticketmasterEvents, skiddleEvents], input.size);
+  const merged = mergeDiscoveryWithProviderDiversity([fientaEvents, dataThistleEvents, ents24Events, meetupEvents, feverEvents, billettoEvents, eventbriteEvents, ticketmasterEvents, skiddleEvents], input.size);
+  rememberExtraEvents(merged.filter(e => ['fienta', 'datathistle', 'ents24', 'meetup'].includes(e.listingSource || '')));
   const events =
     input.category && input.category !== 'all' && !input.keyword?.trim() && !input.includeOtherCategories
       ? merged.filter((event) => eventMatchesBentoCategory(event, input.category!))
@@ -304,5 +334,10 @@ export async function fetchMergedDiscoveryEvents(
     skiddleCount: skiddleEvents.length,
     eventbriteCount: eventbriteEvents.length,
     billettoCount: billettoEvents.length,
+    feverCount: feverEvents.length,
+    fientaCount: fientaEvents.length,
+    dataThistleCount: dataThistleEvents.length,
+    ents24Count: ents24Events.length,
+    meetupCount: meetupEvents.length,
   };
 }

@@ -143,6 +143,11 @@ export function usePerCategoryEvents(options: UsePerCategoryEventsOptions) {
         previewQuery.data?.source === 'skiddle' ||
         previewQuery.data?.source === 'eventbrite' ||
         previewQuery.data?.source === 'billetto' ||
+        previewQuery.data?.source === 'fever' ||
+        previewQuery.data?.source === 'fienta' ||
+        previewQuery.data?.source === 'datathistle' ||
+        previewQuery.data?.source === 'ents24' ||
+        previewQuery.data?.source === 'meetup' ||
         previewQuery.data?.source === 'mixed') {
       return previewQuery.data.source;
     }

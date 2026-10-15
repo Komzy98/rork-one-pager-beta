@@ -142,6 +142,23 @@ app.get("/", (c) => {
   return c.json({ status: "ok", message: "API is running" });
 });
 
+// Configuration-only probe. Never returns credentials or triggers provider API usage.
+app.get("/health/events/providers", (c) => c.json({
+  fienta: { configured: true, publicApi: true },
+  dataThistle: { configured: Boolean(process.env.DATATHISTLE_ACCESS_TOKEN?.trim()) },
+  ents24: { configured: Boolean(process.env.ENTS24_EVENTS_URL?.trim() && process.env.ENTS24_AUTHORIZATION?.trim()) },
+  meetup: { configured: Boolean(process.env.MEETUP_ACCESS_TOKEN?.trim() && process.env.MEETUP_PRO_NETWORK?.trim()) },
+}));
+
+app.get("/health/fever", (c) => {
+  const configured = Boolean(
+    process.env.FEVER_CLIENT_ID?.trim() &&
+    process.env.FEVER_CLIENT_SECRET?.trim() &&
+    process.env.FEVER_AUDIENCE?.trim()
+  );
+  return c.json({ configured, enabled: configured, provider: 'fever' });
+});
+
 app.get("/health", (c) => {
   const footballKey = getFootballApiKeyFromEnv();
   return c.json({

@@ -1,5 +1,7 @@
 import { fetchEventbriteAccountEvents } from '@/backend/services/eventbriteDiscovery';
 import { fetchBillettoPublicEvents } from '@/backend/services/billettoDiscovery';
+import { findCachedFeverEvent } from '@/backend/services/feverDiscovery';
+import { findExtraEvent } from '@/backend/services/extraEventProviderCommon';
 import { getSkiddleApiKeyFromEnv } from '@/backend/utils/skiddleApiKey';
 import { getTicketmasterApiKeyFromEnv } from '@/backend/utils/ticketmasterApiKey';
 import type { LocalEvent } from '@/types/events';
@@ -32,11 +34,16 @@ async function fetchJsonWithTimeout(url: string, label: string): Promise<unknown
 
 export function parseCompoundEventId(
   compoundId: string,
-): { source: 'ticketmaster' | 'skiddle' | 'eventbrite' | 'billetto'; rawId: string } | null {
+): { source: 'ticketmaster' | 'skiddle' | 'eventbrite' | 'billetto' | 'fever' | 'fienta' | 'datathistle' | 'ents24' | 'meetup'; rawId: string } | null {
   const id = compoundId.trim();
   if (id.startsWith('tm-')) return { source: 'ticketmaster', rawId: id.slice(3) };
   if (id.startsWith('eb-')) return { source: 'eventbrite', rawId: id.slice(3) };
   if (id.startsWith('bl-')) return { source: 'billetto', rawId: id.slice(3) };
+  if (id.startsWith('fv-')) return { source: 'fever', rawId: id.slice(3) };
+  if (id.startsWith('fi-')) return { source: 'fienta', rawId: id.slice(3) };
+  if (id.startsWith('da-')) return { source: 'datathistle', rawId: id.slice(3) };
+  if (id.startsWith('en-')) return { source: 'ents24', rawId: id.slice(3) };
+  if (id.startsWith('me-')) return { source: 'meetup', rawId: id.slice(3) };
   if (id.startsWith('sk-')) return { source: 'skiddle', rawId: id.slice(3) };
   return null;
 }
@@ -77,11 +84,15 @@ async function fetchSkiddleEventById(rawId: string): Promise<LocalEvent | null> 
 
 export async function fetchEventById(
   compoundId: string,
-): Promise<{ event: LocalEvent; source: 'ticketmaster' | 'skiddle' | 'eventbrite' | 'billetto' } | null> {
+): Promise<{ event: LocalEvent; source: 'ticketmaster' | 'skiddle' | 'eventbrite' | 'billetto' | 'fever' | 'fienta' | 'datathistle' | 'ents24' | 'meetup' } | null> {
   const parsed = parseCompoundEventId(compoundId);
   if (!parsed) return null;
 
-  const event = parsed.source === 'billetto'
+  const event = ['fienta', 'datathistle', 'ents24', 'meetup'].includes(parsed.source)
+    ? findExtraEvent(compoundId)
+    : parsed.source === 'fever'
+    ? findCachedFeverEvent(compoundId)
+    : parsed.source === 'billetto'
     ? await fetchBillettoPublicEvents(process.env.BILLETTO_ACCESS_KEY_ID || '', process.env.BILLETTO_ACCESS_KEY_SECRET || '').then(events => events.find(e => e.id === compoundId) || null).catch(() => null)
     : parsed.source === 'eventbrite'
     ? await fetchEventbriteAccountEvents(process.env.EVENTBRITE_TOKEN || '').then(events => events.find(e => e.id === compoundId) || null).catch(() => null)

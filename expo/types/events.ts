@@ -14,7 +14,7 @@ export type EventCategory =
 
 export type EventPlanningStatus = 'interested' | 'planning' | 'going';
 
-export type OnePagerEventSource = 'mock' | 'ticketmaster' | 'skiddle' | 'eventbrite' | 'billetto' | 'manual';
+export type OnePagerEventSource = 'mock' | 'ticketmaster' | 'skiddle' | 'eventbrite' | 'billetto' | 'fever' | 'fienta' | 'datathistle' | 'ents24' | 'meetup' | 'manual';
 
 /** Normalised event shape used across discovery, detail, and AI. */
 export interface OnePagerEvent {
@@ -114,7 +114,7 @@ export interface LocalEvent {
   marketCode?: string;
 }
 
-export type NearbyEventsSource = 'ticketmaster' | 'skiddle' | 'eventbrite' | 'billetto' | 'mixed' | 'fallback' | 'none';
+export type NearbyEventsSource = 'ticketmaster' | 'skiddle' | 'eventbrite' | 'billetto' | 'fever' | 'fienta' | 'datathistle' | 'ents24' | 'meetup' | 'mixed' | 'fallback' | 'none';
 
 export interface NearbyEventsResult {
   events: LocalEvent[];
