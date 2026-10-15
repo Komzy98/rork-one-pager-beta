@@ -39,6 +39,7 @@ export function inferListingSourceFromEventId(id: string): OnePagerEventSource |
   if (id.startsWith('sk-')) return 'skiddle';
   if (id.startsWith('eb-')) return 'eventbrite';
   if (id.startsWith('bl-')) return 'billetto';
+  if (id.startsWith('fv-')) return 'fever';
   return null;
 }
 
@@ -52,6 +53,7 @@ export function getListingSourceLabel(source: OnePagerEventSource | null): strin
   if (source === 'skiddle') return 'Skiddle';
   if (source === 'eventbrite') return 'Eventbrite';
   if (source === 'billetto') return 'Billetto';
+  if (source === 'fever') return 'Fever';
   return null;
 }
 

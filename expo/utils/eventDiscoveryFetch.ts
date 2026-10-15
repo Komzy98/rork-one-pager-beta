@@ -6,6 +6,7 @@
 import type { NearbyEventsResult } from '@/types/events';
 import { fetchEventbriteAccountEvents, filterEventbriteDiscovery } from '@/backend/services/eventbriteDiscovery';
 import { fetchBillettoPublicEvents, filterBillettoEvents } from '@/backend/services/billettoDiscovery';
+import { fetchFeverEvents, filterFeverEvents } from '@/backend/services/feverDiscovery';
 import {
   filterUpcomingEvents,
   sortEventsByStartDate,
@@ -276,23 +277,31 @@ export type DiscoveryProviderKeys = {
   eventbrite?: string | null;
   billettoId?: string | null;
   billettoSecret?: string | null;
+  feverClientId?: string | null;
+  feverClientSecret?: string | null;
+  feverAudience?: string | null;
 };
 
 export async function fetchMergedDiscoveryEvents(
   input: DiscoveryFetchInput,
   keys: DiscoveryProviderKeys,
-): Promise<{ events: LocalEventPayload[]; ticketmasterCount: number; skiddleCount: number; eventbriteCount: number; billettoCount: number }> {
+): Promise<{ events: LocalEventPayload[]; ticketmasterCount: number; skiddleCount: number; eventbriteCount: number; billettoCount: number; feverCount: number }> {
   const ticketmasterKey = keys.ticketmaster?.trim() || '';
   const skiddleKey = keys.skiddle?.trim() || '';
 
-  const [ticketmasterEvents, skiddleEvents, eventbriteEvents, billettoEvents] = await Promise.all([
+  const [ticketmasterEvents, skiddleEvents, eventbriteEvents, billettoEvents, feverEvents] = await Promise.all([
     ticketmasterKey ? fetchTicketmasterEvents(ticketmasterKey, input) : Promise.resolve([]),
     skiddleKey ? fetchSkiddleEvents(skiddleKey, input) : Promise.resolve([]),
     keys.eventbrite?.trim() ? fetchEventbriteAccountEvents(keys.eventbrite.trim()).then(events => filterEventbriteDiscovery(events, input)).catch(error => { console.error('Eventbrite account discovery unavailable:', error instanceof Error ? error.message : 'Unknown error'); return [] as LocalEventPayload[]; }) : Promise.resolve([] as LocalEventPayload[]),
     keys.billettoId?.trim() && keys.billettoSecret?.trim() ? fetchBillettoPublicEvents(keys.billettoId.trim(), keys.billettoSecret.trim()).then(events => filterBillettoEvents(events, input)).catch(error => { console.error('Billetto public discovery unavailable:', error instanceof Error ? error.message : 'Unknown error'); return [] as LocalEventPayload[]; }) : Promise.resolve([] as LocalEventPayload[]),
+    keys.feverClientId?.trim() && keys.feverClientSecret?.trim() && keys.feverAudience?.trim()
+      ? fetchFeverEvents(input, { clientId: keys.feverClientId.trim(), clientSecret: keys.feverClientSecret.trim(), audience: keys.feverAudience.trim() })
+          .then(events => filterFeverEvents(events, input))
+          .catch(error => { console.error('Fever discovery unavailable:', error instanceof Error ? error.message : 'Unknown error'); return [] as LocalEventPayload[]; })
+      : Promise.resolve([] as LocalEventPayload[]),
   ]);
 
-  const merged = mergeDiscoveryEvents([billettoEvents, eventbriteEvents, ticketmasterEvents, skiddleEvents], input.size);
+  const merged = mergeDiscoveryEvents([feverEvents, billettoEvents, eventbriteEvents, ticketmasterEvents, skiddleEvents], input.size);
   const events =
     input.category && input.category !== 'all' && !input.keyword?.trim() && !input.includeOtherCategories
       ? merged.filter((event) => eventMatchesBentoCategory(event, input.category!))
@@ -304,5 +313,6 @@ export async function fetchMergedDiscoveryEvents(
     skiddleCount: skiddleEvents.length,
     eventbriteCount: eventbriteEvents.length,
     billettoCount: billettoEvents.length,
+    feverCount: feverEvents.length,
   };
 }
