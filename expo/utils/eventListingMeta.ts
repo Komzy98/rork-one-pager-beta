@@ -40,6 +40,10 @@ export function inferListingSourceFromEventId(id: string): OnePagerEventSource |
   if (id.startsWith('eb-')) return 'eventbrite';
   if (id.startsWith('bl-')) return 'billetto';
   if (id.startsWith('fv-')) return 'fever';
+  if (id.startsWith('fi-')) return 'fienta';
+  if (id.startsWith('da-')) return 'datathistle';
+  if (id.startsWith('en-')) return 'ents24';
+  if (id.startsWith('me-')) return 'meetup';
   return null;
 }
 
@@ -54,6 +58,10 @@ export function getListingSourceLabel(source: OnePagerEventSource | null): strin
   if (source === 'eventbrite') return 'Eventbrite';
   if (source === 'billetto') return 'Billetto';
   if (source === 'fever') return 'Fever';
+  if (source === 'fienta') return 'Fienta';
+  if (source === 'datathistle') return 'Data Thistle';
+  if (source === 'ents24') return 'Ents24';
+  if (source === 'meetup') return 'Meetup';
   return null;
 }
 

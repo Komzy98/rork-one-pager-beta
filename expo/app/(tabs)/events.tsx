@@ -138,6 +138,10 @@ function formatGlobalSearchSourceLabel(source: NearbyEventsSource): string {
       return 'Billetto';
     case 'fever':
       return 'Fever';
+    case 'fienta': return 'Fienta';
+    case 'datathistle': return 'Data Thistle';
+    case 'ents24': return 'Ents24';
+    case 'meetup': return 'Meetup';
     case 'fallback':
       return 'sample listings';
     default:
