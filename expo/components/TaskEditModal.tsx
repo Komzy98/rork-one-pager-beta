@@ -658,7 +658,7 @@ export const TaskEditModal: React.FC<TaskEditModalProps> = ({
                 <View style={styles.card}>
                   {renderSectionHeader(
                     <Clock size={16} color="#007AFF" />,
-                    'Habit Engine V2'
+                    'Habit Engine'
                   )}
                   <Text style={styles.scheduleHint}>
                     Build a stable cue, a tiny first step and a minimum version for difficult days.

@@ -109,17 +109,23 @@ function startOfWeek(date: Date) {
 function opportunities(task: Task, now: Date, lookbackDays = 28) {
   const done = completionKeys(task);
   const frequency = task.habitFrequency;
+  const createdAt = new Date(task.createdAt);
+  const createdDay = Number.isFinite(createdAt.getTime()) ? habitDateKey(createdAt) : null;
+  const earliest = new Date(now);
+  earliest.setHours(12, 0, 0, 0);
+  earliest.setDate(earliest.getDate() - (lookbackDays - 1));
+  const effectiveStart = createdDay && createdDay > habitDateKey(earliest)
+    ? new Date(createdDay + 'T12:00:00')
+    : earliest;
+  const observedDays = Math.max(1, Math.min(lookbackDays, Math.floor((now.getTime() - effectiveStart.getTime()) / DAY_MS) + 1));
 
   if (frequency?.type === 'times_per_week' && frequency.timesPerWeek) {
-    const start = new Date(now);
-    start.setHours(12, 0, 0, 0);
-    start.setDate(start.getDate() - (lookbackDays - 1));
     let completed = 0;
     for (const key of done) {
       const date = new Date(key + 'T12:00:00');
-      if (date >= start && date <= now) completed += 1;
+      if (date >= effectiveStart && date <= now) completed += 1;
     }
-    const target = Math.max(1, Math.round(frequency.timesPerWeek * lookbackDays / 7));
+    const target = Math.max(1, Math.round(frequency.timesPerWeek * observedDays / 7));
     return { scheduled: target, completed, rate: clamp(Math.min(completed, target) / target * 100) };
   }
 
@@ -129,7 +135,7 @@ function opportunities(task: Task, now: Date, lookbackDays = 28) {
     const date = new Date(now);
     date.setHours(12, 0, 0, 0);
     date.setDate(date.getDate() - i);
-    if (!scheduledOn(task, date)) continue;
+    if (date < effectiveStart || !scheduledOn(task, date)) continue;
     scheduled += 1;
     if (done.has(habitDateKey(date))) completed += 1;
   }
@@ -303,13 +309,18 @@ function phaseFor(plan: number, completed: number, adherence: number, context: n
 }
 
 function confidence(task: Task, opportunitiesSeen: number): 'low' | 'medium' | 'high' {
+  // Passing days alone is not evidence that the engine has learned someone's context.
+  const completionDates = new Set([
+    ...Object.entries(task.habitCompletions || {}).filter(([, done]) => done).map(([date]) => date),
+    ...(task.completionLogs || []).map((log) => habitDateKey(new Date(log.completedAt))),
+  ]);
   const evidence =
-    opportunitiesSeen +
-    Math.min(10, task.completionLogs.length) +
+    Math.min(5, Math.floor(opportunitiesSeen / 7)) +
+    Math.min(14, completionDates.size * 2) +
     Math.min(6, task.habitEngine?.frictionLogs?.length || 0) +
     Math.min(4, task.habitEngine?.automaticityCheckIns?.length || 0);
-  if (evidence >= 24) return 'high';
-  if (evidence >= 10) return 'medium';
+  if (evidence >= 20 && completionDates.size >= 6) return 'high';
+  if (evidence >= 9 && completionDates.size >= 2) return 'medium';
   return 'low';
 }
 
@@ -493,6 +504,12 @@ export function getHabitEngineV2Snapshot(task: Task, now = new Date()): HabitEng
     guidance = 'The normal window passed. Do a smaller version now, then improve the plan rather than chasing a perfect streak.';
     nextActionLabel = 'Review recovery plan';
     priorityScore = 88;
+  } else if (start != null && dueToday && minuteNow < start) {
+    interventionType = 'plan_ahead';
+    guidance = 'Your window opens at ' + formatMinutes(start) + '.' +
+      (engine?.firstStep ? ' First step: ' + engine.firstStep + '.' : ' Keep the first step easy.');
+    nextActionLabel = 'See my plan';
+    priorityScore = 45;
   } else if (checkInDue(engine, now)) {
     interventionType = 'checkin';
     guidance = 'Quick check-in: how automatic does this behaviour feel now?';
@@ -503,9 +520,6 @@ export function getHabitEngineV2Snapshot(task: Task, now = new Date()): HabitEng
     guidance = suggestion.message;
     nextActionLabel = suggestion.actionLabel;
     priorityScore = 72;
-  } else if (start != null && dueToday && minuteNow < start) {
-    guidance = 'Your window opens at ' + formatMinutes(start) + '. Keep the cue and environment ready.';
-    priorityScore = 42;
   }
   return {
     habitId: task.id,

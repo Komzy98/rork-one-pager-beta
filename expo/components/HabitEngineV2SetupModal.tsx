@@ -115,7 +115,7 @@ export default function HabitEngineV2SetupModal({ visible, task, onClose, onSave
             {step > 0 ? <ChevronLeft size={20} color={colors.text} /> : <X size={20} color={colors.text} />}
           </TouchableOpacity>
           <View style={styles.headerCopy}>
-            <Text style={[styles.eyebrow, { color: colors.primary }]}>HABIT ENGINE V2</Text>
+            <Text style={[styles.eyebrow, { color: colors.primary }]}>HABIT ENGINE</Text>
             <Text style={[styles.headerTitle, { color: colors.text }]}>{STEP_TITLES[step]}</Text>
           </View>
           <Text style={[styles.stepCount, { color: colors.textSecondary }]}>{step + 1}/4</Text>

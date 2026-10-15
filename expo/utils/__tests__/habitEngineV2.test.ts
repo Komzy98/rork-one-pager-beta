@@ -139,7 +139,24 @@ describe('Habit Engine V2', () => {
     });
     const snapshot = getHabitEngineV2Snapshot(task, new Date('2026-09-27T12:00:00'));
     assert.equal(snapshot.checkInDue, true);
-    assert.equal(snapshot.interventionType, 'checkin');
+    assert.equal(snapshot.interventionType, 'plan_ahead');
+    assert.equal(snapshot.nextActionLabel, 'See my plan');
+    assert.match(snapshot.guidance, /window opens at 17:30/i);
+  });
+
+  it('does not count days before a new habit was created as missed opportunities', () => {
+    const newHabit = configured({
+      createdAt: '2026-09-26T09:00:00',
+      updatedAt: '2026-09-26T09:00:00',
+      habitCompletions: { '2026-09-26': true },
+    });
+    const snapshot = getHabitEngineV2Snapshot(newHabit, new Date('2026-09-27T08:00:00'));
+    assert.ok(snapshot.adherenceRate >= 50);
+  });
+
+  it('does not claim high learning confidence without completed habit data', () => {
+    const snapshot = getHabitEngineV2Snapshot(configured(), new Date('2026-09-27T08:00:00'));
+    assert.equal(snapshot.learningConfidence, 'low');
   });
 
   it('prioritises a habit that is actionable now', () => {

@@ -98,7 +98,6 @@ import DailyStackCard from '@/components/DailyStackCard';
 import TodayCoachCard from '@/components/TodayCoachCard';
 import DecisionMomentsCard from '@/components/DecisionMomentsCard';
 import PeakPerformanceScheduler from '@/components/PeakPerformanceScheduler';
-import HabitFormationCoach from '@/components/HabitFormationCoach';
 import HabitEngineTodayCard from '@/components/HabitEngineTodayCard';
 import RecoveryModePanel from '@/components/RecoveryModePanel';
 import JoySourcesNudgeCard from '@/components/JoySourcesNudgeCard';
@@ -2587,15 +2586,6 @@ export default function ActivitiesScreen() {
             </View>
 
             <HabitEngineTodayCard />
-
-            {/* Habit Formation Coach */}
-            <HabitFormationCoach 
-              maxItems={3}
-              recoveryMode={recovery.isActive}
-              onComplete={(habitId) => {
-                if (__DEV__) console.log('Quick completed habit:', habitId);
-              }}
-            />
 
             <OnePagerSavedFitSection
               events={upcomingSaved}

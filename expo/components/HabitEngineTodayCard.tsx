@@ -49,13 +49,12 @@ export default function HabitEngineTodayCard() {
     engine?.windowStart && engine?.windowEnd ? engine.windowStart + '–' + engine.windowEnd : undefined,
   ].filter(Boolean).join(' · ');
   const contextLabel =
-    snapshot.contextConsistency >= 70
+    snapshot.learningConfidence === 'low' ? 'Learning'
+      : snapshot.contextConsistency >= 70
       ? 'Stable'
       : snapshot.contextConsistency >= 50
         ? 'Forming'
-        : snapshot.learningConfidence === 'low'
-          ? 'Learning'
-          : 'Variable';
+        : 'Variable';
 
   const haptic = () => {
     if (Platform.OS !== 'web') void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
@@ -135,7 +134,7 @@ export default function HabitEngineTodayCard() {
               <BrainCircuit size={20} color={tone} />
             </View>
             <View style={styles.titleWrap}>
-              <Text style={[styles.eyebrow, { color: tone }]}>HABIT ENGINE V2</Text>
+              <Text style={[styles.eyebrow, { color: tone }]}>HABIT ENGINE</Text>
               <Text style={[styles.title, { color: colors.text }]} numberOfLines={1}>{task.title}</Text>
             </View>
             <ChevronRight size={19} color={colors.textSecondary} />
@@ -148,6 +147,23 @@ export default function HabitEngineTodayCard() {
           </View>
           <Text style={[styles.weekText, { color: colors.textSecondary }]}>{weekText}</Text>
         </View>
+
+        {snapshot.weeklyTarget > 0 ? (
+          <View
+            accessibilityRole="progressbar"
+            accessibilityLabel={`${snapshot.weeklyCompleted} of ${snapshot.weeklyTarget} habit sessions completed this week`}
+            accessibilityValue={{
+              min: 0, max: snapshot.weeklyTarget,
+              now: Math.min(snapshot.weeklyCompleted, snapshot.weeklyTarget),
+            }}
+            style={[styles.progressTrack, { backgroundColor: colors.surfaceSecondary }]}
+          >
+            <View style={[styles.progressFill, {
+              backgroundColor: tone,
+              width: `${Math.min(100, Math.round(snapshot.weeklyCompleted / snapshot.weeklyTarget * 100))}%`,
+            }]} />
+          </View>
+        ) : null}
 
         {contextText ? (
           <View style={styles.contextRow}>
@@ -172,7 +188,10 @@ export default function HabitEngineTodayCard() {
           </View>
         </View>
 
-        <Text style={[styles.guidance, { color: colors.text }]}>{snapshot.guidance}</Text>
+        <View style={styles.nextStep}>
+          <Text style={[styles.nextStepLabel, { color: colors.textSecondary }]}>YOUR NEXT STEP</Text>
+          <Text style={[styles.guidance, { color: colors.text }]}>{snapshot.guidance}</Text>
+        </View>
 
         {snapshot.insight ? (
           <View style={[styles.insightBox, { backgroundColor: colors.surfaceSecondary }]}>
@@ -230,7 +249,7 @@ export default function HabitEngineTodayCard() {
           >
             <Text style={styles.primaryText}>{snapshot.nextActionLabel}</Text>
           </TouchableOpacity>
-          {(snapshot.overdueWindow || snapshot.recentMisses > 0) && snapshot.interventionType !== 'setup' ? (
+          {snapshot.interventionType !== 'setup' ? (
             <TouchableOpacity
               activeOpacity={0.76}
               onPress={() => {
@@ -243,6 +262,19 @@ export default function HabitEngineTodayCard() {
             </TouchableOpacity>
           ) : null}
         </View>
+        {snapshot.checkInDue && snapshot.interventionType === 'plan_ahead' ? (
+          <TouchableOpacity
+            onPress={() => { haptic(); setShowCheckIn((value) => !value); }}
+            style={styles.quietCheckIn}
+            accessibilityRole="button"
+            accessibilityLabel="Check how automatic this habit feels"
+          >
+            <Text style={[styles.quietCheckInText, { color: colors.primary }]}>
+              Check how automatic this feels
+            </Text>
+            <ChevronRight size={14} color={colors.primary} />
+          </TouchableOpacity>
+        ) : null}
       </View>
 
       <HabitEngineV2SetupModal
@@ -257,10 +289,14 @@ export default function HabitEngineTodayCard() {
 
 const styles = StyleSheet.create({
   card: {
+    marginHorizontal: 20,
+    alignSelf: 'stretch',
+    minWidth: 0,
     borderWidth: 1,
     borderRadius: 22,
     padding: 18,
     marginBottom: 16,
+    overflow: 'hidden',
   },
   topRow: { flexDirection: 'row', alignItems: 'center' },
   iconWrap: {
@@ -271,7 +307,7 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     marginRight: 12,
   },
-  titleWrap: { flex: 1 },
+  titleWrap: { flex: 1, minWidth: 0 },
   eyebrow: { fontSize: 10, fontWeight: '800', letterSpacing: 0.9, marginBottom: 3 },
   title: { fontSize: 18, fontWeight: '800', letterSpacing: -0.35 },
   statusRow: {
@@ -284,12 +320,16 @@ const styles = StyleSheet.create({
   phaseText: { fontSize: 11, fontWeight: '800' },
   weekText: { fontSize: 12, fontWeight: '600' },
   contextRow: { flexDirection: 'row', alignItems: 'flex-start', gap: 7, marginTop: 12 },
-  contextText: { flex: 1, fontSize: 12, lineHeight: 17 },
-  metricsRow: { flexDirection: 'row', gap: 12, marginTop: 16 },
-  metric: { flex: 1 },
-  metricValue: { fontSize: 14, fontWeight: '800' },
+  contextText: { flex: 1, minWidth: 0, fontSize: 12, lineHeight: 17 },
+  metricsRow: { flexDirection: 'row', gap: 10, marginTop: 16 },
+  metric: { flex: 1, minWidth: 0 },
+  metricValue: { fontSize: 13, fontWeight: '800', flexShrink: 1 },
   metricLabel: { marginTop: 3, fontSize: 10, fontWeight: '600' },
-  guidance: { marginTop: 16, fontSize: 14, lineHeight: 20, fontWeight: '600' },
+  nextStep: { marginTop: 18 },
+  nextStepLabel: { fontSize: 10, fontWeight: '800', letterSpacing: 1.1 },
+  guidance: { marginTop: 6, fontSize: 14, lineHeight: 21, fontWeight: '600' },
+  progressTrack: { height: 5, borderRadius: 10, overflow: 'hidden', marginTop: 12 },
+  progressFill: { height: '100%', borderRadius: 10 },
   insightBox: {
     flexDirection: 'row',
     alignItems: 'flex-start',
@@ -322,9 +362,11 @@ const styles = StyleSheet.create({
   frictionWrap: { flexDirection: 'row', flexWrap: 'wrap', gap: 7, marginTop: 11 },
   frictionChip: { borderWidth: 1, borderRadius: 999, paddingHorizontal: 10, paddingVertical: 7 },
   frictionText: { fontSize: 11, fontWeight: '700' },
-  actionsRow: { flexDirection: 'row', gap: 9, marginTop: 15 },
+  actionsRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 9, marginTop: 15 },
   primaryButton: {
-    minHeight: 42,
+    minHeight: 44,
+    maxWidth: '100%',
+    flexShrink: 1,
     borderRadius: 13,
     paddingHorizontal: 15,
     alignItems: 'center',
@@ -332,7 +374,9 @@ const styles = StyleSheet.create({
   },
   primaryText: { color: '#fff', fontSize: 12, fontWeight: '800' },
   secondaryButton: {
-    minHeight: 42,
+    minHeight: 44,
+    maxWidth: '100%',
+    flexShrink: 1,
     borderWidth: 1,
     borderRadius: 13,
     paddingHorizontal: 13,
@@ -340,4 +384,6 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
   },
   secondaryText: { fontSize: 12, fontWeight: '700' },
+  quietCheckIn: { marginTop: 12, flexDirection: 'row', alignItems: 'center', gap: 5, alignSelf: 'flex-start', paddingVertical: 4 },
+  quietCheckInText: { fontSize: 12, fontWeight: '700' },
 });
