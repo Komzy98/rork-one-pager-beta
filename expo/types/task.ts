@@ -79,6 +79,7 @@ export interface HabitEngineAdaptationRecord {
     | 'reduce_prompts'
     | 'review_plan';
   message: string;
+  signature?: string; // Stable intervention identity for cooldowns
   acceptedAt?: string;
   dismissedAt?: string;
 }
@@ -101,6 +102,8 @@ export interface HabitEngineConfig {
   adaptationHistory?: HabitEngineAdaptationRecord[];
   promptCadence?: HabitEnginePromptCadence;
   lastInterventionAt?: string;
+  minimumPlannedDate?: string; // Adopted a smaller plan, not yet completed
+  fallbackPlannedDate?: string; // Adopted a backup plan, not yet completed
 }
 
 export interface Task {

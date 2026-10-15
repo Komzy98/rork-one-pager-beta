@@ -4,6 +4,7 @@ import { describe, it } from 'node:test';
 import type { Task } from '@/types/task';
 import {
   applyHabitEngineV2Suggestion,
+  dismissHabitEngineV2Suggestion,
   buildHabitEngineV2Setup,
   getHabitEngineV2Snapshot,
   rankHabitEngineV2Interventions,
@@ -157,6 +158,108 @@ describe('Habit Engine V2', () => {
   it('does not claim high learning confidence without completed habit data', () => {
     const snapshot = getHabitEngineV2Snapshot(configured(), new Date('2026-09-27T08:00:00'));
     assert.equal(snapshot.learningConfidence, 'low');
+  });
+
+  it('does not invent a tiredness intervention from one log or missed checkboxes', () => {
+    const now = new Date('2026-09-27T12:00:00');
+    const oneReport = configured({
+      habitEngine: { ...configured().habitEngine,
+        frictionLogs: [{ reason: 'too_tired', date: '2026-09-26T20:00:00' }],
+      },
+    });
+    assert.equal(getHabitEngineV2Snapshot(oneReport, now).adaptiveSuggestion, undefined);
+    assert.equal(getHabitEngineV2Snapshot(configured(), now).adaptiveSuggestion, undefined);
+  });
+
+  it('recognises recurring low energy from reports on separate days', () => {
+    const task = configured({
+      habitEngine: { ...configured().habitEngine,
+        frictionLogs: [
+          { reason: 'too_tired', date: '2026-09-24T19:00:00' },
+          { reason: 'too_tired', date: '2026-09-25T19:00:00' },
+          { reason: 'too_tired', date: '2026-09-25T20:00:00' },
+        ],
+      },
+    });
+    const suggestion = getHabitEngineV2Snapshot(task, new Date('2026-09-27T12:00:00')).adaptiveSuggestion;
+    assert.equal(suggestion?.kind, 'use_minimum');
+    assert.match(suggestion?.evidence || '', /2 separate days/);
+    assert.match(suggestion?.message || '', /One main lift/);
+  });
+
+  it('accepts a smaller plan without claiming the habit was completed', () => {
+    const date = new Date('2026-09-27T12:00:00');
+    const task = configured({
+      habitEngine: { ...configured().habitEngine, frictionLogs: [
+        { reason: 'no_time', date: '2026-09-25T20:00:00' },
+        { reason: 'no_time', date: '2026-09-26T20:00:00' },
+      ] },
+    });
+    const choice = getHabitEngineV2Snapshot(task, date).adaptiveSuggestion!;
+    const selected = applyHabitEngineV2Suggestion(task, choice, date);
+    assert.equal(selected.habitEngine?.minimumPlannedDate, '2026-09-27');
+    assert.equal(selected.habitCompletions, undefined);
+    assert.equal(selected.habitEngine?.adaptationHistory?.at(-1)?.acceptedAt, date.toISOString());
+    const updated = { ...task, ...selected };
+    assert.equal(getHabitEngineV2Snapshot(updated, date).adaptiveSuggestion, undefined);
+    const done = recordHabitEngineV2Completion(updated, 'minimum', date);
+    assert.equal(done.habitCompletions?.['2026-09-27'], true);
+    assert.equal(done.habitEngine?.minimumPlannedDate, undefined);
+  });
+
+  it('remembers Not now across snapshots and reconsiders after its cooldown', () => {
+    const task = configured({
+      habitEngine: { ...configured().habitEngine, frictionLogs: [
+        { reason: 'forgot', date: '2026-09-24T20:00:00' },
+        { reason: 'forgot', date: '2026-09-25T20:00:00' },
+      ] },
+    });
+    const now = new Date('2026-09-26T12:00:00');
+    const proposal = getHabitEngineV2Snapshot(task, now).adaptiveSuggestion!;
+    assert.equal(proposal?.kind, 'strengthen_cue');
+    const rejected = dismissHabitEngineV2Suggestion(task, proposal, now);
+    const updated = { ...task, ...rejected };
+    assert.ok(rejected.habitEngine?.adaptationHistory?.at(-1)?.dismissedAt);
+    assert.equal(getHabitEngineV2Snapshot(updated, new Date('2026-10-02T12:00:00')).adaptiveSuggestion, undefined);
+    assert.equal(getHabitEngineV2Snapshot(updated, new Date('2026-10-11T12:00:00')).adaptiveSuggestion?.kind, 'strengthen_cue');
+  });
+
+  it('does not propose a time change without enough actual completion times', () => {
+    const task = configured({
+      habitEngine: { ...configured().habitEngine, frictionLogs: [
+        { reason: 'wrong_time', date: '2026-09-24T19:00:00' },
+        { reason: 'wrong_time', date: '2026-09-25T19:00:00' },
+      ] },
+      completionLogs: [
+        { id: 'a', taskId: 'habit-1', completedAt: '2026-09-24T08:00:00' },
+      ],
+    });
+    assert.equal(getHabitEngineV2Snapshot(task, new Date('2026-09-27T12:00:00')).adaptiveSuggestion, undefined);
+  });
+
+  it('requires sustained completion history before recommending fewer prompts', () => {
+    const task = configured({
+      habitEngine: { ...configured().habitEngine,
+        automaticityCheckIns: [
+          { date: '2026-09-19T09:00:00', score: 5 },
+          { date: '2026-09-25T09:00:00', score: 5 },
+        ],
+      },
+      habitCompletions: { '2026-09-25': true },
+    });
+    assert.equal(getHabitEngineV2Snapshot(task, new Date('2026-09-27T12:00:00')).adaptiveSuggestion, undefined);
+  });
+
+  it('honours the accepted low check-in cadence instead of just saving a setting', () => {
+    const now = new Date('2026-09-27T12:00:00');
+    const task = configured({ habitEngine: {
+      ...configured().habitEngine,
+      automaticityCheckIns: [{ date: '2026-09-10T09:00:00', score: 4 }],
+    } });
+    assert.equal(getHabitEngineV2Snapshot(task, now).checkInDue, true);
+    const quiet = { ...task, habitEngine: { ...task.habitEngine, promptCadence: 'low' as const } };
+    assert.equal(getHabitEngineV2Snapshot(quiet, now).checkInDue, false);
+    assert.equal(getHabitEngineV2Snapshot(quiet, new Date('2026-10-10T12:00:00')).checkInDue, true);
   });
 
   it('prioritises a habit that is actionable now', () => {

@@ -7,8 +7,11 @@ import * as Haptics from 'expo-haptics';
 import { useTasks } from '@/hooks/useTasksStore';
 import { useTheme } from '@/hooks/useTheme';
 import type { HabitEngineFrictionReason } from '@/types/task';
+import type { HabitEngineAdaptiveSuggestion } from '@/utils/habitEngineV2';
 import {
   applyHabitEngineV2Suggestion,
+  dismissHabitEngineV2Suggestion,
+  habitDateKey,
   rankHabitEngineV2Interventions,
   recordHabitEngineV2Automaticity,
   recordHabitEngineV2Completion,
@@ -31,15 +34,25 @@ export default function HabitEngineTodayCard() {
   const [showSetup, setShowSetup] = useState(false);
   const [showCheckIn, setShowCheckIn] = useState(false);
   const [showFriction, setShowFriction] = useState(false);
+  const [showSuggestionDetails, setShowSuggestionDetails] = useState(false);
+  const [pendingPlanChange, setPendingPlanChange] = useState<HabitEngineAdaptiveSuggestion | null>(null);
+  const [focusedHabitId, setFocusedHabitId] = useState<string | null>(null);
 
-  const intervention = useMemo(() => {
-    return rankHabitEngineV2Interventions(tasks)[0] || null;
-  }, [tasks]);
+  const interventions = useMemo(() => rankHabitEngineV2Interventions(tasks), [tasks]);
+  const activeIndex = Math.max(0, interventions.findIndex((item) => item.task.id === focusedHabitId));
+  const intervention = interventions[activeIndex] ?? null;
 
   if (!intervention) return null;
 
   const { task, snapshot } = intervention;
   const engine = task.habitEngine;
+  const suggestion = snapshot.adaptiveSuggestion;
+  const today = habitDateKey(new Date());
+  const minimumChosen = engine?.minimumPlannedDate === today;
+  const fallbackChosen = engine?.fallbackPlannedDate === today;
+  const selectedSmallerPlan = minimumChosen
+    ? engine?.minimumVersion
+    : fallbackChosen ? engine?.fallback : undefined;
   const tone = snapshot.overdueWindow ? '#F59E0B' : snapshot.dueNow ? '#10B981' : colors.primary;
   const weekText = snapshot.weeklyTarget > 0
     ? String(snapshot.weeklyCompleted) + '/' + String(snapshot.weeklyTarget) + ' this week'
@@ -73,6 +86,23 @@ export default function HabitEngineTodayCard() {
     updateTask(task.id, recordHabitEngineV2Completion(task, level));
   };
 
+  const acceptSuggestion = (choice: HabitEngineAdaptiveSuggestion) => {
+    haptic();
+    if (choice.requiresSetup) {
+      setPendingPlanChange(choice);
+      setShowSetup(true);
+      return;
+    }
+    updateTask(task.id, applyHabitEngineV2Suggestion(task, choice));
+    setShowSuggestionDetails(false);
+  };
+
+  const dismissSuggestion = (choice: HabitEngineAdaptiveSuggestion) => {
+    haptic();
+    updateTask(task.id, dismissHabitEngineV2Suggestion(task, choice));
+    setShowSuggestionDetails(false);
+  };
+
   const runPrimaryAction = () => {
     if (snapshot.interventionType === 'setup') {
       haptic();
@@ -92,17 +122,10 @@ export default function HabitEngineTodayCard() {
       complete('minimum');
       return;
     }
-    if (snapshot.interventionType === 'adapt' && snapshot.adaptiveSuggestion) {
-      const kind = snapshot.adaptiveSuggestion.kind;
-      if (kind === 'shift_window' || kind === 'reduce_prompts') {
-        haptic();
-        updateTask(task.id, applyHabitEngineV2Suggestion(task, snapshot.adaptiveSuggestion));
-        return;
-      }
-      if (kind === 'use_minimum') {
-        complete('minimum');
-        return;
-      }
+    if (snapshot.interventionType === 'adapt' && suggestion) {
+      haptic();
+      setShowSuggestionDetails(true);
+      return;
     }
     openPlan();
   };
@@ -199,6 +222,77 @@ export default function HabitEngineTodayCard() {
             <Text style={[styles.insightText, { color: colors.textSecondary }]}>{snapshot.insight}</Text>
           </View>
         ) : null}
+        {selectedSmallerPlan ? (
+          <View style={[styles.interventionCard, { backgroundColor: colors.surfaceSecondary, borderColor: colors.border }]}>
+            <Text style={[styles.interventionEyebrow, { color: colors.primary }]}>YOUR PLAN FOR TODAY</Text>
+            <Text style={[styles.interventionTitle, { color: colors.text }]}>
+              {minimumChosen ? 'Smaller session selected' : 'Backup plan selected'}
+            </Text>
+            <Text style={[styles.interventionDescription, { color: colors.textSecondary }]}>
+              {selectedSmallerPlan}
+            </Text>
+            <TouchableOpacity
+              accessibilityRole="button"
+              accessibilityLabel="Mark selected smaller version completed"
+              onPress={() => complete('minimum')}
+              style={[styles.interventionPrimary, { backgroundColor: colors.primary }]}
+              testID="habit-intervention-mark-completed"
+            >
+              <Text style={styles.interventionPrimaryText}>I completed this version</Text>
+            </TouchableOpacity>
+          </View>
+        ) : suggestion ? (
+          <View style={[styles.interventionCard, { backgroundColor: colors.surfaceSecondary, borderColor: colors.border }]}
+            testID="habit-intervention-proposal"
+          >
+            <Text style={[styles.interventionEyebrow, { color: colors.primary }]}>SUGGESTED ADJUSTMENT</Text>
+            <Text style={[styles.interventionTitle, { color: colors.text }]}>{suggestion.title}</Text>
+            <Text style={[styles.interventionDescription, { color: colors.textSecondary }]}>
+              {suggestion.message}
+            </Text>
+            {showSuggestionDetails ? (
+              <>
+                {suggestion.evidence ? (
+                  <View style={styles.evidenceRow}>
+                    <Sparkles size={14} color={colors.primary} />
+                    <Text style={[styles.evidenceText, { color: colors.textSecondary }]}>{suggestion.evidence}</Text>
+                  </View>
+                ) : null}
+                <View style={styles.interventionActions}>
+                  <TouchableOpacity
+                    accessibilityRole="button"
+                    accessibilityLabel={suggestion.actionLabel}
+                    onPress={() => acceptSuggestion(suggestion)}
+                    style={[styles.interventionPrimary, { backgroundColor: colors.primary }]}
+                    testID="habit-intervention-accept"
+                  >
+                    <Text style={styles.interventionPrimaryText}>{suggestion.actionLabel}</Text>
+                  </TouchableOpacity>
+                  <TouchableOpacity
+                    accessibilityRole="button"
+                    accessibilityLabel="Not now, dismiss this suggestion"
+                    onPress={() => dismissSuggestion(suggestion)}
+                    style={[styles.interventionSecondary, { borderColor: colors.border }]}
+                    testID="habit-intervention-dismiss"
+                  >
+                    <Text style={[styles.secondaryText, { color: colors.textSecondary }]}>Not now</Text>
+                  </TouchableOpacity>
+                </View>
+              </>
+            ) : (
+              <TouchableOpacity
+                accessibilityRole="button"
+                accessibilityLabel="Review why this habit change is recommended"
+                onPress={() => setShowSuggestionDetails(true)}
+                style={styles.interventionReview}
+                testID="habit-intervention-review"
+              >
+                <Text style={[styles.quietCheckInText, { color: colors.primary }]}>See why & choose</Text>
+                <ChevronRight size={15} color={colors.primary} />
+              </TouchableOpacity>
+            )}
+          </View>
+        ) : null}
         {showCheckIn ? (
           <View style={[styles.inlinePanel, { borderColor: colors.border }]}>
             <Text style={[styles.panelTitle, { color: colors.text }]}>How automatic does it feel?</Text>
@@ -247,7 +341,9 @@ export default function HabitEngineTodayCard() {
             style={[styles.primaryButton, { backgroundColor: tone }]}
             testID="habit-engine-v2-primary"
           >
-            <Text style={styles.primaryText}>{snapshot.nextActionLabel}</Text>
+            <Text style={styles.primaryText}>
+              {snapshot.interventionType === 'adapt' ? 'Review adjustment' : snapshot.nextActionLabel}
+            </Text>
           </TouchableOpacity>
           {snapshot.interventionType !== 'setup' ? (
             <TouchableOpacity
@@ -275,13 +371,46 @@ export default function HabitEngineTodayCard() {
             <ChevronRight size={14} color={colors.primary} />
           </TouchableOpacity>
         ) : null}
+        {interventions.length > 1 ? (
+          <View style={[styles.habitSwitchRow, { borderTopColor: colors.border }]}>
+            <Text style={[styles.habitSwitchCount, { color: colors.textSecondary }]}>
+              {activeIndex + 1} of {interventions.length} active habits
+            </Text>
+            <TouchableOpacity
+              accessibilityRole="button"
+              accessibilityLabel="View next active habit"
+              onPress={() => {
+                haptic();
+                setFocusedHabitId(interventions[(activeIndex + 1) % interventions.length].task.id);
+                setShowSuggestionDetails(false);
+                setShowCheckIn(false);
+                setShowFriction(false);
+              }}
+              style={styles.habitSwitchAction}
+              testID="habit-engine-next-habit"
+            >
+              <Text style={[styles.quietCheckInText, { color: colors.primary }]}>Next habit</Text>
+              <ChevronRight size={16} color={colors.primary} />
+            </TouchableOpacity>
+          </View>
+        ) : null}
       </View>
 
       <HabitEngineV2SetupModal
         visible={showSetup}
         task={task}
-        onClose={() => setShowSetup(false)}
-        onSave={(updates) => updateTask(task.id, updates)}
+        onClose={() => { setShowSetup(false); setPendingPlanChange(null); }}
+        onSave={(updates) => {
+          if (pendingPlanChange) {
+            const configuredTask = { ...task, ...updates };
+            const accepted = applyHabitEngineV2Suggestion(configuredTask, pendingPlanChange);
+            updateTask(task.id, { ...updates, habitEngine: accepted.habitEngine });
+            setPendingPlanChange(null);
+            setShowSuggestionDetails(false);
+          } else {
+            updateTask(task.id, updates);
+          }
+        }}
       />
     </>
   );
@@ -362,6 +491,21 @@ const styles = StyleSheet.create({
   frictionWrap: { flexDirection: 'row', flexWrap: 'wrap', gap: 7, marginTop: 11 },
   frictionChip: { borderWidth: 1, borderRadius: 999, paddingHorizontal: 10, paddingVertical: 7 },
   frictionText: { fontSize: 11, fontWeight: '700' },
+  interventionCard: {
+    marginTop: 16, padding: 14, borderRadius: 16, borderWidth: 1, gap: 7,
+  },
+  interventionEyebrow: { fontSize: 10, letterSpacing: 1.1, fontWeight: '800' },
+  interventionTitle: { fontSize: 15, fontWeight: '800', letterSpacing: -0.25 },
+  interventionDescription: { fontSize: 13, lineHeight: 19, fontWeight: '500' },
+  evidenceRow: { flexDirection: 'row', alignItems: 'flex-start', gap: 8, marginTop: 8 },
+  evidenceText: { flex: 1, minWidth: 0, fontSize: 12, lineHeight: 18 },
+  interventionReview: { flexDirection: 'row', alignItems: 'center', alignSelf: 'flex-start', gap: 5, paddingVertical: 6, marginTop: 4 },
+  interventionActions: { flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginTop: 10 },
+  interventionPrimary: { borderRadius: 12, minHeight: 44, paddingHorizontal: 14,
+    alignItems: 'center', justifyContent: 'center', alignSelf: 'flex-start', maxWidth: '100%' },
+  interventionPrimaryText: { color: '#fff', fontSize: 12, fontWeight: '800' },
+  interventionSecondary: { minHeight: 44, borderWidth: 1, borderRadius: 12, paddingHorizontal: 15,
+    alignItems: 'center', justifyContent: 'center' },
   actionsRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 9, marginTop: 15 },
   primaryButton: {
     minHeight: 44,
@@ -384,6 +528,10 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
   },
   secondaryText: { fontSize: 12, fontWeight: '700' },
+  habitSwitchRow: { borderTopWidth: 1, marginTop: 18, paddingTop: 12,
+    flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', gap: 8 },
+  habitSwitchCount: { flexShrink: 1, fontSize: 11, fontWeight: '600' },
+  habitSwitchAction: { flexDirection: 'row', alignItems: 'center', gap: 3, paddingVertical: 5 },
   quietCheckIn: { marginTop: 12, flexDirection: 'row', alignItems: 'center', gap: 5, alignSelf: 'flex-start', paddingVertical: 4 },
   quietCheckInText: { fontSize: 12, fontWeight: '700' },
 });

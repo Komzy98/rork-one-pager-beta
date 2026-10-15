@@ -28,6 +28,11 @@ export interface HabitEngineAdaptiveSuggestion {
   title: string;
   message: string;
   actionLabel: string;
+  /** Evidence comes from the person's own logged behaviour, not assumptions. */
+  evidence?: string;
+  signature?: string;
+  confidence?: 'emerging' | 'repeated';
+  requiresSetup?: boolean;
   recommendedWindowStart?: string;
   recommendedWindowEnd?: string;
 }
@@ -246,7 +251,9 @@ function checkInDue(engine: HabitEngineConfig | undefined, now: Date) {
   const checks = engine.automaticityCheckIns || [];
   if (!checks.length) return true;
   const latest = new Date(checks[checks.length - 1].date);
-  return now.getTime() - latest.getTime() >= 14 * DAY_MS;
+  if (!Number.isFinite(latest.getTime())) return true;
+  const cadenceDays = engine.promptCadence === 'low' ? 28 : engine.promptCadence === 'high' ? 7 : 14;
+  return now.getTime() - latest.getTime() >= cadenceDays * DAY_MS;
 }
 
 function recentMissCount(task: Task, now: Date) {
@@ -324,103 +331,151 @@ function confidence(task: Task, opportunitiesSeen: number): 'low' | 'medium' | '
   return 'low';
 }
 
-function adaptiveSuggestion(task: Task, now: Date, adherence: number, context: number, auto: number | null, misses: number) {
+/**
+ * Evidence-led habit interventions. Nothing is applied until a person accepts.
+ * Require repeat observations on distinct days, suppress repeat pitches after a
+ * response, and do not infer fatigue/motivation solely from missed checkboxes.
+ */
+function adaptiveSuggestion(
+  task: Task, now: Date, adherence: number, context: number, auto: number | null, _misses: number,
+): HabitEngineAdaptiveSuggestion | undefined {
   const engine = task.habitEngine;
-  const friction = dominantFriction(task, now);
-  const timing = successfulTime(task);
-  if (friction?.reason === 'wrong_time' && timing) {
-    const start = parseMinutes(engine?.windowStart);
-    const end = parseMinutes(engine?.windowEnd);
-    const midpoint = start != null && end != null ? (start + end) / 2 : null;
-    if (midpoint == null || Math.abs(midpoint - timing.median) >= 60) {
-      const proposedStart = formatMinutes(timing.median - 45);
-      const proposedEnd = formatMinutes(timing.median + 45);
-      return {
-        kind: 'shift_window' as const,
-        title: 'Move the window',
-        message: 'Your recent completions cluster around ' + timing.label + '. Shift the plan closer to when you actually succeed.',
-        actionLabel: 'Use ' + proposedStart + '–' + proposedEnd,
-        recommendedWindowStart: proposedStart,
-        recommendedWindowEnd: proposedEnd,
+  if (!engine?.onboardingCompletedAt) return undefined;
+
+  const day = habitDateKey(now);
+  const cutoff = now.getTime() - 21 * DAY_MS;
+  const byReason = new Map<HabitEngineFrictionReason, Set<string>>();
+  for (const log of engine.frictionLogs || []) {
+    const time = new Date(log.date).getTime();
+    if (!Number.isFinite(time) || time < cutoff || time > now.getTime()) continue;
+    const dates = byReason.get(log.reason) ?? new Set<string>();
+    dates.add(habitDateKey(new Date(time)));
+    byReason.set(log.reason, dates);
+  }
+  const recurring = [...byReason.entries()]
+    .filter(([reason, dates]) => reason !== 'other' && dates.size >= 2)
+    .sort((a, b) => b[1].size - a[1].size)[0];
+
+  let suggestion: HabitEngineAdaptiveSuggestion | undefined;
+  if (recurring) {
+    const [reason, dates] = recurring;
+    const count = dates.size;
+    const repeated = count >= 3;
+    const evidence = `You logged "${{
+      too_tired: 'Too tired', forgot: 'Forgot', no_time: 'No time',
+      wrong_time: 'Wrong time', low_motivation: 'Low motivation',
+      unexpected: 'Something came up', other: 'Other',
+    }[reason]}" on ${count} separate days in the past 21 days.`;
+    const base = {
+      evidence, confidence: repeated ? 'repeated' as const : 'emerging' as const,
+    };
+
+    if (reason === 'wrong_time') {
+      const recentCompletions = (task.completionLogs || [])
+        .map((log) => new Date(log.completedAt))
+        .filter((date) => Number.isFinite(date.getTime()) &&
+          date.getTime() >= now.getTime() - 28 * DAY_MS && date.getTime() <= now.getTime());
+      const uniqueDates = new Set(recentCompletions.map(habitDateKey));
+      const times = recentCompletions.map((date) => date.getHours() * 60 + date.getMinutes()).sort((a, b) => a - b);
+      const median = times.length ? times[Math.floor(times.length / 2)] : 0;
+      const start = parseMinutes(engine.windowStart);
+      const end = parseMinutes(engine.windowEnd);
+      const midpoint = start != null && end != null ? (start + end) / 2 : null;
+      // Clock shift is only supported for same-day windows; requires four
+      // distinct observations at a different time and the person's approval.
+      if (uniqueDates.size >= 4 && start != null && end != null && midpoint != null && end > start &&
+          Math.abs(midpoint - median) >= 60) {
+        const proposedStart = formatMinutes(median - 45);
+        const proposedEnd = formatMinutes(median + 45);
+        suggestion = {
+          ...base, kind: 'shift_window', signature: 'shift_window:wrong_time',
+          title: 'Try a better time',
+          message: `Your recent completed sessions are around ${formatMinutes(median)}. Would ${proposedStart}–${proposedEnd} suit you better?`,
+          actionLabel: 'Change my time',
+          recommendedWindowStart: proposedStart, recommendedWindowEnd: proposedEnd,
+          evidence: evidence + ` ${uniqueDates.size} completed sessions also support the timing pattern.`,
+        };
+      }
+    } else if (reason === 'too_tired' || reason === 'no_time') {
+      const minimum = engine.minimumVersion;
+      suggestion = minimum
+        ? {
+            ...base, kind: 'use_minimum', signature: `use_minimum:${reason}`,
+            title: reason === 'too_tired' ? 'Make tired days easier' : 'Make busy days easier',
+            message: `Try your shorter version today: ${minimum}. Only log it once you've actually done it.`,
+            actionLabel: 'Use smaller plan today',
+          }
+        : {
+            ...base, kind: 'review_plan', signature: `review_plan:${reason}`,
+            title: 'Create a smaller version',
+            message: 'Add an achievable minimum version for difficult days. Your full goal stays unchanged.',
+            actionLabel: 'Edit my plan', requiresSetup: true,
+          };
+    } else if (reason === 'forgot') {
+      suggestion = {
+        ...base, kind: 'strengthen_cue', signature: 'strengthen_cue:forgot',
+        title: 'Make your cue easier to notice',
+        message: 'Choose an everyday trigger and a tiny first step you can start straight after it.',
+        actionLabel: 'Review my cue', requiresSetup: true,
+      };
+    } else if (reason === 'unexpected') {
+      suggestion = engine.fallback
+        ? {
+            ...base, kind: 'use_fallback', signature: 'use_fallback:unexpected',
+            title: 'Use your backup plan',
+            message: `When the usual plan falls through, use: ${engine.fallback}. Only mark it done after doing it.`,
+            actionLabel: 'Use backup today',
+          }
+        : {
+            ...base, kind: 'review_plan', signature: 'review_plan:unexpected',
+            title: 'Plan for disrupted days',
+            message: 'Set up a fallback for days when your normal time or place is unavailable.',
+            actionLabel: 'Add a backup', requiresSetup: true,
+          };
+    } else if (reason === 'low_motivation') {
+      suggestion = {
+        ...base, kind: 'add_reward', signature: 'add_reward:low_motivation',
+        title: 'Make starting more rewarding',
+        message: 'Review the first step and a small immediate reward that you actually enjoy.',
+        actionLabel: 'Review my plan', requiresSetup: true,
       };
     }
   }
 
-  if (friction?.reason === 'too_tired' || friction?.reason === 'no_time') {
-    const minimum = engine?.minimumVersion || engine?.fallback;
-    return minimum
-      ? {
-          kind: 'use_minimum' as const,
-          title: 'Protect the repetition',
-          message: 'This barrier has appeared ' + friction.count + ' times recently. On constrained days, default to: ' + minimum + '.',
-          actionLabel: 'Use minimum today',
-        }
-      : {
-          kind: 'review_plan' as const,
-          title: 'Make the habit smaller',
-          message: 'Your current version is too hard on constrained days. Add a minimum version that takes only a few minutes.',
-          actionLabel: 'Create minimum',
-        };
+  if (!suggestion && !recurring && engine.promptCadence !== 'low') {
+    const completeDates = new Set(Object.entries(task.habitCompletions || {})
+      .filter(([key, done]) => done && key <= day &&
+        key >= habitDateKey(new Date(now.getTime() - 28 * DAY_MS))).map(([key]) => key));
+    const checks = (engine.automaticityCheckIns || [])
+      .filter((entry) => entry.score >= 4 && Number.isFinite(new Date(entry.date).getTime()) &&
+        new Date(entry.date).getTime() <= now.getTime() &&
+        new Date(entry.date).getTime() >= now.getTime() - 60 * DAY_MS);
+    const distinctCheckIns = new Set(checks.map((entry) => habitDateKey(new Date(entry.date)))).size;
+    if (completeDates.size >= 8 && distinctCheckIns >= 2 && auto != null && auto >= 75 &&
+        adherence >= 75 && context >= 60) {
+      suggestion = {
+        kind: 'reduce_prompts', signature: 'reduce_prompts:automatic',
+        title: 'Check in less often',
+        message: 'Your habit is becoming more established. Would you like automaticity check-ins every four weeks instead of every two?',
+        actionLabel: 'Check in less often',
+        evidence: `${completeDates.size} completed days recently and ${distinctCheckIns} positive automaticity check-ins.`,
+        confidence: 'repeated',
+      };
+    }
   }
 
-  if (friction?.reason === 'forgot') {
-    return {
-      kind: 'strengthen_cue' as const,
-      title: 'Strengthen the cue',
-      message: engine?.anchor
-        ? 'Forgetting keeps showing up. Make "' + engine.anchor + '" impossible to miss and begin the first step immediately after it.'
-        : 'Forgetting keeps showing up. Attach this habit to one stable event that already happens every day.',
-      actionLabel: 'Review cue',
-    };
-  }
-
-  if (friction?.reason === 'unexpected') {
-    return {
-      kind: engine?.fallback ? 'use_fallback' as const : 'review_plan' as const,
-      title: 'Build a disruption plan',
-      message: engine?.fallback
-        ? 'Unexpected days keep breaking the normal context. Use your fallback: ' + engine.fallback + '.'
-        : 'Unexpected days keep breaking the normal context. Add a fallback that works away from the usual time or place.',
-      actionLabel: engine?.fallback ? 'Use fallback' : 'Add fallback',
-    };
-  }
-  if (friction?.reason === 'low_motivation') {
-    return {
-      kind: engine?.immediateReward ? 'review_plan' as const : 'add_reward' as const,
-      title: engine?.immediateReward ? 'Use the reward you planned' : 'Add an immediate reward',
-      message: engine?.immediateReward
-        ? 'Low motivation keeps showing up. Pair completion with: ' + engine.immediateReward + '.'
-        : 'Low motivation keeps showing up. Pair the habit with a small immediate reward you genuinely enjoy.',
-      actionLabel: 'Review plan',
-    };
-  }
-
-  if (auto != null && auto >= 75 && adherence >= 75 && context >= 60 && engine?.promptCadence !== 'low') {
-    return {
-      kind: 'reduce_prompts' as const,
-      title: 'The habit needs less help',
-      message: 'Automaticity and follow-through are both strong. Reduce prompts so One Pager gets out of the way.',
-      actionLabel: 'Reduce prompts',
-    };
-  }
-
-  if (misses >= 2 && (engine?.minimumVersion || engine?.fallback)) {
-    return {
-      kind: 'use_minimum' as const,
-      title: 'Recover before the pattern slips',
-      message: 'You missed ' + misses + ' of your last few opportunities. Keep the cue-response link alive with your minimum version.',
-      actionLabel: 'Use minimum today',
-    };
-  }
-  if (context < 45 && !engine?.anchor) {
-    return {
-      kind: 'strengthen_cue' as const,
-      title: 'Give the habit a stable trigger',
-      message: 'Completion is not yet tied to a consistent context. Choose one event that will reliably trigger the first step.',
-      actionLabel: 'Choose a cue',
-    };
-  }
-  return undefined;
+  if (!suggestion) return undefined;
+  const cooldown = (engine.adaptationHistory || []).some((record) => {
+    if (record.signature !== suggestion.signature) return false;
+    const response = record.dismissedAt || record.acceptedAt;
+    if (!response) return false;
+    const elapsed = now.getTime() - new Date(response).getTime();
+    // 'Not now' means 14 days of quiet. An accepted intervention gets seven
+    // days before a fresh, evidence-backed suggestion of that type.
+    const wait = record.dismissedAt ? 14 : 7;
+    return Number.isFinite(elapsed) && elapsed >= 0 && elapsed < wait * DAY_MS;
+  });
+  return cooldown ? undefined : suggestion;
 }
 
 function insight(task: Task, now: Date, auto: number | null, context: number, adherence: number, misses: number) {
@@ -656,7 +711,8 @@ export function recordHabitEngineV2Completion(
     completionLogs: logs,
     status: 'completed',
     completedAt: now.toISOString(),
-    habitEngine: { ...engine, attemptLogs: attempts, lastInterventionAt: now.toISOString() },
+    habitEngine: { ...engine, minimumPlannedDate: undefined, fallbackPlannedDate: undefined,
+      attemptLogs: attempts, lastInterventionAt: now.toISOString() },
   };
 }
 
@@ -671,6 +727,7 @@ export function applyHabitEngineV2Suggestion(
     createdAt: now.toISOString(),
     kind: suggestion.kind,
     message: suggestion.message,
+    signature: suggestion.signature,
     acceptedAt: now.toISOString(),
   };
   const updated: HabitEngineConfig = {
@@ -683,5 +740,29 @@ export function applyHabitEngineV2Suggestion(
     updated.windowEnd = suggestion.recommendedWindowEnd;
   }
   if (suggestion.kind === 'reduce_prompts') updated.promptCadence = 'low';
+  if (suggestion.kind === 'use_minimum') updated.minimumPlannedDate = habitDateKey(now);
+  if (suggestion.kind === 'use_fallback') updated.fallbackPlannedDate = habitDateKey(now);
   return { habitEngine: updated };
+}
+
+/** A declined suggestion must remain declined when the app is reopened. */
+export function dismissHabitEngineV2Suggestion(
+  task: Task, suggestion: HabitEngineAdaptiveSuggestion, now = new Date(),
+): Partial<Task> {
+  const engine = engineFor(task);
+  const record: HabitEngineAdaptationRecord = {
+    id: String(Date.now()) + '-dismissed-' + (suggestion.signature ?? suggestion.kind),
+    createdAt: now.toISOString(),
+    kind: suggestion.kind,
+    signature: suggestion.signature,
+    message: suggestion.message,
+    dismissedAt: now.toISOString(),
+  };
+  return {
+    habitEngine: {
+      ...engine,
+      adaptationHistory: [...(engine.adaptationHistory || []), record].slice(-30),
+      lastInterventionAt: now.toISOString(),
+    },
+  };
 }
