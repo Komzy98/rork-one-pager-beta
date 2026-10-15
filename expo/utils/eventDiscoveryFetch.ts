@@ -17,7 +17,7 @@ import {
   sortEventsByStartDate,
 } from '@/utils/eventDiscovery';
 import { eventMatchesBentoCategory } from '@/utils/eventCategories';
-import { mergeDiscoveryEvents } from '@/utils/mergeDiscoveryEvents';
+import { mergeDiscoveryEvents, mergeDiscoveryWithProviderDiversity } from '@/utils/mergeDiscoveryEvents';
 import {
   buildSkiddleEventsSearchUrl,
   parseSkiddleError,
@@ -321,7 +321,7 @@ export async function fetchMergedDiscoveryEvents(
       : Promise.resolve([] as LocalEventPayload[]),
   ]);
 
-  const merged = mergeDiscoveryEvents([fientaEvents, dataThistleEvents, ents24Events, meetupEvents, feverEvents, billettoEvents, eventbriteEvents, ticketmasterEvents, skiddleEvents], input.size);
+  const merged = mergeDiscoveryWithProviderDiversity([fientaEvents, dataThistleEvents, ents24Events, meetupEvents, feverEvents, billettoEvents, eventbriteEvents, ticketmasterEvents, skiddleEvents], input.size);
   rememberExtraEvents(merged.filter(e => ['fienta', 'datathistle', 'ents24', 'meetup'].includes(e.listingSource || '')));
   const events =
     input.category && input.category !== 'all' && !input.keyword?.trim() && !input.includeOtherCategories
