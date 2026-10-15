@@ -34,3 +34,20 @@ export function mergeDiscoveryEvents(
     Math.max(limit, 1),
   );
 }
+
+/** Keep a few verified listings from smaller providers visible instead of letting
+ * the largest ticket platform occupy every slot in a time-sorted feed. */
+export function mergeDiscoveryWithProviderDiversity(lists: LocalEvent[][], limit: number): LocalEvent[] {
+  const pool = mergeDiscoveryEvents(lists, Math.max(limit * 10, 300));
+  const selected = new Map<string, LocalEvent>();
+  const reservedPerSource = Math.min(3, Math.max(1, Math.ceil(limit * 0.06)));
+  for (const source of ['fienta', 'datathistle', 'ents24', 'meetup', 'fever', 'billetto']) {
+    const matches = pool.filter(event => event.listingSource === source).slice(0, reservedPerSource);
+    for (const event of matches) selected.set(event.id, event);
+  }
+  for (const event of pool) {
+    if (selected.size >= limit) break;
+    selected.set(event.id, event);
+  }
+  return sortEventsByStartDate([...selected.values()]).slice(0, Math.max(limit, 1));
+}
