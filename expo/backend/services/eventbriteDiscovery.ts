@@ -68,9 +68,9 @@ export async function fetchEventbriteAccountEvents(token: string): Promise<Local
       date: start.toLocaleDateString('en-GB', { weekday: 'short', day: 'numeric', month: 'short' }),
       time: start.toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' }),
       category: mapCategory(item.category_id), price: item.is_free ? 'Free' : 'See tickets',
-      image: item.logo?.url || 'https://images.unsplash.com/photo-1492684223066-81342ee5ff30?w=600',
+      image: item.logo?.url || '',
       isSaved: false, attendees: 0, rating: 0, tags: ['eventbrite', city.toLowerCase()],
-      latitude, longitude, startIso: item.start.utc, ticketUrl: item.url,
+      latitude, longitude, startIso: item.start.utc, endIso: item.end?.utc, ticketUrl: item.url,
       listingSource: 'eventbrite', marketCode: item.venue?.address?.country,
     });
   }

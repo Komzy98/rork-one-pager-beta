@@ -8,6 +8,8 @@ export function isUsableEventPosterUrl(image?: string | null): boolean {
     const url = new URL(candidate);
     if (!['https:', 'http:'].includes(url.protocol)) return false;
     if (/^(localhost|127\.0\.0\.1)$/i.test(url.hostname)) return false;
+    // A generic festival stock photo is not evidence of this event.
+    if (/images\.unsplash\.com/i.test(url.hostname) && /photo-1492684223066-81342ee5ff30/i.test(url.pathname)) return false;
     // Provider thumbnail URLs are unsuitable for full-screen artwork.
     const width = url.searchParams.get('width') ?? url.searchParams.get('w');
     if (width && /^\d+$/.test(width) && Number(width) < 220) return false;

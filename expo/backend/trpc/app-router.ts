@@ -14,6 +14,7 @@ import { generateVoiceRoute } from "./routes/ai/voice/route";
 import { getNearbyEventsRoute, getNearbyEventsBatchRoute } from "./routes/events/nearby/route";
 import { searchGlobalEventsRoute } from "./routes/events/search/route";
 import { getEventByIdRoute } from "./routes/events/byId/route";
+import { estimateEventRouteProcedure } from "./routes/events/route/route";
 import {
   searchKitchenRecipesRoute,
   getKitchenRecipeRoute,
@@ -59,6 +60,7 @@ export const appRouter = createTRPCRouter({
     getNearbyBatch: getNearbyEventsBatchRoute,
     searchGlobal: searchGlobalEventsRoute,
     getById: getEventByIdRoute,
+    estimateRoute: estimateEventRouteProcedure,
   }),
   cooking: createTRPCRouter({
     searchRecipes: searchKitchenRecipesRoute,

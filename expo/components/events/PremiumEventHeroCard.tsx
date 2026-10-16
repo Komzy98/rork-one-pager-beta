@@ -71,6 +71,7 @@ function HeroSlide({
   const hasConcierge = index === 0 && !!concierge;
   const [artworkFailed, setArtworkFailed] = useState(false);
   const realPosterUrl = resolveEventPosterUrl(event.image);
+  useEffect(() => setArtworkFailed(false), [event.id, event.image]);
 
   const handlePressIn = useCallback(() => {
     Animated.spring(scaleAnim, { toValue: 0.985, useNativeDriver: true, tension: 200, friction: 14 }).start();
@@ -114,7 +115,10 @@ function HeroSlide({
         {!!realPosterUrl && !artworkFailed ? (
           <Image source={{ uri: realPosterUrl }} style={styles.image}
             contentFit="cover" transition={250} cachePolicy="memory-disk"
-            onError={() => setArtworkFailed(true)} />
+            onError={() => setArtworkFailed(true)}
+            onLoad={(e) => {
+              if (e.source?.width && e.source.width < 350) setArtworkFailed(true);
+            }} />
         ) : null}
         {(!realPosterUrl || artworkFailed) ? <View style={styles.artBackdrop} pointerEvents="none">
           <Text style={styles.artGlyph}>{theme.glyph}</Text>

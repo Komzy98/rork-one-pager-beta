@@ -104,6 +104,7 @@ export interface LocalEvent {
   latitude: number;
   longitude: number;
   startIso?: string;
+  endIso?: string;
   ticketUrl?: string;
   distanceKm?: number;
   /** Merged sub-tag when category is rolled into a bento parent (fitness → sports, etc.). */

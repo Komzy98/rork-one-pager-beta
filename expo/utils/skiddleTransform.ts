@@ -34,8 +34,7 @@ export type SkiddleEvent = {
   cancelled?: string;
 };
 
-const FALLBACK_IMAGE =
-  'https://images.unsplash.com/photo-1492684223066-81342ee5ff30?w=600';
+const FALLBACK_IMAGE = '';
 
 /** Skiddle eventcode → app category. */
 export function mapSkiddleEventCode(eventCode?: string): EventCategory | string {
@@ -95,12 +94,12 @@ function formatTimeLabel(iso?: string): string {
 function formatPrice(raw: SkiddleEvent): string {
   const entry = raw.entryprice?.trim();
   if (entry) {
-    if (/^free$/i.test(entry)) return 'Free';
+    if (/^free$/i.test(entry) || /^£?0(?:\.0{1,2})?$/.test(entry)) return 'Free';
     return entry;
   }
   const min = raw.ticketpricing?.minPrice;
   if (min == null || min <= 0) {
-    return raw.tickets ? 'See tickets' : 'Free';
+    return 'See tickets';
   }
   return `£${Math.round(min)}+`;
 }
@@ -130,7 +129,8 @@ export function mapSkiddleEvent(raw: SkiddleEvent): LocalEvent | null {
   const lng = Number(raw.venue?.longitude);
   if (!Number.isFinite(lat) || !Number.isFinite(lng)) return null;
 
-  const startIso = raw.startdate || (raw.date ? `${raw.date}T19:00:00` : undefined);
+  // A date without a verified start clock is not a 19:00 event.
+  const startIso = raw.startdate || undefined;
   const city = raw.venue?.town || raw.venue?.region || 'Nearby';
   const category = mapSkiddleEventCode(raw.EventCode);
   const goingCount = Number(raw.goingtocount ?? 0);
@@ -156,6 +156,7 @@ export function mapSkiddleEvent(raw: SkiddleEvent): LocalEvent | null {
     latitude: lat,
     longitude: lng,
     startIso,
+    endIso: raw.enddate,
     ticketUrl: raw.ticketUrl?.trim() || raw.link,
     listingSource: 'skiddle',
     marketCode: 'GB',

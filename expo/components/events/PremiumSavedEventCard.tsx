@@ -3,11 +3,9 @@ import { StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 import { Bell, Calendar, MapPin, Navigation, Sparkles } from 'lucide-react-native';
 import * as Haptics from 'expo-haptics';
 import type { LocalEvent, EventPlanningStatus } from '@/types/events';
-import { buildNightOutPlan } from '@/utils/eventNightOutPlanner';
 import { getEventCountdownLabel } from '@/utils/eventDiscovery';
 import { getEventCategoryMeta } from '@/utils/eventCategoryMeta';
 import type { EventsPalette } from '@/utils/eventsPalette';
-import { EventNightOutPlanner } from '@/components/events/EventNightOutPlanner';
 import { SavedEventSocialRow } from '@/components/events/SavedEventSocialRow';
 import type { PlanRsvpStatus, SavedEventSocialSummary } from '@/utils/sharedPlansService';
 
@@ -51,7 +49,6 @@ export const PremiumSavedEventCard = React.memo(function PremiumSavedEventCard({
   const categoryMeta = getEventCategoryMeta(event.category);
   const CategoryIcon = categoryMeta.icon;
   const countdown = getEventCountdownLabel(event);
-  const planSteps = useMemo(() => buildNightOutPlan(event, areaLabel), [event, areaLabel]);
 
   const handleOpen = useCallback(() => {
     void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
@@ -118,7 +115,13 @@ export const PremiumSavedEventCard = React.memo(function PremiumSavedEventCard({
         </View>
       ) : null}
 
-      <EventNightOutPlanner steps={planSteps} palette={palette} />
+      <TouchableOpacity
+        accessibilityRole="button"
+        onPress={handleOpen}
+        style={{ marginTop: 8, paddingVertical: 9, paddingHorizontal: 11, borderRadius: 11, backgroundColor: palette.primaryLight }}
+      >
+        <Text style={{ color: palette.primary, fontSize: 12, fontWeight: '800' }}>Plan travel, reminders and meetup →</Text>
+      </TouchableOpacity>
 
       <View style={styles.actions}>
         <TouchableOpacity

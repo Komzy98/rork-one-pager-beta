@@ -1,11 +1,10 @@
-import React, { useMemo } from 'react';
+import React from 'react';
 import { StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 import { Sparkles, X } from 'lucide-react-native';
 import * as Haptics from 'expo-haptics';
 import type { LocalEvent } from '@/types/events';
-import { buildCombinedNightOutPlan } from '@/utils/savedEventsWeek';
+import { parseEventStartDateTime } from '@/utils/eventDiscovery';
 import type { EventsPalette } from '@/utils/eventsPalette';
-import { EventNightOutPlanner } from '@/components/events/EventNightOutPlanner';
 
 interface CombinedNightOutPromptProps {
   dayLabel: string;
@@ -15,6 +14,7 @@ interface CombinedNightOutPromptProps {
   expanded: boolean;
   onToggle: () => void;
   onDismiss?: () => void;
+  onOpenEvent: (eventId: string) => void;
 }
 
 export const CombinedNightOutPrompt = React.memo(function CombinedNightOutPrompt({
@@ -25,11 +25,8 @@ export const CombinedNightOutPrompt = React.memo(function CombinedNightOutPrompt
   expanded,
   onToggle,
   onDismiss,
+  onOpenEvent,
 }: CombinedNightOutPromptProps) {
-  const steps = useMemo(
-    () => (expanded ? buildCombinedNightOutPlan(events, areaLabel) : []),
-    [expanded, events, areaLabel],
-  );
 
   const eventCount = events.length;
   const titles = events.map((event) => event.title).slice(0, 2).join(' + ');
@@ -69,8 +66,29 @@ export const CombinedNightOutPrompt = React.memo(function CombinedNightOutPrompt
         </Text>
       </TouchableOpacity>
 
-      {expanded && steps.length > 0 ? (
-        <EventNightOutPlanner steps={steps} palette={palette} />
+      {expanded ? (
+        <View style={{ gap: 9 }}>
+          <Text style={{ color: palette.textSecondary, fontSize: 12, lineHeight: 18 }}>
+            These are real event start times, not a guaranteed combined itinerary.
+            Open each event to choose your own starting point and check the journey.
+          </Text>
+          {events.map((event) => {
+            const start = parseEventStartDateTime(event);
+            return (
+              <TouchableOpacity
+                key={event.id}
+                onPress={() => onOpenEvent(event.id)}
+                style={{ backgroundColor: palette.surfaceLight, borderRadius: 11, padding: 12, gap: 4 }}
+              >
+                <Text style={{ color: palette.text, fontWeight: '800', fontSize: 13 }}>{event.title}</Text>
+                <Text style={{ color: palette.textSecondary, fontSize: 12 }}>
+                  {start ? start.toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' }) : 'Time to be confirmed'}
+                  {' · '}{event.venue} · Check route →
+                </Text>
+              </TouchableOpacity>
+            );
+          })}
+        </View>
       ) : null}
     </View>
   );

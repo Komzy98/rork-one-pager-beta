@@ -11,7 +11,7 @@ export function useEventReminders() {
   const { isEnabled, requestPermissions } = useNotifications();
 
   const scheduleEventReminder = useCallback(
-    async (event: LocalEvent): Promise<boolean> => {
+    async (event: LocalEvent, minutesBefore?: number): Promise<boolean> => {
       const start = parseEventStartDateTime(event);
       if (!start) {
         Alert.alert('Remind me', 'Could not parse this event’s date.');
@@ -26,7 +26,7 @@ export function useEventReminders() {
         }
       }
 
-      const leadMinutes = profile?.notificationSettings?.eventReminderLeadMinutes ?? 30;
+      const leadMinutes = minutesBefore ?? profile?.notificationSettings?.eventReminderLeadMinutes ?? 30;
       const identifier = await notificationService.scheduleEventReminder(
         event.id,
         event.title,
@@ -40,10 +40,12 @@ export function useEventReminders() {
         return false;
       }
 
-      Alert.alert(
-        'Reminder set',
-        `We’ll remind you ${leadMinutes} minutes before doors.`
-      );
+      const leadLabel = leadMinutes >= 1440
+        ? `${Math.round(leadMinutes / 1440)} day(s)`
+        : leadMinutes >= 60
+          ? `${leadMinutes / 60} hour(s)`
+          : `${leadMinutes} minutes`;
+      Alert.alert('Reminder set', `We'll remind you ${leadLabel} before the event.`);
       return true;
     },
     [isEnabled, profile?.notificationSettings?.eventReminderLeadMinutes, requestPermissions]

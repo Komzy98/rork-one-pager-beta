@@ -35,8 +35,7 @@ type TmEvent = {
   };
 };
 
-const FALLBACK_IMAGE =
-  'https://images.unsplash.com/photo-1492684223066-81342ee5ff30?w=600';
+const FALLBACK_IMAGE = '';
 
 function mapCategory(classifications?: TmClassification[]): EventCategory | string {
   const names = (classifications ?? [])
@@ -74,11 +73,13 @@ function mapCategory(classifications?: TmClassification[]): EventCategory | stri
 }
 
 function formatPrice(ranges?: TmEvent['priceRanges']): string {
-  const first = ranges?.[0];
-  if (!first || first.min == null) return 'See tickets';
-  if (first.min <= 0) return 'Free';
-  const currency = first.currency === 'GBP' ? '£' : first.currency === 'EUR' ? '€' : '$';
-  return `${currency}${Math.round(first.min)}+`;
+  const priced = (ranges ?? []).filter((range) => Number.isFinite(range.min));
+  if (priced.length === 0) return 'See tickets';
+  const cheapest = priced.reduce((a, b) => a.min! <= b.min! ? a : b);
+  if (cheapest.min! <= 0) return 'Free';
+  const currency = cheapest.currency === 'GBP' ? '£' : cheapest.currency === 'EUR' ? '€' :
+    cheapest.currency === 'USD' ? '$' : null;
+  return currency ? `${currency}${Math.round(cheapest.min!)}+` : 'See tickets';
 }
 
 function formatDateLabel(localDate?: string): string {
@@ -104,7 +105,7 @@ function formatTimeLabel(localTime?: string): string {
 function pickImage(images?: TmEvent['images']): string {
   if (!images?.length) return FALLBACK_IMAGE;
   const sorted = [...images].sort((a, b) => (b.width ?? 0) - (a.width ?? 0));
-  return sorted[0]?.url || FALLBACK_IMAGE;
+  return sorted.find(image => /^https?:\/\//i.test(image.url) && (image.width == null || image.width >= 350))?.url || FALLBACK_IMAGE;
 }
 
 function buildTags(classifications?: TmClassification[], city?: string): string[] {
@@ -131,7 +132,7 @@ export function mapTicketmasterEvent(raw: TmEvent): LocalEvent | null {
   // Prefer venue-local date/time — Ticketmaster UTC dateTime is often midnight UTC
   // (e.g. Sea Life 10:00 local → 00:00Z → 1am BST if parsed as local instant).
   const startIso = localDate
-    ? `${localDate}T${localTime || '19:00:00'}`
+    ? (localTime ? `${localDate}T${localTime}` : undefined)
     : raw.dates?.start?.dateTime;
 
   const category = mapCategory(raw.classifications);

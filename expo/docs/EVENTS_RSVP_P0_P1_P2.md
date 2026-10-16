@@ -40,3 +40,44 @@
 - A "Ticket secured" value is self-reported, not verified with a ticketing provider.
 - A TestFlight build and device QA are still required for these client changes.
 - Existing `plan_rsvps` rows remain as group data; new individual attendance is private.
+
+## Completion pass — 16 October 2026
+
+### P0: listing accuracy and ticket confidence
+- Provider detail now refreshes Ticketmaster/Skiddle events when opened, instead of prioritising older saved snapshots.
+- Cancelled/removed or unreachable provider detail has a visible refresh warning when a saved snapshot is shown.
+- Ticketmaster listings without a real local start time no longer fabricate 19:00.
+- Skiddle unknown prices no longer masquerade as free; Ticketmaster ranges use the lowest published amount.
+- Booking links reject unsafe HTTP, loopback, internal destinations and non-web schemes.
+- Eventbrite/Skiddle/Ticketmaster artwork no longer defaults to an unrelated stock festival photograph; load errors and undersized images use branded category treatment.
+- Explicit provider end timestamps are carried through to calendar events; missing end times are marked estimated in calendar notes.
+
+### P1: complete attendance confirmation
+- Going opens a polished confirmation sheet with an accurate ticket disclaimer, calendar, reminder and group invitation actions.
+- The sheet does not reopen unnecessarily if the user has already selected Going.
+- Group share links obtain a real plan token before opening the invitation sheet.
+- Event reminders are cancelled when the user selects Not going.
+
+### P2: opted-in, personalised journeys and groups
+- An event detail has a collapsed journey planner, not a fictitious automatic itinerary.
+- The user can select their GPS location **on demand**, or tap a map to choose a separate starting point.
+- Walking/driving route durations and distances are calculated using OpenStreetMap OSRM routing services through the Railway API, cached for ten minutes with conservative rate limits.
+- Calculations are estimates, **not live traffic**; transit uses the external Maps app for real timetables.
+- The journey calculation is a POST request so the selected location is not placed into One Pager API request URLs.
+- The selected starting point is not saved into the user's One Pager profile or Supabase; routing providers receive the two coordinates for the request.
+- An arrival buffer (15, 20, 30 or 45 minutes) computes an estimated departure time, with a one-time optional departure reminder.
+- Changing route inputs clears stale departure alerts; selecting Not going clears both event and departure alerts.
+- The group organiser can propose or remove a meeting time. Friend groups remain isolated with owner-scoped policies.
+- My Events and combined-events views no longer display fabricated departure itineraries; instead they direct the user to configure their real trip.
+- The prior post-event feedback and experience-rating workflow is retained.
+
+### Tested
+- Unit and regression tests, type checking, and local iOS Metro/Hermes JavaScript export.
+- Backend route response through the local Hono API for both walking and driving; an unsupported transit request was rejected.
+- The production Supabase attendance migration from the previous implementation remains live.
+
+### Release boundaries
+- The community route endpoint is suitable for low-volume beta exploration but has no service-level guarantee. For significant traffic, replace it with a contracted routing service.
+- Public transport departure calculations inside One Pager would require a transit/timetable feed; One Pager correctly opens the native Maps app instead.
+- Provider event availability and image quality must still be confirmed against real mobile listings.
+- Hands-on iPhone QA and TestFlight release are not performed until explicitly requested.

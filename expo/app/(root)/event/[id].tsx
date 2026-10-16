@@ -1,4 +1,4 @@
-import { useCallback, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   Alert,
   ActivityIndicator,
@@ -43,14 +43,19 @@ import { getCatalogEvent, listCatalogEvents } from '@/utils/eventCatalog';
 import { savedSnapshotToOnePager, onePagerToLocalEvent, localEventToOnePager } from '@/utils/eventMappers';
 import { useEventById } from '@/hooks/useEventById';
 import { formatDistanceKm, getEventCountdownLabel } from '@/utils/eventDiscovery';
-import { buildNightOutPlan, mergeGroupMeetStep, defaultGroupMeetTime } from '@/utils/eventNightOutPlanner';
 import { useEventSocial } from '@/hooks/useEventSocial';
+import { useAuth } from '@/hooks/useAuth';
+import { EventTravelPlanner } from '@/components/events/EventTravelPlanner';
+import { EventGroupMeetup } from '@/components/events/EventGroupMeetup';
 import { useFriends } from '@/hooks/useFriends';
 import { EventPlanRsvp } from '@/components/events/EventPlanRsvp';
 import { EventTicketStatus } from '@/components/events/EventTicketStatus';
+import { EventRsvpConfirmationSheet } from '@/components/events/EventRsvpConfirmationSheet';
 import { usePersonalEventAttendance } from '@/hooks/usePersonalEventAttendance';
 import { useEventReminders } from '@/hooks/useEventReminders';
+import { notificationService } from '@/utils/notificationService';
 import { getEventListingBadges } from '@/utils/eventListingMeta';
+import { isUsableTicketLink } from '@/utils/eventTicketLinks';
 import { EventInviteFriendsModal } from '@/components/events/EventInviteFriendsModal';
 import { WhoIsGoing } from '@/components/events/WhoIsGoing';
 import {
@@ -66,11 +71,10 @@ import {
 import { useTheme } from '@/hooks/useTheme';
 import { eventsFixedPalette } from '@/utils/eventsPalette';
 import { getEventCategoryMeta } from '@/utils/eventCategoryMeta';
-import { EventNightOutPlanner } from '@/components/events/EventNightOutPlanner';
 import { WazeLogoMark, WAZE_BRAND_CYAN } from '@/components/WazeLogoMark';
 import { PremiumEventPosterCard, POSTER_HORIZONTAL_CARD_MIN_HEIGHT } from '@/components/events/PremiumEventPosterCard';
 import { buildEventLink } from '@/utils/deepLinks';
-import { pickEventPosterUrl } from '@/utils/eventPosterImage';
+import { pickEventPosterUrl, resolveEventPosterUrl } from '@/utils/eventPosterImage';
 import type { OnePagerEvent } from '@/types/events';
 import type { PlanRsvpStatus } from '@/utils/sharedPlansService';
 import type { SocialProfile } from '@/utils/friendsService';
@@ -91,6 +95,7 @@ export default function EventDetailScreen() {
   const { isDark } = useTheme();
   const palette = useMemo(() => eventsFixedPalette(isDark, 'discover'), [isDark]);
   const { profile } = useUserProfile();
+  const { supabaseUser } = useAuth();
   const { isSaved, addToOnePager, removeFromOnePager, setPlanningStatus, getSnapshotById, toggleSaved } = useSavedEvents();
   const { createEvent, hasPermission, requestPermissions } = useEventKit();
   const { logEventPlanned } = useSocialActivity();
@@ -102,12 +107,15 @@ export default function EventDetailScreen() {
     return getCatalogEvent(id) ?? null;
   }, [getSnapshotById, id]);
 
-  const needsRemoteFetch = !!id && !cachedEvent;
+  // Provider-backed detail is authoritative: refresh saved/catalogue snapshots
+  // when opening an event, but keep them available while offline.
+  const isProviderEvent = !!id && /^(tm|sk)-/.test(id);
+  const needsRemoteFetch = !!id && (isProviderEvent || !cachedEvent);
   const remoteEvent = useEventById(id, needsRemoteFetch);
 
   const event: OnePagerEvent | null = useMemo(() => {
-    if (cachedEvent) return cachedEvent;
     if (remoteEvent.event) return localEventToOnePager(remoteEvent.event);
+    if (cachedEvent) return cachedEvent;
     return null;
   }, [cachedEvent, remoteEvent.event]);
 
@@ -127,6 +135,11 @@ export default function EventDetailScreen() {
   const [showPlanner, setShowPlanner] = useState(false);
   const [ticketBusy, setTicketBusy] = useState(false);
   const [heroPosterFailed, setHeroPosterFailed] = useState(false);
+  const [showRsvpConfirmation, setShowRsvpConfirmation] = useState(false);
+
+  useEffect(() => {
+    setHeroPosterFailed(false);
+  }, [event?.id, event?.imageUrl]);
 
   const saved = id ? isSaved(id) : false;
 
@@ -171,30 +184,6 @@ export default function EventDetailScreen() {
     return 'Worth a spot on your One Pager';
   }, [localEvent, profile, event?.distanceKm, event?.isHot, event?.isFeatured]);
 
-  const nightOutSteps = useMemo(() => {
-    if (!localEvent) return [];
-    const base = buildNightOutPlan(localEvent, localEvent.location);
-    const goingNames = [
-      ...eventSocial.goingRsvps.map(
-        (r) => r.profile?.displayName ?? (r.profile?.username ? `@${r.profile.username}` : 'Partner')
-      ),
-      ...eventSocial.friendsSaved.map(
-        (f) => f.profile?.displayName ?? (f.profile?.username ? `@${f.profile.username}` : 'Partner')
-      ),
-    ].filter((name, index, arr) => arr.indexOf(name) === index);
-
-    const meetAt = eventSocial.plan?.meetAt
-      ? new Date(eventSocial.plan.meetAt)
-      : goingNames.length >= 2
-        ? defaultGroupMeetTime(localEvent)
-        : null;
-
-    return mergeGroupMeetStep(base, {
-      meetAt,
-      venue: localEvent.venue,
-      goingNames,
-    });
-  }, [localEvent, eventSocial.goingRsvps, eventSocial.friendsSaved, eventSocial.plan?.meetAt]);
 
   const categoryMeta = localEvent ? getEventCategoryMeta(localEvent.category) : null;
   const CategoryIcon = categoryMeta?.icon;
@@ -235,7 +224,12 @@ export default function EventDetailScreen() {
       startDate: range.start,
       endDate: range.end,
       location: `${event.venueName}${event.city ? `, ${event.city}` : ''}`,
-      notes: event.ticketUrl ? `Tickets: ${event.ticketUrl}` : event.description,
+      notes: [
+        event.description,
+        localEvent.endIso || localEvent.time.includes('-') ? null :
+          'End time is estimated as 2 hours. Check the provider for actual finishing time.',
+        isUsableTicketLink(event.ticketUrl) ? `Tickets: ${event.ticketUrl}` : null,
+      ].filter(Boolean).join('\n\n'),
     });
     if (eventId) {
       Alert.alert('Added to calendar', event.title);
@@ -263,7 +257,14 @@ export default function EventDetailScreen() {
         } catch (syncError) {
           console.warn('[Event RSVP] Local planning label sync failed:', syncError);
         }
+        if (status === 'cant') {
+          await Promise.all([
+            notificationService.cancelEventReminder(event!.id),
+            notificationService.cancelEventReminder(`departure:${event!.id}`),
+          ]);
+        }
         void Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+        if (status === 'in' && attendance.status !== 'in') setShowRsvpConfirmation(true);
       } catch (error) {
         Alert.alert(
           'Could not save RSVP',
@@ -332,7 +333,13 @@ export default function EventDetailScreen() {
   }, [event, profile?.username]);
 
   const handleRemind = useCallback(() => {
-    if (localEvent) void scheduleEventReminder(localEvent);
+    if (!localEvent) return;
+    Alert.alert('Event reminder', 'When should One Pager remind you?', [
+      { text: '30 min before', onPress: () => void scheduleEventReminder(localEvent, 30) },
+      { text: '2 hours before', onPress: () => void scheduleEventReminder(localEvent, 120) },
+      { text: '1 day before', onPress: () => void scheduleEventReminder(localEvent, 1440) },
+      { text: 'Cancel', style: 'cancel' },
+    ]);
   }, [localEvent, scheduleEventReminder]);
 
   const handleTicketStatus = useCallback(async (status: import('@/utils/personalEventAttendance').TicketStatus) => {
@@ -419,7 +426,9 @@ export default function EventDetailScreen() {
   const hasCoords = event.latitude != null && event.longitude != null
     && (event.latitude !== 0 || event.longitude !== 0);
   const listingInfo = getEventListingBadges(localEvent);
-  const canBuyTickets = !!event.ticketUrl && /^https?:\/\//i.test(event.ticketUrl);
+  const canBuyTickets = isUsableTicketLink(event.ticketUrl);
+  const heroPosterUrl = resolveEventPosterUrl(event.imageUrl);
+  const needsListingRefresh = isProviderEvent && remoteEvent.isError && !!cachedEvent;
 
 
   return (
@@ -469,14 +478,17 @@ export default function EventDetailScreen() {
       >
         <View style={styles.heroWrap}>
           <Animated.View style={[styles.heroImageWrap, { transform: [{ scale: heroScale }] }]}>
-            {event.imageUrl && /^https?:\/\//i.test(event.imageUrl) && !heroPosterFailed ? (
+            {heroPosterUrl && !heroPosterFailed ? (
               <Image
-                source={{ uri: event.imageUrl }}
+                source={{ uri: heroPosterUrl }}
                 style={styles.heroImage}
                 contentFit="cover"
                 transition={220}
                 cachePolicy="memory-disk"
                 onError={() => setHeroPosterFailed(true)}
+                onLoad={(loadEvent) => {
+                  if (loadEvent.source?.width && loadEvent.source.width < 350) setHeroPosterFailed(true);
+                }}
                 accessibilityLabel={event.title}
               />
             ) : (
@@ -527,6 +539,16 @@ export default function EventDetailScreen() {
         </View>
 
         <View style={styles.body}>
+          {needsListingRefresh ? (
+            <TouchableOpacity
+              onPress={() => void remoteEvent.refetch()}
+              style={{ padding: 12, backgroundColor: palette.surfaceLight, borderRadius: 12 }}
+            >
+              <Text style={{ color: palette.textSecondary, fontSize: 12 }}>
+                Provider details couldn't be refreshed. Showing saved information — tap to retry before booking.
+              </Text>
+            </TouchableOpacity>
+          ) : null}
           {whyForYou && /^(Picked|Because|Matches|Happening near)/i.test(whyForYou) ? (
             <View style={[styles.whyCard, { backgroundColor: palette.surfaceLight, borderColor: palette.border }]}>
               <View style={[styles.whyIcon, { backgroundColor: palette.primaryLight }]}>
@@ -571,31 +593,41 @@ export default function EventDetailScreen() {
             />
           ) : null}
 
-          {nightOutSteps.length > 0 && attendance.status !== 'cant' ? (
+          {attendance.status !== 'cant' && eventSocial.available ? (
+            <EventGroupMeetup
+              event={localEvent}
+              palette={palette}
+              plan={eventSocial.plan}
+              isOrganiser={eventSocial.plan?.ownerId === supabaseUser?.id}
+              attendeeCount={eventSocial.goingCount}
+              onInvite={openInviteModal}
+              onSetMeetAt={eventSocial.setGroupMeetAt}
+            />
+          ) : null}
+
+          {attendance.status !== 'cant' ? (
             <View style={styles.plannerSection}>
               <TouchableOpacity
-                style={[styles.plannerHeader, { paddingVertical: 12, paddingHorizontal: 14, backgroundColor: palette.surfaceLight, borderRadius: 14, borderWidth: 1, borderColor: palette.border }]}
+                style={[styles.plannerHeader, {
+                  paddingVertical: 12, paddingHorizontal: 14, backgroundColor: palette.surfaceLight,
+                  borderRadius: 14, borderWidth: 1, borderColor: palette.border,
+                }]}
                 onPress={() => setShowPlanner((value) => !value)}
                 accessibilityRole="button"
                 accessibilityState={{ expanded: showPlanner }}
               >
                 <View style={{ flex: 1, gap: 3 }}>
-                  <Text style={[styles.sectionLabel, { color: palette.text }]}>Plan your day</Text>
-                  <Text style={{ color: palette.textSecondary, fontSize: 12 }}>Optional itinerary and travel checklist</Text>
+                  <Text style={[styles.sectionLabel, { color: palette.text }]}>Plan your journey</Text>
+                  <Text style={{ color: palette.textSecondary, fontSize: 12 }}>Choose where you're leaving from, route and departure reminder</Text>
                 </View>
                 {showPlanner ? <ChevronUp size={18} color={palette.textSecondary} /> : <ChevronDown size={18} color={palette.textSecondary} />}
               </TouchableOpacity>
               {showPlanner ? (
-                <>
-                  <Text style={{ color: palette.textSecondary, fontSize: 12, lineHeight: 18 }}>
-                    Suggested times, not verified schedules or live transport estimates. Check actual routes and event doors before leaving.
-                  </Text>
-                  <EventNightOutPlanner steps={nightOutSteps} palette={palette} />
-                  <TouchableOpacity onPress={handleDirections} style={[styles.inviteBtn, { alignSelf: 'stretch', justifyContent: 'center', padding: 12, borderColor: palette.border }]}>
-                    <Navigation size={15} color={palette.primary} />
-                    <Text style={[styles.inviteBtnText, { color: palette.primary }]}>Check live directions in Maps</Text>
-                  </TouchableOpacity>
-                </>
+                <EventTravelPlanner
+                  event={localEvent}
+                  palette={palette}
+                  onDirections={(mode) => void openEventDirections(localEvent, mode)}
+                />
               ) : null}
             </View>
           ) : null}
@@ -777,6 +809,20 @@ export default function EventDetailScreen() {
           </TouchableOpacity>
         </View>
       </View>
+
+      <EventRsvpConfirmationSheet
+        visible={showRsvpConfirmation}
+        title={event.title}
+        scheduleLabel={[event.dateLabel, event.timeLabel].filter(Boolean).join(' · ')}
+        venueLabel={event.venueName}
+        palette={palette}
+        ticketsAvailable={canBuyTickets}
+        onClose={() => setShowRsvpConfirmation(false)}
+        onTickets={handleTickets}
+        onCalendar={() => void handleCalendar()}
+        onRemind={handleRemind}
+        onInvite={openInviteModal}
+      />
 
       <EventInviteFriendsModal
         visible={showInviteModal}

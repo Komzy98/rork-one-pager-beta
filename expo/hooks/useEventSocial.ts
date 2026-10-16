@@ -258,7 +258,7 @@ export function useEventSocial(
   );
 
   const setGroupMeetAt = useCallback(
-    async (meetAt: Date) => {
+    async (meetAt: Date | null) => {
       const plan = planQuery.data?.plan;
       if (!plan) return;
       await updatePlanMeetAt(plan.id, meetAt);

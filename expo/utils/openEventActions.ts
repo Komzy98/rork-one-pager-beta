@@ -2,6 +2,7 @@ import { Alert, Linking, Platform } from 'react-native';
 import type { LocalEvent } from '@/types/events';
 import { buildWazeEventUrl } from '@/utils/wazeEventLink';
 import { buildEventDirectionsUrl, type EventTravelMode } from '@/utils/eventDirectionsUrl';
+import { isUsableTicketLink } from '@/utils/eventTicketLinks';
 
 export { getEventCalendarRange } from '@/utils/eventDiscovery';
 export { buildWazeEventUrl } from '@/utils/wazeEventLink';
@@ -17,8 +18,8 @@ export async function openEventTickets(event: LocalEvent): Promise<void> {
     );
     return;
   }
-  // Accept only web ticket destinations; never launch arbitrary URL schemes.
-  if (!/^https?:\/\//i.test(url)) {
+  // Reject insecure and local destinations; do not launch arbitrary URL schemes.
+  if (!isUsableTicketLink(url)) {
     Alert.alert('Tickets', 'This event has an invalid ticket link.');
     return;
   }

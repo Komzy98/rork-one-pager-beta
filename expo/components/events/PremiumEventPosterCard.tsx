@@ -1,4 +1,4 @@
-import React, { useCallback, useMemo, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   Animated,
   StyleSheet,
@@ -70,6 +70,7 @@ export const PremiumEventPosterCard = React.memo(function PremiumEventPosterCard
   const distanceText = formatDistanceKm(event.distanceKm ?? 0);
   const posterUri = useMemo(() => resolveEventPosterUrl(event.image), [event.image]);
   const [posterFailed, setPosterFailed] = useState(false);
+  useEffect(() => setPosterFailed(false), [event.id, event.image]);
   const displayPosterUri = posterFailed ? resolveEventPosterUrl(null) : posterUri;
   const fallbackColors: [string, string] = event.category === 'music'
     ? ['#231C48', '#462969']
@@ -149,6 +150,9 @@ export const PremiumEventPosterCard = React.memo(function PremiumEventPosterCard
             contentFit={isFeed ? "contain" : "cover"}
             recyclingKey={`${event.id}-${displayPosterUri}`}
             onError={() => setPosterFailed(true)}
+            onLoad={(e) => {
+              if (e.source?.width && e.source.width < 250) setPosterFailed(true);
+            }}
           /> : null}
           <LinearGradient
             colors={['transparent', 'rgba(0,0,0,0.55)']}

@@ -317,6 +317,10 @@ export function sortEventsByStartDate(events: LocalEvent[]): LocalEvent[] {
 export function getEventCalendarRange(event: LocalEvent): { start: Date; end: Date } | null {
   const start = parseEventStartDateTime(event);
   if (!start) return null;
+  const verifiedEndMs = event.endIso ? Date.parse(event.endIso) : NaN;
+  if (Number.isFinite(verifiedEndMs) && verifiedEndMs > start.getTime()) {
+    return { start, end: new Date(verifiedEndMs) };
+  }
   const end = new Date(start);
   if (event.time.includes('-')) {
     const endPart = event.time.split('-')[1]?.trim();

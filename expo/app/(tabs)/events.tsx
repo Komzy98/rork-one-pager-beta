@@ -1552,6 +1552,7 @@ function EventsScreenInner() {
             <CombinedNightOutPrompt
               dayLabel={nextCombinedDay.dayLabel}
               events={nextCombinedDay.events}
+              onOpenEvent={openEventDetail}
               palette={palette}
               areaLabel={areaLabel ?? undefined}
               expanded={expandedCombinedDayKey === nextCombinedDay.dayKey}
