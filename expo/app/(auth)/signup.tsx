@@ -150,8 +150,8 @@ export default function SignupScreen() {
       const result = await signup(credentials);
       if (result.success) {
         if (result.error) {
-          Alert.alert('Almost there', result.error, [
-            { text: 'OK', onPress: () => router.replace('/(onboarding)/welcome' as any) },
+          Alert.alert('Check your email', result.error, [
+            { text: 'Back to sign in', onPress: () => router.replace('/(auth)/login' as any) },
           ]);
         } else {
           router.replace('/(onboarding)/welcome' as any);

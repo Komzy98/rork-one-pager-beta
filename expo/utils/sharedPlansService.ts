@@ -1,12 +1,28 @@
-import { supabase, supabaseConfigured } from '@/utils/supabaseClient';
+import { supabase, supabaseConfigured, recoverSupabaseSession } from '@/utils/supabaseClient';
+import { verifyPlanWriteAuth } from '@/utils/planWriteAuth';
 import { isSocialUnavailableError } from '@/utils/friendsService';
 import type { LocalEvent, SavedEventSnapshot } from '@/types/events';
 import { toPartnerVisibleEventSnapshot } from '@/utils/socialActivityPublish';
 
+async function requireActivePlanOwner(userId: string): Promise<void> {
+  await verifyPlanWriteAuth(userId, {
+    getSession: () => supabase.auth.getSession(),
+    recoverSession: () => recoverSupabaseSession(),
+    getUser: () => supabase.auth.getUser(),
+    refreshSession: () => supabase.auth.refreshSession(),
+  });
+}
+
 function toQueryError(error: unknown, fallback: string): Error {
-  if (error instanceof Error) return error;
-  const message = (error as { message?: string } | null)?.message?.trim();
-  return new Error(message || fallback);
+  const message = (error as { message?: string } | null)?.message?.trim()
+    || (error instanceof Error ? error.message : '');
+  if (/row.level.security|permission denied.*(shared_plans|plan_rsvps)/i.test(message)) {
+    // Session verification happens before writes. A remaining policy error
+    // indicates the production database needs the owner-only policy migration.
+    console.warn('[Event RSVP] Supabase denied a verified write:', message);
+    return new Error('RSVP is temporarily unavailable because event permissions need updating. Please try again later.');
+  }
+  return error instanceof Error ? error : new Error(message || fallback);
 }
 
 export type PlanRsvpStatus = 'in' | 'maybe' | 'cant';
@@ -121,6 +137,7 @@ export async function getOrCreateEventPlan(
   event: LocalEvent
 ): Promise<SharedPlan | null> {
   if (!supabaseConfigured) return null;
+  await requireActivePlanOwner(userId);
 
   const payload = {
     title: event.title,
@@ -206,6 +223,7 @@ export async function setPlanRsvp(
   status: PlanRsvpStatus
 ): Promise<void> {
   if (!supabaseConfigured) return;
+  await requireActivePlanOwner(userId);
   const { error } = await supabase.from('plan_rsvps').upsert(
     {
       plan_id: planId,

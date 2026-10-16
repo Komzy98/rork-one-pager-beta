@@ -576,7 +576,7 @@ export async function persistSupabaseSession(
 ): Promise<boolean> {
   const timeoutMs = options?.timeoutMs ?? 8000;
   try {
-    await Promise.race([
+    const result = await Promise.race([
       supabase.auth.setSession({
         access_token: accessToken,
         refresh_token: refreshToken,
@@ -585,6 +585,14 @@ export async function persistSupabaseSession(
         setTimeout(() => reject(new Error('setSession timed out')), timeoutMs);
       }),
     ]);
+    // The Supabase SDK often RETURNS an auth error instead of throwing.
+    // Never report successful persistence when it rejected the tokens.
+    if (result.error || !result.data?.session?.access_token) {
+      // A definite auth rejection is not a network timeout. Don't cache
+      // rejected credentials and claim the user is signed in.
+      console.warn('Supabase rejected the session during persistence:', result.error?.message ?? 'No active session');
+      return false;
+    }
     return true;
   } catch (err) {
     console.warn('persistSupabaseSession failed, writing local session fallback:', err);

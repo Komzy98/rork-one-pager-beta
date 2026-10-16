@@ -697,16 +697,18 @@ export const [AuthProvider, useAuth] = createContextHook(() => {
             avatar: meta.avatar_url || meta.picture,
             isAuthenticated: true,
           };
-          setIsGuest(false);
-          setUser(authUser);
-          setSupabaseUser(data.user);
-          await AsyncStorage.setItem(AUTH_STORAGE_KEY, JSON.stringify(authUser));
-
-          await persistSupabaseSession(
+          const sessionPersisted = await persistSupabaseSession(
             authUserRecord.session.access_token,
             authUserRecord.session.refresh_token,
             { user: authUserRecord.user as unknown as User },
           );
+          if (!sessionPersisted) {
+            return { success: false, error: 'Could not complete sign-in. Please try again.' };
+          }
+          setIsGuest(false);
+          setUser(authUser);
+          setSupabaseUser(data.user);
+          await AsyncStorage.setItem(AUTH_STORAGE_KEY, JSON.stringify(authUser));
 
           try {
             const guestUserId =
@@ -834,12 +836,19 @@ export const [AuthProvider, useAuth] = createContextHook(() => {
           return { success: false, error: friendly };
         }
 
-        if (signupSession) {
-          await persistSupabaseSession(
-            signupSession.access_token,
-            signupSession.refresh_token,
-            { user: signupUser as Parameters<typeof setSupabaseUser>[0] },
-          );
+        // With email confirmation enabled, Supabase returns a user but no
+        // session. Do not treat that user as signed in: RLS writes would fail.
+        if (!signupSession) {
+          console.log('Supabase signup requires email confirmation');
+          return { success: true, error: 'Check your email to confirm your account before signing in.' };
+        }
+        const sessionPersisted = await persistSupabaseSession(
+          signupSession.access_token,
+          signupSession.refresh_token,
+          { user: signupUser as Parameters<typeof setSupabaseUser>[0] },
+        );
+        if (!sessionPersisted) {
+          return { success: false, error: 'Could not complete sign-in. Please sign in again.' };
         }
 
         const authUser: AuthUser = {
@@ -862,10 +871,6 @@ export const [AuthProvider, useAuth] = createContextHook(() => {
           void setSyncUserId(signupUser.id);
         } catch (syncError) {
           console.log('Supabase sync setup skipped on signup:', syncError);
-        }
-        if (!signupSession) {
-          console.log('✅ Supabase signup requires email confirmation');
-          return { success: true, error: 'Check your email to confirm your account before signing in.' };
         }
         console.log('✅ Supabase signup successful:', authUser.email);
         return { success: true };

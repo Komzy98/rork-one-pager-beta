@@ -185,6 +185,9 @@ export function useEventSocial(
         throw new Error('Sign in to respond to this plan.');
       }
 
+      const previousCache = queryClient.getQueryData<EventPlanCache>(
+        ['event-plan', eventId, myUserId],
+      );
       applyOptimisticRsvp(status);
 
       try {
@@ -241,11 +244,13 @@ export function useEventSocial(
 
         invalidate();
       } catch (error) {
+        // Don't leave the interface showing 'Going' when the server rejected it.
+        queryClient.setQueryData(['event-plan', eventId, myUserId], previousCache);
         invalidate();
         throw error;
       }
     },
-    [queriesEnabled, event, myUserId, myProfile, planQuery.data, guestRsvpQuery.data, applyOptimisticRsvp, invalidate],
+    [queriesEnabled, event, eventId, myUserId, myProfile, planQuery.data, guestRsvpQuery.data, applyOptimisticRsvp, invalidate, queryClient],
   );
 
   const setGroupMeetAt = useCallback(
