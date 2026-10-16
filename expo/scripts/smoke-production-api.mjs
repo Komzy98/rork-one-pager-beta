@@ -9,9 +9,14 @@
  * Exit 0 = all checks passed.
  */
 
-import { config } from 'dotenv';
-
-config();
+// CI injects environment variables directly and does not install app deps.
+// Keep local .env convenience without making the smoke test depend on dotenv.
+try {
+  const { config } = await import('dotenv');
+  config();
+} catch (error) {
+  if (error?.code !== 'ERR_MODULE_NOT_FOUND') throw error;
+}
 
 const apiBase = (process.env.EVENTS_API_BASE_URL || process.env.PRODUCTION_API_BASE_URL || 'https://join.onepagerapp.co.uk').replace(/\/+$/, '');
 const tmdbKey = process.env.TMDB_API_KEY || process.env.EXPO_PUBLIC_TMDB_API_KEY || '9c4ca7924ae21a581e065517c106f1cc';
