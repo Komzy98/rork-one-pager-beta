@@ -90,7 +90,6 @@ import {
 } from '@/utils/dailySummaryStats';
 import { useActivityIntelligence } from '@/hooks/useBackgroundServices';
 import { useQuery } from '@tanstack/react-query';
-import ActivitiesAIView from '@/components/activities/ActivitiesAIView';
 import FlyingBirds from '@/components/FlyingBirds';
 import TodaysRoutine from '@/components/TodaysRoutine';
 import AddInterestsLaterCard from '@/components/AddInterestsLaterCard';
@@ -302,7 +301,6 @@ export default function ActivitiesScreen() {
   const [linkedStreamingCount, setLinkedStreamingCount] = useState(0);
   const [linkedProviderIds, setLinkedProviderIds] = useState<number[]>([]);
   const [younifyBrowseSections, setYounifyBrowseSections] = useState<YounifyBrowseSection[]>([]);
-  const [showUnifiedView, setShowUnifiedView] = useState<boolean>(false);
   const [showLiveMatchModal, setShowLiveMatchModal] = useState<boolean>(false);
   const [liveBannerDismissed, setLiveBannerDismissed] = useState<boolean>(false);
 
@@ -1639,7 +1637,7 @@ export default function ActivitiesScreen() {
   useFocusEffect(
     useCallback(() => {
       const tick = async () => {
-        if (showUnifiedView || isGeneratingSummary || autoSummaryInFlightRef.current) return;
+        if (isGeneratingSummary || autoSummaryInFlightRef.current) return;
         const todayYmd = getTodayYmd();
         const dismissed = await isDailySummaryDismissed(userId, todayYmd);
         const existing = await loadDailySummaryCache(userId, todayYmd);
@@ -1659,7 +1657,7 @@ export default function ActivitiesScreen() {
       void tick();
       const interval = setInterval(() => void tick(), 60_000);
       return () => clearInterval(interval);
-    }, [showUnifiedView, isGeneratingSummary, userId, generateDailySummary])
+    }, [isGeneratingSummary, userId, generateDailySummary])
   );
   
   const navigateToHabits = () => {
@@ -2416,44 +2414,21 @@ export default function ActivitiesScreen() {
               </Animated.View>
             )}
 
-            {/* View Toggle */}
-            <View style={styles.viewToggleContainer}>
-              <TouchableOpacity 
-                style={[styles.viewToggleBtn, !showUnifiedView && styles.viewToggleBtnActive]}
-                onPress={() => setShowUnifiedView(false)}
-              >
-                <Text style={[styles.viewToggleText, { color: !showUnifiedView ? getHeroTextColor() : getHeroSecondaryTextColor() }]}>
-                  Today
-                </Text>
-              </TouchableOpacity>
-              <TouchableOpacity 
-                style={[styles.viewToggleBtn, showUnifiedView && styles.viewToggleBtnActive]}
-                onPress={() => setShowUnifiedView(true)}
-              >
-                <Sparkles size={14} color={showUnifiedView ? getHeroTextColor() : getHeroSecondaryTextColor()} />
-                <Text style={[styles.viewToggleText, { color: showUnifiedView ? getHeroTextColor() : getHeroSecondaryTextColor() }]}>
-                  AI View
-                </Text>
-              </TouchableOpacity>
-              <TouchableOpacity 
-                style={[styles.viewToggleBtn]}
-                onPress={() => router.push('/(root)/analytics' as any)}
-                testID="analytics-btn"
-              >
-                <BarChart3 size={14} color={getHeroSecondaryTextColor()} />
-                <Text style={[styles.viewToggleText, { color: getHeroSecondaryTextColor() }]}>
-                  Insights
-                </Text>
-              </TouchableOpacity>
-            </View>
+            {/* Keep analytics accessible without switching away from classic Overview. */}
+            <TouchableOpacity
+              style={[styles.viewToggleBtn, { alignSelf: 'flex-start', flex: 0, paddingHorizontal: 14, backgroundColor: 'rgba(255,255,255,0.14)' }]}
+              onPress={() => router.push('/(root)/analytics' as any)}
+              testID="analytics-btn"
+              accessibilityLabel="Open insights"
+            >
+              <BarChart3 size={14} color={getHeroTextColor()} />
+              <Text style={[styles.viewToggleText, { color: getHeroTextColor() }]}>Insights</Text>
+            </TouchableOpacity>
           </View>
         </LinearGradient>
         </View>
 
-        {showUnifiedView ? (
-          <ActivitiesAIView onRequestPeakScheduler={() => setShowPeakScheduler(true)} />
-        ) : (
-          <View style={{ backgroundColor: colors.background }}>
+        <View style={{ backgroundColor: colors.background }}>
             <AddInterestsLaterCard />
             <DailyStackCard
               habitCount={stats.totalHabits}
@@ -2950,8 +2925,7 @@ export default function ActivitiesScreen() {
               <NBAUpcomingSection favoriteNBATeams={favoriteNBATeams} />
             )}
 
-          </View>
-        )}
+        </View>
       </Animated.ScrollView>
       
       <CalendarImporter 
