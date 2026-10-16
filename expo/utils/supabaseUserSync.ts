@@ -405,9 +405,15 @@ export class SupabaseUserSync {
     return false;
   }
 
-  async loadFromCloud(): Promise<UserData | null> {
+  async loadFromCloud(options: { strictProfileRestore?: boolean } = {}): Promise<UserData | null> {
+    // When restoring onboarding status after reinstall, a network/auth failure
+    // cannot be interpreted as a genuinely empty cloud account.
     if (this.disabled) {
-      return this.loadFromLocalFallback();
+      const cached = await this.loadFromLocalFallback();
+      if (options.strictProfileRestore && !cached?.userProfile) {
+        throw new Error('Cloud sync unavailable; cannot verify existing onboarding');
+      }
+      return cached;
     }
     try {
       const sessionOk = await this.ensureAuthSessionMatchesUser();
@@ -417,6 +423,9 @@ export class SupabaseUserSync {
             'loadFromCloud: Supabase session not ready or user id mismatch, skipping (will retry on next effect).',
             { expected: this.userId }
           );
+        }
+        if (options.strictProfileRestore) {
+          throw new Error('Supabase session not ready for profile restoration');
         }
         return null;
       }
@@ -440,7 +449,11 @@ export class SupabaseUserSync {
     } catch (error: any) {
       console.warn('Supabase load failed, using local fallback:', error?.message || String(error));
       this.handleFailure(error);
-      return this.loadFromLocalFallback();
+      const cached = await this.loadFromLocalFallback();
+      if (options.strictProfileRestore && !cached?.userProfile) {
+        throw error instanceof Error ? error : new Error('Cloud profile restoration unavailable');
+      }
+      return cached;
     }
   }
 

@@ -1,70 +1,57 @@
 import React from 'react';
-import { View, ActivityIndicator, StyleSheet, Platform } from 'react-native';
+import { View, ActivityIndicator, StyleSheet, Text, TouchableOpacity } from 'react-native';
 import { Redirect } from 'expo-router';
 import { useAuth } from '@/hooks/useAuth';
 import { useUserProfile } from '@/hooks/useUserProfile';
+import { resolveStartupRoute } from '@/utils/startupRoute';
 import { COLORS } from '@/constants/colors';
 
 export default function Index() {
-  const { isAuthenticated, isInitialized, isGuest, user } = useAuth();
-  const { profile, isLoading: profileLoading } = useUserProfile();
+  const { isAuthenticated, isInitialized, user } = useAuth();
+  const { profile, isLoading: profileLoading, profileRestoreError, retryLoadProfile } = useUserProfile();
 
-  if (__DEV__) {
-    console.log('🏠 [Index] Page state:', {
-      platform: Platform.OS,
-      isInitialized,
-      isAuthenticated,
-      isGuest,
-      hasUser: !!user,
-      hasProfile: !!profile,
-      profileLoading,
-      onboardingCompleted: profile?.onboardingCompleted
-    });
+  const route = resolveStartupRoute({
+    authInitialized: isInitialized,
+    isAuthenticated,
+    userId: user?.id,
+    profileLoading,
+    profileRestoreError,
+    profile,
+  });
+
+  switch (route) {
+    case 'login':
+      return <Redirect href={'/(auth)/login' as any} />;
+    case 'overview':
+      return <Redirect href={'/(tabs)/activities' as any} />;
+    case 'onboarding':
+      return <Redirect href={'/(onboarding)/welcome' as any} />;
+    case 'recovery':
+      return (
+        <View style={styles.loadingContainer}>
+          <Text style={styles.title}>We couldn't restore your profile</Text>
+          <Text style={styles.description}>
+            Your existing setup hasn't been reset. Check your connection and try again.
+          </Text>
+          <TouchableOpacity
+            accessibilityRole="button"
+            accessibilityLabel="Retry restoring my profile"
+            testID="retry-profile-restore"
+            style={styles.button}
+            onPress={() => void retryLoadProfile()}
+          >
+            <Text style={styles.buttonText}>Try again</Text>
+          </TouchableOpacity>
+        </View>
+      );
+    default:
+      return (
+        <View style={styles.loadingContainer}>
+          <ActivityIndicator size="large" color={COLORS.primary} />
+          <Text style={styles.waitText}>Restoring your One Pager…</Text>
+        </View>
+      );
   }
-
-  // Show loading while initializing - but don't block hydration
-  if (!isInitialized) {
-    if (__DEV__) console.log('🔄 Showing loading screen');
-    return (
-      <View style={styles.loadingContainer}>
-        <ActivityIndicator size="large" color={COLORS.primary} />
-      </View>
-    );
-  }
-
-  // Not authenticated - go to login
-  if (!isAuthenticated) {
-    if (__DEV__) console.log('🔐 Not authenticated, redirecting to login');
-    return <Redirect href={"/(auth)/login" as any} />;
-  }
-
-  // Guest user - go to onboarding
-  if (isGuest) {
-    if (__DEV__) console.log('👤 Guest user, redirecting to onboarding');
-    return <Redirect href={"/(onboarding)/welcome" as any} />;
-  }
-
-  if (profile?.onboardingCompleted) {
-    if (__DEV__) console.log('✅ Onboarding completed, redirecting to main app');
-    return <Redirect href={"/(tabs)/activities" as any} />;
-  }
-
-  // Never block onboarding on profile hydration — new signups seed a default profile quickly.
-  if (!profile || !profile.onboardingCompleted) {
-    if (__DEV__) console.log('📋 Onboarding not completed, redirecting to welcome');
-    return <Redirect href={"/(onboarding)/welcome" as any} />;
-  }
-
-  if (profileLoading) {
-    if (__DEV__) console.log('🔄 Profile still loading');
-    return (
-      <View style={styles.loadingContainer}>
-        <ActivityIndicator size="large" color={COLORS.primary} />
-      </View>
-    );
-  }
-
-  return <Redirect href={"/(tabs)/activities" as any} />;
 }
 
 const styles = StyleSheet.create({
@@ -72,6 +59,24 @@ const styles = StyleSheet.create({
     flex: 1,
     justifyContent: 'center',
     alignItems: 'center',
-    backgroundColor: COLORS.background
-  }
+    paddingHorizontal: 28,
+    backgroundColor: COLORS.background,
+  },
+  title: { fontSize: 21, fontWeight: '800', textAlign: 'center', color: COLORS.text },
+  description: {
+    color: COLORS.textSecondary,
+    fontSize: 14,
+    lineHeight: 21,
+    textAlign: 'center',
+    marginTop: 12,
+  },
+  waitText: { color: COLORS.textSecondary, marginTop: 16, fontSize: 13 },
+  button: {
+    backgroundColor: COLORS.primary,
+    paddingHorizontal: 26,
+    paddingVertical: 14,
+    borderRadius: 13,
+    marginTop: 24,
+  },
+  buttonText: { color: '#fff', fontSize: 15, fontWeight: '700' },
 });

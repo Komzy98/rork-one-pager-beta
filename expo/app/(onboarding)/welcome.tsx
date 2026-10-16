@@ -8,6 +8,7 @@ import {
   Image,
   Platform,
   ScrollView,
+  Alert,
 } from 'react-native';
 import { useRouter } from 'expo-router';
 import { ArrowRight, Sparkles, ListChecks, Zap, Shield } from 'lucide-react-native';
@@ -28,7 +29,7 @@ const FEATURES = [
 export default function WelcomeScreen() {
   const router = useRouter();
   const { isGuest } = useAuth();
-  const { completeOnboarding } = useUserProfile();
+  const { completeOnboarding, isLoading: profileLoading } = useUserProfile();
   const insets = useSafeAreaInsets();
 
   const logoScale = useRef(new Animated.Value(0.92)).current;
@@ -47,16 +48,22 @@ export default function WelcomeScreen() {
     if (Platform.OS !== 'web') {
       void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
     }
-    router.push('/(onboarding)/interests' as any);
-  }, [router]);
+    if (!profileLoading) router.push('/(onboarding)/interests' as any);
+  }, [router, profileLoading]);
 
-  const handleSkipSetup = useCallback(() => {
+  const handleSkipSetup = useCallback(async () => {
+    if (profileLoading) return;
     if (Platform.OS !== 'web') {
       void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
     }
-    completeOnboarding();
-    router.replace('/(tabs)/activities' as any);
-  }, [completeOnboarding, router]);
+    try {
+      await completeOnboarding();
+      router.replace('/(tabs)/activities' as any);
+    } catch (error) {
+      console.warn('[Onboarding] Could not save skip choice:', error);
+      Alert.alert('Could not save your setup', 'Please check your connection and try again.');
+    }
+  }, [completeOnboarding, router, profileLoading]);
 
   const handleCreateAccount = useCallback(() => {
     if (Platform.OS !== 'web') {
@@ -119,6 +126,7 @@ export default function WelcomeScreen() {
           <TouchableOpacity
             style={[styles.primaryBtnOuter, ONBOARDING_PREMIUM.primaryButtonShadow]}
             onPress={handleGetStarted}
+            disabled={profileLoading}
             activeOpacity={0.92}
             testID="onboarding-get-started"
           >
@@ -137,7 +145,8 @@ export default function WelcomeScreen() {
 
           <TouchableOpacity
             style={styles.skipBtn}
-            onPress={handleSkipSetup}
+            onPress={() => void handleSkipSetup()}
+            disabled={profileLoading}
             activeOpacity={0.85}
             testID="onboarding-skip"
           >

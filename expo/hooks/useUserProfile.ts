@@ -37,6 +37,8 @@ export const [UserProfileProvider, useUserProfile] = createContextHook(() => {
   const [profile, setProfile] = useState<UserProfile | null>(null);
   const [isLoading, setIsLoading] = useState<boolean>(true);
   const [profileSaveError, setProfileSaveError] = useState<string | null>(null);
+  /** Never treat a failed restore as a new, un-onboarded user. */
+  const [profileRestoreError, setProfileRestoreError] = useState(false);
   const [teamLogos, setTeamLogos] = useState<Map<number, string>>(new Map());
   const logoFetchedRef = useRef<Set<number>>(new Set());
   const loadInFlightRef = useRef<string | null>(null);
@@ -59,6 +61,7 @@ export const [UserProfileProvider, useUserProfile] = createContextHook(() => {
       return loadPromiseRef.current;
     }
     loadInFlightRef.current = userId;
+    setProfileRestoreError(false);
     const mutationCountAtStart = profileMutationCountRef.current;
     console.log('🔄 [Profile] Loading profile for user:', { userId, email, name, platform: Platform.OS });
     if (loadedUserIdRef.current !== userId) {
@@ -80,10 +83,10 @@ export const [UserProfileProvider, useUserProfile] = createContextHook(() => {
       // Do not expose a writable default account while restoring it.
       if (!hadLocalProfile) cloudRestorePendingUserRef.current = userId;
 
-      if (!hadLocalProfile && userId && supabaseSync.loadFromCloud) {
+      if (!hadLocalProfile && userId && !userId.startsWith('guest_') && supabaseSync.loadFromCloud) {
         try {
           console.log('☁️ [Profile] Loading from Supabase...');
-          const cloudData = await supabaseSync.loadFromCloud();
+          const cloudData = await supabaseSync.loadFromCloud({ strictProfileRestore: true });
           if (!stillActive()) return;
           if (cloudData?.userProfile) {
             if (!dataOwnedBySession(userId, cloudData.userProfile.id)) {
@@ -91,6 +94,7 @@ export const [UserProfileProvider, useUserProfile] = createContextHook(() => {
                 expected: userId,
                 got: cloudData.userProfile.id,
               });
+              throw new Error('Remote profile belongs to another account');
             } else {
               console.log('✅ [Profile] Loaded profile from Supabase');
               if (!stillActive()) return;
@@ -108,7 +112,10 @@ export const [UserProfileProvider, useUserProfile] = createContextHook(() => {
             console.log('📝 [Profile] No profile in Supabase yet');
           }
         } catch (cloudError) {
-          console.log('⚠️ [Profile] Supabase load failed, falling back to local storage:', cloudError);
+          console.warn('⚠️ [Profile] Cloud profile restore failed:', cloudError);
+          // A previously onboarded account may have no local copy after reinstall.
+          // Do not seed an un-onboarded profile or overwrite remote settings.
+          throw new Error('Cloud profile restoration unavailable');
         }
       }
 
@@ -215,6 +222,7 @@ export const [UserProfileProvider, useUserProfile] = createContextHook(() => {
       }
     } catch (error) {
       console.error('❌ [Profile] Error loading user profile on', Platform.OS, ':', error);
+      setProfileRestoreError(true);
       if (loadInFlightRef.current === userId && !profileRef.current) {
         // An unreadable local profile is not evidence of an empty account.
         // Show a temporary fallback without overwriting storage or cloud.
@@ -237,6 +245,7 @@ export const [UserProfileProvider, useUserProfile] = createContextHook(() => {
         ]);
       } catch (timeoutErr) {
         console.warn('⚠️ [Profile] Load timed out; keeping stored data intact:', timeoutErr);
+        setProfileRestoreError(true);
         // Invalidate the late cloud/storage response so it cannot overwrite edits.
         if (loadInFlightRef.current === userId) loadInFlightRef.current = null;
         if (!profileRef.current || profileRef.current.id !== userId) {
@@ -279,6 +288,7 @@ export const [UserProfileProvider, useUserProfile] = createContextHook(() => {
     } else {
       console.log('❌ No authenticated user, clearing profile');
       profileRef.current = null;
+      setProfileRestoreError(false);
       cloudRestorePendingUserRef.current = null;
       setProfile(null);
       loadedUserIdRef.current = null;
@@ -624,15 +634,29 @@ export const [UserProfileProvider, useUserProfile] = createContextHook(() => {
     updateProfile({ favoriteBooks: updatedBooks });
   };
 
-  const completeOnboarding = () => {
-    if (!profile && user) {
-      void saveProfile({
+  const completeOnboarding = async (): Promise<void> => {
+    if (isLoading || profileRestoreError) {
+      throw new Error('Wait for your saved profile to finish loading.');
+    }
+    if (!profile) {
+      if (!user) throw new Error('Sign in before completing onboarding.');
+      await saveProfile({
         ...createDefaultUserProfile(user.id, user.email, user.name),
         onboardingCompleted: true,
-      }).catch((error) => console.warn('[Profile] Could not complete onboarding:', error));
+      });
       return;
     }
-    updateProfile({ onboardingCompleted: true });
+    await updateProfile({ onboardingCompleted: true });
+  };
+
+  const retryLoadProfile = async (): Promise<void> => {
+    if (!user?.id) return;
+    setProfileRestoreError(false);
+    setIsLoading(true);
+    profileRef.current = null;
+    setProfile(null);
+    loadedUserIdRef.current = null;
+    await loadProfile(user.id, user.email, user.name);
   };
 
   const resetOnboarding = () => {
@@ -836,6 +860,8 @@ export const [UserProfileProvider, useUserProfile] = createContextHook(() => {
   return {
     profile,
     isLoading,
+    profileRestoreError,
+    retryLoadProfile,
     profileSaveError,
     updateProfile,
     addFavoriteTeam,
