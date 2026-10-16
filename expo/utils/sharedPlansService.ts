@@ -153,6 +153,7 @@ export async function getOrCreateEventPlan(
     .select('*')
     .eq('plan_type', 'event')
     .eq('entity_id', event.id)
+    .eq('owner_id', userId)
     .maybeSingle();
 
   if (fetchError && !isSocialUnavailableError(fetchError)) {
@@ -179,6 +180,7 @@ export async function getOrCreateEventPlan(
         .select('*')
         .eq('plan_type', 'event')
         .eq('entity_id', event.id)
+        .eq('owner_id', userId)
         .maybeSingle();
       if (retryError && !isSocialUnavailableError(retryError)) {
         throw toQueryError(retryError, 'Could not join the event plan.');
@@ -212,6 +214,7 @@ export async function getEventPlanInviteToken(eventId: string): Promise<string |
     .select('invite_token')
     .eq('plan_type', 'event')
     .eq('entity_id', eventId)
+    .eq('owner_id', (await supabase.auth.getUser()).data.user?.id ?? '')
     .maybeSingle();
   if (error && !isSocialUnavailableError(error)) return null;
   return (data as { invite_token?: string } | null)?.invite_token ?? null;
@@ -251,23 +254,30 @@ export async function updatePlanMeetAt(planId: string, meetAt: Date | null): Pro
 
 export async function getEventPlanBundle(
   eventId: string,
-  myUserId: string
+  myUserId: string,
+  preferredPlanId?: string | null,
 ): Promise<{ plan: SharedPlan | null; rsvps: PlanRsvp[]; myStatus: PlanRsvpStatus | null }> {
   if (!supabaseConfigured) {
     return { plan: null, rsvps: [], myStatus: null };
   }
 
-  const { data: planRow, error: planError } = await supabase
+  // Event plans are scoped to groups; a person may see multiple plans
+  // after accepting invitations. Prefer their own group if present.
+  const { data: planRows, error: planError } = await supabase
     .from('shared_plans')
     .select('*')
     .eq('plan_type', 'event')
     .eq('entity_id', eventId)
-    .maybeSingle();
+    .order('created_at', { ascending: false })
+    .limit(30);
 
   if (planError && !isSocialUnavailableError(planError)) throw planError;
-  if (!planRow) return { plan: null, rsvps: [], myStatus: null };
-
-  const plan = mapPlan(planRow as PlanRow);
+  const visiblePlans = (planRows ?? []) as PlanRow[];
+  const selected = (preferredPlanId
+    ? visiblePlans.find((item) => item.id === preferredPlanId)
+    : null) ?? visiblePlans.find((item) => item.owner_id === myUserId) ?? visiblePlans[0];
+  if (!selected) return { plan: null, rsvps: [], myStatus: null };
+  const plan = mapPlan(selected);
 
   const { data: rsvpRows, error: rsvpError } = await supabase
     .from('plan_rsvps')
@@ -538,7 +548,10 @@ export async function getSavedEventsSocialSummaries(
 
   const plansByEventId = new Map<string, SharedPlan>();
   for (const row of (planRows ?? []) as PlanRow[]) {
-    plansByEventId.set(row.entity_id, mapPlan(row));
+    const previous = plansByEventId.get(row.entity_id);
+    if (!previous || (row.owner_id === myUserId && previous.ownerId !== myUserId)) {
+      plansByEventId.set(row.entity_id, mapPlan(row));
+    }
   }
 
   const planIds = [...plansByEventId.values()].map((plan) => plan.id);

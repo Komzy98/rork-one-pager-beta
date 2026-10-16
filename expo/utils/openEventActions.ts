@@ -1,6 +1,7 @@
 import { Alert, Linking, Platform } from 'react-native';
 import type { LocalEvent } from '@/types/events';
 import { buildWazeEventUrl } from '@/utils/wazeEventLink';
+import { buildEventDirectionsUrl, type EventTravelMode } from '@/utils/eventDirectionsUrl';
 
 export { getEventCalendarRange } from '@/utils/eventDiscovery';
 export { buildWazeEventUrl } from '@/utils/wazeEventLink';
@@ -21,32 +22,26 @@ export async function openEventTickets(event: LocalEvent): Promise<void> {
     Alert.alert('Tickets', 'This event has an invalid ticket link.');
     return;
   }
-  const canOpen = await Linking.canOpenURL(url);
-  if (!canOpen) {
-    Alert.alert('Tickets', 'Unable to open the ticket link.');
-    return;
+  try {
+    await Linking.openURL(url);
+  } catch {
+    Alert.alert('Tickets', 'Unable to open the ticket provider right now. Try again later.');
   }
-  await Linking.openURL(url);
 }
 
-export async function openEventDirections(event: LocalEvent): Promise<void> {
-  const label = encodeURIComponent(`${event.venue}, ${event.location}`);
-  const { latitude, longitude } = event;
-  const url =
-    Platform.OS === 'ios'
-      ? `maps:0,0?q=${label}@${latitude},${longitude}`
-      : Platform.OS === 'android'
-        ? `geo:${latitude},${longitude}?q=${latitude},${longitude}(${label})`
-        : `https://www.google.com/maps/search/?api=1&query=${latitude},${longitude}`;
-
-  const canOpen = await Linking.canOpenURL(url);
-  if (!canOpen) {
-    await Linking.openURL(
-      `https://www.google.com/maps/search/?api=1&query=${latitude},${longitude}`
-    );
-    return;
+export async function openEventDirections(
+  event: LocalEvent,
+  mode: EventTravelMode = 'driving',
+): Promise<void> {
+  const url = buildEventDirectionsUrl(
+    Platform.OS === 'ios' ? 'ios' : Platform.OS === 'android' ? 'android' : 'web',
+    event.venue, event.location, event.latitude, event.longitude, mode,
+  );
+  try {
+    await Linking.openURL(url);
+  } catch {
+    Alert.alert('Directions', 'Could not open Maps. Please check the venue address.');
   }
-  await Linking.openURL(url);
 }
 
 export async function openEventInWaze(event: LocalEvent): Promise<void> {

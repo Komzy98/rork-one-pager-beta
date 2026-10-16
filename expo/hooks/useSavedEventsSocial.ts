@@ -5,13 +5,12 @@ import { useFriends } from '@/hooks/useFriends';
 import type { LocalEvent } from '@/types/events';
 import {
   checkSharedPlansAvailable,
-  getOrCreateEventPlan,
   getSavedEventsSocialSummaries,
-  setPlanRsvp,
   type PlanRsvpStatus,
   type SavedEventSocialSummary,
 } from '@/utils/sharedPlansService';
 import { supabaseConfigured } from '@/utils/supabaseClient';
+import { savePersonalEventRsvp, getPersonalEventStatuses } from '@/utils/personalEventAttendance';
 
 export function useSavedEventsSocial(savedEvents: LocalEvent[]) {
   const { supabaseUser, isGuest } = useAuth();
@@ -27,7 +26,14 @@ export function useSavedEventsSocial(savedEvents: LocalEvent[]) {
     queryFn: async () => {
       const available = await checkSharedPlansAvailable();
       if (!available || !myUserId) return {} as Record<string, SavedEventSocialSummary>;
-      return getSavedEventsSocialSummaries(eventIds, myUserId, friendIds);
+      const [summaries, statuses] = await Promise.all([
+        getSavedEventsSocialSummaries(eventIds, myUserId, friendIds),
+        getPersonalEventStatuses(myUserId, eventIds),
+      ]);
+      for (const [eventId, status] of Object.entries(statuses)) {
+        if (summaries[eventId]) summaries[eventId].myStatus = status;
+      }
+      return summaries;
     },
     enabled,
     staleTime: 20_000,
@@ -63,14 +69,10 @@ export function useSavedEventsSocial(savedEvents: LocalEvent[]) {
         throw new Error('Sign in to respond to this plan.');
       }
 
-      const plan = await getOrCreateEventPlan(myUserId, event);
-      if (!plan) {
-        throw new Error('Could not start a plan for this event.');
-      }
-
-      await setPlanRsvp(plan.id, myUserId, status);
+      await savePersonalEventRsvp(myUserId, event.id, status);
       await queryClient.invalidateQueries({ queryKey: ['saved-events-social', myUserId] });
       await queryClient.invalidateQueries({ queryKey: ['event-plan', event.id] });
+      await queryClient.invalidateQueries({ queryKey: ['personal-event-attendance', myUserId, event.id] });
     },
     [enabled, myUserId, queryClient],
   );

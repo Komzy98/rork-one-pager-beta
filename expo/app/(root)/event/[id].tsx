@@ -4,7 +4,6 @@ import {
   ActivityIndicator,
   Animated,
   Dimensions,
-  Image,
   Platform,
   ScrollView,
   Share,
@@ -17,6 +16,7 @@ import { Stack, useLocalSearchParams, useRouter } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import MapView, { Marker } from 'react-native-maps';
 import { BlurView } from 'expo-blur';
+import { Image } from 'expo-image';
 import {
   ArrowLeft,
   Calendar,
@@ -28,6 +28,9 @@ import {
   Target,
   Ticket,
   TrendingUp,
+  ChevronDown,
+  ChevronUp,
+  Bell,
 } from 'lucide-react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import * as Haptics from 'expo-haptics';
@@ -44,6 +47,10 @@ import { buildNightOutPlan, mergeGroupMeetStep, defaultGroupMeetTime } from '@/u
 import { useEventSocial } from '@/hooks/useEventSocial';
 import { useFriends } from '@/hooks/useFriends';
 import { EventPlanRsvp } from '@/components/events/EventPlanRsvp';
+import { EventTicketStatus } from '@/components/events/EventTicketStatus';
+import { usePersonalEventAttendance } from '@/hooks/usePersonalEventAttendance';
+import { useEventReminders } from '@/hooks/useEventReminders';
+import { getEventListingBadges } from '@/utils/eventListingMeta';
 import { EventInviteFriendsModal } from '@/components/events/EventInviteFriendsModal';
 import { WhoIsGoing } from '@/components/events/WhoIsGoing';
 import {
@@ -69,11 +76,11 @@ import type { PlanRsvpStatus } from '@/utils/sharedPlansService';
 import type { SocialProfile } from '@/utils/friendsService';
 
 const { width: SCREEN_WIDTH, height: SCREEN_HEIGHT } = Dimensions.get('window');
-const HERO_HEIGHT = Math.round(SCREEN_HEIGHT * 0.6);
+const HERO_HEIGHT = Math.min(455, Math.round(SCREEN_HEIGHT * 0.48));
 
 /** Fixed bottom bar: padding + icon + label + safe area — keep scroll content above it. */
 function eventDetailScrollPadding(bottomInset: number): number {
-  return bottomInset + 10 + 46 + 6 + 14 + 10 + 48;
+  return bottomInset + 92;
 }
 
 export default function EventDetailScreen() {
@@ -84,7 +91,7 @@ export default function EventDetailScreen() {
   const { isDark } = useTheme();
   const palette = useMemo(() => eventsFixedPalette(isDark, 'discover'), [isDark]);
   const { profile } = useUserProfile();
-  const { isSaved, addToOnePager, removeFromOnePager, getSnapshotById, toggleSaved } = useSavedEvents();
+  const { isSaved, addToOnePager, removeFromOnePager, setPlanningStatus, getSnapshotById, toggleSaved } = useSavedEvents();
   const { createEvent, hasPermission, requestPermissions } = useEventKit();
   const { logEventPlanned } = useSocialActivity();
 
@@ -110,10 +117,16 @@ export default function EventDetailScreen() {
   );
 
   const eventSocial = useEventSocial(localEvent, { planInviteToken: ptoken });
+  const attendance = usePersonalEventAttendance(event?.id);
+  const { scheduleEventReminder } = useEventReminders();
   const { friends, nudge: nudgeFriend, available: friendsAvailable } = useFriends();
   const [rsvpBusy, setRsvpBusy] = useState(false);
   const [rsvpPending, setRsvpPending] = useState<PlanRsvpStatus | null>(null);
   const [showInviteModal, setShowInviteModal] = useState(false);
+  const [invitePlanToken, setInvitePlanToken] = useState<string | null>(null);
+  const [showPlanner, setShowPlanner] = useState(false);
+  const [ticketBusy, setTicketBusy] = useState(false);
+  const [heroPosterFailed, setHeroPosterFailed] = useState(false);
 
   const saved = id ? isSaved(id) : false;
 
@@ -235,7 +248,21 @@ export default function EventDetailScreen() {
       setRsvpBusy(true);
       setRsvpPending(status);
       try {
-        await eventSocial.setRsvp(status);
+        await attendance.setRsvp(status);
+        // Attending or considering an event should also place it in My Events.
+        if (status !== 'cant' && !saved && localEvent) {
+          try {
+            await addToOnePager(localEvent);
+          } catch (saveError) {
+            console.warn('[Event RSVP] Could not mirror RSVP into My Events:', saveError);
+          }
+        }
+        try {
+          if (status !== 'cant') await setPlanningStatus(event!.id, status === 'in' ? 'going' : 'planning');
+          else if (saved) await setPlanningStatus(event!.id, 'interested');
+        } catch (syncError) {
+          console.warn('[Event RSVP] Local planning label sync failed:', syncError);
+        }
         void Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
       } catch (error) {
         Alert.alert(
@@ -249,7 +276,7 @@ export default function EventDetailScreen() {
         setRsvpPending(null);
       }
     },
-    [eventSocial]
+    [attendance, saved, localEvent, event, addToOnePager, setPlanningStatus]
   );
 
   const handleInviteFriend = useCallback(
@@ -266,8 +293,21 @@ export default function EventDetailScreen() {
 
   const openInviteModal = useCallback(() => {
     void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-    setShowInviteModal(true);
-  }, []);
+    if (!eventSocial.canRsvp) {
+      Alert.alert('Sign in required', 'Sign in to create a group invitation. You can still share the event normally.');
+      return;
+    }
+    void eventSocial.ensurePlan().then((plan) => {
+      if (!plan?.inviteToken) {
+        Alert.alert('Invite unavailable', 'Could not prepare your group invitation. Please try again.');
+        return;
+      }
+      setInvitePlanToken(plan.inviteToken);
+      setShowInviteModal(true);
+    }).catch(() => {
+      Alert.alert('Invite unavailable', 'Could not prepare your group invitation. Please try again.');
+    });
+  }, [eventSocial]);
 
   const handleInviteToNight = useCallback(async () => {
     openInviteModal();
@@ -291,6 +331,21 @@ export default function EventDetailScreen() {
     );
   }, [event, profile?.username]);
 
+  const handleRemind = useCallback(() => {
+    if (localEvent) void scheduleEventReminder(localEvent);
+  }, [localEvent, scheduleEventReminder]);
+
+  const handleTicketStatus = useCallback(async (status: import('@/utils/personalEventAttendance').TicketStatus) => {
+    setTicketBusy(true);
+    try {
+      await attendance.setTicketStatus(status);
+    } catch (error) {
+      Alert.alert('Could not update ticket', error instanceof Error ? error.message : 'Please try again.');
+    } finally {
+      setTicketBusy(false);
+    }
+  }, [attendance]);
+
   const handleTickets = useCallback(() => {
     if (!localEvent) return;
     void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
@@ -300,7 +355,12 @@ export default function EventDetailScreen() {
   const handleDirections = useCallback(() => {
     if (!localEvent) return;
     void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-    void openEventDirections(localEvent);
+    Alert.alert('Get directions', 'Choose how you plan to travel. Maps will calculate your live route.', [
+      { text: 'Drive', onPress: () => void openEventDirections(localEvent, 'driving') },
+      { text: 'Public transport', onPress: () => void openEventDirections(localEvent, 'transit') },
+      { text: 'Walk', onPress: () => void openEventDirections(localEvent, 'walking') },
+      { text: 'Cancel', style: 'cancel' },
+    ]);
   }, [localEvent]);
 
   const handleWaze = useCallback(() => {
@@ -356,7 +416,11 @@ export default function EventDetailScreen() {
 
   const distanceText = event.distanceKm != null ? formatDistanceKm(event.distanceKm) : null;
   const countdown = getEventCountdownLabel(localEvent);
-  const hasCoords = event.latitude != null && event.longitude != null;
+  const hasCoords = event.latitude != null && event.longitude != null
+    && (event.latitude !== 0 || event.longitude !== 0);
+  const listingInfo = getEventListingBadges(localEvent);
+  const canBuyTickets = !!event.ticketUrl && /^https?:\/\//i.test(event.ticketUrl);
+
 
   return (
     <View style={[styles.container, { backgroundColor: palette.background }]}>
@@ -405,13 +469,22 @@ export default function EventDetailScreen() {
       >
         <View style={styles.heroWrap}>
           <Animated.View style={[styles.heroImageWrap, { transform: [{ scale: heroScale }] }]}>
-            {event.imageUrl ? (
-              <Image source={{ uri: event.imageUrl }} style={styles.heroImage} />
-            ) : (
-              <LinearGradient
-                colors={[...palette.heroGradient]}
+            {event.imageUrl && /^https?:\/\//i.test(event.imageUrl) && !heroPosterFailed ? (
+              <Image
+                source={{ uri: event.imageUrl }}
                 style={styles.heroImage}
+                contentFit="cover"
+                transition={220}
+                cachePolicy="memory-disk"
+                onError={() => setHeroPosterFailed(true)}
+                accessibilityLabel={event.title}
               />
+            ) : (
+              <LinearGradient colors={[...palette.heroGradient]} style={styles.heroImage}>
+                <Text style={{ color: '#fff', fontSize: 13, fontWeight: '700', letterSpacing: 2, textAlign: 'center', marginTop: HERO_HEIGHT * 0.44 }}>
+                  {String(event.category).toUpperCase()} / ONE PAGER
+                </Text>
+              </LinearGradient>
             )}
           </Animated.View>
 
@@ -431,12 +504,6 @@ export default function EventDetailScreen() {
                   <Text style={[styles.categoryBadgeText, { color: categoryMeta.color }]}>
                     {String(event.category).replace(/_/g, ' ')}
                   </Text>
-                </View>
-              ) : null}
-              {event.isHot ? (
-                <View style={[styles.hotBadge, { backgroundColor: palette.errorLight }]}>
-                  <TrendingUp size={11} color={palette.error} />
-                  <Text style={[styles.hotBadgeText, { color: palette.error }]}>Hot</Text>
                 </View>
               ) : null}
               <View style={[styles.countdownBadge, { backgroundColor: palette.primaryLight }]}>
@@ -460,7 +527,7 @@ export default function EventDetailScreen() {
         </View>
 
         <View style={styles.body}>
-          {whyForYou ? (
+          {whyForYou && /^(Picked|Because|Matches|Happening near)/i.test(whyForYou) ? (
             <View style={[styles.whyCard, { backgroundColor: palette.surfaceLight, borderColor: palette.border }]}>
               <View style={[styles.whyIcon, { backgroundColor: palette.primaryLight }]}>
                 <Target size={16} color={palette.primary} />
@@ -481,34 +548,63 @@ export default function EventDetailScreen() {
           ) : null}
           <EventPlanRsvp
             palette={palette}
-            myStatus={eventSocial.myRsvpStatus}
+            myStatus={attendance.status}
             goingCount={eventSocial.goingCount}
             maybeCount={eventSocial.maybeCount}
             loading={rsvpBusy}
             pendingStatus={rsvpPending}
+            canRsvp={attendance.available}
             onSelect={handleRsvp}
-            onInviteFriends={openInviteModal}
+            onInviteFriends={attendance.status !== 'cant' ? openInviteModal : undefined}
+            onTickets={handleTickets}
+            ticketAvailable={canBuyTickets}
+            onCalendar={() => void handleCalendar()}
+            onRemind={handleRemind}
           />
+          {attendance.status === 'in' && attendance.available ? (
+            <EventTicketStatus
+              value={attendance.ticketStatus}
+              palette={palette}
+              busy={ticketBusy}
+              onChange={handleTicketStatus}
+              onFindTickets={canBuyTickets ? handleTickets : undefined}
+            />
+          ) : null}
 
-          {nightOutSteps.length > 0 ? (
+          {nightOutSteps.length > 0 && attendance.status !== 'cant' ? (
             <View style={styles.plannerSection}>
-              <View style={styles.plannerHeader}>
-                <Text style={[styles.sectionLabel, { color: palette.textSecondary }]}>
-                  Plan your night out
-                </Text>
-                <TouchableOpacity
-                  style={[styles.inviteBtn, { borderColor: palette.border, backgroundColor: palette.surfaceLight }]}
-                  onPress={() => void handleInviteToNight()}
-                  activeOpacity={0.85}
-                >
-                  <UserPlus size={14} color={palette.primary} />
-                  <Text style={[styles.inviteBtnText, { color: palette.primary }]}>Invite</Text>
-                </TouchableOpacity>
-              </View>
-              <EventNightOutPlanner steps={nightOutSteps} palette={palette} />
+              <TouchableOpacity
+                style={[styles.plannerHeader, { paddingVertical: 12, paddingHorizontal: 14, backgroundColor: palette.surfaceLight, borderRadius: 14, borderWidth: 1, borderColor: palette.border }]}
+                onPress={() => setShowPlanner((value) => !value)}
+                accessibilityRole="button"
+                accessibilityState={{ expanded: showPlanner }}
+              >
+                <View style={{ flex: 1, gap: 3 }}>
+                  <Text style={[styles.sectionLabel, { color: palette.text }]}>Plan your day</Text>
+                  <Text style={{ color: palette.textSecondary, fontSize: 12 }}>Optional itinerary and travel checklist</Text>
+                </View>
+                {showPlanner ? <ChevronUp size={18} color={palette.textSecondary} /> : <ChevronDown size={18} color={palette.textSecondary} />}
+              </TouchableOpacity>
+              {showPlanner ? (
+                <>
+                  <Text style={{ color: palette.textSecondary, fontSize: 12, lineHeight: 18 }}>
+                    Suggested times, not verified schedules or live transport estimates. Check actual routes and event doors before leaving.
+                  </Text>
+                  <EventNightOutPlanner steps={nightOutSteps} palette={palette} />
+                  <TouchableOpacity onPress={handleDirections} style={[styles.inviteBtn, { alignSelf: 'stretch', justifyContent: 'center', padding: 12, borderColor: palette.border }]}>
+                    <Navigation size={15} color={palette.primary} />
+                    <Text style={[styles.inviteBtnText, { color: palette.primary }]}>Check live directions in Maps</Text>
+                  </TouchableOpacity>
+                </>
+              ) : null}
             </View>
           ) : null}
 
+          {listingInfo.sourceLabel ? (
+            <Text style={{ color: palette.textSecondary, fontSize: 12 }}>
+              Listed by {listingInfo.sourceLabel} · Verify dates, prices and availability before purchasing
+            </Text>
+          ) : null}
           <View style={[styles.venueBlock, { backgroundColor: palette.card, borderColor: palette.border }]}>
             <View style={styles.venueHeader}>
               <View style={styles.venueCopy}>
@@ -640,16 +736,16 @@ export default function EventDetailScreen() {
               style={[
                 styles.actionIcon,
                 {
-                  backgroundColor: saved ? palette.primaryLight : palette.primary,
-                  borderColor: saved ? palette.primary : 'transparent',
-                  borderWidth: saved ? 1 : 0,
+                  backgroundColor: palette.surfaceLight,
+                  borderColor: saved ? palette.primary : palette.border,
+                  borderWidth: 1,
                 },
               ]}
             >
-              <Sparkles size={18} color={saved ? palette.primary : palette.textInverse} />
+              <Sparkles size={18} color={saved ? palette.primary : palette.textSecondary} />
             </View>
             <Text style={[styles.actionLabel, { color: saved ? palette.primary : palette.text }]}>
-              {saved ? 'Saved' : 'One Pager'}
+              {saved ? 'Saved' : 'Save'}
             </Text>
           </TouchableOpacity>
 
@@ -667,11 +763,17 @@ export default function EventDetailScreen() {
             <Text style={[styles.actionLabel, { color: palette.textSecondary }]}>Share</Text>
           </TouchableOpacity>
 
-          <TouchableOpacity style={styles.actionItem} onPress={handleTickets} activeOpacity={0.85}>
-            <View style={[styles.actionIcon, { backgroundColor: palette.primary }]}>
-              <Ticket size={18} color={palette.textInverse} />
-            </View>
-            <Text style={[styles.actionLabel, { color: palette.text }]}>Tickets</Text>
+          <TouchableOpacity
+            style={[styles.ticketPrimary, { backgroundColor: palette.primary }]}
+            onPress={canBuyTickets ? handleTickets : openInviteModal}
+            activeOpacity={0.85}
+            accessibilityRole="button"
+            accessibilityLabel={canBuyTickets ? 'View tickets from event provider' : 'Invite friends to this event'}
+          >
+            {canBuyTickets ? <Ticket size={17} color={palette.textInverse} /> : <UserPlus size={17} color={palette.textInverse} />}
+            <Text style={[styles.ticketPrimaryLabel, { color: palette.textInverse }]}>
+              {canBuyTickets ? 'Get tickets' : 'Invite friends'}
+            </Text>
           </TouchableOpacity>
         </View>
       </View>
@@ -686,7 +788,7 @@ export default function EventDetailScreen() {
         venueName={event.venueName}
         eventId={event.id}
         inviterUsername={profile?.username}
-        planToken={eventSocial.plan?.inviteToken}
+        planToken={invitePlanToken ?? eventSocial.plan?.inviteToken}
         friends={friends}
         onInviteFriend={handleInviteFriend}
       />
@@ -982,18 +1084,31 @@ const styles = StyleSheet.create({
   },
   actionRow: {
     flexDirection: 'row',
-    alignItems: 'flex-start',
-    justifyContent: 'space-around',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    gap: 8,
   },
   actionItem: {
     alignItems: 'center',
-    gap: 6,
-    minWidth: 72,
+    gap: 4,
+    width: 52,
   },
-  actionIcon: {
-    width: 46,
-    height: 46,
+  ticketPrimary: {
+    flex: 1,
+    marginLeft: 5,
+    minHeight: 50,
     borderRadius: 15,
+    paddingHorizontal: 10,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 7,
+  },
+  ticketPrimaryLabel: { fontSize: 13, fontWeight: '800' },
+  actionIcon: {
+    width: 37,
+    height: 37,
+    borderRadius: 12,
     alignItems: 'center',
     justifyContent: 'center',
   },

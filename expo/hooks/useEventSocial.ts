@@ -38,6 +38,7 @@ export function useEventSocial(
   const enabled = !!event && !!myUserId && supabaseConfigured && !isGuest;
 
   const [available, setAvailable] = useState<boolean | null>(enabled ? null : false);
+  const [invitedPlanId, setInvitedPlanId] = useState<string | null>(null);
 
   useEffect(() => {
     if (!enabled) {
@@ -59,8 +60,8 @@ export function useEventSocial(
   const planInviteToken = options?.planInviteToken?.trim() ?? '';
 
   const planQuery = useQuery({
-    queryKey: ['event-plan', eventId, myUserId],
-    queryFn: () => getEventPlanBundle(eventId, myUserId as string),
+    queryKey: ['event-plan', eventId, myUserId, invitedPlanId],
+    queryFn: () => getEventPlanBundle(eventId, myUserId as string, invitedPlanId),
     enabled: queriesEnabled,
     staleTime: 20_000,
   });
@@ -90,8 +91,11 @@ export function useEventSocial(
     let cancelled = false;
     void (async () => {
       try {
-        await claimPlanInvite(planInviteToken);
-        if (!cancelled) invalidate();
+        const targetId = await claimPlanInvite(planInviteToken);
+        if (!cancelled) {
+          setInvitedPlanId(targetId);
+          invalidate();
+        }
       } catch {
         // invite token invalid or migration pending — plan may still load for friends
       }
@@ -157,7 +161,7 @@ export function useEventSocial(
     (status: PlanRsvpStatus) => {
       if (!myUserId) return;
       const profile = resolveRsvpProfile(myUserId);
-      queryClient.setQueryData<EventPlanCache>(['event-plan', eventId, myUserId], (prev) => {
+      queryClient.setQueryData<EventPlanCache>(['event-plan', eventId, myUserId, invitedPlanId], (prev) => {
         const base = prev ?? { plan: null, rsvps: [], myStatus: null };
         const others = base.rsvps.filter((r) => r.userId !== myUserId);
         return {
@@ -176,7 +180,7 @@ export function useEventSocial(
         };
       });
     },
-    [queryClient, eventId, myUserId, resolveRsvpProfile],
+    [queryClient, eventId, myUserId, invitedPlanId, resolveRsvpProfile],
   );
 
   const setRsvp = useCallback(
@@ -186,7 +190,7 @@ export function useEventSocial(
       }
 
       const previousCache = queryClient.getQueryData<EventPlanCache>(
-        ['event-plan', eventId, myUserId],
+        ['event-plan', eventId, myUserId, invitedPlanId],
       );
       applyOptimisticRsvp(status);
 
@@ -245,12 +249,12 @@ export function useEventSocial(
         invalidate();
       } catch (error) {
         // Don't leave the interface showing 'Going' when the server rejected it.
-        queryClient.setQueryData(['event-plan', eventId, myUserId], previousCache);
+        queryClient.setQueryData(['event-plan', eventId, myUserId, invitedPlanId], previousCache);
         invalidate();
         throw error;
       }
     },
-    [queriesEnabled, event, eventId, myUserId, myProfile, planQuery.data, guestRsvpQuery.data, applyOptimisticRsvp, invalidate, queryClient],
+    [queriesEnabled, event, eventId, myUserId, invitedPlanId, myProfile, planQuery.data, guestRsvpQuery.data, applyOptimisticRsvp, invalidate, queryClient],
   );
 
   const setGroupMeetAt = useCallback(

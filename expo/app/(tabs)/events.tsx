@@ -244,6 +244,7 @@ function EventsScreenInner() {
   const [viewMode, setViewMode] = useState<ViewMode>('list');
   const [selectedMapEvent, setSelectedMapEvent] = useState<string | null>(null);
   const [discoveryTab, setDiscoveryTab] = useState<DiscoveryTabKey>('forYou');
+  const [showMoreFilters, setShowMoreFilters] = useState(false);
   const [toastMessage, setToastMessage] = useState<string | null>(null);
   const [planLoading, setPlanLoading] = useState<'tonight' | 'weekend' | null>(null);
   const [weekendPlannerOpen, setWeekendPlannerOpen] = useState(false);
@@ -624,6 +625,7 @@ function EventsScreenInner() {
       setRsvpPendingByEventId((prev) => ({ ...prev, [event.id]: status }));
       try {
         await savedEventsSocial.setRsvp(event, status);
+        await setPlanningStatus(event.id, status === 'in' ? 'going' : status === 'maybe' ? 'planning' : 'interested');
         void Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
       } catch (error) {
         Alert.alert(
@@ -634,7 +636,7 @@ function EventsScreenInner() {
         setRsvpPendingByEventId((prev) => ({ ...prev, [event.id]: null }));
       }
     },
-    [savedEventsSocial],
+    [savedEventsSocial, setPlanningStatus],
   );
 
   const handleInviteSavedEvent = useCallback(
@@ -843,6 +845,11 @@ function EventsScreenInner() {
       return rankEventsBySearchKeyword(events, keyword);
     }
 
+    // Explore shows the full deduplicated catalogue in the chosen area;
+    // secondary filters show their own results rather than a personal rail.
+    if (discoveryTab === 'explore') return filteredEvents;
+    if (discoveryTab !== 'forYou') return smartDiscoveryEvents;
+
     const excludeHeroAndRail = (event: LocalEvent) =>
       !smartDiscoveryEventIds.has(event.id) && !heroEventIdSet.has(event.id);
 
@@ -859,6 +866,8 @@ function EventsScreenInner() {
     return rankEventsForConciergeFeed(pool, recommendationInput, conciergeContext);
   }, [
     inSearchMode,
+    discoveryTab,
+    smartDiscoveryEvents,
     globalSearchKeyword,
     searchQuery,
     events,
@@ -873,7 +882,7 @@ function EventsScreenInner() {
   ]);
 
   const showCinematicHero =
-    mainTab === 'discover' && viewMode === 'list' && !inSearchMode;
+    mainTab === 'discover' && viewMode === 'list' && !inSearchMode && discoveryTab === 'forYou';
 
   const discoveryRailTitle =
     discoveryTab === 'explore'
@@ -992,44 +1001,52 @@ function EventsScreenInner() {
         </View>
 
         <View style={[styles.mainTabRow, showCinematicHero && styles.mainTabRowCompact]}>
-          <TouchableOpacity
-            style={[
-              styles.mainTabPill,
-              showCinematicHero && styles.mainTabPillCompact,
-              { backgroundColor: mainTab === 'discover' ? accentColor : cardBg, borderColor: mainTab === 'discover' ? accentColor : cardBorder },
-            ]}
-            onPress={() => setMainTab('discover')}
-            activeOpacity={0.85}
-          >
-            <Sparkles size={14} color={mainTab === 'discover' ? inverseText : accentColor} />
-            <Text style={[styles.mainTabText, { color: mainTab === 'discover' ? inverseText : mainText }]}>Discover</Text>
-          </TouchableOpacity>
-          <TouchableOpacity
-            style={[
-              styles.mainTabPill,
-              showCinematicHero && styles.mainTabPillCompact,
-              { backgroundColor: mainTab === 'myEvents' ? accentColor : cardBg, borderColor: mainTab === 'myEvents' ? accentColor : cardBorder },
-            ]}
-            onPress={() => setMainTab('myEvents')}
-            activeOpacity={0.85}
-          >
-            <Heart size={14} color={mainTab === 'myEvents' ? inverseText : accentColor} fill={mainTab === 'myEvents' ? inverseText : 'transparent'} />
-            <Text style={[styles.mainTabText, { color: mainTab === 'myEvents' ? inverseText : mainText }]}>
-              My Events{savedCount > 0 ? ` (${savedCount})` : ''}
-            </Text>
-          </TouchableOpacity>
-       </View>
+          {([
+            { label: 'For You', selected: mainTab === 'discover' && discoveryTab !== 'explore' && !showMoreFilters, action: () => { setMainTab('discover'); setDiscoveryTab('forYou'); setShowMoreFilters(false); } },
+            { label: 'Explore', selected: mainTab === 'discover' && discoveryTab === 'explore', action: () => { setMainTab('discover'); setDiscoveryTab('explore'); setShowMoreFilters(false); } },
+            { label: 'My Events', selected: mainTab === 'myEvents', action: () => setMainTab('myEvents') },
+          ] as const).map((tab) => (
+            <TouchableOpacity
+              key={tab.label}
+              accessibilityRole="tab"
+              accessibilityState={{ selected: tab.selected }}
+              style={[
+                styles.mainTabPill,
+                { backgroundColor: tab.selected ? accentColor : cardBg, borderColor: tab.selected ? accentColor : cardBorder },
+              ]}
+              onPress={tab.action}
+              activeOpacity={0.85}
+            >
+              <Text style={[styles.mainTabText, { color: tab.selected ? inverseText : mainText }]}>
+                {tab.label}{tab.label === 'My Events' && savedCount > 0 ? ` (${savedCount})` : ''}
+              </Text>
+            </TouchableOpacity>
+          ))}
+        </View>
       </View>
 
-      {showCinematicHero ? (
-        <View style={{ paddingHorizontal: 20, marginTop: 10, marginBottom: 12 }}>
-          <EventsDiscoveryPills
-            tabs={DISCOVERY_PILL_TABS}
-            activeTab={discoveryTab}
-            onTabChange={setDiscoveryTab}
-            palette={palette}
-            compact
-          />
+      {mainTab === 'discover' && viewMode === 'list' && !inSearchMode ? (
+        <View style={{ paddingHorizontal: 20, paddingTop: 8, paddingBottom: 12 }}>
+          <TouchableOpacity
+            style={{ alignSelf: 'flex-start', paddingVertical: 8, flexDirection: 'row', alignItems: 'center', gap: 5 }}
+            onPress={() => setShowMoreFilters((previous) => !previous)}
+            accessibilityRole="button"
+            accessibilityState={{ expanded: showMoreFilters }}
+          >
+            <Text style={{ color: palette.primary, fontSize: 12, fontWeight: '700' }}>
+              {showMoreFilters ? 'Hide filters' : 'More filters · Now, Near You, Weekend, Price'}
+            </Text>
+            {showMoreFilters ? <ChevronLeft size={14} color={palette.primary} /> : <ChevronRight size={14} color={palette.primary} />}
+          </TouchableOpacity>
+          {showMoreFilters ? (
+            <EventsDiscoveryPills
+              tabs={DISCOVERY_PILL_TABS.filter(tab => tab.key !== 'forYou' && tab.key !== 'explore')}
+              activeTab={discoveryTab}
+              onTabChange={setDiscoveryTab}
+              palette={palette}
+              compact
+            />
+          ) : null}
         </View>
       ) : null}
 
@@ -1126,7 +1143,7 @@ function EventsScreenInner() {
         <EventsStatsRow stats={eventStats} palette={palette} />
       ) : null}
 
-      {mainTab === 'discover' && viewMode === 'list' && !inSearchMode && (
+      {showCinematicHero && (
       <View style={styles.smartDiscoveryWrap}>
         {showCinematicHero ? (
           <View style={[styles.railHeader, styles.railHeaderFirst]}>
@@ -1576,7 +1593,9 @@ function EventsScreenInner() {
                 pendingRsvpStatus={rsvpPendingByEventId[event.id] ?? null}
                 onPress={openEventDetail}
                 planningStatus={savedSnapshots.find(snapshot => snapshot.id === event.id)?.planningStatus ?? 'interested'}
-                onPlanningStatusChange={(eventId, status) => { void setPlanningStatus(eventId, status); }}
+                onPlanningStatusChange={savedEventsSocial.available
+                  ? undefined
+                  : (eventId, status) => { void setPlanningStatus(eventId, status); }}
                 onAddToOnePager={handleAddToOnePager}
                 onRemind={handleRemind}
                 onAddToCalendar={handleAddToCalendar}

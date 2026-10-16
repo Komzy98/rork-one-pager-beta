@@ -71,6 +71,13 @@ export const PremiumEventPosterCard = React.memo(function PremiumEventPosterCard
   const posterUri = useMemo(() => resolveEventPosterUrl(event.image), [event.image]);
   const [posterFailed, setPosterFailed] = useState(false);
   const displayPosterUri = posterFailed ? resolveEventPosterUrl(null) : posterUri;
+  const fallbackColors: [string, string] = event.category === 'music'
+    ? ['#231C48', '#462969']
+    : event.category === 'comedy'
+      ? ['#3C261C', '#71442F']
+      : event.category === 'sports'
+        ? ['#0E3149', '#145769']
+        : ['#19283F', '#354663'];
 
   const handlePressIn = useCallback(() => {
     Animated.spring(scaleAnim, { toValue: 0.98, useNativeDriver: true, tension: 220, friction: 16 }).start();
@@ -117,7 +124,16 @@ export const PremiumEventPosterCard = React.memo(function PremiumEventPosterCard
         activeOpacity={1}
       >
         <View style={isFeed ? styles.feedImageWrap : isHorizontal ? styles.horizontalImageWrap : styles.verticalImageWrap}>
-          {isFeed ? (
+          {!displayPosterUri ? (
+            <LinearGradient colors={fallbackColors} style={StyleSheet.absoluteFillObject}>
+              <View style={styles.posterFallback}>
+                <CategoryIcon size={38} color="rgba(255,255,255,0.85)" />
+                <Text style={styles.posterFallbackTitle} numberOfLines={2}>{event.title}</Text>
+                <Text style={styles.posterFallbackCaption}>ONE PAGER · {categoryMeta.label.toUpperCase()}</Text>
+              </View>
+            </LinearGradient>
+          ) : null}
+          {isFeed && !!displayPosterUri ? (
             <Image
               source={{ uri: displayPosterUri }}
               style={styles.feedImageBackdrop}
@@ -127,13 +143,13 @@ export const PremiumEventPosterCard = React.memo(function PremiumEventPosterCard
               accessible={false}
             />
           ) : null}
-          <Image
+          {!!displayPosterUri ? <Image
             source={{ uri: displayPosterUri }}
             style={isFeed ? styles.feedImage : isHorizontal ? styles.horizontalImage : styles.verticalImage}
             contentFit={isFeed ? "contain" : "cover"}
             recyclingKey={`${event.id}-${displayPosterUri}`}
             onError={() => setPosterFailed(true)}
-          />
+          /> : null}
           <LinearGradient
             colors={['transparent', 'rgba(0,0,0,0.55)']}
             style={styles.imageGradient}
@@ -308,6 +324,9 @@ const HORIZONTAL_WIDTH = 280;
 export const POSTER_HORIZONTAL_CARD_MIN_HEIGHT = 278;
 
 const styles = StyleSheet.create({
+  posterFallback: { flex: 1, alignItems: 'center', justifyContent: 'center', gap: 10, paddingHorizontal: 18 },
+  posterFallbackTitle: { color: '#fff', fontWeight: '800', fontSize: 16, textAlign: 'center' },
+  posterFallbackCaption: { color: 'rgba(255,255,255,0.7)', letterSpacing: 1.2, fontSize: 10, fontWeight: '700' },
   feedWrap: {
     width: '100%',
   },

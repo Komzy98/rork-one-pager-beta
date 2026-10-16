@@ -130,17 +130,18 @@ async function ensureEventPlanId(
   event: LocalEvent,
   inviterUsername: string | null
 ): Promise<string | null> {
+  const ownerId = await resolveInviterUserId(admin, inviterUsername);
+  if (!ownerId) return null;
+  // Different organising groups may have plans for the same event.
   const { data: existing } = await admin
     .from('shared_plans')
     .select('id')
     .eq('plan_type', 'event')
     .eq('entity_id', event.id)
+    .eq('owner_id', ownerId)
     .maybeSingle();
 
   if (existing?.id) return existing.id;
-
-  const ownerId = await resolveInviterUserId(admin, inviterUsername);
-  if (!ownerId) return null;
 
   const payload = {
     title: event.title,
@@ -169,6 +170,7 @@ async function ensureEventPlanId(
         .select('id')
         .eq('plan_type', 'event')
         .eq('entity_id', event.id)
+        .eq('owner_id', ownerId)
         .maybeSingle();
       return retry?.id ?? null;
     }

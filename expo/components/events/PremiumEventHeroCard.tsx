@@ -12,6 +12,8 @@ import {
 } from 'react-native';
 import { Heart, Sparkles, Ticket, X } from 'lucide-react-native';
 import { LinearGradient } from 'expo-linear-gradient';
+import { Image } from 'expo-image';
+import { resolveEventPosterUrl } from '@/utils/eventPosterImage';
 import * as Haptics from 'expo-haptics';
 import type { LocalEvent } from '@/types/events';
 import { formatDistanceKm, getEventCountdownLabel, shortenEventTitleForHero } from '@/utils/eventDiscovery';
@@ -67,6 +69,8 @@ function HeroSlide({
 }: HeroSlideProps) {
   const scaleAnim = useRef(new Animated.Value(1)).current;
   const hasConcierge = index === 0 && !!concierge;
+  const [artworkFailed, setArtworkFailed] = useState(false);
+  const realPosterUrl = resolveEventPosterUrl(event.image);
 
   const handlePressIn = useCallback(() => {
     Animated.spring(scaleAnim, { toValue: 0.985, useNativeDriver: true, tension: 200, friction: 14 }).start();
@@ -107,12 +111,17 @@ function HeroSlide({
     >
       <Animated.View style={[styles.media, { transform: [{ scale: scaleAnim }] }]}>
         <LinearGradient colors={theme.colors} style={styles.image} />
-        <View style={styles.artBackdrop} pointerEvents="none">
+        {!!realPosterUrl && !artworkFailed ? (
+          <Image source={{ uri: realPosterUrl }} style={styles.image}
+            contentFit="cover" transition={250} cachePolicy="memory-disk"
+            onError={() => setArtworkFailed(true)} />
+        ) : null}
+        {(!realPosterUrl || artworkFailed) ? <View style={styles.artBackdrop} pointerEvents="none">
           <Text style={styles.artGlyph}>{theme.glyph}</Text>
           <View style={styles.artLine} />
           <Text style={styles.artCategory}>{theme.label}</Text>
           <Text style={styles.artBrand}>ONE PAGER / DISCOVER</Text>
-        </View>
+        </View> : null}
         <LinearGradient colors={[...palette.heroScrim]} style={styles.scrim} />
         <LinearGradient
           colors={['rgba(30,38,96,0.18)', 'transparent']}
