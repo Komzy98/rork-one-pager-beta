@@ -8,13 +8,9 @@ import {
 } from '@/utils/onboardingFlow';
 
 /**
- * Dynamic onboarding steps branch by interest:
- * - Football → football-favorites → feed-tuning (right after sports picks)
- * - NBA only → nba-teams
- * - Movies → streaming
- * - Events → event-categories (music, comedy, tech, etc.)
- * - Fitness/productivity/etc. → chronotype → calendar (after sports tuning)
- * - UFC/F1-only → interests → complete (short path)
+ * First-run onboarding is intentionally short: interests -> one relevant
+ * quick preference (when supported) -> preview -> classic Overview.
+ * Original detailed setup routes are still accessible after onboarding.
  */
 export function useOnboardingStepMeta(screen: OnboardingScreenId = 'interests') {
   const { profile } = useUserProfile();

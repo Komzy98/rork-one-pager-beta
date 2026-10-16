@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState } from 'react';
 import { Platform } from 'react-native';
 import { DEFAULT_COORDS } from '@/constants/mockEvents';
+import { useUserProfile } from '@/hooks/useUserProfile';
 
 export interface UserCoords {
   latitude: number;
@@ -94,12 +95,25 @@ async function readDeviceCoords(): Promise<{
 }
 
 export function useUserLocation(): UseUserLocationResult {
+  const { profile, isLoading: profileLoading } = useUserProfile();
+  const preferred = profile?.preferredEventsCity;
+  const preferredName = preferred?.name;
+  const preferredLat = preferred?.latitude;
+  const preferredLon = preferred?.longitude;
   const [coords, setCoords] = useState<UserCoords>(DEFAULT_COORDS);
   const [areaLabel, setAreaLabel] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [permissionDenied, setPermissionDenied] = useState(false);
 
   const refresh = useCallback(async () => {
+    if (profileLoading) return; // Do not request GPS until a saved city preference has loaded.
+    if (preferredName && preferredLat !== undefined && preferredLon !== undefined) {
+      setCoords({ latitude: preferredLat, longitude: preferredLon });
+      setAreaLabel(preferredName);
+      setPermissionDenied(false);
+      setIsLoading(false);
+      return;
+    }
     setIsLoading(true);
     const { coords: nextCoords, permissionDenied: denied } = await readDeviceCoords();
     setCoords(nextCoords);
@@ -107,7 +121,7 @@ export function useUserLocation(): UseUserLocationResult {
     const label = await reverseGeocodeLabel(nextCoords.latitude, nextCoords.longitude);
     setAreaLabel(label);
     setIsLoading(false);
-  }, []);
+  }, [profileLoading, preferredName, preferredLat, preferredLon]);
 
   useEffect(() => {
     void refresh();

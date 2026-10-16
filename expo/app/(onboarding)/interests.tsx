@@ -93,8 +93,12 @@ export default function InterestsScreen() {
   const handleContinue = useCallback(() => {
     void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
     updateInterests(selectedInterests);
-    router.push(getNextOnboardingRoute('interests', selectedInterests) as any);
-  }, [selectedInterests, updateInterests, router]);
+    if (returnTo === 'activities') {
+      router.replace('/(tabs)/activities' as any);
+    } else {
+      router.push(getNextOnboardingRoute('interests', selectedInterests) as any);
+    }
+  }, [selectedInterests, updateInterests, router, returnTo]);
 
   const handleBack = useCallback(() => {
     if (returnTo === 'activities') {
@@ -118,8 +122,8 @@ export default function InterestsScreen() {
 
       <Animated.View style={[styles.titleWrap, { opacity: fadeAnim, transform: [{ translateY: titleSlide }] }]}>
         <Text style={styles.stepLabel}>STEP 1 · INTERESTS</Text>
-        <Text style={styles.title}>What excites you?</Text>
-        <Text style={styles.subtitle}>Pick your interests to personalise your experience</Text>
+        <Text style={styles.title}>What matters to you?</Text>
+        <Text style={styles.subtitle}>Choose your favourites. We’ll personalise one now, and you can add more anytime.</Text>
       </Animated.View>
 
       <ScrollView
@@ -190,7 +194,7 @@ export default function InterestsScreen() {
           <Text style={styles.selectionLabel}>
             {selectedInterests.length === 0
               ? 'Select at least one'
-              : 'selected · you can refine later in Sports settings'}
+              : 'selected · you can refine these anytime'}
           </Text>
         </View>
 

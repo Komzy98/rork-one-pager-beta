@@ -456,6 +456,8 @@ export interface UserProfile {
   interests: string[];
   /** Bento event categories picked during onboarding (music, comedy, tech, etc.). */
   favoriteEventCategories?: string[];
+  /** Optional city preference for Events; no GPS permission required. */
+  preferredEventsCity?: import('@/utils/onboardingEventCities').OnboardingEventCity;
   chronotype?: Chronotype;
   nationalities?: UserNationality[]; // User's nationalities for national team matches (AFCON, World Cup, etc.)
   notificationSettings: {

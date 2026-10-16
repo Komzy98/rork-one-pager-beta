@@ -948,6 +948,21 @@ function EventsScreenInner() {
                       ? `Around ${areaLabel}`
                       : 'Discover events picked for you'}
                 </Text>
+                {mainTab === 'discover' ? (
+                  <TouchableOpacity
+                    onPress={() => router.push({
+                      pathname: '/(onboarding)/quick-setup',
+                      params: { returnTo: 'events' },
+                    } as any)}
+                    accessibilityRole="button"
+                    accessibilityLabel="Change event preferences and city"
+                    style={{ alignSelf: 'flex-start', paddingTop: 5, paddingBottom: 3 }}
+                  >
+                    <Text style={{ color: palette.primary, fontSize: 12, fontWeight: '700' }}>
+                      Change city & interests
+                    </Text>
+                  </TouchableOpacity>
+                ) : null}
               </View>
             </View>
 

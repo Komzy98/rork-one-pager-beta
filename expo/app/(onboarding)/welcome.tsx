@@ -10,26 +10,24 @@ import {
   ScrollView,
 } from 'react-native';
 import { useRouter } from 'expo-router';
-import { ArrowRight, Link2, Sparkles, Tv, ListChecks, Zap, Shield } from 'lucide-react-native';
+import { ArrowRight, Sparkles, ListChecks, Zap, Shield } from 'lucide-react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import * as Haptics from 'expo-haptics';
 import { LinearGradient } from 'expo-linear-gradient';
-import { useAuth } from '@/hooks/useAuth';
 import { useUserProfile } from '@/hooks/useUserProfile';
+import { useAuth } from '@/hooks/useAuth';
 import { COLORS } from '@/constants/colors';
 import { ONBOARDING_PREMIUM } from '@/constants/onboardingTheme';
 
 const FEATURES = [
-  { icon: Link2, title: 'Streaming services', desc: 'Connect providers for Continue watching & picks' },
-  { icon: Zap, title: 'Smart habits & tasks', desc: 'AI-assisted routines that fit your day' },
-  { icon: Sparkles, title: 'Live sports', desc: 'Scores, teams, and alerts you care about' },
-  { icon: Tv, title: 'Shows & movies', desc: 'Track what you watch in one place' },
-  { icon: ListChecks, title: 'Your overview', desc: 'Calendar, weather, and daily focus' },
+  { icon: ListChecks, title: 'Overview', desc: 'Tasks, habits and your important moments.' },
+  { icon: Zap, title: 'Sports', desc: 'Your favourite teams and leagues in one place.' },
+  { icon: Sparkles, title: 'Events & Shows', desc: 'Discover things to do and track what you watch.' },
 ];
 
 export default function WelcomeScreen() {
   const router = useRouter();
-  const { user, isGuest } = useAuth();
+  const { isGuest } = useAuth();
   const { completeOnboarding } = useUserProfile();
   const insets = useSafeAreaInsets();
 
@@ -67,7 +65,6 @@ export default function WelcomeScreen() {
     router.push('/(auth)/signup' as any);
   }, [router]);
 
-  const userName = isGuest ? 'there' : user?.name?.split(' ')[0] || 'there';
 
   return (
     <View style={[styles.root, { paddingTop: insets.top + 16 }]}>
@@ -90,12 +87,12 @@ export default function WelcomeScreen() {
           <Text style={styles.kicker}>Personal setup</Text>
           <Animated.View style={[styles.logoWrap, { transform: [{ scale: logoScale }] }]}>
             <Image
-              source={{ uri: 'https://r2-pub.rork.com/attachments/fjpmfu4g76ll0wi3po34f' }}
+              source={require('../../assets/images/icon.png')}
               style={styles.logo}
               resizeMode="contain"
             />
           </Animated.View>
-          <Text style={styles.greeting}>Hey {userName}</Text>
+          <Text style={styles.greeting}>Make One Pager yours.</Text>
           <Text style={styles.tagline}>
             Let&apos;s tailor One Pager to you — streaming, sports, and habits.
           </Text>
@@ -131,7 +128,7 @@ export default function WelcomeScreen() {
               end={{ x: 1, y: 1 }}
               style={styles.primaryBtnGradient}
             >
-              <Text style={styles.primaryBtnText}>Get started</Text>
+              <Text style={styles.primaryBtnText}>Make it mine</Text>
               <View style={styles.primaryBtnIcon}>
                 <ArrowRight size={18} color="#FFF" strokeWidth={2.5} />
               </View>
@@ -153,7 +150,7 @@ export default function WelcomeScreen() {
             <Text style={styles.securityHintCardText}>Secure your account later with 2FA in Profile.</Text>
           </View>
 
-          <Text style={styles.timeHint}>Full setup takes about 2 minutes · You can skip any step</Text>
+          <Text style={styles.timeHint}>A few quick choices. You can always personalise more later.</Text>
 
           {isGuest ? (
             <TouchableOpacity style={styles.linkRow} onPress={handleCreateAccount} activeOpacity={0.7}>

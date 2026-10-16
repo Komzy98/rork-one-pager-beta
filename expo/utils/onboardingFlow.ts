@@ -1,14 +1,16 @@
-/** Habit / lifestyle interests that trigger chronotype + calendar setup. */
+/**
+ * Onboarding V2: welcome -> interests -> one relevant preference -> preview.
+ * All the existing detailed setup routes remain available from the app, but
+ * don't gate the first useful experience behind provider logins or permissions.
+ */
 export const HABIT_ONBOARDING_INTERESTS = [
-  'fitness',
-  'productivity',
-  'learning',
-  'events',
-  'cooking',
+  'fitness', 'productivity', 'learning', 'events', 'cooking',
 ] as const;
 
+export type QuickSetupFocus = 'football' | 'nba' | 'events' | 'movies' | 'task' | null;
 export type OnboardingScreenId =
   | 'interests'
+  | 'quick-setup'
   | 'event-categories'
   | 'football-favorites'
   | 'nba-teams'
@@ -21,6 +23,7 @@ export type OnboardingScreenId =
 
 const SCREEN_ROUTES: Record<Exclude<OnboardingScreenId, 'complete'>, string> = {
   interests: '/(onboarding)/interests',
+  'quick-setup': '/(onboarding)/quick-setup',
   'event-categories': '/(onboarding)/event-categories',
   'football-favorites': '/(onboarding)/football-favorites',
   'nba-teams': '/(onboarding)/nba-teams',
@@ -31,112 +34,73 @@ const SCREEN_ROUTES: Record<Exclude<OnboardingScreenId, 'complete'>, string> = {
   'joy-sources': '/(onboarding)/joy-sources',
 };
 
-function hasInterest(interests: readonly string[], id: string): boolean {
-  return interests.includes(id);
-}
-
-function wantsHabitsSetup(interests: readonly string[]): boolean {
-  return interests.some((id) =>
-    (HABIT_ONBOARDING_INTERESTS as readonly string[]).includes(id),
-  );
-}
-
-/** Linear onboarding path from interests selection (excludes welcome + complete from progress). */
-export function buildOnboardingPath(interests: readonly string[]): OnboardingScreenId[] {
-  const path: OnboardingScreenId[] = ['interests'];
-
-  if (hasInterest(interests, 'events')) {
-    path.push('event-categories');
-  }
-
-  if (hasInterest(interests, 'football')) {
-    path.push('football-favorites');
-    if (hasInterest(interests, 'nba')) {
-      path.push('nba-teams');
+/** The first supported selection gets personalised first; additional interests
+ * are saved and can be configured later in their original tabs. */
+export function getQuickSetupFocus(interests: readonly string[]): QuickSetupFocus {
+  for (const interest of interests) {
+    if (interest === 'football' || interest === 'nba' || interest === 'events' || interest === 'movies') {
+      return interest;
     }
-    path.push('feed-tuning');
-  } else if (hasInterest(interests, 'nba')) {
-    path.push('nba-teams');
+    if (interest === 'productivity' || interest === 'fitness' || interest === 'learning') {
+      return 'task';
+    }
   }
+  return null;
+}
 
-  if (hasInterest(interests, 'movies')) {
-    path.push('streaming');
-  }
-
-  if (wantsHabitsSetup(interests)) {
-    path.push('chronotype', 'calendar');
-  }
-
-  path.push('joy-sources', 'complete');
-  return path;
+export function buildOnboardingPath(interests: readonly string[]): OnboardingScreenId[] {
+  return getQuickSetupFocus(interests)
+    ? ['interests', 'quick-setup', 'complete']
+    : ['interests', 'complete'];
 }
 
 export function getNextOnboardingScreen(
-  current: OnboardingScreenId,
-  interests: readonly string[],
+  current: OnboardingScreenId, interests: readonly string[],
 ): OnboardingScreenId {
   const path = buildOnboardingPath(interests);
   const idx = path.indexOf(current);
-  if (idx === -1 || idx >= path.length - 1) {
-    return 'complete';
-  }
-  return path[idx + 1]!;
+  return idx < 0 || idx >= path.length - 1 ? 'complete' : path[idx + 1]!;
 }
 
-export function getOnboardingRoute(
-  screen: Exclude<OnboardingScreenId, 'complete'>,
-): string {
+export function getOnboardingRoute(screen: Exclude<OnboardingScreenId, 'complete'>): string {
   return SCREEN_ROUTES[screen];
 }
 
 export function getNextOnboardingRoute(
-  current: OnboardingScreenId,
-  interests: readonly string[],
+  current: OnboardingScreenId, interests: readonly string[],
 ): string {
   const next = getNextOnboardingScreen(current, interests);
-  if (next === 'complete') {
-    return '/(onboarding)/complete';
-  }
-  return SCREEN_ROUTES[next];
+  return next === 'complete' ? '/(onboarding)/complete' : SCREEN_ROUTES[next];
 }
 
-/** Progress bar: numbered steps only (excludes terminal complete screen). */
 export function getOnboardingProgressMeta(
-  screen: OnboardingScreenId,
-  interests: readonly string[],
+  screen: OnboardingScreenId, interests: readonly string[],
 ): { currentStep: number; totalSteps: number } {
-  const path: OnboardingScreenId[] = buildOnboardingPath(interests).filter(
-    (s) => s !== 'complete',
-  );
+  const path: OnboardingScreenId[] = buildOnboardingPath(interests).filter((s) => s !== 'complete');
   const idx = path.indexOf(screen);
   return {
-    currentStep: idx >= 0 ? idx + 1 : 1,
+    currentStep: idx >= 0 ? idx + 1 : path.length,
     totalSteps: Math.max(path.length, 1),
   };
 }
 
 export function hasFootballOnboarding(interests: readonly string[]): boolean {
-  return hasInterest(interests, 'football');
+  return interests.includes('football');
 }
-
 export function hasNbaOnboarding(interests: readonly string[]): boolean {
-  return hasInterest(interests, 'nba');
+  return interests.includes('nba');
 }
-
 export function hasMoviesOnboarding(interests: readonly string[]): boolean {
-  return hasInterest(interests, 'movies');
+  return interests.includes('movies');
 }
-
 export function hasEventsOnboarding(interests: readonly string[]): boolean {
-  return hasInterest(interests, 'events');
+  return interests.includes('events');
 }
 
-/** @deprecated Use football-favorites — kept for deep links */
+/** Old deep links intentionally remain valid for profile / edit entry points. */
 export type LegacyOnboardingScreenId = 'leagues' | 'nationality' | 'teams';
-
 export function resolveLegacyOnboardingRoute(legacy: LegacyOnboardingScreenId): string {
-  if (legacy === 'leagues' || legacy === 'nationality' || legacy === 'teams') {
-    return SCREEN_ROUTES['football-favorites'];
-  }
-  return SCREEN_ROUTES.interests;
+  return ['leagues', 'nationality', 'teams'].includes(legacy)
+    ? SCREEN_ROUTES['football-favorites']
+    : SCREEN_ROUTES.interests;
 }

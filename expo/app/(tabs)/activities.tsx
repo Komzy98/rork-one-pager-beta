@@ -17,7 +17,6 @@ import { useTodayYmd } from '@/hooks/useTodayYmd';
 import { router, Stack, useLocalSearchParams } from 'expo-router';
 import { useFocusEffect } from '@react-navigation/native';
 import SwipeableTabContainer from '@/components/SwipeableTabContainer';
-import TabWalkthrough from '@/components/TabWalkthrough';
 import CalendarImporter from '@/components/CalendarImporter';
 import EventKitManager from '@/components/EventKitManager';
 import ModernSportsSection from '@/components/ModernSportsSection';
@@ -2065,7 +2064,6 @@ export default function ActivitiesScreen() {
 
   return (
     <SwipeableTabContainer>
-      <TabWalkthrough tabName="activities" />
       <Stack.Screen options={{ headerShown: false }} />
 
       <Animated.ScrollView
