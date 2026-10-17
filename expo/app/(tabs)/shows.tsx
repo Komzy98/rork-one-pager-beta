@@ -109,6 +109,7 @@ import { applyReleaseAwareWatchProviders } from '@/utils/watchProviderAvailabili
 import { episodeNotificationService, TrackedShow } from '@/utils/episodeNotificationService';
 import { useUserProfile } from '@/hooks/useUserProfile';
 import { useDismissedContinueWatching } from '@/hooks/useDismissedContinueWatching';
+import { readStreamingCatalogue, writeStreamingCatalogue } from '@/utils/streamingCatalogCache';
 import { getYounifyContinueWatchingDismissKey } from '@/utils/continueWatchingDismiss';
 import { getNationalitySignals } from '@/utils/nationalityPersonalization';
 import { likedContentService } from '@/utils/likedContentService';
@@ -989,6 +990,8 @@ export default function ShowsScreen() {
   const streamingSectionsRef = useRef<YounifyBrowseSection[]>([]);
   const streamingInitializedRef = useRef(false);
   const YOUNIFY_REFETCH_COOLDOWN_MS = 2 * 60 * 1000;
+  const streamingOwnerRef = useRef<string | null>(null);
+  const streamingHydrationRef = useRef<{ ownerId: string; promise: Promise<void> } | null>(null);
   const younifyEpisodeIndex = useMemo(
     () => buildYounifyProviderIndex(streamingSections, linkedProviderIds),
     [streamingSections, linkedProviderIds],
@@ -1039,8 +1042,8 @@ export default function ShowsScreen() {
     streamingInitializedRef.current = streamingInitialized;
   }, [streamingInitialized]);
 
-  /** Single SDK round-trip: configure + linked services + one catalog fetch (see `loadYounifyStreamingBundle`). */
-  const applyLinkedStreamingServices = useCallback((linkedList: readonly any[]) => {
+  /** Return the safe TMDB provider IDs, not linked-service credentials. */
+  const applyLinkedStreamingServices = useCallback((linkedList: readonly any[]): number[] => {
     setLinkedStreamingCount(linkedList.length);
     setHasLinkedServices(linkedList.length > 0);
     const ids = Array.from(
@@ -1056,74 +1059,167 @@ export default function ShowsScreen() {
       ),
     );
     setLinkedProviderIds(ids);
+    return ids;
   }, []);
 
+  /**
+   * Hydrate BEFORE the network request. All snapshots are scoped to the active app
+   * account and old asynchronous responses are ignored when that account changes.
+   * The SDK itself is reset by accountIsolation on sign-out/switch.
+   */
+  const ensureStreamingHydrated = useCallback((ownerId: string): Promise<void> => {
+    if (streamingOwnerRef.current === ownerId && streamingHydrationRef.current?.ownerId === ownerId) {
+      return streamingHydrationRef.current.promise;
+    }
+
+    streamingOwnerRef.current = ownerId;
+    streamingHydrationRef.current = null;
+    younifyFetchInFlightRef.current = null;
+    lastYounifyFetchAtRef.current = 0;
+    younifyContentRef.current = [];
+    streamingSectionsRef.current = [];
+    streamingInitializedRef.current = false;
+    setYounifyContent([]);
+    setStreamingSections([]);
+    setHasLinkedServices(false);
+    setLinkedStreamingCount(0);
+    setLinkedProviderIds([]);
+    setStreamingInitialized(false);
+    setYounifyLoading(true);
+    setStreamingLoading(false);
+    setStreamingLoadProgress(null);
+    setStreamingLoadError(null);
+
+    const promise = (async () => {
+      const startedAt = Date.now();
+      const cached = await readStreamingCatalogue(ownerId);
+      if (streamingOwnerRef.current !== ownerId) return;
+      if (cached) {
+        younifyContentRef.current = cached.heroContent;
+        streamingSectionsRef.current = cached.browseSections;
+        streamingInitializedRef.current = true;
+        lastYounifyFetchAtRef.current = cached.savedAt;
+        setYounifyContent(cached.heroContent);
+        setStreamingSections(cached.browseSections);
+        setLinkedStreamingCount(cached.linkedStreamingCount);
+        setHasLinkedServices(cached.linkedStreamingCount > 0);
+        setLinkedProviderIds(cached.linkedProviderIds);
+        setStreamingInitialized(true);
+        setYounifyLoading(false);
+        if (__DEV__) console.log('[streaming-perf] cache restored in', Date.now() - startedAt, 'ms');
+      }
+    })();
+    streamingHydrationRef.current = { ownerId, promise };
+    return promise;
+  }, []);
+
+  useEffect(() => {
+    if (!authInitialized) return;
+    if (user?.id) {
+      void ensureStreamingHydrated(user.id);
+      return;
+    }
+    // A signed-out user must never see a previous account's linked catalog.
+    streamingOwnerRef.current = null;
+    streamingHydrationRef.current = null;
+    younifyFetchInFlightRef.current = null;
+    lastYounifyFetchAtRef.current = 0;
+    younifyContentRef.current = [];
+    streamingSectionsRef.current = [];
+    streamingInitializedRef.current = false;
+    setYounifyContent([]);
+    setStreamingSections([]);
+    setHasLinkedServices(false);
+    setLinkedStreamingCount(0);
+    setLinkedProviderIds([]);
+    setStreamingInitialized(false);
+    setYounifyLoading(false);
+    setStreamingLoading(false);
+    setStreamingLoadProgress(null);
+  }, [authInitialized, user?.id, ensureStreamingHydrated]);
+
+  /** Keep last successful content interactive; revalidate silently in the background. */
   const refetchYounifyStreamingUnified = useCallback(async (opts?: { force?: boolean; silent?: boolean }) => {
+    const ownerId = user?.id;
+    if (!authInitialized || !ownerId) return;
+    await ensureStreamingHydrated(ownerId);
+    if (streamingOwnerRef.current !== ownerId) return;
+
     const force = opts?.force === true;
     const silent = opts?.silent === true;
-    const now = Date.now();
     const hasLocalContent =
       younifyContentRef.current.length > 0 ||
-      streamingSectionsRef.current.some((s) => Array.isArray(s.items) && s.items.length > 0);
+      streamingSectionsRef.current.some((section) => Array.isArray(section.items) && section.items.length > 0);
 
-    // Cool down repeated focus events unless explicitly forced.
     if (
       !force &&
       streamingInitializedRef.current &&
       hasLocalContent &&
-      now - lastYounifyFetchAtRef.current < YOUNIFY_REFETCH_COOLDOWN_MS
-    ) {
-      return;
-    }
+      Date.now() - lastYounifyFetchAtRef.current < YOUNIFY_REFETCH_COOLDOWN_MS
+    ) return;
 
-    // Deduplicate concurrent calls from tab-change + focus + auth effects.
-    if (younifyFetchInFlightRef.current) {
-      return younifyFetchInFlightRef.current;
-    }
+    // A focus event and a tab press should share one in-flight request.
+    if (younifyFetchInFlightRef.current) return younifyFetchInFlightRef.current;
 
     const task = (async () => {
-      const shouldShowBlockingLoader = !silent && !hasLocalContent;
       const shouldTrackProgress = !hasLocalContent;
+      const startedAt = Date.now();
       try {
-        if (shouldShowBlockingLoader) {
+        if (!silent && !hasLocalContent) {
           setYounifyLoading(true);
           setStreamingLoading(true);
         }
         setStreamingLoadError(null);
-        if (shouldTrackProgress) {
-          setStreamingLoadProgress({ progress: 0.05, label: 'Starting…' });
-        }
+        if (shouldTrackProgress) setStreamingLoadProgress({ progress: 0.05, label: 'Connecting…' });
         const bundle = await loadYounifyStreamingBundle({
           onProgress: shouldTrackProgress
-            ? (update) => setStreamingLoadProgress(update)
+            ? (update) => {
+                if (streamingOwnerRef.current === ownerId) setStreamingLoadProgress(update);
+              }
             : undefined,
           onLinkedServices: (linkedList) => {
-            applyLinkedStreamingServices(linkedList);
+            if (streamingOwnerRef.current === ownerId) applyLinkedStreamingServices(linkedList);
           },
         });
-        applyLinkedStreamingServices(bundle.linkedServices);
-        setYounifyContent(Array.isArray(bundle.heroContent) ? bundle.heroContent : []);
-        setStreamingSections(Array.isArray(bundle.browseSections) ? bundle.browseSections : []);
+        if (streamingOwnerRef.current !== ownerId) return;
+        const hero = Array.isArray(bundle.heroContent) ? bundle.heroContent : [];
+        const sections = Array.isArray(bundle.browseSections) ? bundle.browseSections : [];
+        const ids = applyLinkedStreamingServices(bundle.linkedServices);
+        younifyContentRef.current = hero;
+        streamingSectionsRef.current = sections;
+        streamingInitializedRef.current = true;
+        setYounifyContent(hero);
+        setStreamingSections(sections);
         lastYounifyFetchAtRef.current = Date.now();
+        // Persist asynchronously; no disk writes on the critical UI rendering path.
+        void writeStreamingCatalogue(ownerId, {
+          linkedStreamingCount: bundle.linkedServices.length,
+          linkedProviderIds: ids,
+          heroContent: hero,
+          browseSections: sections,
+        });
+        if (__DEV__) console.log('[streaming-perf] SDK catalogue in', Date.now() - startedAt, 'ms');
       } catch (error) {
-        const message =
-          error instanceof Error ? error.message : 'Could not load your streaming catalogs';
-        setStreamingLoadError(message);
-        if (__DEV__) {
-          console.warn('Failed to load Younify streaming bundle:', error);
-        }
+        if (streamingOwnerRef.current !== ownerId) return;
+        setStreamingLoadError(
+          error instanceof Error ? error.message : 'Could not refresh your streaming catalog',
+        );
+        if (__DEV__) console.warn('[streaming-perf] SDK refresh failed after', Date.now() - startedAt, 'ms', error);
+        // Intentionally preserve cached content and linked services.
       } finally {
-        setYounifyLoading(false);
-        setStreamingLoading(false);
-        setStreamingInitialized(true);
-        setStreamingLoadProgress(null);
-        younifyFetchInFlightRef.current = null;
+        if (streamingOwnerRef.current === ownerId) {
+          setYounifyLoading(false);
+          setStreamingLoading(false);
+          setStreamingInitialized(true);
+          streamingInitializedRef.current = true;
+          setStreamingLoadProgress(null);
+          younifyFetchInFlightRef.current = null;
+        }
       }
     })();
-
     younifyFetchInFlightRef.current = task;
     return task;
-  }, [applyLinkedStreamingServices]);
+  }, [authInitialized, user?.id, applyLinkedStreamingServices, ensureStreamingHydrated]);
 
   const onStreamingPullRefresh = useCallback(async () => {
     setStreamingRefreshing(true);
@@ -1156,7 +1252,7 @@ export default function ShowsScreen() {
   /** Account switch: force-refresh linked streaming data for the signed-in user. */
   useEffect(() => {
     if (!authInitialized) return;
-    void refetchYounifyStreamingUnified({ force: true, silent: true });
+    void refetchYounifyStreamingUnified({ silent: true });
   }, [authInitialized, user?.id, refetchYounifyStreamingUnified]);
 
   /** When the Streaming subtab is opened, ensure load runs with visible progress if rows are not cached yet. */
