@@ -96,7 +96,7 @@ export default function ConnectedServicesHero({
   if (loading) {
     return (
       <View style={styles.section}>
-        <View style={[styles.slideFrame, { width: HERO_CARD_WIDTH, height: HERO_HEIGHT, alignSelf: "center" }]}>
+        <View style={[styles.slideFrame, { width: HERO_CARD_WIDTH, height: 240, alignSelf: "center" }]}>
           <View style={styles.skeletonInner}>
             {loadProgress ? (
               <View style={styles.progressWrap}>
@@ -161,6 +161,9 @@ export default function ConnectedServicesHero({
     <View style={styles.section}>
       <RNAnimated.FlatList
         data={slides}
+        initialNumToRender={2}
+        maxToRenderPerBatch={2}
+        windowSize={3}
         horizontal
         pagingEnabled
         decelerationRate="fast"
