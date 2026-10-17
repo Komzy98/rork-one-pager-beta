@@ -36,8 +36,9 @@ yarn-error.*
 *.tsbuildinfo
 .vercel
 
-ios/
-android/
+# Ignore generated app projects, not nested local Expo modules.
+/ios/
+/android/
 .rork
 .env
 rork-eslint.config.js
