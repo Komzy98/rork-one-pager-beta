@@ -173,6 +173,9 @@ const styles = StyleSheet.create({
   },
   posterWrap: {
     position: "relative",
+    // Absolutely positioned poster Pressable does not contribute intrinsic height.
+    // Reserve a 2:3 portrait slot or the entire artwork area collapses to zero.
+    aspectRatio: 2 / 3,
     borderRadius: 6,
     overflow: "hidden",
     backgroundColor: "#0B0E14",
