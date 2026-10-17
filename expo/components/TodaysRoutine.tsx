@@ -542,7 +542,7 @@ const RoutineItem = ({
               { color: colors.text },
               isCompleted && [styles.routineItemTitleCompleted, { color: colors.textMuted }],
             ]}
-            numberOfLines={1}
+            numberOfLines={2}
           >
             {displayTitle}
           </Text>
