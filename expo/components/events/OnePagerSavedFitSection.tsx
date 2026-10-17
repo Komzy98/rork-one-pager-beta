@@ -38,7 +38,6 @@ export function OnePagerSavedFitSection({
   timeFormat = '12h',
 }: OnePagerSavedFitSectionProps) {
   const visibleEvents = useMemo(() => events.slice(0, maxItems), [events, maxItems]);
-  if (visibleEvents.length === 0) return null;
 
   const handleOpen = useCallback((eventId: string) => {
     void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
@@ -49,6 +48,8 @@ export function OnePagerSavedFitSection({
     router.push('/(tabs)/events' as never);
   }, []);
 
+  // Keep all hooks unconditional, including when no upcoming events are saved.
+  if (visibleEvents.length === 0) return null;
   return (
     <View style={styles.section}>
       <View style={styles.headerRow}>
