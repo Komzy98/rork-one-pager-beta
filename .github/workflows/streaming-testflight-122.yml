@@ -35,7 +35,8 @@ jobs:
 
   build-and-submit:
     needs: validate
-    if: ${{ github.event_name == 'workflow_dispatch' || github.event.head_commit.message == 'ci: one-time build 122 to TestFlight' }}
+    if: >-
+      ${{ github.event_name == 'workflow_dispatch' || github.event.head_commit.message == 'ci: one-time build 122 to TestFlight' }}
     runs-on: ubuntu-latest
     timeout-minutes: 120
     defaults:
