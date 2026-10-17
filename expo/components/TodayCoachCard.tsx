@@ -1,5 +1,5 @@
 import React, { useMemo } from 'react';
-import { StyleSheet, Text, TouchableOpacity, View } from 'react-native';
+import { ActivityIndicator, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 import { Share2, Volume2, VolumeX, X } from 'lucide-react-native';
 
 import { useTheme } from '@/hooks/useTheme';
@@ -34,9 +34,8 @@ function firstUsefulSentence(value: string, max = 220) {
 }
 
 /**
- * The old "AI coach" shell was intentionally removed.
- * Daily synthesis only appears when there is a real summary to communicate,
- * and it is presented as a normal day review rather than an AI feature.
+ * The daily summary is presented as an ordinary compact day review, not
+ * as an AI feature or a separate coaching dashboard.
  */
 export default function TodayCoachCard(props: TodayCoachCardProps) {
   const { colors, isDark } = useTheme();
@@ -59,9 +58,9 @@ export default function TodayCoachCard(props: TodayCoachCardProps) {
   const supportingLine = useMemo(() => {
     if (!dailySummary) return null;
     const challenge = dailySummary.challenges?.find(Boolean);
-    if (challenge) return `Still worth noticing: ${challenge}`;
+    if (challenge) return `Focus next: ${challenge}`;
     const win = dailySummary.wins?.find(Boolean);
-    if (win) return `Good signal: ${win}`;
+    if (win) return `A win today: ${win}`;
     if (yesterdayDelta?.habitsLabel) return yesterdayDelta.habitsLabel;
     return null;
   }, [dailySummary, yesterdayDelta]);
@@ -70,66 +69,149 @@ export default function TodayCoachCard(props: TodayCoachCardProps) {
 
   return (
     <View style={styles.wrap}>
-      <View style={[styles.rule, { backgroundColor: colors.border }]} />
-      <View style={styles.header}>
-        <View style={styles.copy}>
+      <View style={[styles.card, { backgroundColor: colors.card, borderColor: colors.border }]}>
+        <View style={styles.topRow}>
           <Text style={[styles.kicker, { color: colors.textMuted }]}>DAY REVIEW</Text>
-          <Text style={[styles.review, { color: colors.text }]}>{review}</Text>
-          {supportingLine ? (
-            <Text style={[styles.supporting, { color: colors.textSecondary }]}>{supportingLine}</Text>
-          ) : null}
-          {!recoveryActive ? (
-            <Text style={[styles.meta, { color: colors.textMuted }]}>Today · {dailySummary.score}/100</Text>
-          ) : (
-            <Text style={[styles.meta, { color: colors.textMuted }]}>Today · recovery mode</Text>
-          )}
-        </View>
-        <TouchableOpacity
-          onPress={onDismissSummary}
-          accessibilityLabel="Dismiss day review"
-          hitSlop={8}
-          style={[styles.iconButton, { backgroundColor: isDark ? '#242832' : '#F1F4F8' }]}
-        >
-          <X size={16} color={colors.textSecondary} />
-        </TouchableOpacity>
-      </View>
-
-      <View style={styles.actions}>
-        <TouchableOpacity
-          onPress={onToggleListen}
-          disabled={isVoicePending}
-          style={[styles.action, { backgroundColor: isDark ? '#20252E' : '#F4F6F9' }]}
-        >
-          {isSpeaking ? <VolumeX size={15} color={colors.text} /> : <Volume2 size={15} color={colors.text} />}
-          <Text style={[styles.actionText, { color: colors.text }]}>
-            {isVoicePending ? 'Preparing…' : isSpeaking ? 'Stop' : 'Listen'}
-          </Text>
-        </TouchableOpacity>
-        {!recoveryActive ? (
           <TouchableOpacity
-            onPress={onShareSummary}
-            style={[styles.action, { backgroundColor: isDark ? '#20252E' : '#F4F6F9' }]}
+            onPress={onDismissSummary}
+            accessibilityRole="button"
+            accessibilityLabel="Dismiss day review"
+            hitSlop={10}
+            style={styles.dismissButton}
           >
-            <Share2 size={15} color={colors.text} />
-            <Text style={[styles.actionText, { color: colors.text }]}>Share</Text>
+            <X size={17} color={colors.textMuted} strokeWidth={2} />
           </TouchableOpacity>
+        </View>
+
+        <Text style={[styles.review, { color: colors.text }]}>{review}</Text>
+        {supportingLine ? (
+          <Text style={[styles.supporting, { color: colors.textSecondary }]} numberOfLines={2}>
+            {supportingLine}
+          </Text>
         ) : null}
+        <Text style={[styles.meta, { color: colors.textMuted }]}>
+          {recoveryActive ? 'Today · Recovery mode' : `Today · Day score ${dailySummary.score}/100`}
+        </Text>
+
+        <View style={[styles.actions, { borderTopColor: colors.border }]}>
+          <TouchableOpacity
+            onPress={onToggleListen}
+            disabled={isVoicePending}
+            accessibilityRole="button"
+            accessibilityLabel={isVoicePending ? 'Preparing audio' : isSpeaking ? 'Stop listening' : 'Listen to day review'}
+            accessibilityState={{ disabled: isVoicePending }}
+            activeOpacity={0.8}
+            style={[styles.listenButton, { backgroundColor: isDark ? '#26344E' : '#EDF2FE', opacity: isVoicePending ? 0.7 : 1 }]}
+          >
+            {isVoicePending ? (
+              <ActivityIndicator size="small" color={colors.primary} />
+            ) : isSpeaking ? (
+              <VolumeX size={16} color={colors.primary} />
+            ) : (
+              <Volume2 size={16} color={colors.primary} />
+            )}
+            <Text style={[styles.listenText, { color: colors.primary }]}>
+              {isVoicePending ? 'Preparing…' : isSpeaking ? 'Stop' : 'Listen'}
+            </Text>
+          </TouchableOpacity>
+
+          {!recoveryActive ? (
+            <TouchableOpacity
+              onPress={onShareSummary}
+              accessibilityRole="button"
+              accessibilityLabel="Share day review"
+              activeOpacity={0.75}
+              style={styles.shareButton}
+            >
+              <Share2 size={15} color={colors.textSecondary} />
+              <Text style={[styles.shareText, { color: colors.textSecondary }]}>Share</Text>
+            </TouchableOpacity>
+          ) : null}
+        </View>
       </View>
     </View>
   );
 }
 
 const styles = StyleSheet.create({
-  wrap: { paddingHorizontal: 20, paddingTop: 8, paddingBottom: 10, gap: 12 },
-  rule: { height: StyleSheet.hairlineWidth },
-  header: { flexDirection: 'row', alignItems: 'flex-start', gap: 12 },
-  copy: { flex: 1, minWidth: 0 },
-  kicker: { fontSize: 9, fontWeight: '900', letterSpacing: 1.25 },
-  review: { marginTop: 5, fontSize: 15, lineHeight: 21, fontWeight: '700' },
-  supporting: { marginTop: 6, fontSize: 12, lineHeight: 17, fontWeight: '500' },
-  meta: { marginTop: 7, fontSize: 10, fontWeight: '700' },
-  iconButton: { width: 32, height: 32, borderRadius: 16, alignItems: 'center', justifyContent: 'center' },
-  actions: { flexDirection: 'row', gap: 8 },
-  action: { minHeight: 36, paddingHorizontal: 12, borderRadius: 12, flexDirection: 'row', alignItems: 'center', gap: 6 },
-  actionText: { fontSize: 12, fontWeight: '750' as any },
+  wrap: {
+    paddingHorizontal: 20,
+    paddingTop: 8,
+    paddingBottom: 12,
+  },
+  card: {
+    paddingHorizontal: 16,
+    paddingTop: 14,
+    paddingBottom: 12,
+    borderRadius: 18,
+    borderWidth: StyleSheet.hairlineWidth,
+  },
+  topRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+  },
+  kicker: {
+    fontSize: 10,
+    fontWeight: '800',
+    letterSpacing: 1.2,
+  },
+  dismissButton: {
+    width: 28,
+    height: 28,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  review: {
+    marginTop: 3,
+    fontSize: 16,
+    lineHeight: 22,
+    fontWeight: '700',
+    letterSpacing: -0.25,
+  },
+  supporting: {
+    marginTop: 6,
+    fontSize: 12.5,
+    lineHeight: 18,
+    fontWeight: '400',
+  },
+  meta: {
+    marginTop: 7,
+    fontSize: 11,
+    lineHeight: 16,
+    fontWeight: '500',
+  },
+  actions: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    marginTop: 12,
+    paddingTop: 11,
+    borderTopWidth: StyleSheet.hairlineWidth,
+  },
+  listenButton: {
+    minHeight: 34,
+    minWidth: 92,
+    paddingHorizontal: 13,
+    borderRadius: 10,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 7,
+  },
+  listenText: {
+    fontSize: 12,
+    fontWeight: '700',
+  },
+  shareButton: {
+    minHeight: 34,
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 10,
+    gap: 7,
+  },
+  shareText: {
+    fontSize: 12,
+    fontWeight: '600',
+  },
 });
