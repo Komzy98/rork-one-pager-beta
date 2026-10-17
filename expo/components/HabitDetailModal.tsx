@@ -8,6 +8,8 @@ import {
   ScrollView,
   Image,
   Animated,
+  Alert,
+  ActivityIndicator,
 } from 'react-native';
 import {
   X,
@@ -30,6 +32,9 @@ import {
   ChevronDown,
   ChevronUp,
   ChefHat,
+  HeartPulse,
+  RefreshCw,
+  CheckCircle2,
 } from 'lucide-react-native';
 import { COLORS } from '@/constants/colors';
 import { CommunityHabit, ExerciseFormGuide } from '@/types/habit';
@@ -39,6 +44,8 @@ import { Platform } from 'react-native';
 import { useCommunity } from '@/hooks/useCommunity';
 import { LinearGradient } from 'expo-linear-gradient';
 import { HabitAccountabilitySection } from '@/components/social/HabitAccountabilitySection';
+import { useHealthContext } from '@/contexts/HealthContext';
+import { getAppleHealthStepHabit } from '@/utils/communityHabitHealth';
 
 
 
@@ -184,6 +191,22 @@ export default function HabitDetailModal({
   const [selectedDays, setSelectedDays] = useState<number[]>([]);
   const router = useRouter();
   const { available: communityAvailable, likedIds, recordLike, getStatsFor } = useCommunity();
+  const health = useHealthContext();
+  const healthStepHabit = habit ? getAppleHealthStepHabit(habit) : null;
+
+  const connectAppleHealth = async () => {
+    if (!health.isAppleHealthAvailable) {
+      Alert.alert(
+        'Apple Health unavailable',
+        'This installed version of One Pager cannot access Apple Health. Install a TestFlight build with HealthKit support and try again.',
+      );
+      return;
+    }
+    const completed = await health.requestStepAccess();
+    if (!completed) {
+      Alert.alert('Could not connect Apple Health', 'Check Health access on your iPhone and try again.');
+    }
+  };
 
   const liked = habit ? likedIds.has(habit.id) : false;
   const likeCount = habit ? (getStatsFor(habit.id)?.likes ?? habit.likes) : 0;
@@ -320,6 +343,68 @@ export default function HabitDetailModal({
                 <Text style={styles.categoryText}>{habit.category}</Text>
               </View>
             </View>
+
+            {Platform.OS === 'ios' && healthStepHabit && (
+              <View style={styles.appleHealthCard} testID="habit-apple-health-card">
+                <View style={styles.appleHealthHeading}>
+                  <View style={styles.appleHealthIcon}>
+                    <HeartPulse size={20} color="#C93F56" />
+                  </View>
+                  <View style={styles.appleHealthHeadingCopy}>
+                    <Text style={styles.appleHealthTitle}>Track with Apple Health</Text>
+                    <Text style={styles.appleHealthDescription}>
+                      Read your daily steps to track this habit. One Pager does not write to Apple Health.
+                    </Text>
+                  </View>
+                </View>
+
+                {health.permissionRequested ? (
+                  <View style={styles.appleHealthConnected}>
+                    <View style={styles.appleHealthConnectedLabel}>
+                      <CheckCircle2 size={16} color="#14875E" />
+                      <Text style={styles.appleHealthConnectedText}>Apple Health set up</Text>
+                    </View>
+                    <TouchableOpacity
+                      accessibilityRole="button"
+                      accessibilityLabel="Refresh Apple Health steps"
+                      onPress={() => void health.refresh()}
+                      disabled={health.isLoading}
+                      style={styles.appleHealthRefresh}
+                    >
+                      {health.isLoading
+                        ? <ActivityIndicator size="small" color="#C93F56" />
+                        : <RefreshCw size={17} color="#C93F56" />}
+                    </TouchableOpacity>
+                  </View>
+                ) : (
+                  <TouchableOpacity
+                    accessibilityRole="button"
+                    accessibilityLabel="Connect Apple Health"
+                    testID="habit-connect-apple-health"
+                    style={styles.appleHealthButton}
+                    activeOpacity={0.85}
+                    disabled={health.isLoading}
+                    onPress={() => void connectAppleHealth()}
+                  >
+                    {health.isLoading
+                      ? <ActivityIndicator size="small" color="#FFFFFF" />
+                      : <HeartPulse size={17} color="#FFFFFF" />}
+                    <Text style={styles.appleHealthButtonText}>Connect Apple Health</Text>
+                  </TouchableOpacity>
+                )}
+
+                {health.permissionRequested && (
+                  <Text style={styles.appleHealthSteps}>
+                    {health.stepsToday == null
+                      ? 'No step data available today. Check your Health permissions if you expect steps.'
+                      : healthStepHabit.target
+                        ? `${health.stepsToday.toLocaleString('en-GB')} / ${healthStepHabit.target.toLocaleString('en-GB')} steps today`
+                        : `${health.stepsToday.toLocaleString('en-GB')} steps today`}
+                  </Text>
+                )}
+                {health.error && <Text style={styles.appleHealthError}>{health.error}</Text>}
+              </View>
+            )}
 
             {habit?.dietTags && habit.dietTags.length > 0 && (
               <TouchableOpacity
@@ -1029,6 +1114,48 @@ const styles = StyleSheet.create({
     lineHeight: 22,
     marginBottom: 20,
   },
+  appleHealthCard: {
+    borderWidth: 1,
+    borderColor: '#F1DBDF',
+    borderRadius: 16,
+    padding: 14,
+    marginBottom: 18,
+    backgroundColor: '#FFF7F8',
+    gap: 11,
+  },
+  appleHealthHeading: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+  },
+  appleHealthIcon: {
+    backgroundColor: '#FCE6EB',
+    width: 42,
+    height: 42,
+    borderRadius: 13,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  appleHealthHeadingCopy: { flex: 1, gap: 3 },
+  appleHealthTitle: { fontSize: 15, fontWeight: '700', color: COLORS.text },
+  appleHealthDescription: { fontSize: 12, lineHeight: 17, color: COLORS.textSecondary },
+  appleHealthButton: {
+    backgroundColor: '#C93F56',
+    borderRadius: 12,
+    minHeight: 44,
+    paddingHorizontal: 12,
+    alignItems: 'center',
+    justifyContent: 'center',
+    flexDirection: 'row',
+    gap: 9,
+  },
+  appleHealthButtonText: { fontSize: 14, color: '#FFFFFF', fontWeight: '700' },
+  appleHealthConnected: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
+  appleHealthConnectedLabel: { flexDirection: 'row', alignItems: 'center', gap: 8 },
+  appleHealthConnectedText: { fontSize: 13, fontWeight: '700', color: '#14875E' },
+  appleHealthRefresh: { minHeight: 34, minWidth: 34, alignItems: 'center', justifyContent: 'center' },
+  appleHealthSteps: { fontSize: 13, fontWeight: '600', color: COLORS.textSecondary },
+  appleHealthError: { fontSize: 12, lineHeight: 16, color: '#C93F56' },
   statsRow: {
     flexDirection: 'row',
     backgroundColor: '#F8F9FA',
