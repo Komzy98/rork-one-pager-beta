@@ -15,7 +15,7 @@ type DecisionMomentsCardProps = BuildDecisionMomentsInput & {
 };
 
 export default function DecisionMomentsCard(props: DecisionMomentsCardProps) {
-  const { colors } = useTheme();
+  const { colors, isDark } = useTheme();
   const { onCheer, ...input } = props;
 
   const moments = useMemo(() => buildDecisionMoments(input), [
@@ -52,9 +52,9 @@ export default function DecisionMomentsCard(props: DecisionMomentsCardProps) {
   if (moments.length === 0) return null;
 
   return (
-    <View style={[styles.wrap, { paddingHorizontal: 20 }]}>
+    <View style={styles.wrap}>
       <View style={styles.headerRow}>
-        <Compass size={16} color={colors.primary} strokeWidth={2.2} />
+        <Compass size={15} color={colors.primary} strokeWidth={2} />
         <Text style={[styles.kicker, { color: colors.textMuted }]}>RIGHT NOW</Text>
       </View>
 
@@ -64,20 +64,26 @@ export default function DecisionMomentsCard(props: DecisionMomentsCardProps) {
             key={moment.id}
             style={[styles.card, { backgroundColor: colors.card, borderColor: colors.border }]}
             onPress={() => handleAction(moment)}
-            activeOpacity={0.85}
+            activeOpacity={0.8}
             accessibilityRole="button"
-            accessibilityLabel={`${moment.headline}. ${moment.actionLabel}`}
+            accessibilityLabel={`${moment.headline}. ${moment.body}. ${moment.actionLabel}`}
           >
-            <Text style={styles.emoji}>{moment.emoji}</Text>
+            <View style={[styles.iconTile, { backgroundColor: isDark ? '#2A3345' : '#F1F4FA' }]}>
+              <Text style={styles.emoji}>{moment.emoji}</Text>
+            </View>
             <View style={styles.copy}>
-              <Text style={[styles.headline, { color: colors.text }]}>{moment.headline}</Text>
+              <View style={styles.headlineRow}>
+                <Text style={[styles.headline, { color: colors.text }]} numberOfLines={2}>
+                  {moment.headline}
+                </Text>
+                <ChevronRight size={17} color={colors.textMuted} strokeWidth={1.8} />
+              </View>
               <Text style={[styles.body, { color: colors.textSecondary }]} numberOfLines={2}>
                 {moment.body}
               </Text>
-              <View style={styles.actionRow}>
-                <Text style={[styles.actionLabel, { color: colors.primary }]}>{moment.actionLabel}</Text>
-                <ChevronRight size={14} color={colors.primary} />
-              </View>
+              <Text style={[styles.actionLabel, { color: colors.primary }]}>
+                {moment.actionLabel}
+              </Text>
             </View>
           </TouchableOpacity>
         ))}
@@ -88,58 +94,70 @@ export default function DecisionMomentsCard(props: DecisionMomentsCardProps) {
 
 const styles = StyleSheet.create({
   wrap: {
-    paddingTop: 8,
+    paddingHorizontal: 20,
+    paddingTop: 12,
     paddingBottom: 4,
-    gap: 8,
+    gap: 10,
   },
   headerRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 6,
+    gap: 7,
     paddingHorizontal: 2,
   },
   kicker: {
-    fontSize: 11,
-    fontWeight: '700',
-    letterSpacing: 0.6,
+    fontSize: 10,
+    fontWeight: '800',
+    letterSpacing: 1.2,
   },
   list: {
-    gap: 8,
+    gap: 9,
   },
   card: {
     flexDirection: 'row',
     alignItems: 'flex-start',
     gap: 12,
-    borderRadius: 14,
-    borderWidth: 1,
+    borderRadius: 18,
+    borderWidth: StyleSheet.hairlineWidth,
     padding: 14,
+  },
+  iconTile: {
+    width: 40,
+    height: 40,
+    borderRadius: 12,
+    alignItems: 'center',
+    justifyContent: 'center',
   },
   emoji: {
     fontSize: 20,
-    marginTop: 1,
   },
   copy: {
     flex: 1,
-    gap: 4,
+    minWidth: 0,
+  },
+  headlineRow: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    gap: 5,
+    justifyContent: 'space-between',
   },
   headline: {
+    flex: 1,
     fontSize: 15,
+    lineHeight: 20,
     fontWeight: '700',
     letterSpacing: -0.2,
   },
   body: {
-    fontSize: 13,
+    marginTop: 4,
+    fontSize: 12.5,
     lineHeight: 18,
-    fontWeight: '500',
-  },
-  actionRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 2,
-    marginTop: 2,
+    fontWeight: '400',
   },
   actionLabel: {
-    fontSize: 13,
+    marginTop: 8,
+    fontSize: 12,
+    lineHeight: 16,
     fontWeight: '700',
   },
 });
