@@ -1,0 +1,65 @@
+# Deliberately one-shot: adding this file triggers build 122 once.
+# No ongoing auto-build or auto-submit on normal pushes.
+name: Streaming cache validation and one-time TestFlight 122
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/streaming-testflight-122.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    defaults:
+      run:
+        working-directory: expo
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: npm
+          cache-dependency-path: expo/package-lock.json
+      - name: Install
+        run: npm ci --ignore-scripts
+      - name: Unit tests
+        run: npm test
+      - name: Typecheck
+        run: npx tsc --noEmit
+
+  build-and-submit:
+    needs: validate
+    if: ${{ github.event_name == 'workflow_dispatch' || github.event.head_commit.message == 'ci: one-time build 122 to TestFlight' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+    defaults:
+      run:
+        working-directory: expo
+    env:
+      EXPO_TOKEN: ${{ secrets.EXPO_TOKEN }}
+      CI: '1'
+    steps:
+      - name: Require Expo automation credentials
+        run: |
+          if [ -z "$EXPO_TOKEN" ]; then
+            echo "::error::EXPO_TOKEN secret unavailable. Configure an Expo access token in GitHub Actions secrets or run EAS on the authorised Mac."
+            exit 1
+          fi
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: npm
+          cache-dependency-path: expo/package-lock.json
+      - name: Install
+        run: npm ci
+      - name: EAS production iOS build 122
+        run: npx eas-cli build --platform ios --profile production --non-interactive --wait
+      - name: Submit the successful build to TestFlight
+        run: npx eas-cli submit --platform ios --profile production --latest --non-interactive
