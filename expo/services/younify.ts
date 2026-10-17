@@ -627,7 +627,8 @@ async function fetchBrowseSectionsWithLinked(
     contentResult = Array.isArray(raw) ? raw : [];
   } catch (error) {
     console.warn("fetchBrowseSectionsWithLinked: fetchContent failed", error);
-    return YOUNIFY_BROWSE_ROWS.map((row) => ({ id: row.id, title: row.title, items: [] }));
+    // Do not replace a healthy offline catalogue with an empty result on network failure.
+    throw error;
   }
 
   return YOUNIFY_BROWSE_ROWS.map((row) => {
@@ -753,10 +754,14 @@ async function loadYounifyStreamingBundleInner(
     });
   };
 
+  const startedAt = Date.now();
   report(0.05, "Connecting…");
   const connect = await configureYounify();
+  const configuredAt = Date.now();
   report(0.2, "Checking linked services…");
   const linkedServices = normalizeLinkedServices(await connect.fetchLinkedServices(null));
+  const linkedAt = Date.now();
+  if (__DEV__) console.log("[streaming-perf] connect", configuredAt - startedAt, "ms; linked services", linkedAt - configuredAt, "ms");
   opts?.onLinkedServices?.(linkedServices);
 
   const emptyBrowse = YOUNIFY_BROWSE_ROWS.map((row) => ({
@@ -778,6 +783,7 @@ async function loadYounifyStreamingBundleInner(
     linkedServices.length === 1 ? "1 service" : `${linkedServices.length} services`;
   report(0.35, `Loading catalogs from ${serviceLabel}…`);
   const browseSections = await fetchBrowseSectionsWithLinked(connect, linkedServices);
+  if (__DEV__) console.log("[streaming-perf] catalog fetch", Date.now() - linkedAt, "ms");
   report(0.85, "Building your feed…");
   const heroContent = pickHeroFromBrowseSections(browseSections);
   report(1, "Ready");
