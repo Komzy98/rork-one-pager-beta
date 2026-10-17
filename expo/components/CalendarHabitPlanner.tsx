@@ -1,6 +1,6 @@
 import React from 'react';
-import { View, Text, StyleSheet, TouchableOpacity, ActivityIndicator } from 'react-native';
-import { CalendarDays, Clock3, Sparkles, ChevronRight, HeartPulse, RefreshCw } from 'lucide-react-native';
+import { View, Text, StyleSheet, TouchableOpacity, ActivityIndicator, Alert, Platform } from 'react-native';
+import { CalendarDays, Clock3, Sparkles, ChevronRight, HeartPulse, RefreshCw, CheckCircle2 } from 'lucide-react-native';
 import type { ThemeColors } from '@/types/theme';
 import type { SemanticHabitRecommendation } from '@/utils/semanticHabitRecommendations';
 import { useHealthContext } from '@/contexts/HealthContext';
@@ -40,7 +40,27 @@ export default function CalendarHabitPlanner({
   const muted = isDark ? colors.textSecondary : '#6B7280';
   const stepRecommendation = recommendations.find((item) => item.healthMetric === 'steps') ?? null;
 
-  const healthCard = stepRecommendation && health.isAppleHealthAvailable ? (
+  const connectAppleHealth = async () => {
+    if (!health.isAppleHealthAvailable) {
+      Alert.alert(
+        'Apple Health unavailable',
+        'This installed version of One Pager cannot access Apple Health. A new TestFlight build containing the HealthKit integration is needed.',
+      );
+      return;
+    }
+
+    const completed = await health.requestStepAccess();
+    if (!completed) {
+      Alert.alert(
+        'Apple Health could not connect',
+        'The permission request could not be completed. Check Health access on your iPhone and try again.',
+      );
+    }
+  };
+
+  // Show a standalone entry point only when calendar suggestions are not visible;
+  // connected calendars display the action directly inside the steps recommendation.
+  const healthCard = stepRecommendation && !isConnected && Platform.OS === 'ios' ? (
     <View style={[styles.healthCard, { backgroundColor: isDark ? 'rgba(232,74,95,0.10)' : '#FFF4F5', borderColor: isDark ? 'rgba(232,74,95,0.25)' : '#F7D9DD' }]}>
       <View style={styles.healthHeader}>
         <View style={[styles.healthIcon, { backgroundColor: isDark ? 'rgba(232,74,95,0.20)' : '#FFE4E7' }]}>
@@ -67,7 +87,7 @@ export default function CalendarHabitPlanner({
       {!health.permissionRequested ? (
         <TouchableOpacity
           style={[styles.healthCta, { backgroundColor: ACCENT.health }]}
-          onPress={() => void health.requestStepAccess()}
+          onPress={() => void connectAppleHealth()}
           activeOpacity={0.85}
           disabled={health.isLoading}
         >
@@ -166,6 +186,48 @@ export default function CalendarHabitPlanner({
                     <Text style={[styles.reason, { color: muted }]} numberOfLines={3}>
                       {rec.reasoning}
                     </Text>
+                    {isHealthProgress && Platform.OS === 'ios' ? (
+                      <View style={styles.inlineHealthArea}>
+                        {health.permissionRequested ? (
+                          <View style={styles.inlineHealthStatus}>
+                            <CheckCircle2 size={15} color={ACCENT.green} />
+                            <Text style={[styles.inlineHealthStatusText, { color: colors.text }]}>
+                              Apple Health set up
+                            </Text>
+                            <TouchableOpacity
+                              accessibilityRole="button"
+                              accessibilityLabel="Refresh Apple Health steps"
+                              onPress={() => void health.refresh()}
+                              disabled={health.isLoading}
+                              hitSlop={10}
+                            >
+                              {health.isLoading
+                                ? <ActivityIndicator size="small" color={ACCENT.health} />
+                                : <RefreshCw size={16} color={ACCENT.health} />}
+                            </TouchableOpacity>
+                          </View>
+                        ) : (
+                          <TouchableOpacity
+                            accessibilityRole="button"
+                            accessibilityLabel="Connect Apple Health"
+                            style={styles.inlineHealthButton}
+                            onPress={() => void connectAppleHealth()}
+                            disabled={health.isLoading}
+                            activeOpacity={0.85}
+                          >
+                            {health.isLoading
+                              ? <ActivityIndicator size="small" color="#FFFFFF" />
+                              : <HeartPulse size={15} color="#FFFFFF" />}
+                            <Text style={styles.inlineHealthButtonText}>Connect Apple Health</Text>
+                          </TouchableOpacity>
+                        )}
+                        {health.error ? (
+                          <Text style={[styles.inlineHealthError, { color: ACCENT.health }]}>
+                            {health.error}
+                          </Text>
+                        ) : null}
+                      </View>
+                    ) : null}
                   </View>
                 </View>
               );
@@ -308,6 +370,40 @@ const styles = StyleSheet.create({
     fontSize: 12,
     lineHeight: 16,
     fontWeight: '600',
+  },
+  inlineHealthArea: {
+    marginTop: 10,
+    gap: 6,
+  },
+  inlineHealthButton: {
+    alignSelf: 'flex-start',
+    maxWidth: '100%',
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    minHeight: 36,
+    paddingHorizontal: 12,
+    borderRadius: 10,
+    gap: 7,
+    backgroundColor: ACCENT.health,
+  },
+  inlineHealthButtonText: {
+    color: '#FFFFFF',
+    fontSize: 12,
+    fontWeight: '800',
+  },
+  inlineHealthStatus: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 7,
+  },
+  inlineHealthStatusText: {
+    fontSize: 12,
+    fontWeight: '700',
+  },
+  inlineHealthError: {
+    fontSize: 11,
+    lineHeight: 15,
   },
   empty: {
     fontSize: 13,
