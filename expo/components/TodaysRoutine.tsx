@@ -29,6 +29,7 @@ import {
   AlertTriangle,
   Check,
   Users,
+  Footprints,
 } from 'lucide-react-native';
 import { COLORS, HABIT_COLORS } from '@/constants/colors';
 import { useTheme } from '@/hooks/useTheme';
@@ -53,6 +54,11 @@ import * as Haptics from 'expo-haptics';
 import { router } from 'expo-router';
 import HabitAddToTodayPicker from '@/components/HabitAddToTodayPicker';
 import { HabitAccountabilitySection } from '@/components/social/HabitAccountabilitySection';
+import { useHealthContext } from '@/contexts/HealthContext';
+import { useFriends } from '@/hooks/useFriends';
+import { usePartnerHabitShares } from '@/hooks/usePartnerHabitShares';
+import { buildStepHabitProgress } from '@/utils/stepHabitIntelligence';
+import { getActiveAccountabilityHabitIds } from '@/utils/routineCardPresentation';
 
 
 interface ConvertedHabit {
@@ -81,6 +87,8 @@ interface RoutineItemProps {
   minimalVersion?: MinimalHabit;
   weeklyProgress?: WeeklyHabitProgress | null;
   isBusyMode: boolean;
+  stepsToday: number | null;
+  hasAccountabilityPartners: boolean;
   onToggle: () => void;
   onRemove: () => void;
   index: number;
@@ -260,6 +268,8 @@ const RoutineItem = ({
   minimalVersion,
   weeklyProgress,
   isBusyMode,
+  stepsToday,
+  hasAccountabilityPartners,
   onToggle,
   onRemove,
   index,
@@ -425,6 +435,13 @@ const RoutineItem = ({
   }, [programInfo.hasProgram, programInfo.isRestDay, todaysActivities]);
 
   const displayTitle = workoutDayLabel || habit.title;
+  // Step totals belong to today's Health data, not to the 28-day programme timeline.
+  // Never substitute zero when HealthKit access or samples are unavailable.
+  const stepProgress = buildStepHabitProgress({
+    title: habit.title,
+    description: habit.description,
+    tags: (habit as Task).tags ?? [],
+  }, stepsToday);
   
   const handlePress = () => {
     void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
@@ -624,14 +641,16 @@ const RoutineItem = ({
           </View>
         )}
 
-        <TouchableOpacity
-          onPress={openHabitPartners}
-          style={[styles.partnerIconBtn, { backgroundColor: colors.primary + '14', borderColor: colors.primary + '30' }]}
-          hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
-          accessibilityLabel={`Accountability partners for ${habit.title}`}
-        >
-          <Users size={15} color={colors.primary} />
-        </TouchableOpacity>
+        {hasAccountabilityPartners && (
+          <TouchableOpacity
+            onPress={openHabitPartners}
+            style={[styles.partnerIconBtn, { backgroundColor: colors.primary + '14', borderColor: colors.primary + '30' }]}
+            hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+            accessibilityLabel={`Accountability partners for ${habit.title}`}
+          >
+            <Users size={15} color={colors.primary} />
+          </TouchableOpacity>
+        )}
         
         {programInfo.hasProgram && (
           <TouchableOpacity 
@@ -647,7 +666,37 @@ const RoutineItem = ({
           </TouchableOpacity>
         )}
       </TouchableOpacity>
-      
+
+      {stepProgress && (
+        <View
+          style={[styles.stepProgressFooter, { borderTopColor: colors.border }]}
+          accessibilityLabel={`Apple Health: ${stepProgress.label}, ${Math.round(stepProgress.progress * 100)} percent of daily goal`}
+        >
+          <View style={styles.stepProgressLabels}>
+            <View style={styles.stepProgressLeft}>
+              <Footprints size={13} color={stepProgress.completed ? '#059669' : '#7C3AED'} />
+              <Text style={[styles.stepProgressText, { color: colors.text }]} numberOfLines={1}>
+                {stepProgress.label}
+              </Text>
+            </View>
+            <Text style={[styles.stepProgressPercent, { color: stepProgress.completed ? '#059669' : colors.textSecondary }]}>
+              {Math.round(stepProgress.progress * 100)}%
+            </Text>
+          </View>
+          <View style={styles.stepProgressTrack}>
+            <View
+              style={[
+                styles.stepProgressFill,
+                { width: `${stepProgress.progress * 100}%`, backgroundColor: stepProgress.completed ? '#10B981' : '#8B5CF6' },
+              ]}
+            />
+          </View>
+          <Text style={styles.stepProgressSource}>
+            {stepProgress.completed ? 'Daily step goal reached · Apple Health' : `${stepProgress.remaining.toLocaleString('en-GB')} to go · Apple Health`}
+          </Text>
+        </View>
+      )}
+
       {isExpanded && programInfo.hasProgram && (
         <View style={styles.activitiesSection}>
           {programInfo.isRestDay ? (
@@ -767,6 +816,13 @@ export default function TodaysRoutine({
   const tasksContext = useTasks();
   const appContext = useApp();
   const busyMode = useBusyModeSafe();
+  const { stepsToday } = useHealthContext();
+  const { friends } = useFriends();
+  const { sharesFor } = usePartnerHabitShares();
+  const partnerHabitIds = useMemo(
+    () => getActiveAccountabilityHabitIds(friends.map(friend => friend.id), sharesFor),
+    [friends, sharesFor],
+  );
   const progressAnim = useRef(new Animated.Value(0)).current;
   const [habitsExpanded, setHabitsExpanded] = useState(false);
   
@@ -1045,6 +1101,8 @@ export default function TodaysRoutine({
             minimalVersion={minimalVersion}
             weeklyProgress={weeklyByHabitId[habit.id] ?? null}
             isBusyMode={busyMode.isEnabled}
+            stepsToday={stepsToday}
+            hasAccountabilityPartners={partnerHabitIds.has(habit.id)}
             onToggle={() => handleToggle(habit.id)}
             onRemove={() => handleRemove(habit.id)}
             index={idx}
@@ -1539,6 +1597,50 @@ const styles = StyleSheet.create({
     fontWeight: '700' as const,
     letterSpacing: -0.1,
     color: '#FFFFFF',
+  },
+  stepProgressFooter: {
+    paddingHorizontal: 18,
+    paddingTop: 10,
+    paddingBottom: 12,
+    borderTopWidth: 1,
+    gap: 6,
+  },
+  stepProgressLabels: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    gap: 12,
+  },
+  stepProgressLeft: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+  },
+  stepProgressText: {
+    fontSize: 12,
+    fontWeight: '700',
+    fontVariant: ['tabular-nums'],
+    flexShrink: 1,
+  },
+  stepProgressPercent: {
+    fontSize: 12,
+    fontWeight: '700',
+    fontVariant: ['tabular-nums'],
+  },
+  stepProgressTrack: {
+    height: 5,
+    borderRadius: 3,
+    backgroundColor: '#EDE9F7',
+    overflow: 'hidden',
+  },
+  stepProgressFill: {
+    height: '100%',
+    borderRadius: 3,
+  },
+  stepProgressSource: {
+    fontSize: 10,
+    color: '#94A3B8',
   },
   partnerIconBtn: {
     width: 34,
