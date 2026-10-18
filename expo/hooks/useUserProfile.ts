@@ -809,24 +809,23 @@ export const [UserProfileProvider, useUserProfile] = createContextHook(() => {
     return sortTabs(enabledTabsArray);
   };
 
-  const recordTabVisit = useCallback((tabName: string) => {
-    if (tabName === 'activities' || tabName === 'profile') {
-      return;
-    }
-
-    const current = profileRef.current;
-    if (!current) {
-      return;
-    }
-
-    const previousCount = current.tabVisitCounts?.[tabName] ?? 0;
-    updateProfile({
-      tabVisitCounts: {
-        ...(current.tabVisitCounts ?? {}),
-        [tabName]: previousCount + 1,
-      },
+  /** Batch tab usage into one delayed profile write, never per navigation tap. */
+  const recordTabVisits = useCallback((visitDeltas: Record<string, number>) => {
+    const valid = Object.entries(visitDeltas).filter(
+      ([tab, count]) => tab !== 'activities' && tab !== 'profile' &&
+        Number.isInteger(count) && count > 0,
+    );
+    if (!valid.length || !profileRef.current) return;
+    void updateProfile(current => {
+      const counts = { ...(current.tabVisitCounts ?? {}) };
+      for (const [tab, delta] of valid) counts[tab] = (counts[tab] ?? 0) + delta;
+      return { tabVisitCounts: counts };
     });
   }, [updateProfile]);
+
+  const recordTabVisit = useCallback((tabName: string) => {
+    recordTabVisits({ [tabName]: 1 });
+  }, [recordTabVisits]);
 
   const updateTabOrder = (newOrder: string[]) => {
     updateProfile({ tabOrder: newOrder });
@@ -887,6 +886,7 @@ export const [UserProfileProvider, useUserProfile] = createContextHook(() => {
     isFavoriteLeague,
     getPersonalizedTabs,
     recordTabVisit,
+    recordTabVisits,
     updateTabOrder,
     resetTabOrder,
     getTeamLogo,

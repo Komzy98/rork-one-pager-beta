@@ -312,7 +312,9 @@ export const [AppProvider, useApp] = createContextHook(() => {
             }
           }
         }
-        const mergedHabits = resolveHabitsAfterCloudSync(cloudData.habits, localHabitsHydrate);
+        const mergedHabits = hasPendingOrRecentHabitEdit()
+          ? null
+          : resolveHabitsAfterCloudSync(cloudData.habits, localHabitsHydrate);
         if (mergedHabits !== null) {
           queryClient.setQueryData(['habits', userId], mergedHabits);
           await unifiedStorage.setItem(HABITS_STORAGE_KEY, JSON.stringify(mergedHabits));
@@ -329,7 +331,9 @@ export const [AppProvider, useApp] = createContextHook(() => {
           queryClient.setQueryData(['sports', userId], cloudData.sports);
           await unifiedStorage.setItem(SPORTS_STORAGE_KEY, JSON.stringify(cloudData.sports));
         }
-        void queryClient.invalidateQueries({ queryKey: ['habits', userId] });
+        if (!hasPendingOrRecentHabitEdit()) {
+          void queryClient.invalidateQueries({ queryKey: ['habits', userId] });
+        }
         void queryClient.invalidateQueries({ queryKey: ['activities', userId] });
         void queryClient.invalidateQueries({ queryKey: ['shows', userId] });
         void queryClient.invalidateQueries({ queryKey: ['sports', userId] });
@@ -357,7 +361,9 @@ export const [AppProvider, useApp] = createContextHook(() => {
     if (!userId || !supabaseSync.setupRealtimeSync) return;
     const unsubscribe = supabaseSync.setupRealtimeSync((cloudData) => {
       const localHabitsRt = queryClient.getQueryData<Habit[]>(['habits', userId]);
-      const mergedHabits = resolveHabitsAfterCloudSync(cloudData.habits, localHabitsRt);
+      const mergedHabits = hasPendingOrRecentHabitEdit()
+        ? null
+        : resolveHabitsAfterCloudSync(cloudData.habits, localHabitsRt);
       if (mergedHabits !== null) {
         queryClient.setQueryData(['habits', userId], mergedHabits);
         void unifiedStorage.setItem(HABITS_STORAGE_KEY, JSON.stringify(mergedHabits));
@@ -390,28 +396,35 @@ export const [AppProvider, useApp] = createContextHook(() => {
   ]);
 
   // Save mutations
+  const habitsWriteQueueRef = React.useRef<Promise<void>>(Promise.resolve());
+  const pendingHabitWritesRef = React.useRef(0);
+  const lastLocalHabitEditAtRef = React.useRef(0);
+  const hasPendingOrRecentHabitEdit = () =>
+    pendingHabitWritesRef.current > 0 ||
+    Date.now() - lastLocalHabitEditAtRef.current < 20_000;
   const saveHabitsMutation = useMutation({
-    mutationFn: async (habits: Habit[]) => {
-      try {
-        await unifiedStorage.setItem(HABITS_STORAGE_KEY, JSON.stringify(habits));
-        
+    mutationFn: async (nextHabits: Habit[]) => {
+      const persist = async () => {
+        await unifiedStorage.setItem(HABITS_STORAGE_KEY, JSON.stringify(nextHabits));
         if (userId && supabaseSync.saveToCloud) {
           try {
-            await supabaseSync.saveToCloud({ habits });
-            console.log('✅ Habits synced to Supabase');
+            await supabaseSync.saveToCloud({ habits: nextHabits });
           } catch (syncError) {
-            console.warn('⚠️ Supabase sync failed for habits, data saved locally:', syncError);
+            console.warn('Supabase sync failed for habits; local changes retained:', syncError);
           }
         }
-        
-        return habits;
+      };
+      const queued = habitsWriteQueueRef.current.then(persist, persist);
+      habitsWriteQueueRef.current = queued.catch(() => {});
+      try {
+        await queued;
+        return nextHabits;
       } catch (error) {
-        console.error('Error saving habits:', error);
+        console.error('Habit persistence failed; retaining in-memory change:', error);
         throw error;
+      } finally {
+        pendingHabitWritesRef.current = Math.max(0, pendingHabitWritesRef.current - 1);
       }
-    },
-    onSuccess: (habits) => {
-      queryClient.setQueryData(['habits', userId], habits);
     },
   });
 
@@ -465,6 +478,14 @@ export const [AppProvider, useApp] = createContextHook(() => {
     },
   });
 
+  /** Publish a habit change in the same tap, before local or cloud persistence. */
+  const commitHabits = (nextHabits: Habit[]) => {
+    pendingHabitWritesRef.current += 1;
+    lastLocalHabitEditAtRef.current = Date.now();
+    queryClient.setQueryData(['habits', userId], nextHabits);
+    saveHabitsMutation.mutate(nextHabits);
+  };
+
   // Add a new habit
   const addHabit = (habitData: NewHabitFormData) => {
     const habits = habitsQuery.data || [];
@@ -502,30 +523,30 @@ export const [AppProvider, useApp] = createContextHook(() => {
     }
     
     const updatedHabits = [...habits, newHabit];
-    saveHabitsMutation.mutate(updatedHabits);
+    commitHabits(updatedHabits);
   };
 
   // Update an existing habit
   const updateHabit = (updatedHabit: Habit) => {
-    const habits = habitsQuery.data || [];
+    const habits = queryClient.getQueryData<Habit[]>(['habits', userId]) ?? habitsQuery.data ?? [];
     const updatedHabits = habits.map(habit => 
       habit.id === updatedHabit.id ? updatedHabit : habit
     );
     
-    saveHabitsMutation.mutate(updatedHabits);
+    commitHabits(updatedHabits);
   };
 
   // Delete a habit
   const deleteHabit = (habitId: string) => {
-    const habits = habitsQuery.data || [];
+    const habits = queryClient.getQueryData<Habit[]>(['habits', userId]) ?? habitsQuery.data ?? [];
     const updatedHabits = habits.filter(habit => habit.id !== habitId);
     
-    saveHabitsMutation.mutate(updatedHabits);
+    commitHabits(updatedHabits);
   };
 
   // Toggle completion status for today
   const toggleHabitCompletion = (habitId: string) => {
-    const habits = habitsQuery.data || [];
+    const habits = queryClient.getQueryData<Habit[]>(['habits', userId]) ?? habitsQuery.data ?? [];
     const today = getTodayFormatted();
     let completedHabitName: string | null = null;
     
@@ -592,7 +613,7 @@ export const [AppProvider, useApp] = createContextHook(() => {
     });
     
     devLogSocial('💾 Saving updated habits to storage', { count: updatedHabits.length });
-    saveHabitsMutation.mutate(updatedHabits);
+    commitHabits(updatedHabits);
     if (completedHabitName) {
       const completedHabit = habits.find((habit) => habit.id === habitId);
       void logHabitCompleted({
@@ -634,7 +655,7 @@ export const [AppProvider, useApp] = createContextHook(() => {
       return habit;
     });
     
-    saveHabitsMutation.mutate(updatedHabits);
+    commitHabits(updatedHabits);
     devLogSocial('✅ Habit completion logged successfully', { habitId });
   };
 
@@ -922,7 +943,7 @@ export const [AppProvider, useApp] = createContextHook(() => {
       return habit;
     });
     
-    saveHabitsMutation.mutate(updatedHabits);
+    commitHabits(updatedHabits);
   };
   
   // Generate today's tasks for a progressive habit
@@ -970,7 +991,7 @@ export const [AppProvider, useApp] = createContextHook(() => {
       return habit;
     });
     
-    saveHabitsMutation.mutate(updatedHabits);
+    commitHabits(updatedHabits);
   };
   
   // Update milestone
@@ -994,7 +1015,7 @@ export const [AppProvider, useApp] = createContextHook(() => {
       return habit;
     });
     
-    saveHabitsMutation.mutate(updatedHabits);
+    commitHabits(updatedHabits);
   };
 
   const getWeekStart = (): string => {
@@ -1077,7 +1098,7 @@ export const [AppProvider, useApp] = createContextHook(() => {
     const didFreeze = habitBefore !== habitAfter;
     
     if (didFreeze) {
-      saveHabitsMutation.mutate(updatedHabits);
+      commitHabits(updatedHabits);
       console.log('Streak freeze used for habit:', habitId);
     }
     

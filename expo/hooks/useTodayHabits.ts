@@ -1,4 +1,8 @@
 import { useCallback, useMemo, useState } from 'react';
+import { useQueryClient } from '@tanstack/react-query';
+import { useAuth } from '@/hooks/useAuth';
+import type { Task } from '@/types/task';
+import type { Habit } from '@/types/habit';
 import { useApp } from '@/hooks/useHabitsStore';
 import { useTasks } from '@/hooks/useTasksStore';
 import { mergeCompletionMaps } from '@/utils/syncMerge';
@@ -30,6 +34,8 @@ const HIDDEN_FEEDBACK: CompletionFeedback = {
 };
 
 export function useTodayHabits() {
+  const queryClient = useQueryClient();
+  const { user } = useAuth();
   const appContext = useApp();
   const tasksContext = useTasks();
   const allTasks = tasksContext?.allTasks ?? [];
@@ -96,10 +102,14 @@ export function useTodayHabits() {
       const entry = entries.find((e) => e.id === habitId);
       if (!entry) return;
 
-      const taskHabit = allTasks.find((t) => t.id === habitId && t.isHabit);
+      // Read the optimistic snapshot, not an outdated closure from the last render.
+      // Two quick taps must toggle twice even before React paints the first update.
+      const latestTasks = queryClient.getQueryData<Task[]>(['tasks', user?.id]) ?? allTasks;
+      const taskHabit = latestTasks.find((t) => t.id === habitId && t.isHabit);
 
       if (entry.isLegacy) {
-        const legacy = legacyTodayHabits.find((h) => h.id === habitId);
+        const latestLegacy = queryClient.getQueryData<Habit[]>(['habits', user?.id]) ?? legacyTodayHabits;
+        const legacy = latestLegacy.find((h) => h.id === habitId);
         const legacyCompletions = legacy
           ? Object.keys(legacy.completions || {}).reduce(
               (acc, date) => {
@@ -174,6 +184,8 @@ export function useTodayHabits() {
       allTasks,
       legacyTodayHabits,
       today,
+      queryClient,
+      user?.id,
       toggleLegacy,
       updateTask,
       showFeedback,

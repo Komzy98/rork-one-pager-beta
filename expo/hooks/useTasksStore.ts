@@ -370,7 +370,10 @@ export const [TaskProvider, useTasks] = createContextHook(() => {
             }
           }
         }
-        const mergedTasks = resolveTasksAfterCloudSync(cloudData.tasks, localTasksHydrate);
+        // Do not replace a recent optimistic edit with an older cloud snapshot.
+        const mergedTasks = hasPendingOrRecentTaskEdit()
+          ? null
+          : resolveTasksAfterCloudSync(cloudData.tasks, localTasksHydrate);
         if (mergedTasks !== null) {
           queryClient.setQueryData(['tasks', userId], mergedTasks);
           await unifiedStorage.setItem(TASKS_STORAGE_KEY, JSON.stringify(mergedTasks));
@@ -383,7 +386,9 @@ export const [TaskProvider, useTasks] = createContextHook(() => {
           queryClient.setQueryData(['task-time-entries', userId], cloudData.taskTimeEntries);
           await unifiedStorage.setItem(TIME_ENTRIES_STORAGE_KEY, JSON.stringify(cloudData.taskTimeEntries));
         }
-        void queryClient.invalidateQueries({ queryKey: ['tasks', userId] });
+        if (!hasPendingOrRecentTaskEdit()) {
+          void queryClient.invalidateQueries({ queryKey: ['tasks', userId] });
+        }
         void queryClient.invalidateQueries({ queryKey: ['task-projects', userId] });
         void queryClient.invalidateQueries({ queryKey: ['task-time-entries', userId] });
       } catch (error) {
@@ -409,7 +414,9 @@ export const [TaskProvider, useTasks] = createContextHook(() => {
     if (!userId || !supabaseSync.setupRealtimeSync) return;
     const unsubscribe = supabaseSync.setupRealtimeSync((cloudData) => {
       const localTasksRt = queryClient.getQueryData<Task[]>(['tasks', userId]);
-      const mergedTasks = resolveTasksAfterCloudSync(cloudData.tasks, localTasksRt);
+      const mergedTasks = hasPendingOrRecentTaskEdit()
+        ? null
+        : resolveTasksAfterCloudSync(cloudData.tasks, localTasksRt);
       if (mergedTasks !== null) {
         queryClient.setQueryData(['tasks', userId], mergedTasks);
         void unifiedStorage.setItem(TASKS_STORAGE_KEY, JSON.stringify(mergedTasks));
@@ -437,28 +444,37 @@ export const [TaskProvider, useTasks] = createContextHook(() => {
   ]);
 
   // Save Tasks Mutation
+  // Serialise persistence: an earlier cloud save must never finish after a newer one.
+  const tasksWriteQueueRef = React.useRef<Promise<void>>(Promise.resolve());
+  const pendingTasksWritesRef = React.useRef(0);
+  const lastLocalTaskEditAtRef = React.useRef(0);
+  const hasPendingOrRecentTaskEdit = () =>
+    pendingTasksWritesRef.current > 0 ||
+    Date.now() - lastLocalTaskEditAtRef.current < 20_000;
   const saveTasksMutation = useMutation({
-    mutationFn: async (tasks: Task[]) => {
-      try {
-        await unifiedStorage.setItem(TASKS_STORAGE_KEY, JSON.stringify(tasks));
-        
+    mutationFn: async (nextTasks: Task[]) => {
+      const persist = async () => {
+        await unifiedStorage.setItem(TASKS_STORAGE_KEY, JSON.stringify(nextTasks));
+        // Cloud saves are best-effort and deliberately do not block on-screen feedback.
         if (userId && supabaseSync.saveToCloud) {
           try {
-            await supabaseSync.saveToCloud({ tasks });
-            console.log('✅ Tasks synced to Supabase');
+            await supabaseSync.saveToCloud({ tasks: nextTasks });
           } catch (syncError) {
-            console.warn('⚠️ Supabase sync failed for tasks, data saved locally:', syncError);
+            console.warn('Supabase sync failed for tasks; changes remain on device:', syncError);
           }
         }
-        
-        return tasks;
+      };
+      const queued = tasksWriteQueueRef.current.then(persist, persist);
+      tasksWriteQueueRef.current = queued.catch(() => {});
+      try {
+        await queued;
+        return nextTasks;
       } catch (error) {
-        console.error('❌ Error saving tasks:', error);
+        console.error('Task persistence failed; keeping the in-memory change:', error);
         throw error;
+      } finally {
+        pendingTasksWritesRef.current = Math.max(0, pendingTasksWritesRef.current - 1);
       }
-    },
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['tasks', userId] });
     },
   });
 
@@ -556,7 +572,7 @@ export const [TaskProvider, useTasks] = createContextHook(() => {
 
     if (needsSave) {
       console.log('💾 [Tasks] Saving updated tasks to storage');
-      saveTasksMutate(workingTasks);
+      commitTasks(workingTasks);
     }
   }, [tasks.length, formatDateStr(new Date())]); // Run when tasks change or day changes
 
@@ -756,6 +772,13 @@ export const [TaskProvider, useTasks] = createContextHook(() => {
 
   // Task Actions
   const { mutate: saveTasksMutate } = saveTasksMutation;
+  /** Commit synchronously to React Query; write to disk/cloud after the UI responds. */
+  const commitTasks = useCallback((nextTasks: Task[]) => {
+    pendingTasksWritesRef.current += 1;
+    lastLocalTaskEditAtRef.current = Date.now();
+    queryClient.setQueryData(['tasks', userId], nextTasks);
+    saveTasksMutate(nextTasks);
+  }, [queryClient, userId, saveTasksMutate]);
   const addTask = useCallback((taskData: Omit<Task, 'id' | 'createdAt' | 'updatedAt'>) => {
     const newTask: Task = {
       ...taskData,
@@ -768,15 +791,17 @@ export const [TaskProvider, useTasks] = createContextHook(() => {
       habitStreak: taskData.isHabit ? 0 : undefined,
     };
     
-    const updatedTasks = [...tasks, newTask];
-    saveTasksMutate(updatedTasks);
+    const latestTasks = queryClient.getQueryData<Task[]>(['tasks', userId]) ?? tasks;
+    const updatedTasks = [...latestTasks, newTask];
+    commitTasks(updatedTasks);
     
     console.log('Task added:', newTask.title);
     return newTask;
-  }, [tasks, saveTasksMutate]);
+  }, [tasks, commitTasks, queryClient, userId]);
 
   const updateTask = useCallback((taskId: string, updates: Partial<Task>) => {
-    const updatedTasks = tasks.map(task => {
+    const latestTasks = queryClient.getQueryData<Task[]>(['tasks', userId]) ?? tasks;
+    const updatedTasks = latestTasks.map(task => {
       if (task.id === taskId) {
         const updatedTask = { ...task, ...updates, updatedAt: new Date().toISOString() };
         
@@ -791,18 +816,20 @@ export const [TaskProvider, useTasks] = createContextHook(() => {
       return task;
     });
     
-    saveTasksMutate(updatedTasks);
+    commitTasks(updatedTasks);
     console.log('Task updated:', taskId);
-  }, [tasks, saveTasksMutate]);
+  }, [tasks, commitTasks, queryClient, userId]);
 
   const deleteTask = useCallback((taskId: string) => {
-    const updatedTasks = tasks.filter(task => task.id !== taskId);
-    saveTasksMutate(updatedTasks);
+    const latestTasks = queryClient.getQueryData<Task[]>(['tasks', userId]) ?? tasks;
+    const updatedTasks = latestTasks.filter(task => task.id !== taskId);
+    commitTasks(updatedTasks);
     console.log('Task deleted:', taskId);
-  }, [tasks, saveTasksMutate]);
+  }, [tasks, commitTasks, queryClient, userId]);
 
   const toggleTaskStatus = useCallback((taskId: string) => {
-    const task = tasks.find(t => t.id === taskId);
+    const latestTasks = queryClient.getQueryData<Task[]>(['tasks', userId]) ?? tasks;
+    const task = latestTasks.find(t => t.id === taskId);
     if (!task) return;
 
     let newStatus: TaskStatus;
@@ -826,7 +853,7 @@ export const [TaskProvider, useTasks] = createContextHook(() => {
     }
 
     updateTask(taskId, { status: newStatus, completedAt });
-  }, [tasks, updateTask]);
+  }, [tasks, updateTask, queryClient, userId]);
 
   // Log detailed task completion
   const logTaskCompletion = useCallback((taskId: string, completionData: TaskCompletionFormData) => {
@@ -929,10 +956,10 @@ export const [TaskProvider, useTasks] = createContextHook(() => {
         ? { ...task, projectId: undefined, updatedAt: new Date().toISOString() }
         : task
     );
-    saveTasksMutate(updatedTasks);
+    commitTasks(updatedTasks);
     
     console.log('Project deleted:', projectId);
-  }, [projects, tasks, saveProjectsMutate, saveTasksMutate]);
+  }, [projects, tasks, saveProjectsMutate, commitTasks]);
 
   // Time Tracking
   const { mutate: saveTimeEntriesMutate } = saveTimeEntriesMutation;

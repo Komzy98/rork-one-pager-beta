@@ -119,31 +119,22 @@ const AnimatedTabItem = React.memo(({
 }: AnimatedTabItemProps) => {
   const scaleAnim = useRef(new Animated.Value(1)).current;
   const iconScale = useRef(new Animated.Value(isFocused ? 1.15 : 1)).current;
-  const glowOpacity = useRef(new Animated.Value(isFocused ? 1 : 0)).current;
 
   useEffect(() => {
-    Animated.parallel([
-      Animated.spring(iconScale, {
-        toValue: isFocused ? 1.15 : 1,
-        tension: 180,
-        friction: 12,
-        useNativeDriver: false,
-      }),
-      Animated.spring(glowOpacity, {
-        toValue: isFocused ? 1 : 0,
-        tension: 180,
-        friction: 12,
-        useNativeDriver: false,
-      }),
-    ]).start();
-  }, [isFocused, iconScale, glowOpacity]);
+    Animated.spring(iconScale, {
+      toValue: isFocused ? 1.12 : 1,
+      tension: 180,
+      friction: 12,
+      useNativeDriver: true,
+    }).start();
+  }, [isFocused, iconScale]);
 
   const handlePressIn = useCallback(() => {
     Animated.spring(scaleAnim, {
       toValue: 0.9,
       tension: 180,
       friction: 12,
-      useNativeDriver: false,
+      useNativeDriver: true,
     }).start();
   }, [scaleAnim]);
 
@@ -152,7 +143,7 @@ const AnimatedTabItem = React.memo(({
       toValue: 1,
       tension: 180,
       friction: 12,
-      useNativeDriver: false,
+      useNativeDriver: true,
     }).start();
   }, [scaleAnim]);
 
@@ -197,10 +188,10 @@ const AnimatedTabItem = React.memo(({
         { transform: [{ scale: scaleAnim }] },
       ]}>
         <Animated.View style={[{ transform: [{ scale: iconScale }] }]}>
-          <Animated.View style={{
+          <View style={{
             shadowColor: activeColor,
             shadowOffset: { width: 0, height: 0 },
-            shadowOpacity: glowOpacity,
+            shadowOpacity: isFocused ? 0.32 : 0,
             shadowRadius: 8,
           }}>
             {route.name === 'profile' && (avatarCandidates?.length ?? 0) > 0 ? (
@@ -224,7 +215,7 @@ const AnimatedTabItem = React.memo(({
                 size={22}
               />
             )}
-          </Animated.View>
+          </View>
         </Animated.View>
         <Text style={[
           styles.tabLabel,
@@ -248,7 +239,7 @@ AnimatedTabItem.displayName = 'AnimatedTabItem';
 
 function CustomTabBar({ state, descriptors, navigation }: BottomTabBarProps) {
   const insets = useSafeAreaInsets();
-  const { getPersonalizedTabs, profile, recordTabVisit } = useUserProfile();
+  const { getPersonalizedTabs, profile, recordTabVisits } = useUserProfile();
   const { myProfile } = useFriends();
   const { colors, isDark } = useTheme();
   const { user } = useAuth();
@@ -297,7 +288,7 @@ function CustomTabBar({ state, descriptors, navigation }: BottomTabBarProps) {
     Animated.timing(containerOpacity, {
       toValue: 1,
       duration: 300,
-      useNativeDriver: false,
+      useNativeDriver: true,
     }).start();
   }, [containerOpacity]);
 
@@ -305,15 +296,31 @@ function CustomTabBar({ state, descriptors, navigation }: BottomTabBarProps) {
   const isShowsTabActive = currentRouteName === 'shows';
   const scrollableTabNames = scrollableRoutes.map((route) => route.name).join(',');
   const lastRecordedTabRef = useRef<string | null>(null);
+  const visitBufferRef = useRef<Record<string, number>>({});
+  const visitFlushTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const recordTabVisitsRef = useRef(recordTabVisits);
+  recordTabVisitsRef.current = recordTabVisits;
 
   useEffect(() => {
-    if (!currentRouteName || lastRecordedTabRef.current === currentRouteName) {
-      return;
-    }
-
+    if (!currentRouteName || lastRecordedTabRef.current === currentRouteName) return;
     lastRecordedTabRef.current = currentRouteName;
-    recordTabVisit(currentRouteName);
-  }, [currentRouteName, recordTabVisit]);
+    if (currentRouteName === 'activities' || currentRouteName === 'profile') return;
+    visitBufferRef.current[currentRouteName] = (visitBufferRef.current[currentRouteName] ?? 0) + 1;
+    if (visitFlushTimerRef.current) clearTimeout(visitFlushTimerRef.current);
+    // A sequence of taps must never write a full profile during the transitions.
+    visitFlushTimerRef.current = setTimeout(() => {
+      const pending = visitBufferRef.current;
+      visitBufferRef.current = {};
+      visitFlushTimerRef.current = null;
+      recordTabVisitsRef.current(pending);
+    }, 5000);
+  }, [currentRouteName]);
+
+  useEffect(() => () => {
+    // Never write a previous account's visits during an account switch.
+    if (visitFlushTimerRef.current) clearTimeout(visitFlushTimerRef.current);
+    visitBufferRef.current = {};
+  }, []);
 
   const scrollMiddleTabIntoView = useCallback((tabName: string, animated: boolean) => {
     const layout = middleTabLayouts.current[tabName];
@@ -501,6 +508,8 @@ function ClassicTabScreens() {
       initialRouteName="activities"
       screenOptions={{
         headerShown: false,
+        lazy: true,
+        freezeOnBlur: true,
         tabBarStyle: {
           position: 'absolute',
           backgroundColor: 'transparent',
