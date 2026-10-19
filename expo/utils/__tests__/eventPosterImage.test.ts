@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { describe, it } from 'node:test';
-import { isUsableEventPosterUrl, pickEventPosterUrl, resolveEventPosterUrl } from '../eventPosterImage';
+import { getEventDetailPosterUrls, isUsableEventPosterUrl, pickEventPosterUrl, resolveEventPosterUrl } from '../eventPosterImage';
 import { getTicketStatusLabel, toPersonalAttendance } from '../eventTicketStatus';
 
 describe('Event poster trust', () => {
@@ -11,6 +11,18 @@ describe('Event poster trust', () => {
   it('keeps a real provider poster', () => {
     assert.equal(resolveEventPosterUrl('https://img.example.org/event.jpg'), 'https://img.example.org/event.jpg');
     assert.equal(pickEventPosterUrl('bad', 'https://img.example.org/legit.jpg'), 'https://img.example.org/legit.jpg');
+  });
+  it('keeps a discovery image when the refreshed detail lacks one', () => {
+    assert.deepEqual(getEventDetailPosterUrls('https://events.example.com/discovery.jpg', ''),
+      ['https://events.example.com/discovery.jpg']);
+  });
+  it('tries an alternative provider image only when necessary', () => {
+    assert.deepEqual(getEventDetailPosterUrls('https://events.example.com/discovery.jpg', 'https://events.example.com/detail.jpg', 'https://events.example.com/discovery.jpg'),
+      ['https://events.example.com/discovery.jpg', 'https://events.example.com/detail.jpg']);
+  });
+  it('does not replace a real lower-resolution image with a generic gradient', () => {
+    assert.deepEqual(getEventDetailPosterUrls('https://events.example.com/authentic.jpg'),
+      ['https://events.example.com/authentic.jpg']);
   });
   it('rejects obviously tiny thumbnails and unsafe schemes', () => {
     assert.equal(isUsableEventPosterUrl('https://img.example.org/p.png?w=85'), false);

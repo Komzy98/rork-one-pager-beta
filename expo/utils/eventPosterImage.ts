@@ -29,3 +29,16 @@ export function pickEventPosterUrl(...candidates: Array<string | null | undefine
   }
   return DEFAULT_EVENT_POSTER_URL;
 }
+
+
+/** Keep carousel artwork first, with provider-detail art as a fallback.
+ * A provider detail refresh can omit artwork even when the discovery card has it.
+ */
+export function getEventDetailPosterUrls(...candidates: Array<string | null | undefined>): string[] {
+  const urls = new Set<string>();
+  for (const candidate of candidates) {
+    const url = resolveEventPosterUrl(candidate);
+    if (url) urls.add(url);
+  }
+  return [...urls];
+}
