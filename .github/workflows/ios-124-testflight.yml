@@ -1,0 +1,64 @@
+name: One Pager iOS 124 to TestFlight (manual)
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: npm
+          cache-dependency-path: expo/package-lock.json
+      - name: Install dependencies
+        working-directory: expo
+        run: npm ci --ignore-scripts
+      - name: Confirm no Trakt references
+        run: |
+          if git grep -niE 'trakt|api\.trakt\.tv' -- .; then
+            echo '::error::Trakt reference found in tracked source'
+            exit 1
+          fi
+      - name: Run unit tests
+        working-directory: expo
+        run: npm test
+      - name: Typecheck
+        working-directory: expo
+        run: npx tsc --noEmit
+
+  build-and-submit:
+    needs: validate
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+    env:
+      EXPO_TOKEN: ${{ secrets.EXPO_TOKEN }}
+      CI: '1'
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: npm
+          cache-dependency-path: expo/package-lock.json
+      - name: Verify EAS authentication
+        run: |
+          if [ -z "$EXPO_TOKEN" ]; then
+            echo '::error::EXPO_TOKEN is missing'
+            exit 1
+          fi
+      - name: Install dependencies
+        working-directory: expo
+        run: npm ci
+      - name: Build iOS version 2.0.0 (124) on EAS
+        working-directory: expo
+        run: npx eas-cli build --platform ios --profile production --non-interactive --wait
+      - name: Submit build 124 to TestFlight
+        working-directory: expo
+        run: npx eas-cli submit --platform ios --profile production --latest --non-interactive --wait
