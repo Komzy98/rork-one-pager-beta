@@ -74,7 +74,7 @@ import { getEventCategoryMeta } from '@/utils/eventCategoryMeta';
 import { WazeLogoMark, WAZE_BRAND_CYAN } from '@/components/WazeLogoMark';
 import { PremiumEventPosterCard, POSTER_HORIZONTAL_CARD_MIN_HEIGHT } from '@/components/events/PremiumEventPosterCard';
 import { buildEventLink } from '@/utils/deepLinks';
-import { pickEventPosterUrl, resolveEventPosterUrl } from '@/utils/eventPosterImage';
+import { getEventDetailPosterUrls, pickEventPosterUrl } from '@/utils/eventPosterImage';
 import type { OnePagerEvent } from '@/types/events';
 import type { PlanRsvpStatus } from '@/utils/sharedPlansService';
 import type { SocialProfile } from '@/utils/friendsService';
@@ -114,7 +114,12 @@ export default function EventDetailScreen() {
   const remoteEvent = useEventById(id, needsRemoteFetch);
 
   const event: OnePagerEvent | null = useMemo(() => {
-    if (remoteEvent.event) return localEventToOnePager(remoteEvent.event);
+    if (remoteEvent.event) {
+      const refreshed = localEventToOnePager(remoteEvent.event);
+      // Provider details are authoritative for metadata, but their image field
+      // may be empty or lower quality than the poster already shown in Events.
+      return { ...refreshed, imageUrl: pickEventPosterUrl(cachedEvent?.imageUrl, refreshed.imageUrl) };
+    }
     if (cachedEvent) return cachedEvent;
     return null;
   }, [cachedEvent, remoteEvent.event]);
@@ -134,12 +139,19 @@ export default function EventDetailScreen() {
   const [invitePlanToken, setInvitePlanToken] = useState<string | null>(null);
   const [showPlanner, setShowPlanner] = useState(false);
   const [ticketBusy, setTicketBusy] = useState(false);
-  const [heroPosterFailed, setHeroPosterFailed] = useState(false);
+  const [heroPosterIndex, setHeroPosterIndex] = useState(0);
   const [showRsvpConfirmation, setShowRsvpConfirmation] = useState(false);
 
+  // Preserve the poster the user tapped in the discovery feed. If that image
+  // fails to load, try the provider's refreshed image before using a gradient.
+  const heroPosterUrls = useMemo(
+    () => getEventDetailPosterUrls(cachedEvent?.imageUrl, remoteEvent.event?.image, event?.imageUrl),
+    [cachedEvent?.imageUrl, remoteEvent.event?.image, event?.imageUrl],
+  );
+  const heroPosterKey = heroPosterUrls.join('|');
   useEffect(() => {
-    setHeroPosterFailed(false);
-  }, [event?.id, event?.imageUrl]);
+    setHeroPosterIndex(0);
+  }, [id, heroPosterKey]);
 
   const saved = id ? isSaved(id) : false;
 
@@ -427,7 +439,7 @@ export default function EventDetailScreen() {
     && (event.latitude !== 0 || event.longitude !== 0);
   const listingInfo = getEventListingBadges(localEvent);
   const canBuyTickets = isUsableTicketLink(event.ticketUrl);
-  const heroPosterUrl = resolveEventPosterUrl(event.imageUrl);
+  const heroPosterUrl = heroPosterUrls[heroPosterIndex] ?? '';
   const needsListingRefresh = isProviderEvent && remoteEvent.isError && !!cachedEvent;
 
 
@@ -478,17 +490,15 @@ export default function EventDetailScreen() {
       >
         <View style={styles.heroWrap}>
           <Animated.View style={[styles.heroImageWrap, { transform: [{ scale: heroScale }] }]}>
-            {heroPosterUrl && !heroPosterFailed ? (
+            {heroPosterUrl ? (
               <Image
+                key={heroPosterUrl}
                 source={{ uri: heroPosterUrl }}
                 style={styles.heroImage}
                 contentFit="cover"
                 transition={220}
                 cachePolicy="memory-disk"
-                onError={() => setHeroPosterFailed(true)}
-                onLoad={(loadEvent) => {
-                  if (loadEvent.source?.width && loadEvent.source.width < 350) setHeroPosterFailed(true);
-                }}
+                onError={() => setHeroPosterIndex((index) => Math.min(index + 1, heroPosterUrls.length))}
                 accessibilityLabel={event.title}
               />
             ) : (
