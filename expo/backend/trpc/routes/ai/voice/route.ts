@@ -2,9 +2,11 @@ import { z } from 'zod';
 import { publicProcedure } from '@/backend/trpc/create-context';
 
 const ELEVENLABS_API_URL = 'https://api.elevenlabs.io/v1/text-to-speech';
-const DEFAULT_VOICE_ID = '21m00Tcm4TlvDq8ikWAM';
-const DEFAULT_VOICE_NAME = 'Rachel';
-const DEFAULT_MODEL_ID = 'eleven_multilingual_v2';
+// ElevenLabs' newer, warm guide-style voice (replacing the legacy Rachel preset).
+// Configure ELEVENLABS_VOICE_ID in production after auditioning the preferred voice.
+const DEFAULT_VOICE_ID = 'OZ0L6eISlOejga3XjDFt';
+const DEFAULT_VOICE_NAME = 'Talia';
+const DEFAULT_MODEL_ID = 'eleven_v4';
 
 export const generateVoiceRoute = publicProcedure
   .input(
@@ -15,20 +17,22 @@ export const generateVoiceRoute = publicProcedure
   )
   .mutation(async ({ input }) => {
     const apiKey = process.env.ELEVENLABS_API_KEY;
-    const voiceId = input.voiceId ?? DEFAULT_VOICE_ID;
+    const voiceId = input.voiceId ?? process.env.ELEVENLABS_VOICE_ID?.trim() ?? DEFAULT_VOICE_ID;
+    const modelId = process.env.ELEVENLABS_MODEL_ID?.trim() || DEFAULT_MODEL_ID;
+    const voiceName = voiceId === DEFAULT_VOICE_ID ? DEFAULT_VOICE_NAME : 'Custom ElevenLabs voice';
 
-    console.log('🎤 [ElevenLabs] Voice generation request received', {
+    console.log('🎤 [ElevenLabs] Natural summary narration requested', {
       textLength: input.text.length,
       hasApiKey: Boolean(apiKey),
       voiceId,
-      voiceName: DEFAULT_VOICE_NAME,
+      modelId,
     });
 
     if (!apiKey) {
       throw new Error('ELEVENLABS_API_KEY is not configured');
     }
 
-    const url = `${ELEVENLABS_API_URL}/${voiceId}?output_format=mp3_44100_128`;
+    const url = `${ELEVENLABS_API_URL}/${encodeURIComponent(voiceId)}?output_format=mp3_44100_128`;
 
     const response = await fetch(url, {
       method: 'POST',
@@ -37,13 +41,14 @@ export const generateVoiceRoute = publicProcedure
         'xi-api-key': apiKey,
       },
       body: JSON.stringify({
-        text: input.text,
-        model_id: DEFAULT_MODEL_ID,
+        // The v4 model understands a gentle delivery cue. The underlying words
+        // remain the actual grounded daily summary (no invented achievements).
+        text: `[warm, natural, relaxed conversational tone] ${input.text}`,
+        model_id: modelId,
+        language_code: 'en',
         voice_settings: {
-          stability: 0.38,
-          similarity_boost: 0.88,
-          style: 0.2,
-          use_speaker_boost: true,
+          stability: 0.5,
+          similarity_boost: 0.75,
         },
       }),
     });
@@ -53,24 +58,27 @@ export const generateVoiceRoute = publicProcedure
       console.log('❌ [ElevenLabs] Voice generation failed', {
         status: response.status,
         body: errorText.slice(0, 300),
+        modelId,
       });
       throw new Error('Failed to generate ElevenLabs voice audio');
     }
 
     const audioBuffer = await response.arrayBuffer();
+    if (!audioBuffer.byteLength) throw new Error('ElevenLabs returned empty audio');
+
     const audioBase64 = Buffer.from(audioBuffer).toString('base64');
     const audioDataUri = `data:audio/mpeg;base64,${audioBase64}`;
 
     console.log('✅ [ElevenLabs] Voice generation succeeded', {
       bytes: audioBuffer.byteLength,
       voiceId,
-      voiceName: DEFAULT_VOICE_NAME,
+      modelId,
     });
 
     return {
       audioDataUri,
       voiceId,
-      voiceName: DEFAULT_VOICE_NAME,
+      voiceName,
       provider: 'elevenlabs' as const,
     };
   });
