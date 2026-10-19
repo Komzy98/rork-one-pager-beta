@@ -489,7 +489,14 @@ export default function ActivitiesScreen() {
     } catch (error) {
       console.log('❌ [Activities] ElevenLabs summary audio failed:', error);
       setIsSpeaking(false);
-      setAudioError('Audio is unavailable right now. Tap Listen to Audio to retry.');
+      const reason = error instanceof Error ? error.message : String(error ?? '');
+      // A missing production API key cannot be fixed by repeatedly tapping Retry.
+      // Expose the configuration problem rather than misleading the user.
+      setAudioError(
+        /ELEVENLABS_API_KEY|not configured/i.test(reason)
+          ? 'ElevenLabs audio is not configured on the server yet.'
+          : 'Audio could not play. Check your connection and try again.'
+      );
     }
   }, [generateVoiceMutation, summaryAudioPlayer]);
 
