@@ -1,7 +1,6 @@
 import React, { useMemo, useState, useEffect, useCallback, useRef } from 'react';
 import { StyleSheet, View, Text, ScrollView, TouchableOpacity, Image, Platform, RefreshControl, Animated, Alert, FlatList } from 'react-native';
 import { Play, ChevronRight, Sparkles, Calendar, CheckCircle2, Target, Flame, Tv, Radio, X, Clock, BarChart3, BellRing, PartyPopper, Users } from 'lucide-react-native';
-import * as Speech from 'expo-speech';
 import * as Haptics from 'expo-haptics';
 import { setAudioModeAsync, useAudioPlayer, useAudioPlayerStatus } from 'expo-audio';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -139,8 +138,6 @@ import { buildYounifyProviderIndex, pickBestYounifyRowForEpisode } from '@/utils
 import { formatShowEpisodeLabel, formatYounifyContinueEpisodeLabel } from '@/utils/showEpisodeLabel';
 import { SHOWS_HREF } from '@/constants/showsNavigation';
 
-type AvailableSpeechVoice = Awaited<ReturnType<typeof Speech.getAvailableVoicesAsync>>[number];
-
 type ActivitiesContinueItem =
   | { kind: 'local'; show: Show & { posterUrl?: string | null } }
   | { kind: 'younify'; row: Record<string, unknown>; key: string };
@@ -162,61 +159,6 @@ function getContinueWatchingTitle(item: ActivitiesContinueItem): string {
 }
 
 const ELEVENLABS_SUMMARY_VOICE_ID = '21m00Tcm4TlvDq8ikWAM';
-
-const NATURAL_VOICE_HINTS = [
-  'premium',
-  'enhanced',
-  'natural',
-  'neural',
-  'siri',
-  'google',
-  'wavenet',
-  'studio',
-  'eloquence',
-  'ava',
-  'allison',
-  'samantha',
-  'serena',
-  'daniel',
-  'karen',
-] as const;
-
-function scoreVoice(voice: AvailableSpeechVoice): number {
-  const identifier = voice.identifier.toLowerCase();
-  const name = (voice.name ?? '').toLowerCase();
-  const language = voice.language.toLowerCase();
-  let score = 0;
-
-  if (language.startsWith('en-ng')) score += 80;
-  if (language.startsWith('en-gb')) score += 70;
-  if (language.startsWith('en-us')) score += 65;
-  if (language.startsWith('en')) score += 50;
-  const quality = String(voice.quality ?? 'Default');
-
-  if (quality === 'Enhanced') score += 45;
-  if (quality === 'Premium') score += 55;
-
-  const searchText = `${identifier} ${name}`;
-  for (const hint of NATURAL_VOICE_HINTS) {
-    if (searchText.includes(hint)) {
-      score += 18;
-    }
-  }
-
-  if (searchText.includes('compact')) score -= 20;
-  if (searchText.includes('default')) score -= 8;
-
-  return score;
-}
-
-function selectMostNaturalVoice(voices: AvailableSpeechVoice[]): AvailableSpeechVoice | null {
-  if (voices.length === 0) {
-    return null;
-  }
-
-  const rankedVoices = [...voices].sort((a, b) => scoreVoice(b) - scoreVoice(a));
-  return rankedVoices[0] ?? null;
-}
 
 function buildSpeechSummaryText(summary: string): string {
   return summary
@@ -295,6 +237,7 @@ export default function ActivitiesScreen() {
   const [autoSummaryScheduleLabel, setAutoSummaryScheduleLabel] = useState<string>('');
   const [autoSummaryHintDismissed, setAutoSummaryHintDismissed] = useState(true);
   const [isSpeaking, setIsSpeaking] = useState<boolean>(false);
+  const [audioError, setAudioError] = useState<string | null>(null);
   const [showsWithThumbnails, setShowsWithThumbnails] = useState<(Show & { posterUrl?: string | null })[]>([]);
   const [younifyContinueItems, setYounifyContinueItems] = useState<Record<string, unknown>[]>([]);
   const [linkedStreamingCount, setLinkedStreamingCount] = useState(0);
@@ -447,7 +390,6 @@ export default function ActivitiesScreen() {
   const generateVoiceMutation = trpc.ai.generateVoice.useMutation();
   const summaryAudioPlayer = useAudioPlayer();
   const summaryAudioStatus = useAudioPlayerStatus(summaryAudioPlayer);
-  const preferredVoiceRef = useRef<AvailableSpeechVoice | null>(null);
   const scrollY = useRef(new Animated.Value(0)).current;
   const fadeAnim = useRef(new Animated.Value(1)).current;
   const slideAnim = useRef(new Animated.Value(0)).current;
@@ -489,48 +431,12 @@ export default function ActivitiesScreen() {
     setIsSpeaking(summaryAudioStatus.playing);
   }, [summaryAudioStatus.playing]);
 
-  const loadPreferredVoice = useCallback(async (): Promise<AvailableSpeechVoice | null> => {
-    if (preferredVoiceRef.current) {
-      return preferredVoiceRef.current;
-    }
-
-    try {
-      let voices = await Speech.getAvailableVoicesAsync();
-
-      if (voices.length === 0 && Platform.OS === 'web') {
-        await new Promise<void>((resolve) => {
-          setTimeout(() => resolve(), 250);
-        });
-        voices = await Speech.getAvailableVoicesAsync();
-      }
-
-      const preferredVoice = selectMostNaturalVoice(voices);
-      preferredVoiceRef.current = preferredVoice;
-
-      if (__DEV__) {
-        console.log('🎙️ [Activities] Loaded speech voices:', voices.map((voice) => ({
-          identifier: voice.identifier,
-          name: voice.name,
-          language: voice.language,
-          quality: voice.quality,
-        })));
-        console.log('🎙️ [Activities] Selected preferred voice:', preferredVoice);
-      }
-
-      return preferredVoice;
-    } catch (error) {
-      console.log('❌ [Activities] Failed to load speech voices:', error);
-      return null;
-    }
-  }, []);
-
   const stopSummarySpeech = useCallback(async () => {
     try {
       summaryAudioPlayer.pause();
       void summaryAudioPlayer.seekTo(0);
-      await Speech.stop();
     } catch (error) {
-      console.log('❌ [Activities] Failed to stop speech:', error);
+      console.log('❌ [Activities] Failed to stop summary audio:', error);
     } finally {
       setIsSpeaking(false);
     }
@@ -538,16 +444,12 @@ export default function ActivitiesScreen() {
 
   const speakDailySummary = useCallback(async (summary: string) => {
     const normalizedSummary = buildSpeechSummaryText(summary);
+    if (!normalizedSummary) return;
 
-    if (!normalizedSummary) {
-      return;
-    }
-
-    setIsSpeaking(true);
+    setAudioError(null);
     void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
 
     try {
-      await Speech.stop();
       summaryAudioPlayer.pause();
       void summaryAudioPlayer.seekTo(0);
 
@@ -556,50 +458,25 @@ export default function ActivitiesScreen() {
         voiceId: ELEVENLABS_SUMMARY_VOICE_ID,
       });
 
+      if (generatedVoice.provider !== 'elevenlabs' || !generatedVoice.audioDataUri) {
+        throw new Error('ElevenLabs returned no playable audio');
+      }
+
       console.log('🎙️ [Activities] Playing ElevenLabs summary audio', {
         provider: generatedVoice.provider,
         voiceId: generatedVoice.voiceId,
-        voiceName: generatedVoice.voiceName,
         audioLength: generatedVoice.audioDataUri.length,
       });
 
       summaryAudioPlayer.replace(generatedVoice.audioDataUri);
       void summaryAudioPlayer.seekTo(0);
       summaryAudioPlayer.play();
-      return;
     } catch (error) {
-      console.log('⚠️ [Activities] ElevenLabs playback failed, falling back to system voice:', error);
-    }
-
-    try {
-      const preferredVoice = await loadPreferredVoice();
-      const language = preferredVoice?.language ?? 'en-GB';
-
-      if (__DEV__) {
-        console.log('🎙️ [Activities] Speaking summary with fallback voice:', {
-          identifier: preferredVoice?.identifier ?? 'default',
-          name: preferredVoice?.name ?? 'default',
-          language,
-        });
-      }
-
-      Speech.speak(normalizedSummary, {
-        language,
-        voice: preferredVoice?.identifier,
-        rate: Platform.OS === 'web' ? 0.88 : 0.9,
-        pitch: 1.0,
-        onDone: () => setIsSpeaking(false),
-        onStopped: () => setIsSpeaking(false),
-        onError: (playbackError) => {
-          console.log('❌ [Activities] Speech playback error:', playbackError);
-          setIsSpeaking(false);
-        },
-      });
-    } catch (error) {
-      console.log('❌ [Activities] Failed to speak summary:', error);
+      console.log('❌ [Activities] ElevenLabs summary audio failed:', error);
       setIsSpeaking(false);
+      setAudioError('Audio is unavailable right now. Tap Listen to Audio to retry.');
     }
-  }, [generateVoiceMutation, loadPreferredVoice, summaryAudioPlayer]);
+  }, [generateVoiceMutation, summaryAudioPlayer]);
 
   const activities = useMemo(() => appContext?.activities || [], [appContext?.activities]);
   const shows = useMemo(() => appContext?.shows || [], [appContext?.shows]);
@@ -2504,13 +2381,19 @@ export default function ActivitiesScreen() {
               isGenerating={isGeneratingSummary}
               isSpeaking={isSpeaking}
               isVoicePending={generateVoiceMutation.isPending}
+              audioError={audioError}
               recoveryActive={recovery.isActive}
               autoSummaryHintDismissed={autoSummaryHintDismissed}
               autoSummaryScheduleLabel={autoSummaryScheduleLabel || null}
               yesterdayDelta={yesterdayDelta}
-              onGenerate={generateDailySummary}
+              onGenerate={() => {
+                void stopSummarySpeech();
+                setAudioError(null);
+                void generateDailySummary();
+              }}
               onDismissSummary={() => {
                 void stopSummarySpeech();
+                setAudioError(null);
                 void markDailySummaryDismissed(userId, getTodayYmd());
                 setDailySummary(null);
               }}
