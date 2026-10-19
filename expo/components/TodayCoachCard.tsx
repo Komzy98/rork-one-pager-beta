@@ -1,6 +1,6 @@
 import React, { useMemo } from 'react';
 import { ActivityIndicator, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
-import { Share2, Volume2, VolumeX, X } from 'lucide-react-native';
+import { RefreshCw, Share2, Sparkles, Volume2, VolumeX, X } from 'lucide-react-native';
 
 import { useTheme } from '@/hooks/useTheme';
 import type { DailySummary } from '@/utils/dailySummary';
@@ -41,10 +41,12 @@ export default function TodayCoachCard(props: TodayCoachCardProps) {
   const { colors, isDark } = useTheme();
   const {
     dailySummary,
+    isGenerating,
     isSpeaking,
     isVoicePending,
     recoveryActive,
     yesterdayDelta,
+    onGenerate,
     onDismissSummary,
     onToggleListen,
     onShareSummary,
@@ -65,69 +67,121 @@ export default function TodayCoachCard(props: TodayCoachCardProps) {
     return null;
   }, [dailySummary, yesterdayDelta]);
 
-  if (!dailySummary || !review) return null;
+  const hasReview = Boolean(dailySummary && review);
 
   return (
     <View style={styles.wrap}>
       <View style={[styles.card, { backgroundColor: colors.card, borderColor: colors.border }]}>
         <View style={styles.topRow}>
           <Text style={[styles.kicker, { color: colors.textMuted }]}>DAY REVIEW</Text>
-          <TouchableOpacity
-            onPress={onDismissSummary}
-            accessibilityRole="button"
-            accessibilityLabel="Dismiss day review"
-            hitSlop={10}
-            style={styles.dismissButton}
-          >
-            <X size={17} color={colors.textMuted} strokeWidth={2} />
-          </TouchableOpacity>
-        </View>
-
-        <Text style={[styles.review, { color: colors.text }]}>{review}</Text>
-        {supportingLine ? (
-          <Text style={[styles.supporting, { color: colors.textSecondary }]} numberOfLines={2}>
-            {supportingLine}
-          </Text>
-        ) : null}
-        <Text style={[styles.meta, { color: colors.textMuted }]}>
-          {recoveryActive ? 'Today · Recovery mode' : `Today · Day score ${dailySummary.score}/100`}
-        </Text>
-
-        <View style={[styles.actions, { borderTopColor: colors.border }]}>
-          <TouchableOpacity
-            onPress={onToggleListen}
-            disabled={isVoicePending}
-            accessibilityRole="button"
-            accessibilityLabel={isVoicePending ? 'Preparing audio' : isSpeaking ? 'Stop listening' : 'Listen to day review'}
-            accessibilityState={{ disabled: isVoicePending }}
-            activeOpacity={0.8}
-            style={[styles.listenButton, { backgroundColor: isDark ? '#26344E' : '#EDF2FE', opacity: isVoicePending ? 0.7 : 1 }]}
-          >
-            {isVoicePending ? (
-              <ActivityIndicator size="small" color={colors.primary} />
-            ) : isSpeaking ? (
-              <VolumeX size={16} color={colors.primary} />
-            ) : (
-              <Volume2 size={16} color={colors.primary} />
-            )}
-            <Text style={[styles.listenText, { color: colors.primary }]}>
-              {isVoicePending ? 'Preparing…' : isSpeaking ? 'Stop' : 'Listen'}
-            </Text>
-          </TouchableOpacity>
-
-          {!recoveryActive ? (
+          {hasReview ? (
             <TouchableOpacity
-              onPress={onShareSummary}
+              onPress={onDismissSummary}
               accessibilityRole="button"
-              accessibilityLabel="Share day review"
-              activeOpacity={0.75}
-              style={styles.shareButton}
+              accessibilityLabel="Dismiss day review"
+              hitSlop={10}
+              style={styles.dismissButton}
             >
-              <Share2 size={15} color={colors.textSecondary} />
-              <Text style={[styles.shareText, { color: colors.textSecondary }]}>Share</Text>
+              <X size={17} color={colors.textMuted} strokeWidth={2} />
             </TouchableOpacity>
           ) : null}
         </View>
+
+        {dailySummary && review ? (
+          <>
+            <Text style={[styles.review, { color: colors.text }]}>{review}</Text>
+            {supportingLine ? (
+              <Text style={[styles.supporting, { color: colors.textSecondary }]} numberOfLines={2}>
+                {supportingLine}
+              </Text>
+            ) : null}
+            <Text style={[styles.meta, { color: colors.textMuted }]}>
+              {recoveryActive ? 'Today · Recovery mode' : `Today · Day score ${dailySummary.score}/100`}
+            </Text>
+
+            <View style={[styles.actions, { borderTopColor: colors.border }]}>
+              <TouchableOpacity
+                onPress={onToggleListen}
+                disabled={isVoicePending}
+                accessibilityRole="button"
+                accessibilityLabel={isVoicePending ? 'Preparing audio' : isSpeaking ? 'Stop listening' : 'Listen to day review'}
+                accessibilityState={{ disabled: isVoicePending }}
+                activeOpacity={0.8}
+                style={[styles.listenButton, { backgroundColor: isDark ? '#26344E' : '#EDF2FE', opacity: isVoicePending ? 0.7 : 1 }]}
+              >
+                {isVoicePending ? (
+                  <ActivityIndicator size="small" color={colors.primary} />
+                ) : isSpeaking ? (
+                  <VolumeX size={16} color={colors.primary} />
+                ) : (
+                  <Volume2 size={16} color={colors.primary} />
+                )}
+                <Text style={[styles.listenText, { color: colors.primary }]}>
+                  {isVoicePending ? 'Preparing…' : isSpeaking ? 'Stop' : 'Listen'}
+                </Text>
+              </TouchableOpacity>
+
+              {!recoveryActive ? (
+                <TouchableOpacity
+                  onPress={onShareSummary}
+                  accessibilityRole="button"
+                  accessibilityLabel="Share day review"
+                  activeOpacity={0.75}
+                  style={styles.shareButton}
+                >
+                  <Share2 size={15} color={colors.textSecondary} />
+                  <Text style={[styles.shareText, { color: colors.textSecondary }]}>Share</Text>
+                </TouchableOpacity>
+              ) : null}
+              <TouchableOpacity
+                onPress={onGenerate}
+                disabled={isGenerating}
+                accessibilityRole="button"
+                accessibilityLabel="Regenerate daily summary"
+                accessibilityState={{ disabled: isGenerating, busy: isGenerating }}
+                activeOpacity={0.75}
+                style={[styles.regenerateButton, { opacity: isGenerating ? 0.6 : 1 }]}
+              >
+                {isGenerating ? (
+                  <ActivityIndicator size="small" color={colors.textSecondary} />
+                ) : (
+                  <RefreshCw size={14} color={colors.textSecondary} />
+                )}
+                <Text style={[styles.regenerateText, { color: colors.textSecondary }]}>
+                  {isGenerating ? 'Generating…' : 'Regenerate'}
+                </Text>
+              </TouchableOpacity>
+            </View>
+          </>
+        ) : (
+          <>
+            <Text style={[styles.review, { color: colors.text }]}>Your day, in a few words.</Text>
+            <Text style={[styles.supporting, { color: colors.textSecondary }]}>
+              Get a personalised recap of your progress, wins and what to focus on next.
+            </Text>
+            <TouchableOpacity
+              onPress={onGenerate}
+              disabled={isGenerating}
+              accessibilityRole="button"
+              accessibilityLabel="Generate daily summary"
+              accessibilityState={{ disabled: isGenerating, busy: isGenerating }}
+              activeOpacity={0.8}
+              style={[
+                styles.generateButton,
+                { backgroundColor: colors.primary, opacity: isGenerating ? 0.75 : 1 },
+              ]}
+            >
+              {isGenerating ? (
+                <ActivityIndicator size="small" color="#FFFFFF" />
+              ) : (
+                <Sparkles size={16} color="#FFFFFF" />
+              )}
+              <Text style={styles.generateText}>
+                {isGenerating ? 'Generating summary…' : 'Generate Daily Summary'}
+              </Text>
+            </TouchableOpacity>
+          </>
+        )}
       </View>
     </View>
   );
@@ -213,5 +267,31 @@ const styles = StyleSheet.create({
   shareText: {
     fontSize: 12,
     fontWeight: '600',
+  },
+  regenerateButton: {
+    minHeight: 34,
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 5,
+    gap: 6,
+    marginLeft: 'auto',
+  },
+  regenerateText: {
+    fontSize: 11,
+    fontWeight: '600',
+  },
+  generateButton: {
+    minHeight: 42,
+    marginTop: 14,
+    borderRadius: 12,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 9,
+  },
+  generateText: {
+    color: '#FFFFFF',
+    fontSize: 13,
+    fontWeight: '700',
   },
 });
