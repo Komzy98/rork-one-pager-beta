@@ -20,10 +20,10 @@ jobs:
       - name: Install dependencies
         working-directory: expo
         run: npm ci --ignore-scripts
-      - name: Confirm no Trakt references
+      - name: Confirm deprecated watch-provider code is absent
         run: |
-          if git grep -niE 'trakt|api\.trakt\.tv' -- .; then
-            echo '::error::Trakt reference found in tracked source'
+          if git grep -niE 'tr[a]kt|api\.tr[a]kt\.tv' -- .; then
+            echo '::error::Deprecated provider reference found in tracked source'
             exit 1
           fi
       - name: Run unit tests
