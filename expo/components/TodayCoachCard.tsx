@@ -27,11 +27,10 @@ export type TodayCoachCardProps = {
   onDismissAutoSummaryHint: () => void;
 };
 
-function firstUsefulSentence(value: string, max = 220) {
-  const clean = value.replace(/\s+/g, ' ').trim();
-  const sentence = clean.match(/^.*?[.!?](?:\s|$)/)?.[0]?.trim() ?? clean;
-  if (sentence.length <= max) return sentence;
-  return `${sentence.slice(0, max - 1).replace(/[\s,;:.!?-]+$/g, '')}…`;
+function completeDailyReview(value: string): string {
+  // The source summary is already capped by the generator. Do not silently
+  // truncate it to the first sentence: users need their actual daily recap.
+  return value.replace(/\s+/g, ' ').trim();
 }
 
 /**
@@ -55,7 +54,7 @@ export default function TodayCoachCard(props: TodayCoachCardProps) {
   } = props;
 
   const review = useMemo(
-    () => (dailySummary ? firstUsefulSentence(dailySummary.summary) : null),
+    () => (dailySummary ? completeDailyReview(dailySummary.summary) : null),
     [dailySummary],
   );
 
