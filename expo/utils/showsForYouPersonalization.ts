@@ -216,6 +216,7 @@ export function buildForYouPersonalizationContext(input: {
   younifyLinkedTmdbIds: Iterable<number>;
   regionalTmdbIds: Iterable<number>;
   heroCandidates: readonly ForYouMediaItem[];
+  savedGenreIds?: Iterable<number>;
 }): ForYouPersonalizationContext {
   const savedTmdbIds = new Set(input.savedTmdbIds);
   return {
@@ -223,6 +224,9 @@ export function buildForYouPersonalizationContext(input: {
     continueWatchingTmdbIds: new Set(input.continueWatchingTmdbIds),
     younifyLinkedTmdbIds: new Set(input.younifyLinkedTmdbIds),
     regionalTmdbIds: new Set(input.regionalTmdbIds),
-    preferredGenreIds: inferPreferredGenreIds(input.heroCandidates, savedTmdbIds),
+    preferredGenreIds: new Set([
+      ...inferPreferredGenreIds(input.heroCandidates, savedTmdbIds),
+      ...(input.savedGenreIds ?? []),
+    ]),
   };
 }

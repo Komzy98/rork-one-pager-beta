@@ -1,7 +1,7 @@
 import { unifiedStorage } from '@/utils/unifiedStorage';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import createContextHook from '@nkzw/create-context-hook';
-import React, { useEffect } from 'react';
+import React, { useEffect, useRef } from 'react';
 import { 
   Habit, 
   HabitWithStats, 
@@ -473,10 +473,20 @@ export const [AppProvider, useApp] = createContextHook(() => {
         throw error;
       }
     },
-    onSuccess: (shows) => {
-      queryClient.setQueryData(['shows', userId], shows);
-    },
   });
+
+  // Commit immediately to the React Query cache. Serialize persistence so rapid
+  // save/status/progress taps cannot overwrite one another with an older snapshot.
+  const showWriteQueue = useRef<Promise<unknown>>(Promise.resolve());
+  const commitShows = (next: Show[]) => {
+    queryClient.setQueryData(['shows', userId], next);
+    const save = () => saveShowsMutation.mutateAsync(next).catch((error) => {
+      console.error('[shows] failed to persist library change', error);
+    });
+    showWriteQueue.current = showWriteQueue.current.then(save, save);
+  };
+  const currentShows = () =>
+    queryClient.getQueryData<Show[]>(['shows', userId]) ?? showsQuery.data ?? [];
 
   /** Publish a habit change in the same tap, before local or cloud persistence. */
   const commitHabits = (nextHabits: Habit[]) => {
@@ -809,12 +819,12 @@ export const [AppProvider, useApp] = createContextHook(() => {
 
   // Show CRUD operations
   const addShow = (showData: NewShowFormData) => {
-    const shows = showsQuery.data || [];
+    const shows = currentShows();
     
     // Check for duplicates based on tmdbId and mediaType
-    const isDuplicate = shows.some(show => 
-      show.tmdbId === showData.tmdbId && 
-      show.mediaType === showData.mediaType
+    const isDuplicate = showData.tmdbId != null && shows.some(show =>
+      show.tmdbId === showData.tmdbId &&
+      (show.mediaType || (show.type === 'Movie' ? 'movie' : 'tv')) === showData.mediaType
     );
     
     if (isDuplicate) {
@@ -831,21 +841,21 @@ export const [AppProvider, useApp] = createContextHook(() => {
     };
     
     const updatedShows = [...shows, newShow];
-    saveShowsMutation.mutate(updatedShows);
+    commitShows(updatedShows);
     void logShowSaved(newShow.id, showData.title, showData.tmdbId, showData.mediaType);
   };
 
   const updateShow = (updatedShow: Show) => {
-    const shows = showsQuery.data || [];
+    const shows = currentShows();
     const updatedShows = shows.map(show => 
       show.id === updatedShow.id ? { ...updatedShow, updatedAt: new Date().toISOString() } : show
     );
     
-    saveShowsMutation.mutate(updatedShows);
+    commitShows(updatedShows);
   };
 
   const markEpisodeWatched = (showId: string) => {
-    const shows = showsQuery.data || [];
+    const shows = currentShows();
     const updatedShows = shows.map(show => {
       if (show.id === showId && show.type === 'Series') {
         const newEpisode = (show.currentEpisode || 0) + 1;
@@ -860,18 +870,18 @@ export const [AppProvider, useApp] = createContextHook(() => {
       return show;
     });
     
-    saveShowsMutation.mutate(updatedShows);
+    commitShows(updatedShows);
   };
 
   const deleteShow = (showId: string) => {
-    const shows = showsQuery.data || [];
+    const shows = currentShows();
     console.log('Deleting show with ID:', showId);
     console.log('Current shows:', shows.map(s => ({ id: s.id, title: s.title })));
     
     const updatedShows = shows.filter(show => show.id !== showId);
     console.log('Shows after deletion:', updatedShows.map(s => ({ id: s.id, title: s.title })));
     
-    saveShowsMutation.mutate(updatedShows);
+    commitShows(updatedShows);
   };
 
   // Toggle daily task completion
