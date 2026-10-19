@@ -158,13 +158,29 @@ function getContinueWatchingTitle(item: ActivitiesContinueItem): string {
   return String(row.showTitle || row.title || 'This title');
 }
 
-const ELEVENLABS_SUMMARY_VOICE_ID = '21m00Tcm4TlvDq8ikWAM';
+
+// Keep the actual daily-summary wording and natural sentence rhythm.
+// Avoid turning punctuation inside show or task titles into full stops.
+const SPOKEN_SMALL_NUMBERS = [
+  'zero', 'one', 'two', 'three', 'four', 'five', 'six', 'seven',
+  'eight', 'nine', 'ten', 'eleven', 'twelve', 'thirteen',
+  'fourteen', 'fifteen', 'sixteen', 'seventeen', 'eighteen',
+  'nineteen', 'twenty',
+] as const;
 
 function buildSpeechSummaryText(summary: string): string {
   return summary
-    .replace(/\s+/g, ' ')
-    .replace(/([.!?])\s+/g, '$1  ')
-    .replace(/\s*[:|-]\s*/g, '. ')
+    .replace(/\*\*/g, '')
+    .replace(/(^|\n)\s*[-•*]\s+/g, '$1')
+    .replace(/\b(\d{1,2}) of (\d{1,2})(?=\s+(?:habits?|tasks?|goals?|routines?)\b)/gi,
+      (match, completed: string, total: string) => {
+        const first = SPOKEN_SMALL_NUMBERS[Number(completed)];
+        const second = SPOKEN_SMALL_NUMBERS[Number(total)];
+        return first && second ? `\${first} of \${second}` : match;
+      })
+    .replace(/\s+([,.!?;:])/g, '$1')
+    .replace(/[ \t]+/g, ' ')
+    .replace(/\n{3,}/g, '\n\n')
     .trim();
 }
 
@@ -455,7 +471,6 @@ export default function ActivitiesScreen() {
 
       const generatedVoice = await generateVoiceMutation.mutateAsync({
         text: normalizedSummary,
-        voiceId: ELEVENLABS_SUMMARY_VOICE_ID,
       });
 
       if (generatedVoice.provider !== 'elevenlabs' || !generatedVoice.audioDataUri) {
