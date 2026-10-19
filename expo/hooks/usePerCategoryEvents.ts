@@ -12,6 +12,7 @@ import {
 import { mergeDiscoveryEvents } from '@/utils/mergeDiscoveryEvents';
 import { BENTO_CATEGORY_IDS } from '@/utils/eventCategoryMeta';
 import { eventMatchesBentoCategory } from '@/utils/eventCategories';
+import { curateDiscoveryEvents } from '@/utils/eventsV2Discovery';
 
 export { EVENTS_PER_CATEGORY, EVENTS_PREVIEW_SIZE } from '@/utils/eventDiscovery';
 
@@ -25,9 +26,10 @@ function normalizeEvents(events: LocalEvent[], queryCoords: { latitude: number; 
     description: event.description ?? '',
   }));
 
-  return sortEventsByStartDate(
+  // Counts and cards must share the same deduplication and stale-listing policy.
+  return curateDiscoveryEvents(sortEventsByStartDate(
     filterUpcomingEvents(attachDistanceKm(normalized, queryCoords)),
-  );
+  ));
 }
 
 function applyFallbackIfNeeded(
@@ -45,11 +47,12 @@ export interface UsePerCategoryEventsOptions {
   latitude: number;
   longitude: number;
   radiusMiles?: number;
+  sizePerCategory?: number;
   enabled?: boolean;
 }
 
 export function usePerCategoryEvents(options: UsePerCategoryEventsOptions) {
-  const { latitude, longitude, radiusMiles = 25, enabled = true } = options;
+  const { latitude, longitude, radiusMiles = 25, sizePerCategory = EVENTS_PER_CATEGORY, enabled = true } = options;
   const queryCoords = useMemo(() => ({ latitude, longitude }), [latitude, longitude]);
 
   const previewQuery = trpc.events.getNearby.useQuery(
@@ -74,7 +77,7 @@ export function usePerCategoryEvents(options: UsePerCategoryEventsOptions) {
       latitude: queryCoords.latitude,
       longitude: queryCoords.longitude,
       radiusMiles,
-      sizePerCategory: EVENTS_PER_CATEGORY,
+      sizePerCategory,
     },
     {
       enabled: batchEnabled,

@@ -1,7 +1,9 @@
 import assert from 'node:assert/strict';
 import { describe, it } from 'node:test';
 import type { LocalEvent } from '@/types/events';
+import { curateDiscoveryEvents } from '@/utils/eventsV2Discovery';
 import {
+  countEventsByBentoCategory,
   eventMatchesBentoCategory,
   formatBentoCountLabel,
   getBentoCategoryId,
@@ -108,4 +110,26 @@ describe('eventCategories', () => {
     assert.match(label, /3 Fitness/);
     assert.match(label, /2 Family/);
   });
+  it('counts only distinct, upcoming category listings that are browseable', () => {
+    const now = Date.parse('2026-10-19T12:00:00Z');
+    const boat = baseEvent({
+      id: 'tm-boat', title: 'Manchester Boat Crawl', venue: 'The Wharf',
+      category: 'other', startIso: '2026-11-01T19:00:00Z',
+    });
+    const duplicate = { ...boat, id: 'sk-boat' };
+    const past = baseEvent({
+      id: 'past-party', title: 'September Party', venue: 'Another Venue',
+      category: 'other', startIso: '2026-09-12T19:00:00Z',
+    });
+    const unique = baseEvent({
+      id: 'future-quiz', title: 'Pub Quiz', venue: 'Pub',
+      category: 'other', startIso: '2026-11-08T19:00:00Z',
+    });
+
+    const browsable = curateDiscoveryEvents([boat, duplicate, past, unique], now);
+    const counts = countEventsByBentoCategory(browsable);
+    assert.equal(counts.get('other'), 2);
+    assert.equal(browsable.filter((event) => eventMatchesBentoCategory(event, 'other')).length, 2);
+  });
+
 });

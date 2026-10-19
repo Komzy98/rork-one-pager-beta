@@ -203,6 +203,7 @@ function sampleEventsBannerMessage(): string {
 type ViewMode = 'list' | 'map';
 type EventsMainTab = 'discover' | 'myEvents';
 type Event = LocalEvent;
+const EVENTS_FEED_PAGE_SIZE = 8;
 
 const DISCOVERY_PILL_TABS = [
   { key: 'now' as const, label: 'Now', icon: Flame, color: '#FF6B6B' },
@@ -238,6 +239,8 @@ function EventsScreenInner() {
   } = useSavedEvents();
   const insets = useSafeAreaInsets();
   const [selectedCategory, setSelectedCategory] = useState<string>('all');
+  const [visibleFeedCount, setVisibleFeedCount] = useState(EVENTS_FEED_PAGE_SIZE);
+  const [eventsSearchRadiusMiles, setEventsSearchRadiusMiles] = useState(25);
   const [searchQuery, setSearchQuery] = useState<string>('');
   const [refreshing, setRefreshing] = useState<boolean>(false);
   const [mainTab, setMainTab] = useState<EventsMainTab>('discover');
@@ -303,6 +306,8 @@ function EventsScreenInner() {
   } = usePerCategoryEvents({
     latitude: eventQueryCenter.latitude,
     longitude: eventQueryCenter.longitude,
+    radiusMiles: eventsSearchRadiusMiles,
+    sizePerCategory: eventsSearchRadiusMiles > 25 ? 50 : 20,
     enabled: mainTab === 'discover',
   });
 
@@ -848,6 +853,11 @@ function EventsScreenInner() {
     // Explore shows the full deduplicated catalogue in the chosen area;
     // secondary filters show their own results rather than a personal rail.
     if (discoveryTab === 'explore') return filteredEvents;
+    // Rails show a small preview, but their matching feed must include all results.
+    if (discoveryTab === 'near') return sortEventsByDistance(filteredEvents, userCoords);
+    if (discoveryTab === 'now') return filterHappeningNow(filteredEvents);
+    if (discoveryTab === 'thisWeek') return filterThisWeekEvents(filteredEvents);
+    if (discoveryTab === 'friendsPicks') return friendsPickEvents;
     if (discoveryTab !== 'forYou') return smartDiscoveryEvents;
 
     const excludeHeroAndRail = (event: LocalEvent) =>
@@ -868,6 +878,8 @@ function EventsScreenInner() {
     inSearchMode,
     discoveryTab,
     smartDiscoveryEvents,
+    userCoords,
+    friendsPickEvents,
     globalSearchKeyword,
     searchQuery,
     events,
@@ -880,6 +892,27 @@ function EventsScreenInner() {
     recommendationInput,
     conciergeContext,
   ]);
+
+  // Render a small first page for smooth scrolling; do not hide the full result count.
+  useEffect(() => {
+    setVisibleFeedCount(EVENTS_FEED_PAGE_SIZE);
+  }, [selectedCategory, discoveryTab, searchQuery, mapSearchCenter, eventsSearchRadiusMiles]);
+
+  const visibleVerticalFeedEvents = useMemo(
+    () => verticalFeedEvents.slice(0, visibleFeedCount),
+    [verticalFeedEvents, visibleFeedCount],
+  );
+  const hasMoreVisibleEvents = visibleVerticalFeedEvents.length < verticalFeedEvents.length;
+
+  const handleShowMoreEvents = useCallback(() => {
+    void Haptics.selectionAsync();
+    setVisibleFeedCount((previous) => previous + EVENTS_FEED_PAGE_SIZE);
+  }, []);
+
+  const handleExpandEventSearch = useCallback(() => {
+    void Haptics.selectionAsync();
+    setEventsSearchRadiusMiles(50);
+  }, []);
 
   const showCinematicHero =
     mainTab === 'discover' && viewMode === 'list' && !inSearchMode && discoveryTab === 'forYou';
@@ -1439,7 +1472,9 @@ function EventsScreenInner() {
                 />
               ) : (
                 <DiscoveryScopeChip
-                  label={`Near ${areaLabel?.split(',')[0]?.trim() || areaLabel}`}
+                  label={eventsSearchRadiusMiles > 25
+                    ? `Within ${eventsSearchRadiusMiles} mi of ${areaLabel?.split(',')[0]?.trim() || areaLabel}`
+                    : `Near ${areaLabel?.split(',')[0]?.trim() || areaLabel}`}
                   Icon={MapPin}
                   color={palette.secondary}
                   backgroundColor={palette.primaryLight}
@@ -1489,7 +1524,7 @@ function EventsScreenInner() {
             </View>
           ) : (
             <View style={styles.feedList}>
-            {verticalFeedEvents.map((event, index) => (
+            {visibleVerticalFeedEvents.map((event, index) => (
               <PremiumEventPosterCard
                 key={event.id}
                 event={event}
@@ -1510,6 +1545,34 @@ function EventsScreenInner() {
                 onAddToOnePager={handleAddToOnePager}
               />
             ))}
+              {hasMoreVisibleEvents ? (
+                <TouchableOpacity
+                  accessibilityRole="button"
+                  accessibilityLabel="Show more events"
+                  activeOpacity={0.85}
+                  onPress={handleShowMoreEvents}
+                  style={[styles.showMoreEventsButton, { borderColor: cardBorder, backgroundColor: cardBg }]}
+                >
+                  <Text style={[styles.showMoreEventsLabel, { color: mainText }]}>Show more events</Text>
+                  <Text style={[styles.showMoreEventsProgress, { color: subtleText }]}>
+                    {visibleVerticalFeedEvents.length} of {verticalFeedEvents.length}
+                  </Text>
+                  <ChevronRight size={18} color={palette.primary} />
+                </TouchableOpacity>
+              ) : !inSearchMode && eventsSearchRadiusMiles < 50 && !isBatchLoading ? (
+                <TouchableOpacity
+                  accessibilityRole="button"
+                  accessibilityLabel="Find more events within 50 miles"
+                  activeOpacity={0.85}
+                  onPress={handleExpandEventSearch}
+                  style={[styles.showMoreEventsButton, { borderColor: cardBorder, backgroundColor: cardBg }]}
+                >
+                  <MapPin size={18} color={palette.primary} />
+                  <Text style={[styles.showMoreEventsLabel, { color: mainText }]}>Find more nearby events</Text>
+                  <Text style={[styles.showMoreEventsProgress, { color: subtleText }]}>50 mi radius</Text>
+                  <ChevronRight size={18} color={palette.primary} />
+                </TouchableOpacity>
+              ) : null}
             </View>
           )}
         </View>
@@ -1954,6 +2017,26 @@ const styles = StyleSheet.create({
   },
   resultCount: {
     fontSize: 13,
+  },
+  showMoreEventsButton: {
+    minHeight: 54,
+    borderRadius: 16,
+    borderWidth: 1,
+    paddingHorizontal: 16,
+    paddingVertical: 13,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 10,
+  },
+  showMoreEventsLabel: {
+    flex: 1,
+    fontSize: 14,
+    fontWeight: '700' as const,
+  },
+  showMoreEventsProgress: {
+    fontSize: 12,
+    fontWeight: '500' as const,
   },
   countBadge: {
     paddingHorizontal: 10,
