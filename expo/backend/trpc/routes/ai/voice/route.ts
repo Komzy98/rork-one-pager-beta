@@ -17,7 +17,7 @@ export const generateVoiceRoute = publicProcedure
   )
   .mutation(async ({ input }) => {
     const apiKey = process.env.ELEVENLABS_API_KEY;
-    const voiceId = input.voiceId ?? process.env.ELEVENLABS_VOICE_ID?.trim() ?? DEFAULT_VOICE_ID;
+    const voiceId = input.voiceId ?? (process.env.ELEVENLABS_VOICE_ID?.trim() || DEFAULT_VOICE_ID);
     const modelId = process.env.ELEVENLABS_MODEL_ID?.trim() || DEFAULT_MODEL_ID;
     const voiceName = voiceId === DEFAULT_VOICE_ID ? DEFAULT_VOICE_NAME : 'Custom ElevenLabs voice';
 
