@@ -1,6 +1,6 @@
 import { describe, it } from 'node:test';
 import assert from 'node:assert/strict';
-import { buildGroundedDailySummary } from '@/utils/dailySummary';
+import { buildGroundedDailySummary, summarizeDailyProgress } from '@/utils/dailySummary';
 
 describe('daily summary grounding', () => {
   it('uses only verified user actions in the Overview wrap-up', () => {
@@ -56,4 +56,26 @@ describe('daily summary grounding', () => {
     assert.deepEqual(grounded.streaks, []);
     assert.equal(grounded.sentiment, 'neutral');
   });
+  it('returns an accurate normal review without awaiting network generation', async () => {
+    const originalFetch = globalThis.fetch;
+    globalThis.fetch = (async () => {
+      throw new Error('normal review must not call fetch');
+    }) as typeof fetch;
+    try {
+      const review = await summarizeDailyProgress({
+        date: '2026-10-19',
+        habits: [
+          { name: 'Walk outdoors', done: true, streak: 2, scheduledToday: true },
+          { name: 'Read', done: false, streak: 0, scheduledToday: true },
+        ],
+        openItems: ['Read'],
+      });
+      assert.match(review.summary, /Walk outdoors/);
+      assert.match(review.summary, /Read/);
+      assert.notEqual(review.summary, 'Keep building momentum with your daily activities and habits!');
+    } finally {
+      globalThis.fetch = originalFetch;
+    }
+  });
+
 });

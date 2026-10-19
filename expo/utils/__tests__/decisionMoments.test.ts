@@ -59,4 +59,22 @@ describe('decisionMoments', () => {
     });
     assert.ok(moments.some((m) => m.kind === 'walk_before_match'));
   });
+  it('avoids premature unwind prompts and offers them only late after progress', () => {
+    const early = buildDecisionMoments({
+      now: new Date('2026-10-19T18:30:00'),
+      continueWatchingTitle: 'Special Ops: Lioness',
+      completedHabits: 1,
+      totalHabits: 6,
+    });
+    assert.equal(early.some(m => m.kind === 'unwind_show'), false);
+    const almostDone = buildDecisionMoments({
+      now: new Date('2026-10-19T21:15:00'),
+      continueWatchingTitle: 'Special Ops: Lioness',
+      completedHabits: 5,
+      totalHabits: 6,
+    });
+    assert.equal(almostDone.some(m => m.kind === 'unwind_show'), true);
+    assert.match(almostDone.find(m => m.kind === 'unwind_show')?.body ?? '', /Lioness/);
+  });
+
 });

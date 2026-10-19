@@ -1,6 +1,6 @@
 import React, { useCallback, useMemo } from 'react';
 import { StyleSheet, Text, TouchableOpacity, View } from 'react-native';
-import { Bell, Calendar, MapPin, Navigation, Sparkles } from 'lucide-react-native';
+import { Bell, Calendar, Check, MapPin, Navigation, Sparkles } from 'lucide-react-native';
 import * as Haptics from 'expo-haptics';
 import type { LocalEvent, EventPlanningStatus } from '@/types/events';
 import { getEventCountdownLabel } from '@/utils/eventDiscovery';
@@ -21,6 +21,10 @@ interface PremiumSavedEventCardProps {
   onAddToOnePager: (event: LocalEvent) => void;
   onRemind: (event: LocalEvent) => void;
   onAddToCalendar: (event: LocalEvent) => void;
+  reminderOn?: boolean;
+  calendarAdded?: boolean;
+  reminderPending?: boolean;
+  calendarPending?: boolean;
   onDirections: (event: LocalEvent) => void;
   onRsvp?: (event: LocalEvent, status: PlanRsvpStatus) => void | Promise<void>;
   onInviteFriends?: (event: LocalEvent) => void;
@@ -40,6 +44,10 @@ export const PremiumSavedEventCard = React.memo(function PremiumSavedEventCard({
   onAddToOnePager,
   onRemind,
   onAddToCalendar,
+  reminderOn = false,
+  calendarAdded = false,
+  reminderPending = false,
+  calendarPending = false,
   onDirections,
   onRsvp,
   onInviteFriends,
@@ -140,9 +148,12 @@ export const PremiumSavedEventCard = React.memo(function PremiumSavedEventCard({
             e.stopPropagation();
             void onRemind(event);
           }}
+          disabled={reminderOn || reminderPending}
         >
-          <Bell size={14} color={palette.textSecondary} />
-          <Text style={[styles.actionBtnText, { color: palette.textSecondary }]}>Remind</Text>
+          {reminderOn ? <Check size={14} color={palette.primary} /> : <Bell size={14} color={palette.textSecondary} />}
+          <Text style={[styles.actionBtnText, { color: reminderOn ? palette.primary : palette.textSecondary }]}>
+            {reminderOn ? 'Reminder on' : reminderPending ? 'Setting…' : 'Remind'}
+          </Text>
         </TouchableOpacity>
         <TouchableOpacity
           style={[styles.actionBtn, { borderColor: palette.border }]}
@@ -150,9 +161,12 @@ export const PremiumSavedEventCard = React.memo(function PremiumSavedEventCard({
             e.stopPropagation();
             void onAddToCalendar(event);
           }}
+          disabled={calendarAdded || calendarPending}
         >
-          <Calendar size={14} color={palette.textSecondary} />
-          <Text style={[styles.actionBtnText, { color: palette.textSecondary }]}>Calendar</Text>
+          {calendarAdded ? <Check size={14} color={palette.primary} /> : <Calendar size={14} color={palette.textSecondary} />}
+          <Text style={[styles.actionBtnText, { color: calendarAdded ? palette.primary : palette.textSecondary }]}>
+            {calendarAdded ? 'Added to calendar' : calendarPending ? 'Adding…' : 'Calendar'}
+          </Text>
         </TouchableOpacity>
         <TouchableOpacity
           style={[styles.iconOnlyBtn, { borderColor: palette.border }]}

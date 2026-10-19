@@ -201,13 +201,14 @@ export function buildDecisionMoments(input: BuildDecisionMomentsInput): Decision
     });
   }
 
-  if (input.continueWatchingTitle && hour >= 18) {
+  // Only suggest leisure late in the evening after meaningful progress.
+  if (input.continueWatchingTitle && hour >= 20 && total > 0 && done / total >= 0.8) {
     moments.push({
       id: 'unwind-show',
       kind: 'unwind_show',
       emoji: '📺',
-      headline: 'Unwind without guilt',
-      body: `Continue ${input.continueWatchingTitle} — rest counts as living well too.`,
+      headline: 'Continue where you left off',
+      body: `Ready to watch? Resume ${input.continueWatchingTitle}.`,
       actionLabel: 'Continue watching',
       priority: 70,
       action: { type: 'route', route: '/(tabs)/shows' },

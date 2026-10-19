@@ -1702,6 +1702,12 @@ export default function ActivitiesScreen() {
       ) {
         return;
       }
+      // A saved content URL is stronger than a generic provider search and
+      // can open the actual title/episode instead of the provider home page.
+      if (show.netflixUrl) {
+        const openedExact = await openStreamingApp(providerId, show.title, undefined, show.netflixUrl);
+        if (openedExact) return;
+      }
       const openedSearch = await openStreamingTitleSearch(providerId, show.title, undefined, episodeHint);
       if (openedSearch) return;
       const openedApp = await openStreamingApp(providerId, show.title);
@@ -2345,6 +2351,15 @@ export default function ActivitiesScreen() {
               partnerFeed={partnerActivity.feed}
               currentUserId={user?.id}
               onCheer={(eventId) => void partnerActivity.cheer(eventId, true)}
+              onContinueWatching={() => {
+                const first = continueWatchingItems[0];
+                if (!first) return;
+                if (first.kind === 'younify') {
+                  void handleContinueWatchingYounify(first.row);
+                } else {
+                  void handleContinueWatching(first.show);
+                }
+              }}
             />
             {hasSportsInterest && footballInterestSignals.length > 0 && (
               <>
@@ -2764,11 +2779,10 @@ export default function ActivitiesScreen() {
                       key={show.id} 
                       style={[styles.upNextCard, { borderBottomColor: colors.border }, index === rankedUpNextShows.length - 1 && { borderBottomWidth: 0 }]}
                       onPress={() => {
-                        if (show.tmdbId && show.mediaType) {
-                          setShowInfoModal({ visible: true, tmdbId: show.tmdbId, mediaType: show.mediaType, title: show.title, platform: show.platform });
-                        } else {
-                          handleStartWatching(show);
-                        }
+                        void (async () => {
+                          await handleStartWatching(show);
+                          await handleContinueWatching(show);
+                        })();
                       }}
                       onLongPress={() => handleRemoveShow(show.id, show.title)}
                       delayLongPress={350}

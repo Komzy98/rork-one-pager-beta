@@ -392,15 +392,8 @@ function DetailModal({
         return;
       }
 
-      const bestRankedRow = pickBestYounifyRowForEpisode(younifyProviderIndex, {
-        tmdbId,
-        title: itemTitle,
-      });
-      if (bestRankedRow) {
-        await openYounifyBrowseItemOnPlatform(bestRankedRow, {});
-        return;
-      }
-
+      // A generic matching show on a different provider must not hijack this
+      // specific "Watch on [provider]" action.
       await openStreamingApp(
         provider.provider_id,
         itemTitle,
@@ -2373,6 +2366,40 @@ export default function ShowsScreen() {
     }
   }, [showStatusModal.visible, showStatusModal.show?.tmdbId, showStatusModal.show]);
 
+  const openTrackedShowOnPlatform = useCallback(async (show: Show) => {
+    const label = String(show.platform || '').toLowerCase();
+    const providerId =
+      label.includes('netflix') ? 8 :
+      label.includes('prime') ? 9 :
+      label.includes('disney') ? 337 :
+      label.includes('hbo') ? 1899 :
+      label.includes('hulu') ? 15 :
+      label.includes('youtube') ? 192 : null;
+    const linked = pickBestYounifyRowForEpisode(younifyEpisodeIndex, {
+      tmdbId: show.tmdbId ?? null,
+      title: show.title,
+      seasonNumber: show.currentSeason,
+      episodeNumber: show.currentEpisode,
+    });
+    // Respect the service associated with the saved show. A row from a
+    // different service must not unexpectedly hijack the user's tap.
+    const linkedId = linked
+      ? younifySourceToTmdbProviderId(
+          linked.younifySourceService as { id?: string; name?: string } | undefined,
+        )
+      : null;
+    if (linked && (providerId == null ||
+      (linkedId != null && normalizeTmdbWatchProviderId(linkedId) === normalizeTmdbWatchProviderId(providerId)))) {
+      await openYounifyBrowseItemOnPlatform(linked, { sectionId: 'continue' });
+      return;
+    }
+    if (providerId != null) {
+      const opened = await openStreamingApp(providerId, show.title, undefined, show.netflixUrl);
+      if (opened) return;
+    }
+    setShowStatusModal({ visible: true, show });
+  }, [younifyEpisodeIndex]);
+
   const renderMyListCard = useCallback(({ item }: { item: Show }) => {
     const thumbnailUrl = showThumbnails[item.id];
     const platformData = PLATFORMS.find(p => p.id === item.platform);
@@ -2386,7 +2413,7 @@ export default function ShowsScreen() {
           if (Platform.OS !== 'web') {
             void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
           }
-          setShowStatusModal({ visible: true, show: item });
+          await openTrackedShowOnPlatform(item);
         }}
         onLongPress={() => handleDeleteShow(item.id)}
       >
@@ -2419,7 +2446,7 @@ export default function ShowsScreen() {
             item.status === 'On Hold' ? THEME.warning :
             THEME.textMuted
         }]} />
-        {item.status === 'Watching' && markEpisodeWatched && (
+        {item.status === 'Watching' && (
           <TouchableOpacity 
             style={styles.myListPlayButton}
             onPress={async (e) => {
@@ -2427,7 +2454,7 @@ export default function ShowsScreen() {
               if (Platform.OS !== 'web') {
                 void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
               }
-              markEpisodeWatched(item.id);
+              await openTrackedShowOnPlatform(item);
             }}
           >
             <Play size={14} color="#FFF" fill="#FFF" />
@@ -2435,7 +2462,7 @@ export default function ShowsScreen() {
         )}
       </Pressable>
     );
-  }, [showThumbnails, handleDeleteShow, markEpisodeWatched, younifyContinueByTmdbId]);
+  }, [showThumbnails, handleDeleteShow, openTrackedShowOnPlatform, younifyContinueByTmdbId]);
 
   const renderStatusModal = () => {
     const show = showStatusModal.show;

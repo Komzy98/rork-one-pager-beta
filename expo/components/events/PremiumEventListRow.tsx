@@ -1,6 +1,6 @@
 import React, { useCallback } from 'react';
 import { StyleSheet, Text, TouchableOpacity, View } from 'react-native';
-import { Bell, Calendar, ChevronRight, Clock, MapPin } from 'lucide-react-native';
+import { Bell, Calendar, Check, ChevronRight, Clock, MapPin } from 'lucide-react-native';
 import * as Haptics from 'expo-haptics';
 import type { LocalEvent } from '@/types/events';
 import { getEventCountdownLabel, getDaysUntilEvent } from '@/utils/eventDiscovery';
@@ -15,6 +15,10 @@ interface PremiumEventListRowProps {
   trailing?: React.ReactNode;
   onRemind?: (event: LocalEvent) => void;
   onAddToCalendar?: (event: LocalEvent) => void;
+  reminderOn?: boolean;
+  calendarAdded?: boolean;
+  reminderPending?: boolean;
+  calendarPending?: boolean;
 }
 
 export const PremiumEventListRow = React.memo(function PremiumEventListRow({
@@ -25,6 +29,10 @@ export const PremiumEventListRow = React.memo(function PremiumEventListRow({
   trailing,
   onRemind,
   onAddToCalendar,
+  reminderOn = false,
+  calendarAdded = false,
+  reminderPending = false,
+  calendarPending = false,
 }: PremiumEventListRowProps) {
   const categoryMeta = getEventCategoryMeta(event.category);
   const CategoryIcon = categoryMeta.icon;
@@ -97,18 +105,26 @@ export const PremiumEventListRow = React.memo(function PremiumEventListRow({
             <TouchableOpacity
               style={[styles.actionBtn, { borderColor: palette.border }]}
               onPress={() => onRemind(event)}
+              disabled={reminderOn || reminderPending}
+              accessibilityState={{ disabled: reminderOn || reminderPending }}
             >
-              <Bell size={13} color={palette.textSecondary} />
-              <Text style={[styles.actionBtnText, { color: palette.textSecondary }]}>Remind</Text>
+              {reminderOn ? <Check size={13} color={palette.primary} /> : <Bell size={13} color={palette.textSecondary} />}
+              <Text style={[styles.actionBtnText, { color: reminderOn ? palette.primary : palette.textSecondary }]}>
+                {reminderOn ? 'Reminder on' : reminderPending ? 'Setting…' : 'Remind'}
+              </Text>
             </TouchableOpacity>
           ) : null}
           {onAddToCalendar ? (
             <TouchableOpacity
               style={[styles.actionBtn, { borderColor: palette.border }]}
               onPress={() => onAddToCalendar(event)}
+              disabled={calendarAdded || calendarPending}
+              accessibilityState={{ disabled: calendarAdded || calendarPending }}
             >
-              <Calendar size={13} color={palette.textSecondary} />
-              <Text style={[styles.actionBtnText, { color: palette.textSecondary }]}>Calendar</Text>
+              {calendarAdded ? <Check size={13} color={palette.primary} /> : <Calendar size={13} color={palette.textSecondary} />}
+              <Text style={[styles.actionBtnText, { color: calendarAdded ? palette.primary : palette.textSecondary }]}>
+                {calendarAdded ? 'Added to calendar' : calendarPending ? 'Adding…' : 'Calendar'}
+              </Text>
             </TouchableOpacity>
           ) : null}
         </View>

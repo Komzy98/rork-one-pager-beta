@@ -35,6 +35,7 @@ import {
 } from 'lucide-react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useUserProfile } from '@/hooks/useUserProfile';
+import { useAuth } from '@/hooks/useAuth';
 import { useUserLocation } from '@/hooks/useUserLocation';
 import { KeyboardAwareScrollView } from '@/components/KeyboardAwareScrollView';
 import { usePerCategoryEvents } from '@/hooks/usePerCategoryEvents';
@@ -223,6 +224,62 @@ function EventsScreenInner() {
   const router = useRouter();
   const { createEvent, hasPermission, requestPermissions } = useEventKit();
   const { scheduleEventReminder } = useEventReminders();
+  const { user } = useAuth();
+  const eventActionStorageKey = 'onepager:event-actions:v1:' + (user?.id ?? 'guest');
+  const [eventActionStatus, setEventActionStatus] = useState<Record<string, {
+    calendarEventId?: string;
+    reminderOn?: boolean;
+  }>>({});
+  const [pendingEventActions, setPendingEventActions] = useState<Record<string, boolean>>({});
+  const eventActionLocks = useRef(new Set<string>());
+
+  useEffect(() => {
+    let active = true;
+    setEventActionStatus({});
+    AsyncStorage.getItem(eventActionStorageKey).then((stored) => {
+      if (active && stored) {
+        const parsed: unknown = JSON.parse(stored);
+        if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) {
+          setEventActionStatus(parsed as typeof eventActionStatus);
+        }
+      }
+    }).catch(() => {});
+    return () => { active = false; };
+  }, [eventActionStorageKey]);
+
+  const eventActionKey = useCallback((event: Event) =>
+    String(event.id) + ':' + (event.startIso || event.date), []);
+
+  const markEventAction = useCallback((event: Event, changes: {
+    calendarEventId?: string;
+    reminderOn?: boolean;
+  }) => {
+    const key = eventActionKey(event);
+    setEventActionStatus((previous) => {
+      const next = { ...previous, [key]: { ...previous[key], ...changes } };
+      void AsyncStorage.setItem(eventActionStorageKey, JSON.stringify(next)).catch((error) => {
+        console.warn('[Events] Failed to persist action status', error);
+      });
+      return next;
+    });
+  }, [eventActionKey, eventActionStorageKey]);
+
+  const runEventActionOnce = useCallback(async (
+    event: Event,
+    kind: 'calendar' | 'reminder',
+    action: () => Promise<void>,
+  ) => {
+    const key = kind + ':' + eventActionKey(event);
+    if (eventActionLocks.current.has(key)) return;
+    eventActionLocks.current.add(key);
+    setPendingEventActions((prev) => ({ ...prev, [key]: true }));
+    try {
+      await action();
+    } finally {
+      eventActionLocks.current.delete(key);
+      setPendingEventActions((prev) => ({ ...prev, [key]: false }));
+    }
+  }, [eventActionKey]);
   const { logEventPlanned } = useSocialActivity();
   const {
     savedAsLocalEvents,
@@ -506,42 +563,58 @@ function EventsScreenInner() {
 
   const handleAddToCalendar = useCallback(
     async (event: Event) => {
-      void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-      const range = getEventCalendarRange(event);
-      if (!range) {
-        Alert.alert('Calendar', 'Could not parse this event’s date.');
-        return;
-      }
-      if (!hasPermission) {
-        const granted = await requestPermissions();
-        if (!granted) {
-          Alert.alert('Calendar', 'Allow calendar access in Settings to save events.');
-          return;
+      if (eventActionStatus[eventActionKey(event)]?.calendarEventId) return;
+      await runEventActionOnce(event, 'calendar', async () => {
+        void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+        try {
+          const range = getEventCalendarRange(event);
+          if (!range) {
+            Alert.alert('Calendar', 'Could not parse this event’s date.');
+            return;
+          }
+          if (!hasPermission) {
+            const granted = await requestPermissions();
+            if (!granted) {
+              Alert.alert('Calendar', 'Allow calendar access in Settings to save events.');
+              return;
+            }
+          }
+          const createdId = await createEvent({
+            title: event.title,
+            startDate: range.start,
+            endDate: range.end,
+            location: event.venue + ', ' + event.location,
+            notes: event.ticketUrl ? 'Tickets: ' + event.ticketUrl + '\\n\\n' + event.description : event.description,
+          });
+          if (createdId) {
+            markEventAction(event, { calendarEventId: createdId });
+            Alert.alert('Added to calendar', event.title);
+            void logEventPlanned(event);
+          } else {
+            Alert.alert('Calendar', 'Could not add this event. Check calendar permissions.');
+          }
+        } catch {
+          Alert.alert('Calendar', 'Could not add this event. Please try again.');
         }
-      }
-      const eventId = await createEvent({
-        title: event.title,
-        startDate: range.start,
-        endDate: range.end,
-        location: `${event.venue}, ${event.location}`,
-        notes: event.ticketUrl ? `Tickets: ${event.ticketUrl}\n\n${event.description}` : event.description,
       });
-      if (eventId) {
-        Alert.alert('Added to calendar', event.title);
-        void logEventPlanned(event);
-      } else {
-        Alert.alert('Calendar', 'Could not add this event. Check calendar permissions.');
-      }
     },
-    [createEvent, hasPermission, requestPermissions, logEventPlanned]
+    [eventActionStatus, eventActionKey, runEventActionOnce, createEvent, hasPermission, requestPermissions, markEventAction, logEventPlanned],
   );
 
   const handleRemind = useCallback(
     async (event: Event) => {
-      void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-      await scheduleEventReminder(event);
+      if (eventActionStatus[eventActionKey(event)]?.reminderOn) return;
+      await runEventActionOnce(event, 'reminder', async () => {
+        void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+        try {
+          const scheduled = await scheduleEventReminder(event);
+          if (scheduled) markEventAction(event, { reminderOn: true });
+        } catch {
+          Alert.alert('Reminder', 'Could not set reminder. Please try again.');
+        }
+      });
     },
-    [scheduleEventReminder]
+    [scheduleEventReminder, eventActionStatus, eventActionKey, runEventActionOnce, markEventAction],
   );
 
   const accentColor = palette.primary;
@@ -914,8 +987,12 @@ function EventsScreenInner() {
     setEventsSearchRadiusMiles(50);
   }, []);
 
+  // Filters at the top must govern the entire displayed discovery feed.
+  // Do not leave unrelated hero/rails above a filtered result set.
+  const showCuratedEventSections =
+    discoveryTab === 'forYou' && selectedCategory === 'all' && !inSearchMode;
   const showCinematicHero =
-    mainTab === 'discover' && viewMode === 'list' && !inSearchMode && discoveryTab === 'forYou';
+    mainTab === 'discover' && viewMode === 'list' && showCuratedEventSections;
 
   const discoveryRailTitle =
     discoveryTab === 'explore'
@@ -1035,8 +1112,8 @@ function EventsScreenInner() {
 
         <View style={[styles.mainTabRow, showCinematicHero && styles.mainTabRowCompact]}>
           {([
-            { label: 'For You', selected: mainTab === 'discover' && discoveryTab !== 'explore' && !showMoreFilters, action: () => { setMainTab('discover'); setDiscoveryTab('forYou'); setShowMoreFilters(false); } },
-            { label: 'Explore', selected: mainTab === 'discover' && discoveryTab === 'explore', action: () => { setMainTab('discover'); setDiscoveryTab('explore'); setShowMoreFilters(false); } },
+            { label: 'For You', selected: mainTab === 'discover' && discoveryTab === 'forYou', action: () => { setMainTab('discover'); setSelectedCategory('all'); setDiscoveryTab('forYou'); setShowMoreFilters(false); } },
+            { label: 'Explore', selected: mainTab === 'discover' && discoveryTab === 'explore', action: () => { setMainTab('discover'); setSelectedCategory('all'); setDiscoveryTab('explore'); setShowMoreFilters(false); } },
             { label: 'My Events', selected: mainTab === 'myEvents', action: () => setMainTab('myEvents') },
           ] as const).map((tab) => (
             <TouchableOpacity
@@ -1075,7 +1152,10 @@ function EventsScreenInner() {
             <EventsDiscoveryPills
               tabs={DISCOVERY_PILL_TABS.filter(tab => tab.key !== 'forYou' && tab.key !== 'explore')}
               activeTab={discoveryTab}
-              onTabChange={setDiscoveryTab}
+              onTabChange={(tab) => {
+                setSelectedCategory('all');
+                setDiscoveryTab(tab);
+              }}
               palette={palette}
               compact
             />
@@ -1104,7 +1184,7 @@ function EventsScreenInner() {
         />
       ) : null}
 
-      {mainTab === 'discover' && viewMode === 'list' && !inSearchMode ? (
+      {mainTab === 'discover' && viewMode === 'list' && showCuratedEventSections ? (
         <TouchableOpacity accessibilityRole="button" accessibilityLabel="Plan your weekend"
           onPress={() => setWeekendPlannerOpen(true)}
           style={{ marginHorizontal: 16, marginTop: 12, marginBottom: 8, borderRadius: 16,
@@ -1176,7 +1256,7 @@ function EventsScreenInner() {
         <EventsStatsRow stats={eventStats} palette={palette} />
       ) : null}
 
-      {showCinematicHero && (
+      {showCuratedEventSections && showCinematicHero && (
       <View style={styles.smartDiscoveryWrap}>
         {showCinematicHero ? (
           <View style={[styles.railHeader, styles.railHeaderFirst]}>
@@ -1318,7 +1398,7 @@ function EventsScreenInner() {
         </View>
       ) : mainTab === 'discover' && viewMode === 'list' ? (
       <>
-        {upcomingSaved.length > 0 && !searchQuery && selectedCategory === 'all' && (
+        {showCuratedEventSections && upcomingSaved.length > 0 && (
           <View style={styles.section}>
             <View style={styles.sectionHeader}>
               <View style={styles.sectionTitleRow}>
@@ -1339,12 +1419,16 @@ function EventsScreenInner() {
                 onPress={openEventDetail}
                 onRemind={handleRemind}
                 onAddToCalendar={handleAddToCalendar}
+                reminderOn={Boolean(eventActionStatus[eventActionKey(event)]?.reminderOn)}
+                calendarAdded={Boolean(eventActionStatus[eventActionKey(event)]?.calendarEventId)}
+                reminderPending={Boolean(pendingEventActions['reminder:' + eventActionKey(event)])}
+                calendarPending={Boolean(pendingEventActions['calendar:' + eventActionKey(event)])}
               />
             ))}
           </View>
         )}
 
-        {habitEventRow && selectedCategory === 'all' && !searchQuery ? (
+        {showCuratedEventSections && habitEventRow ? (
           <View style={styles.section}>
             <View style={styles.sectionHeader}>
               <View style={styles.sectionTitleRow}>
@@ -1390,7 +1474,7 @@ function EventsScreenInner() {
           </View>
         ) : null}
 
-        {editorialRows.length > 0 && selectedCategory === 'all' && !searchQuery
+        {showCuratedEventSections && editorialRows.length > 0
           ? editorialRows.map((row) => (
           <View key={row.id} style={styles.section}>
             <View style={styles.sectionHeader}>
@@ -1438,7 +1522,7 @@ function EventsScreenInner() {
         ))
           : null}
 
-        {!searchQuery && (
+        {!searchQuery && (discoveryTab === 'forYou' || discoveryTab === 'explore') && (
           <View style={styles.section}>
             <View style={styles.sectionHeader}>
               <View style={styles.sectionTitleRow}>
@@ -1454,7 +1538,10 @@ function EventsScreenInner() {
               countsLoading={isBatchLoading}
               selectedCategory={selectedCategory}
               palette={palette}
-              onSelectCategory={setSelectedCategory}
+              onSelectCategory={(category) => {
+                setDiscoveryTab('forYou');
+                setSelectedCategory(category);
+              }}
             />
           </View>
         )}
@@ -1491,9 +1578,19 @@ function EventsScreenInner() {
               <Text style={[styles.sectionTitle, { color: mainText }]}>
                 {inSearchMode
                   ? `Results for “${globalSearchKeyword || searchQuery.trim()}”`
-                  : filteredCategoryLabel ?? 'All events'}
+                  : filteredCategoryLabel ?? (discoveryTab === 'forYou' ? 'All events' : discoveryRailTitle)}
               </Text>
             </View>
+            {(selectedCategory !== 'all' || (discoveryTab !== 'forYou' && discoveryTab !== 'explore')) && !inSearchMode ? (
+              <TouchableOpacity
+                accessibilityRole="button"
+                accessibilityLabel="Clear event filters"
+                onPress={() => { setSelectedCategory('all'); setDiscoveryTab('forYou'); }}
+                style={{ paddingHorizontal: 9, paddingVertical: 6, borderRadius: 10, backgroundColor: palette.primaryLight }}
+              >
+                <Text style={{ color: palette.primary, fontSize: 12, fontWeight: '700' }}>Clear</Text>
+              </TouchableOpacity>
+            ) : null}
             <Text style={[styles.resultCount, { color: subtleText }]}>
               {isGlobalSearching && inSearchMode
                 ? 'Searching…'
@@ -1663,6 +1760,10 @@ function EventsScreenInner() {
                 onAddToOnePager={handleAddToOnePager}
                 onRemind={handleRemind}
                 onAddToCalendar={handleAddToCalendar}
+                reminderOn={Boolean(eventActionStatus[eventActionKey(event)]?.reminderOn)}
+                calendarAdded={Boolean(eventActionStatus[eventActionKey(event)]?.calendarEventId)}
+                reminderPending={Boolean(pendingEventActions['reminder:' + eventActionKey(event)])}
+                calendarPending={Boolean(pendingEventActions['calendar:' + eventActionKey(event)])}
                 onDirections={handleOpenDirections}
                 onRsvp={savedEventsSocial.available ? handleSavedEventRsvp : undefined}
                 onInviteFriends={canInvite ? handleInviteSavedEvent : undefined}

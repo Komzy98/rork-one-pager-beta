@@ -278,8 +278,25 @@ export async function summarizeDailyProgress(input: {
   notes?: string;
   yesterdayContext?: DailySummaryYesterdayContext | null;
 }): Promise<DailySummary> {
+  // No network round trip is needed for a normal data-grounded day review.
+  if (!input.recoveryMode) {
+    const grounded = buildGroundedDailySummary(input);
+    const nextFocus = grounded.challenges[0]
+      ? `Consider ${grounded.challenges[0]} next.`
+      : 'Review tomorrow’s priorities when you are ready.';
+    return {
+      date: input.date,
+      ...grounded,
+      recommendations: [nextFocus],
+      score: computeDailyScore(input),
+    };
+  }
+
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), 9000);
   try {
     const response = await fetch('https://toolkit.rork.com/text/llm/', {
+      signal: controller.signal,
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
@@ -446,5 +463,7 @@ Generate a daily summary with this exact JSON structure:
       sentiment: "positive",
       score: computeDailyScore(input)
     };
+  } finally {
+    clearTimeout(timeout);
   }
 }

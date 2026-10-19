@@ -12,11 +12,12 @@ import {
 
 type DecisionMomentsCardProps = BuildDecisionMomentsInput & {
   onCheer?: (eventId: string) => void;
+  onContinueWatching?: () => void;
 };
 
 export default function DecisionMomentsCard(props: DecisionMomentsCardProps) {
   const { colors, isDark } = useTheme();
-  const { onCheer, ...input } = props;
+  const { onCheer, onContinueWatching, ...input } = props;
 
   const moments = useMemo(() => buildDecisionMoments(input), [
     input.now,
@@ -42,11 +43,15 @@ export default function DecisionMomentsCard(props: DecisionMomentsCardProps) {
           router.push('/(tabs)/tasks' as any);
           break;
         case 'route':
+          if (moment.kind === 'unwind_show' && onContinueWatching) {
+            onContinueWatching();
+            break;
+          }
           router.push(moment.action.route as any);
           break;
       }
     },
-    [onCheer],
+    [onCheer, onContinueWatching],
   );
 
   if (moments.length === 0) return null;
