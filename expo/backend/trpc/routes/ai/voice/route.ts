@@ -1,11 +1,9 @@
 import { z } from 'zod';
 import { publicProcedure } from '@/backend/trpc/create-context';
+import { resolveElevenLabsVoice } from '@/utils/elevenLabsVoiceConfig';
 
 const ELEVENLABS_API_URL = 'https://api.elevenlabs.io/v1/text-to-speech';
-// ElevenLabs' newer, warm guide-style voice (replacing the legacy Rachel preset).
-// Configure ELEVENLABS_VOICE_ID in production after auditioning the preferred voice.
-const DEFAULT_VOICE_ID = 'OZ0L6eISlOejga3XjDFt';
-const DEFAULT_VOICE_NAME = 'Talia';
+// The voice is resolved from a verified, free-plan-compatible narrator.
 const DEFAULT_MODEL_ID = 'eleven_v4';
 
 export const generateVoiceRoute = publicProcedure
@@ -17,9 +15,8 @@ export const generateVoiceRoute = publicProcedure
   )
   .mutation(async ({ input }) => {
     const apiKey = process.env.ELEVENLABS_API_KEY;
-    const voiceId = input.voiceId ?? (process.env.ELEVENLABS_VOICE_ID?.trim() || DEFAULT_VOICE_ID);
+    const { voiceId, voiceName } = resolveElevenLabsVoice(input.voiceId, process.env.ELEVENLABS_VOICE_ID);
     const modelId = process.env.ELEVENLABS_MODEL_ID?.trim() || DEFAULT_MODEL_ID;
-    const voiceName = voiceId === DEFAULT_VOICE_ID ? DEFAULT_VOICE_NAME : 'Custom ElevenLabs voice';
 
     console.log('🎤 [ElevenLabs] Natural summary narration requested', {
       textLength: input.text.length,
