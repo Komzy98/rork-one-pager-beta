@@ -176,7 +176,7 @@ function buildSpeechSummaryText(summary: string): string {
       (match, completed: string, total: string) => {
         const first = SPOKEN_SMALL_NUMBERS[Number(completed)];
         const second = SPOKEN_SMALL_NUMBERS[Number(total)];
-        return first && second ? `\${first} of \${second}` : match;
+        return first && second ? `${first} of ${second}` : match;
       })
     .replace(/\s+([,.!?;:])/g, '$1')
     .replace(/[ \t]+/g, ' ')
