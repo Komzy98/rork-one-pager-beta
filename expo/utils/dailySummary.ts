@@ -1,3 +1,7 @@
+import { buildBriefingHighlights, type BriefingHighlight } from './dailyBriefingContext';
+
+export const DAILY_SUMMARY_VERSION = 2;
+
 export type DailySummaryHabit = {
   name: string;
   done: boolean;
@@ -60,6 +64,9 @@ export type DailySummary = {
     description: string;
   };
   upcomingEvents?: { title: string; time: string; date: string }[];
+  /** Sections assembled from verified calendar, weather and media data. */
+  contextHighlights?: BriefingHighlight[];
+  briefingVersion?: number;
 };
 
 export type DailySummaryYesterdayContext = {
@@ -278,16 +285,55 @@ export async function summarizeDailyProgress(input: {
   notes?: string;
   yesterdayContext?: DailySummaryYesterdayContext | null;
 }): Promise<DailySummary> {
-  // No network round trip is needed for a normal data-grounded day review.
+  // The normal briefing is composed locally for instant loading, using all
+  // the context already collected on Overview, not just the habit tracker.
+  // Progress claims remain grounded in actual recorded completions.
   if (!input.recoveryMode) {
     const grounded = buildGroundedDailySummary(input);
-    const nextFocus = grounded.challenges[0]
-      ? `Consider ${grounded.challenges[0]} next.`
-      : 'Review tomorrow’s priorities when you are ready.';
+    const highlights = buildBriefingHighlights(input);
+    const habitTotal = input.habitRollup?.scheduledCount ??
+      (input.habits ?? []).filter(h => h.scheduledToday !== false).length;
+    const habitDone = input.habitRollup?.completedCount ??
+      (input.habits ?? []).filter(h => h.scheduledToday !== false && h.done).length;
+    const completedTasks = (input.tasks ?? []).filter(t => t.completed);
+    const lines: string[] = [];
+
+    if (habitTotal > 0) {
+      if (habitDone > 0) {
+        lines.push(`You've completed ${habitDone} of ${habitTotal} scheduled habits today.`);
+        const doneNames = (input.habits ?? [])
+          .filter(h => h.scheduledToday !== false && h.done)
+          .slice(0, 2)
+          .map(h => h.name);
+        if (doneNames.length) lines.push(`${joinNaturalTitles(doneNames)} ${doneNames.length === 1 ? 'is' : 'are'} done.`);
+      } else {
+        // A new morning with zero completions is not a failed day.
+        lines.push(`You have ${habitTotal} habit${habitTotal === 1 ? '' : 's'} scheduled today, with none marked complete yet.`);
+      }
+    }
+    if (completedTasks.length > 0) {
+      lines.push(`You've also finished ${joinNaturalTitles(completedTasks.slice(0, 2).map(t => t.name))}.`);
+    } else if (habitTotal === 0) {
+      lines.push('No completed habits or tasks have been logged for today yet.');
+    }
+
+    const highPriority = (input.priorityTasks ?? []).find(t => !t.completed && t.title.trim())?.title;
+    const focus = highPriority ?? grounded.challenges[0] ?? null;
+    if (focus) lines.push(`${focus} is still open if it matters today.`);
+    const recommendations = focus
+      ? [`If it still matters today, make ${focus} your next step.`]
+      : ['Check your schedule and choose what matters most next.'];
+
     return {
       date: input.date,
-      ...grounded,
-      recommendations: [nextFocus],
+      briefingVersion: DAILY_SUMMARY_VERSION,
+      summary: lines.join(' '),
+      contextHighlights: highlights,
+      wins: grounded.wins,
+      challenges: grounded.challenges,
+      streaks: grounded.streaks,
+      sentiment: grounded.sentiment,
+      recommendations,
       score: computeDailyScore(input),
     };
   }
@@ -418,6 +464,7 @@ Generate a daily summary with this exact JSON structure:
     }
     
     const summary = JSON.parse(completionText) as DailySummary;
+    summary.briefingVersion = DAILY_SUMMARY_VERSION;
     // The model tends to echo the example score (85); always use the real,
     // data-derived score so it reflects the actual day.
     summary.score = computeDailyScore(input);
@@ -443,6 +490,7 @@ Generate a daily summary with this exact JSON structure:
     if (input.recoveryMode) {
       return {
         date: input.date,
+        briefingVersion: DAILY_SUMMARY_VERSION,
         summary: "You've been carrying a lot. One small win today is enough — be gentle with yourself.",
         wins: ["You're still here, still trying"],
         challenges: ["Rest is allowed"],

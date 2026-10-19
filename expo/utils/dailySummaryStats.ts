@@ -1,5 +1,5 @@
 import { unifiedStorage } from '@/utils/unifiedStorage';
-import type { DailySummary } from '@/utils/dailySummary';
+import { DAILY_SUMMARY_VERSION, type DailySummary } from '@/utils/dailySummary';
 
 export type DailyStatsSnapshot = {
   date: string;
@@ -138,7 +138,7 @@ export async function loadDailySummaryCache(
     const raw = await unifiedStorage.getItem(summaryCacheKey(userId, dateYmd));
     if (!raw) return null;
     const parsed = JSON.parse(raw) as DailySummary;
-    return parsed?.date === dateYmd ? parsed : parsed;
+    return parsed?.date === dateYmd && parsed.briefingVersion === DAILY_SUMMARY_VERSION ? parsed : null;
   } catch {
     return null;
   }
