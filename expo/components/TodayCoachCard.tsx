@@ -14,6 +14,7 @@ export type TodayCoachCardProps = {
   isGenerating: boolean;
   isSpeaking: boolean;
   isVoicePending: boolean;
+  audioError?: string | null;
   recoveryActive: boolean;
   autoSummaryHintDismissed: boolean;
   autoSummaryScheduleLabel: string | null;
@@ -38,12 +39,13 @@ function firstUsefulSentence(value: string, max = 220) {
  * as an AI feature or a separate coaching dashboard.
  */
 export default function TodayCoachCard(props: TodayCoachCardProps) {
-  const { colors, isDark } = useTheme();
+  const { colors } = useTheme();
   const {
     dailySummary,
     isGenerating,
     isSpeaking,
     isVoicePending,
+    audioError,
     recoveryActive,
     yesterdayDelta,
     onGenerate,
@@ -102,55 +104,61 @@ export default function TodayCoachCard(props: TodayCoachCardProps) {
             <View style={[styles.actions, { borderTopColor: colors.border }]}>
               <TouchableOpacity
                 onPress={onToggleListen}
-                disabled={isVoicePending}
+                disabled={isVoicePending || isGenerating}
                 accessibilityRole="button"
-                accessibilityLabel={isVoicePending ? 'Preparing audio' : isSpeaking ? 'Stop listening' : 'Listen to day review'}
-                accessibilityState={{ disabled: isVoicePending }}
+                accessibilityLabel={isVoicePending ? 'Preparing ElevenLabs audio' : isSpeaking ? 'Stop summary audio' : 'Listen to audio version of daily summary'}
+                accessibilityState={{ disabled: isVoicePending || isGenerating, busy: isVoicePending }}
                 activeOpacity={0.8}
-                style={[styles.listenButton, { backgroundColor: isDark ? '#26344E' : '#EDF2FE', opacity: isVoicePending ? 0.7 : 1 }]}
+                style={[styles.listenButton, { backgroundColor: colors.primary, opacity: isVoicePending || isGenerating ? 0.72 : 1 }]}
               >
                 {isVoicePending ? (
-                  <ActivityIndicator size="small" color={colors.primary} />
+                  <ActivityIndicator size="small" color="#FFFFFF" />
                 ) : isSpeaking ? (
-                  <VolumeX size={16} color={colors.primary} />
+                  <VolumeX size={17} color="#FFFFFF" />
                 ) : (
-                  <Volume2 size={16} color={colors.primary} />
+                  <Volume2 size={17} color="#FFFFFF" />
                 )}
-                <Text style={[styles.listenText, { color: colors.primary }]}>
-                  {isVoicePending ? 'Preparing…' : isSpeaking ? 'Stop' : 'Listen'}
+                <Text style={styles.listenText}>
+                  {isVoicePending ? 'Preparing Audio…' : isSpeaking ? 'Stop Audio' : 'Listen to Audio'}
                 </Text>
               </TouchableOpacity>
-
-              {!recoveryActive ? (
-                <TouchableOpacity
-                  onPress={onShareSummary}
-                  accessibilityRole="button"
-                  accessibilityLabel="Share day review"
-                  activeOpacity={0.75}
-                  style={styles.shareButton}
-                >
-                  <Share2 size={15} color={colors.textSecondary} />
-                  <Text style={[styles.shareText, { color: colors.textSecondary }]}>Share</Text>
-                </TouchableOpacity>
+              {audioError ? (
+                <Text style={[styles.audioError, { color: colors.textSecondary }]} accessibilityRole="alert">
+                  {audioError}
+                </Text>
               ) : null}
-              <TouchableOpacity
-                onPress={onGenerate}
-                disabled={isGenerating}
-                accessibilityRole="button"
-                accessibilityLabel="Regenerate daily summary"
-                accessibilityState={{ disabled: isGenerating, busy: isGenerating }}
-                activeOpacity={0.75}
-                style={[styles.regenerateButton, { opacity: isGenerating ? 0.6 : 1 }]}
-              >
-                {isGenerating ? (
-                  <ActivityIndicator size="small" color={colors.textSecondary} />
-                ) : (
-                  <RefreshCw size={14} color={colors.textSecondary} />
-                )}
-                <Text style={[styles.regenerateText, { color: colors.textSecondary }]}>
-                  {isGenerating ? 'Generating…' : 'Regenerate'}
-                </Text>
-              </TouchableOpacity>
+              <View style={styles.secondaryActions}>
+                {!recoveryActive ? (
+                  <TouchableOpacity
+                    onPress={onShareSummary}
+                    accessibilityRole="button"
+                    accessibilityLabel="Share day review"
+                    activeOpacity={0.75}
+                    style={styles.shareButton}
+                  >
+                    <Share2 size={15} color={colors.textSecondary} />
+                    <Text style={[styles.shareText, { color: colors.textSecondary }]}>Share</Text>
+                  </TouchableOpacity>
+                ) : null}
+                <TouchableOpacity
+                  onPress={onGenerate}
+                  disabled={isGenerating || isVoicePending}
+                  accessibilityRole="button"
+                  accessibilityLabel="Regenerate daily summary"
+                  accessibilityState={{ disabled: isGenerating || isVoicePending, busy: isGenerating }}
+                  activeOpacity={0.75}
+                  style={[styles.regenerateButton, { opacity: isGenerating || isVoicePending ? 0.6 : 1 }]}
+                >
+                  {isGenerating ? (
+                    <ActivityIndicator size="small" color={colors.textSecondary} />
+                  ) : (
+                    <RefreshCw size={14} color={colors.textSecondary} />
+                  )}
+                  <Text style={[styles.regenerateText, { color: colors.textSecondary }]}>
+                    {isGenerating ? 'Generating…' : 'Regenerate'}
+                  </Text>
+                </TouchableOpacity>
+              </View>
             </View>
           </>
         ) : (
@@ -236,26 +244,33 @@ const styles = StyleSheet.create({
     fontWeight: '500',
   },
   actions: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 8,
+    gap: 9,
     marginTop: 12,
     paddingTop: 11,
     borderTopWidth: StyleSheet.hairlineWidth,
   },
   listenButton: {
-    minHeight: 34,
-    minWidth: 92,
-    paddingHorizontal: 13,
-    borderRadius: 10,
+    minHeight: 42,
+    paddingHorizontal: 14,
+    borderRadius: 12,
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
-    gap: 7,
+    gap: 9,
   },
   listenText: {
-    fontSize: 12,
+    color: '#FFFFFF',
+    fontSize: 13,
     fontWeight: '700',
+  },
+  audioError: {
+    fontSize: 11,
+    lineHeight: 16,
+  },
+  secondaryActions: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
   },
   shareButton: {
     minHeight: 34,
