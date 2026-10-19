@@ -118,6 +118,9 @@ import ConnectedServicesHero from '@/components/younify/ConnectedServicesHero';
 import StreamingServicesBrowseTab from '@/components/younify/StreamingServicesBrowseTab';
 import YounifyBrowseSectionRow from '@/components/younify/YounifyBrowseSectionRow';
 import AroundYouTab from '@/components/shows/AroundYouTab';
+import { filterLibrary, libraryMediaType, LIBRARY_SECTION_LABELS, type LibraryMediaFilter, type LibrarySort } from '@/utils/showsLibrary';
+import EpisodeProgressSheet from '@/components/shows/EpisodeProgressSheet';
+import { unifiedStorage } from '@/utils/unifiedStorage';
 
 import TabWalkthrough from '@/components/TabWalkthrough';
 import { useRouter, useFocusEffect, useLocalSearchParams } from 'expo-router';
@@ -180,6 +183,10 @@ interface DetailModalProps {
   onClose: () => void;
   onAddToList: (item: any, type: 'movie' | 'tv', startWatching?: boolean) => void;
   isInList: boolean;
+  savedShow?: Show;
+  justSaved: boolean;
+  onManageSaved: () => void;
+  onStartWatching: () => void;
   trackedShow: TrackedShow | null;
   onToggleNotifications: (enabled: boolean) => void;
   isTogglingNotifications: boolean;
@@ -188,6 +195,8 @@ interface DetailModalProps {
   onShare: () => void;
   hasLinkedServices: boolean;
   younifyProviderIndex: YounifyProviderIndex;
+  linkedProviderIds: number[];
+  countryCode: string;
   onConnectServices: () => void;
 }
 
@@ -239,6 +248,10 @@ function DetailModal({
   onClose,
   onAddToList,
   isInList,
+  savedShow,
+  justSaved,
+  onManageSaved,
+  onStartWatching,
   trackedShow,
   onToggleNotifications,
   isTogglingNotifications,
@@ -247,6 +260,8 @@ function DetailModal({
   onShare,
   hasLinkedServices,
   younifyProviderIndex,
+  linkedProviderIds,
+  countryCode,
   onConnectServices,
 }: DetailModalProps) {
   const insets = useSafeAreaInsets();
@@ -323,9 +338,7 @@ function DetailModal({
       }
 
       tmdbApi.getWatchProviders(itemId, mediaType).then((res) => {
-        const gbProviders = res.results?.GB;
-        const usProviders = res.results?.US;
-        const countryProviders = gbProviders || usProviders;
+        const countryProviders = res.results?.[countryCode];
         if (countryProviders) {
           const raw = {
             streaming: countryProviders.flatrate || [],
@@ -504,6 +517,47 @@ function DetailModal({
               <Text style={styles.detailOverview}>{item.overview || 'No description available.'}</Text>
             </View>
 
+            <View style={styles.detailActions}>
+              {isInList ? (
+                <TouchableOpacity style={[styles.detailActionButton, styles.detailActionSuccess]} onPress={onManageSaved}>
+                  <BookmarkCheck size={20} color="#FFF" />
+                  <Text style={styles.detailActionText}>Saved · {LIBRARY_SECTION_LABELS[savedShow?.status ?? 'Plan to Watch']}</Text>
+                  <ChevronRight size={16} color="#FFF" />
+                </TouchableOpacity>
+              ) : (
+                <TouchableOpacity
+                  style={[styles.detailActionButton, styles.detailActionPrimary]}
+                  onPress={() => onAddToList(item, mediaType)}
+                >
+                  <Plus size={20} color="#FFF" />
+                  <Text style={styles.detailActionText}>Add to My List</Text>
+                </TouchableOpacity>
+              )}
+                            <TouchableOpacity
+                style={[styles.detailActionSecondary, isLiked && styles.detailActionLiked]}
+                onPress={() => {
+                  RNAnimated.sequence([
+                    RNAnimated.timing(heartScale, { toValue: 1.35, duration: 120, useNativeDriver: Platform.OS !== 'web' }),
+                    RNAnimated.timing(heartScale, { toValue: 1, duration: 180, useNativeDriver: Platform.OS !== 'web' }),
+                  ]).start();
+                  onToggleLike();
+                }}
+                testID="like-button"
+              >
+                <RNAnimated.View style={{ transform: [{ scale: heartScale }] }}>
+                  <Heart size={22} color={isLiked ? '#FF2D55' : THEME.text} fill={isLiked ? '#FF2D55' : 'none'} />
+                </RNAnimated.View>
+              </TouchableOpacity>
+
+              <TouchableOpacity
+                style={styles.detailActionSecondary}
+                onPress={onShare}
+                testID="share-button"
+              >
+                <Share2 size={22} color={THEME.text} />
+              </TouchableOpacity>
+            </View>
+
             {!hasLinkedServices && (
               <View style={styles.connectServicesCard}>
                 <Text style={styles.connectServicesTitle}>Connect your streaming services</Text>
@@ -518,9 +572,9 @@ function DetailModal({
 
             {modalWatchProviders && modalWatchProviders.streaming.length > 0 && (
               <View style={styles.watchNowSection}>
-                <Text style={styles.watchNowLabel}>Watch Now</Text>
+                <Text style={styles.watchNowLabel}>Stream on</Text>
                 <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.watchNowProviders}>
-                  {modalWatchProviders.streaming.map((provider) => {
+                  {[...modalWatchProviders.streaming].sort((a,b) => Number(linkedProviderIds.includes(b.provider_id)) - Number(linkedProviderIds.includes(a.provider_id))).map((provider) => {
                     const platform = getStreamingPlatform(provider.provider_id);
                     return (
                       <TouchableOpacity
@@ -556,38 +610,35 @@ function DetailModal({
               </View>
             )}
 
-            {!loadingProviders && modalWatchProviders && modalWatchProviders.streaming.length === 0 && (
-              !modalWatchProviders.suppressDigitalReason &&
-              (modalWatchProviders.rent.length > 0 || modalWatchProviders.buy.length > 0) && (
-                <View style={styles.watchNowSection}>
-                  <Text style={styles.watchNowLabel}>
-                    {modalWatchProviders.rent.length > 0 ? 'Rent or Buy' : 'Buy'}
-                  </Text>
-                  <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.watchNowProviders}>
-                    {[...modalWatchProviders.rent, ...modalWatchProviders.buy]
-                      .filter((p, i, arr) => arr.findIndex(x => x.provider_id === p.provider_id) === i)
-                      .slice(0, 5)
-                      .map((provider) => {
-                        const platform = getStreamingPlatform(provider.provider_id);
-                        return (
-                          <TouchableOpacity
-                            key={provider.provider_id}
-                            style={[styles.watchNowButtonCompact, { borderColor: (platform?.color || THEME.textMuted) + '50' }]}
-                            onPress={() => handleWatchNow(provider)}
-                            activeOpacity={0.8}
-                            disabled={openingApp}
-                          >
-                            <Image
-                              source={{ uri: `https://image.tmdb.org/t/p/w92${provider.logo_path}` }}
-                              style={styles.watchNowProviderLogoSmall}
-                            />
-                            <Text style={styles.watchNowCompactName} numberOfLines={1}>{provider.provider_name}</Text>
-                          </TouchableOpacity>
-                        );
-                      })}
-                  </ScrollView>
-                </View>
-              )
+            {!loadingProviders && modalWatchProviders && !modalWatchProviders.suppressDigitalReason && (
+              <>
+                {([
+                  { label: 'Rent', providers: modalWatchProviders.rent },
+                  { label: 'Buy', providers: modalWatchProviders.buy },
+                ] as const).map(group => group.providers.length ? (
+                  <View key={group.label} style={styles.watchNowSection}>
+                    <Text style={styles.watchNowLabel}>{group.label}</Text>
+                    <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.watchNowProviders}>
+                      {group.providers.map(provider => (
+                        <TouchableOpacity key={provider.provider_id}
+                          style={styles.watchNowButtonCompact}
+                          onPress={handleOpenJustWatch}
+                          activeOpacity={0.8}>
+                          <Image source={{ uri: `https://image.tmdb.org/t/p/w92${provider.logo_path}` }}
+                            style={styles.watchNowProviderLogoSmall}/>
+                          <Text style={styles.watchNowCompactName} numberOfLines={1}>
+                            {group.label} · {provider.provider_name}
+                          </Text>
+                        </TouchableOpacity>
+                      ))}
+                    </ScrollView>
+                  </View>
+                ) : null)}
+              </>
+            )}
+
+            {!loadingProviders && !modalWatchProviders && (
+              <Text style={styles.libraryActionSubtitle}>No verified watch offers for {countryCode} at present.</Text>
             )}
 
             {loadingProviders && (
@@ -609,67 +660,19 @@ function DetailModal({
               </TouchableOpacity>
             )}
 
-            <View style={styles.detailActions}>
-              {isInList ? (
-                <TouchableOpacity 
-                  style={[styles.detailActionButton, styles.detailActionSuccess]}
-                  disabled
-                >
-                  <Check size={20} color="#FFF" />
-                  <Text style={styles.detailActionText}>In My List</Text>
+            {justSaved && savedShow?.status === 'Plan to Watch' && (
+              <View style={styles.savedConfirmation}>
+                <View style={styles.savedConfirmationHeading}>
+                  <BookmarkCheck size={17} color={THEME.success} />
+                  <Text style={styles.savedConfirmationText}>Added to Watchlist</Text>
+                </View>
+                <Text style={styles.savedConfirmationSubtitle}>Ready whenever you are. Want to start now?</Text>
+                <TouchableOpacity onPress={onStartWatching} style={styles.savedStartAction}>
+                  <Play size={15} color="#FFF" />
+                  <Text style={styles.savedStartText}>Start Watching</Text>
                 </TouchableOpacity>
-              ) : (
-                <>
-                  <TouchableOpacity 
-                    style={[styles.detailActionButton, styles.detailActionPrimary]}
-                    onPress={async () => {
-                      if (Platform.OS !== 'web') {
-                        void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
-                      }
-                      onAddToList(item, mediaType, true);
-                    }}
-                  >
-                    <Plus size={20} color="#FFF" />
-                    <Text style={styles.detailActionText}>Add to List</Text>
-                  </TouchableOpacity>
-                  <TouchableOpacity 
-                    style={styles.detailActionSecondary}
-                    onPress={async () => {
-                      if (Platform.OS !== 'web') {
-                        void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-                      }
-                      onAddToList(item, mediaType, false);
-                    }}
-                  >
-                    <Bookmark size={22} color={THEME.text} />
-                  </TouchableOpacity>
-                </>
-              )}
-              
-              <TouchableOpacity 
-                style={[styles.detailActionSecondary, isLiked && styles.detailActionLiked]}
-                onPress={() => {
-                  RNAnimated.sequence([
-                    RNAnimated.timing(heartScale, { toValue: 1.35, duration: 120, useNativeDriver: Platform.OS !== 'web' }),
-                    RNAnimated.timing(heartScale, { toValue: 1, duration: 180, useNativeDriver: Platform.OS !== 'web' }),
-                  ]).start();
-                  onToggleLike();
-                }}
-                testID="like-button"
-              >
-                <RNAnimated.View style={{ transform: [{ scale: heartScale }] }}>
-                  <Heart size={22} color={isLiked ? '#FF2D55' : THEME.text} fill={isLiked ? '#FF2D55' : 'none'} />
-                </RNAnimated.View>
-              </TouchableOpacity>
-              
-              <TouchableOpacity 
-                style={styles.detailActionSecondary}
-                onPress={onShare}
-                testID="share-button"
-              >
-                <Share2 size={22} color={THEME.text} />
-              </TouchableOpacity>
-            </View>
+              </View>
+            )}
 
             {trailerKey && (
               <TouchableOpacity
@@ -874,7 +877,7 @@ function DetailModal({
                   </View>
                 )}
                 
-                <TouchableOpacity 
+                <TouchableOpacity
                   style={[
                     styles.notificationToggle,
                     trackedShow?.notificationsEnabled && styles.notificationToggleActive
@@ -941,7 +944,28 @@ export default function ShowsScreen() {
       });
     }, [params.tab, router]),
   );
-  const [selectedStatus, setSelectedStatus] = useState<'all' | Show['status']>('all');
+  const [selectedStatus, setSelectedStatus] = useState<'all' | Show['status']>('Watching');
+  const [mediaFilter, setMediaFilter] = useState<LibraryMediaFilter>('all');
+  const [librarySort, setLibrarySort] = useState<LibrarySort>('recent');
+  const [librarySearch, setLibrarySearch] = useState('');
+  const [justSavedKey, setJustSavedKey] = useState<string | null>(null);
+  const [progressShow, setProgressShow] = useState<Show | null>(null);
+  const [providerSheetShow, setProviderSheetShow] = useState<Show | null>(null);
+  const [libraryAlerts, setLibraryAlerts] = useState<Record<number, boolean>>({});
+  // Streaming offer country is a user preference, not inferred nationality.
+  const [watchRegion, setWatchRegion] = useState('GB');
+  useEffect(() => {
+    let cancelled = false;
+    void unifiedStorage.getItem(`shows_watch_region_${user?.id || 'guest'}`).then(saved => {
+      if (!cancelled) setWatchRegion(saved && /^[A-Z]{2}$/.test(saved) ? saved : 'GB');
+    });
+    return () => { cancelled = true; };
+  }, [user?.id]);
+  const chooseWatchRegion = (region: string) => {
+    setWatchRegion(region);
+    setWatchProviders(null);
+    void unifiedStorage.setItem(`shows_watch_region_${user?.id || 'guest'}`, region);
+  };
 
   const [showThumbnails, setShowThumbnails] = useState<Record<string, string>>({});
   const [refreshing, setRefreshing] = useState(false);
@@ -1548,6 +1572,12 @@ export default function ShowsScreen() {
       if (!row) continue;
       const progress = readSeasonEpisodeFromYounifyRow(row);
       if (!progress) continue;
+      if (show.status === 'Completed') continue;
+      if (show.lastWatchedSeason != null && show.lastWatchedEpisode != null) {
+        const current = (show.currentSeason ?? 0) * 10000 + (show.currentEpisode ?? 0);
+        const incoming = progress.season * 10000 + progress.episode;
+        if (incoming <= current) continue;
+      }
       if (show.currentSeason === progress.season && show.currentEpisode === progress.episode) continue;
 
       updateShow({
@@ -1661,6 +1691,33 @@ export default function ShowsScreen() {
     [younifyContent, continueWatchingRows],
   );
 
+  // Enrich interests from the actual saved library, not just the handful
+  // of saved titles coincidentally present in current TMDB trending results.
+  const genreSourceShows = useMemo(() => shows
+    .filter(s => s.tmdbId && (s.status === 'Watching' || s.status === 'Completed' || s.status === 'Plan to Watch'))
+    .sort((a,b) => (b.status === 'Completed' ? 1 : 0) - (a.status === 'Completed' ? 1 : 0))
+    .slice(0, 6), [shows]);
+  const savedGenreQuery = useQuery({
+    queryKey: ['shows-saved-genres', user?.id ?? 'guest', genreSourceShows.map(s => `${libraryMediaType(s)}:${s.tmdbId}`).join('|')],
+    enabled: genreSourceShows.length > 0,
+    staleTime: 1000 * 60 * 60 * 6,
+    queryFn: async () => {
+      const result = await Promise.allSettled(genreSourceShows.map(show =>
+        libraryMediaType(show) === 'movie'
+          ? tmdbApi.getMovieDetails(show.tmdbId!)
+          : tmdbApi.getTVShowDetails(show.tmdbId!),
+      ));
+      const counts = new Map<number, number>();
+      for (const entry of result) {
+        if (entry.status !== 'fulfilled') continue;
+        for (const genre of entry.value.genres ?? []) {
+          counts.set(genre.id, (counts.get(genre.id) ?? 0) + 1);
+        }
+      }
+      return [...counts].sort((a,b) => b[1] - a[1]).slice(0, 8).map(pair => pair[0]);
+    },
+  });
+
   const forYouPersonalization = useMemo(() => {
     const regionMovies =
       regionTrendingQuery.data?.movies?.slice(0, 8).map((m) => toForYouMediaItem(m, 'movie', 'region')) ?? [];
@@ -1686,10 +1743,12 @@ export default function ShowsScreen() {
       younifyLinkedTmdbIds: [...younifyLinkedTmdbIds],
       regionalTmdbIds,
       heroCandidates,
+      savedGenreIds: savedGenreQuery.data,
     });
   }, [
     regionTrendingQuery.data,
     trendingQuery.data,
+    savedGenreQuery.data,
     shows,
     younifyContinueByTmdbId,
     younifyLinkedTmdbIds,
@@ -1932,13 +1991,21 @@ export default function ShowsScreen() {
     younifyLoading,
   ]);
 
-  const filteredShows = useMemo(() => {
-    let filtered = shows;
-    if (selectedStatus !== 'all') {
-      filtered = filtered.filter(s => s.status === selectedStatus);
-    }
-    return filtered;
-  }, [shows, selectedStatus]);
+  const filteredShows = useMemo(() => filterLibrary(shows, {
+    section: selectedStatus,
+    media: mediaFilter,
+    search: librarySearch,
+    sort: librarySort,
+  }), [shows, selectedStatus, mediaFilter, librarySearch, librarySort]);
+
+  const readySaved = useMemo(() => {
+    // Restrict this row to titles the linked provider explicitly reports in
+    // its own watchlist. A TMDB provider listing alone is not proof of access.
+    const linkedIds = new Set(
+      (younifyWatchlistSection?.items ?? []).map(row => extractTmdbIdFromYounifyRow(row)).filter(Boolean),
+    );
+    return shows.filter(show => show.status === 'Plan to Watch' && !!show.tmdbId && linkedIds.has(show.tmdbId));
+  }, [shows, younifyWatchlistSection]);
 
   const groupedShows = useMemo(() => {
     const watching = shows.filter(s => s.status === 'Watching');
@@ -1949,7 +2016,7 @@ export default function ShowsScreen() {
   }, [shows]);
 
   const isInList = useCallback((itemId: number, type: 'movie' | 'tv') => {
-    return shows.some(show => show.tmdbId === itemId && show.mediaType === type);
+    return shows.some(show => show.tmdbId === itemId && libraryMediaType(show) === type);
   }, [shows]);
 
   const handleAddFromTMDB = useCallback((item: any, type: 'movie' | 'tv', startWatching: boolean = false) => {
@@ -1968,13 +2035,11 @@ export default function ShowsScreen() {
     const title =
       typeof rawTitle === 'string' && rawTitle.trim().length > 0 ? rawTitle.trim() : 'Untitled';
     
-    const exists = shows.some(show => show.tmdbId === tmdbId && show.mediaType === type);
+    const exists = shows.some(show => show.tmdbId === tmdbId && libraryMediaType(show) === type);
     
     if (exists) {
-      if (Platform.OS !== 'web') {
-        void Haptics.notificationAsync(Haptics.NotificationFeedbackType.Warning);
-      }
-      Alert.alert('Already Added', 'This title is already in your list.');
+      const saved = shows.find(show => show.tmdbId === tmdbId && libraryMediaType(show) === type);
+      if (saved) setShowStatusModal({ visible: true, show: saved });
       return;
     }
     
@@ -1992,23 +2057,18 @@ export default function ShowsScreen() {
     }
     
     addShow(showData);
-    setDetailModal({ visible: false, item: null, mediaType: 'movie' });
-    
-    const posterUrl = tmdbApi.getImageUrl(item.poster_path);
-    if (posterUrl) {
-      setTimeout(() => {
-        const newShow = shows[shows.length - 1];
-        if (newShow) {
-          setShowThumbnails(prev => ({ ...prev, [newShow.id]: posterUrl }));
-        }
-      }, 100);
+    // A save is not a request to start playing or close the detail page.
+    // Show a lightweight, optional Start Watching action instead.
+    if (detailModal.visible && detailModal.item?.id === tmdbId) {
+      setJustSavedKey(`${type}:${tmdbId}`);
     }
-  }, [shows, addShow]);
+  }, [shows, addShow, detailModal.visible, detailModal.item?.id]);
 
   const handleItemPress = useCallback(async (item: TMDBMovie | TMDBTVShow, mediaType: 'movie' | 'tv') => {
     if (Platform.OS !== 'web') {
       void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
     }
+    setJustSavedKey(null);
     setDetailModal({ visible: true, item: { ...item, media_type: mediaType }, mediaType });
     
     const liked = await likedContentService.isLiked(item.id, mediaType);
@@ -2186,14 +2246,14 @@ export default function ShowsScreen() {
               <Text style={styles.heroGenres}>{genres.slice(0, 2).join(' • ')}</Text>
             </View>
             <View style={styles.heroActions}>
-              <TouchableOpacity 
+              <TouchableOpacity
                 style={styles.heroPlayButton}
                 onPress={() => handleItemPress(item, item.media_type)}
               >
                 <Info size={18} color="#FFF" />
                 <Text style={styles.heroPlayText}>More Info</Text>
               </TouchableOpacity>
-              <TouchableOpacity 
+              <TouchableOpacity
                 style={styles.heroAddButton}
                 onPress={() => handleAddFromTMDB(item, item.media_type)}
               >
@@ -2313,7 +2373,7 @@ export default function ShowsScreen() {
   // Fetch watch providers when status modal opens
   React.useEffect(() => {
     const fetchWatchProviders = async () => {
-      const show = showStatusModal.show;
+      const show = providerSheetShow;
       if (!show?.tmdbId || !show?.mediaType) {
         setWatchProviders(null);
         return;
@@ -2322,10 +2382,8 @@ export default function ShowsScreen() {
       setLoadingProviders(true);
       try {
         const providers = await tmdbApi.getWatchProviders(show.tmdbId, show.mediaType);
-        // Try GB (UK) first, then fall back to US
-        const ukProviders = providers.results?.GB;
-        const usProviders = providers.results?.US;
-        const countryProviders = ukProviders || usProviders;
+        // Do not pass foreign-region availability off as an offer in the user's location.
+        const countryProviders = providers.results?.[watchRegion];
         
         if (countryProviders) {
           const raw = {
@@ -2361,10 +2419,10 @@ export default function ShowsScreen() {
       }
     };
 
-    if (showStatusModal.visible && showStatusModal.show) {
+    if (providerSheetShow) {
       void fetchWatchProviders();
     }
-  }, [showStatusModal.visible, showStatusModal.show?.tmdbId, showStatusModal.show]);
+  }, [providerSheetShow, watchRegion]);
 
   const openTrackedShowOnPlatform = useCallback(async (show: Show) => {
     const label = String(show.platform || '').toLowerCase();
@@ -2402,9 +2460,16 @@ export default function ShowsScreen() {
 
   const renderMyListCard = useCallback(({ item }: { item: Show }) => {
     const thumbnailUrl = showThumbnails[item.id];
-    const platformData = PLATFORMS.find(p => p.id === item.platform);
+    const contentLabel = libraryMediaType(item) === 'movie' ? 'MOVIE' : 'TV SERIES';
     const younifyRow = item.tmdbId != null ? younifyContinueByTmdbId.get(item.tmdbId) : undefined;
     const episodeLabel = formatShowEpisodeLabel(item, younifyRow, 'bullet');
+    const progressLabel = item.status === 'Watching' && libraryMediaType(item) === 'tv'
+      ? item.currentSeason && item.currentEpisode
+        ? item.lastWatchedSeason === item.currentSeason && item.lastWatchedEpisode === item.currentEpisode
+          ? 'Caught up · new episodes pending'
+          : `Next · S${item.currentSeason} E${item.currentEpisode}`
+        : 'Track episodes'
+      : episodeLabel;
     
     return (
       <Pressable 
@@ -2413,7 +2478,7 @@ export default function ShowsScreen() {
           if (Platform.OS !== 'web') {
             void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
           }
-          await openTrackedShowOnPlatform(item);
+          setShowStatusModal({ visible: true, show: item });
         }}
         onLongPress={() => handleDeleteShow(item.id)}
       >
@@ -2429,13 +2494,13 @@ export default function ShowsScreen() {
           style={styles.myListCardGradient}
         />
         <View style={styles.myListCardContent}>
-          <View style={[styles.myListPlatformBadge, { backgroundColor: platformData?.color || THEME.surface }]}>
-            <Text style={styles.myListPlatformText}>{item.platform}</Text>
+          <View style={[styles.myListPlatformBadge, { backgroundColor: 'rgba(25,25,34,0.84)' }]}>
+            <Text style={styles.myListPlatformText}>{contentLabel}</Text>
           </View>
           <View style={styles.myListCardBottom}>
             <Text style={styles.myListTitle} numberOfLines={2}>{item.title}</Text>
-            {episodeLabel ? (
-              <Text style={styles.myListProgress}>{episodeLabel}</Text>
+            {progressLabel ? (
+              <Text style={styles.myListProgress} numberOfLines={2}>{progressLabel}</Text>
             ) : null}
           </View>
         </View>
@@ -2446,128 +2511,192 @@ export default function ShowsScreen() {
             item.status === 'On Hold' ? THEME.warning :
             THEME.textMuted
         }]} />
-        {item.status === 'Watching' && (
-          <TouchableOpacity 
-            style={styles.myListPlayButton}
-            onPress={async (e) => {
-              e.stopPropagation();
-              if (Platform.OS !== 'web') {
-                void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-              }
-              await openTrackedShowOnPlatform(item);
-            }}
-          >
-            <Play size={14} color="#FFF" fill="#FFF" />
-          </TouchableOpacity>
-        )}
+        <View style={styles.myListManageButton}>
+          <ChevronRight size={16} color="#FFF" />
+        </View>
       </Pressable>
     );
-  }, [showThumbnails, handleDeleteShow, openTrackedShowOnPlatform, younifyContinueByTmdbId]);
+  }, [showThumbnails, handleDeleteShow, younifyContinueByTmdbId]);
+
+  useEffect(() => {
+    const id = showStatusModal.show?.tmdbId;
+    if (!showStatusModal.visible || !id) return;
+    let cancelled = false;
+    void episodeNotificationService.isShowTracked(id).then(enabled => {
+      if (!cancelled) setLibraryAlerts(prev => ({ ...prev, [id]: enabled }));
+    });
+    return () => { cancelled = true; };
+  }, [showStatusModal.visible, showStatusModal.show?.tmdbId]);
+
+  const toggleLibraryEpisodeAlerts = async (show: Show) => {
+    if (!show.tmdbId) return;
+    const previous = await episodeNotificationService.getTrackedShow(show.tmdbId);
+    const enable = !(previous?.notificationsEnabled ?? false);
+    if (enable) await episodeNotificationService.addTrackedShow(show.tmdbId, show.title, null);
+    else await episodeNotificationService.toggleNotifications(show.tmdbId, false);
+    const result = await episodeNotificationService.isShowTracked(show.tmdbId);
+    setLibraryAlerts(prev => ({ ...prev, [show.tmdbId!]: result }));
+  };
 
   const renderStatusModal = () => {
-    const show = showStatusModal.show;
-    if (!show) return null;
-    
+    const current = showStatusModal.show
+      ? shows.find(item => item.id === showStatusModal.show?.id) ?? showStatusModal.show
+      : null;
+    if (!current) return null;
     const statuses: { key: Show['status']; label: string; icon: React.ReactNode; color: string }[] = [
-      { key: 'Watching', label: 'Currently Watching', icon: <Eye size={20} />, color: THEME.primary },
-      { key: 'Plan to Watch', label: 'Plan to Watch', icon: <Bookmark size={20} />, color: THEME.textSecondary },
-      { key: 'Completed', label: 'Completed', icon: <BookmarkCheck size={20} />, color: THEME.success },
-      { key: 'On Hold', label: 'On Hold', icon: <Pause size={20} />, color: THEME.warning },
+      { key: 'Watching', label: 'Watching', icon: <Eye size={19} />, color: THEME.primary },
+      { key: 'Plan to Watch', label: 'Want to Watch', icon: <Bookmark size={19} />, color: THEME.textSecondary },
+      { key: 'Completed', label: 'Watched', icon: <BookmarkCheck size={19} />, color: THEME.success },
+      { key: 'On Hold', label: 'Paused', icon: <Pause size={19} />, color: THEME.warning },
     ];
-    
     return (
-      <Modal
-        visible={showStatusModal.visible}
-        animationType="slide"
-        presentationStyle={Platform.OS === 'web' ? undefined : 'pageSheet'}
-        onRequestClose={() => setShowStatusModal({ visible: false, show: null })}
-      >
-        <View style={[styles.statusModal, { paddingTop: insets.top }]}>
-          <View style={styles.statusModalHeader}>
-            <Text style={styles.statusModalTitle}>{show.title}</Text>
-            <TouchableOpacity onPress={() => setShowStatusModal({ visible: false, show: null })}>
-              <X size={24} color={THEME.text} />
-            </TouchableOpacity>
-          </View>
-          
-          <View style={styles.statusModalContent}>
-            <Text style={styles.statusModalSectionTitle}>Change Status</Text>
-            {statuses.map((status) => (
-              <TouchableOpacity
-                key={status.key}
-                style={[
-                  styles.statusOption,
-                  show.status === status.key && styles.statusOptionActive
-                ]}
-                onPress={() => handleChangeStatus(show, status.key)}
-              >
-                <View style={[styles.statusOptionIcon, { backgroundColor: `${status.color}20` }]}>
-                  {React.cloneElement(status.icon as React.ReactElement<{ color: string }>, {
-                    color: status.color
-                  })}
-                </View>
-                <Text style={[
-                  styles.statusOptionText,
-                  show.status === status.key && styles.statusOptionTextActive
-                ]}>
-                  {status.label}
-                </Text>
-                {show.status === status.key && (
-                  <Check size={20} color={THEME.primary} />
-                )}
+      <Modal transparent visible={showStatusModal.visible} animationType="slide"
+        onRequestClose={() => setShowStatusModal({ visible: false, show: null })}>
+        <View style={styles.librarySheetScrim}>
+          <Pressable style={StyleSheet.absoluteFill} onPress={() => setShowStatusModal({ visible: false, show: null })}/>
+          <View style={[styles.librarySheet, { paddingBottom: Math.max(20, insets.bottom) }]}>
+            <View style={styles.librarySheetHandle} />
+            <View style={styles.statusModalHeader}>
+              <View style={{ flex: 1 }}>
+                <Text style={styles.statusModalTitle} numberOfLines={2}>{current.title}</Text>
+                <Text style={styles.librarySheetSubhead}>Manage in My Library</Text>
+              </View>
+              <TouchableOpacity onPress={() => setShowStatusModal({ visible: false, show: null })} hitSlop={12}>
+                <X size={22} color={THEME.text} />
               </TouchableOpacity>
-            ))}
-            
-            <View style={styles.statusModalDivider} />
-            
-            {/* Watch Providers Section */}
-            {loadingProviders ? (
-              <View style={styles.watchProvidersLoading}>
-                <ActivityIndicator size="small" color={THEME.primary} />
-                <Text style={styles.watchProvidersLoadingText}>Loading streaming options...</Text>
-              </View>
-            ) : watchProviders ? (
-              <WatchProviders
-                streaming={watchProviders.streaming}
-                rent={watchProviders.rent}
-                buy={watchProviders.buy}
-                link={watchProviders.link}
-                tmdbId={show.tmdbId || 0}
-                mediaType={show.mediaType || 'tv'}
-              />
-            ) : show.tmdbId ? (
-              <View style={styles.noProvidersCard}>
-                <Text style={styles.noProvidersText}>No streaming options available in your region</Text>
-              </View>
-            ) : null}
-            
-            <TouchableOpacity
-              style={styles.statusModalAction}
-              onPress={async () => {
-                if (Platform.OS !== 'web') {
-                  void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-                }
+            </View>
+            <ScrollView contentContainerStyle={styles.librarySheetContent}>
+              <Text style={styles.statusModalSectionTitle}>YOUR WATCH STATUS</Text>
+              {statuses.map(status => (
+                <TouchableOpacity key={status.key}
+                  style={[styles.libraryStatusRow, current.status === status.key && styles.libraryStatusActive]}
+                  onPress={() => handleChangeStatus(current, status.key)}>
+                  <View style={[styles.statusOptionIcon, { backgroundColor: status.color + '20' }]}>
+                    {React.cloneElement(status.icon as React.ReactElement<{ color: string }>, { color: status.color })}
+                  </View>
+                  <Text style={styles.statusOptionText}>{status.label}</Text>
+                  {current.status === status.key && <Check size={19} color={THEME.success}/>}
+                </TouchableOpacity>
+              ))}
+              {libraryMediaType(current) === 'tv' && (
+                <TouchableOpacity style={styles.librarySecondaryAction} onPress={() => {
+                  setShowStatusModal({ visible: false, show: null });
+                  InteractionManager.runAfterInteractions(() => setProgressShow(current));
+                }}>
+                  <Clapperboard size={18} color={THEME.text}/>
+                  <View style={{ flex: 1 }}>
+                    <Text style={styles.libraryActionTitle}>Track episodes</Text>
+                    <Text style={styles.libraryActionSubtitle}>Select a season, update progress or mark an episode watched</Text>
+                  </View>
+                  <ChevronRight size={16} color={THEME.textSecondary}/>
+                </TouchableOpacity>
+              )}
+              {libraryMediaType(current) === 'tv' && !!current.tmdbId && (
+                <TouchableOpacity style={styles.librarySecondaryAction}
+                  onPress={() => void toggleLibraryEpisodeAlerts(current)}>
+                  {libraryAlerts[current.tmdbId] ? <BellRing size={18} color={THEME.success}/> : <BellOff size={18} color={THEME.text}/>}
+                  <View style={{ flex: 1 }}>
+                    <Text style={styles.libraryActionTitle}>New episode alerts · {libraryAlerts[current.tmdbId] ? 'On' : 'Off'}</Text>
+                    <Text style={styles.libraryActionSubtitle}>Optional reminders when a new episode releases</Text>
+                  </View>
+                </TouchableOpacity>
+              )}
+              {current.status === 'Completed' && (
+                <View style={styles.libraryRatingRow}>
+                  <Text style={styles.libraryActionTitle}>Your rating</Text>
+                  <View style={{ flexDirection: 'row', gap: 8 }}>
+                    {[1,2,3,4,5].map(score => (
+                      <TouchableOpacity key={score}
+                        onPress={() => {
+                          updateShow?.({ ...current, rating: score });
+                          setShowStatusModal({ visible: false, show: null });
+                        }}>
+                        <Star size={20} fill={(current.rating ?? 0) >= score ? THEME.warning : 'none'}
+                          color={THEME.warning}/>
+                      </TouchableOpacity>
+                    ))}
+                  </View>
+                </View>
+              )}
+              <TouchableOpacity style={styles.librarySecondaryAction} onPress={() => {
                 setShowStatusModal({ visible: false, show: null });
                 setWatchProviders(null);
+                InteractionManager.runAfterInteractions(() => setProviderSheetShow(current));
+              }}>
+                <Tv size={18} color={THEME.text}/>
+                <View style={{ flex: 1 }}>
+                  <Text style={styles.libraryActionTitle}>Where to Watch</Text>
+                  <Text style={styles.libraryActionSubtitle}>Streaming, rental and purchase options</Text>
+                </View>
+                <ChevronRight size={16} color={THEME.textSecondary}/>
+              </TouchableOpacity>
+              <TouchableOpacity style={styles.libraryRemoveAction} onPress={() => {
+                setShowStatusModal({ visible: false, show: null });
+                handleDeleteShow(current.id);
+              }}>
+                <X size={17} color={THEME.primary}/>
+                <Text style={styles.libraryRemoveText}>Remove from My Library</Text>
+              </TouchableOpacity>
+            </ScrollView>
+          </View>
+        </View>
+      </Modal>
+    );
+  };
+
+  const renderProviderModal = () => {
+    if (!providerSheetShow) return null;
+    return (
+      <Modal visible transparent animationType="slide" onRequestClose={() => setProviderSheetShow(null)}>
+        <View style={styles.librarySheetScrim}>
+          <Pressable style={StyleSheet.absoluteFill} onPress={() => setProviderSheetShow(null)}/>
+          <View style={[styles.librarySheet, { paddingBottom: Math.max(20, insets.bottom) }]}>
+            <View style={styles.librarySheetHandle}/>
+            <View style={styles.statusModalHeader}>
+              <View style={{ flex: 1 }}>
+                <Text style={styles.statusModalTitle}>{providerSheetShow.title}</Text>
+                <Text style={styles.librarySheetSubhead}>Where to Watch</Text>
+              </View>
+              <TouchableOpacity onPress={() => setProviderSheetShow(null)}><X size={22} color={THEME.text}/></TouchableOpacity>
+            </View>
+            <ScrollView contentContainerStyle={styles.librarySheetContent}>
+              <Text style={styles.librarySheetSubhead}>Offers by country</Text>
+              <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ gap: 7, marginBottom: 8 }}>
+                {([
+                  { code: 'GB', name: 'UK' }, { code: 'US', name: 'US' },
+                  { code: 'NG', name: 'Nigeria' }, { code: 'CA', name: 'Canada' },
+                  { code: 'DE', name: 'Germany' }, { code: 'FR', name: 'France' },
+                ] as const).map(region => (
+                  <TouchableOpacity key={region.code}
+                    style={[styles.libraryTypeChip, watchRegion === region.code && styles.statusChipActive]}
+                    onPress={() => chooseWatchRegion(region.code)}>
+                    <Text style={[styles.libraryTypeLabel, watchRegion === region.code && { color: '#FFF' }]}>
+                      {region.name}
+                    </Text>
+                  </TouchableOpacity>
+                ))}
+              </ScrollView>
+              {loadingProviders ? (
+                <ActivityIndicator color={THEME.primary}/>
+              ) : watchProviders ? (
+                <WatchProviders streaming={watchProviders.streaming} rent={watchProviders.rent}
+                  buy={watchProviders.buy} link={watchProviders.link}
+                  tmdbId={providerSheetShow.tmdbId ?? 0}
+                  mediaType={providerSheetShow.mediaType || 'tv'} title={providerSheetShow.title}/>
+              ) : (
+                <Text style={styles.libraryActionSubtitle}>No verified offers for the selected country.</Text>
+              )}
+              <TouchableOpacity style={styles.librarySecondaryAction} onPress={async () => {
+                const show = providerSheetShow;
+                setProviderSheetShow(null);
                 const result = await navigateToShow(show);
                 showNavigationAlert(result);
-              }}
-            >
-              <Play size={20} color={THEME.primary} />
-              <Text style={styles.statusModalActionText}>Open in Streaming App</Text>
-            </TouchableOpacity>
-            
-            <TouchableOpacity
-              style={[styles.statusModalAction, styles.statusModalActionDanger]}
-              onPress={() => {
-                setShowStatusModal({ visible: false, show: null });
-                setWatchProviders(null);
-                handleDeleteShow(show.id);
-              }}
-            >
-              <X size={20} color={THEME.primary} />
-              <Text style={[styles.statusModalActionText, styles.statusModalActionTextDanger]}>Remove from List</Text>
-            </TouchableOpacity>
+              }}>
+                <Play size={18} color={THEME.primary}/>
+                <Text style={styles.libraryActionTitle}>Open linked streaming app</Text>
+                <ChevronRight size={16} color={THEME.textSecondary}/>
+              </TouchableOpacity>
+            </ScrollView>
           </View>
         </View>
       </Modal>
@@ -2784,7 +2913,7 @@ export default function ShowsScreen() {
                   {selectedTab === 'around-you'
                     ? 'What One Pager users around you are watching'
                     : shows.length > 0
-                      ? `${shows.length} in your list`
+                      ? `${shows.length} in your library`
                       : 'Discover & track'}
                 </Text>
               </View>
@@ -2817,7 +2946,7 @@ export default function ShowsScreen() {
                     </View>
                   ) : null}
                 </TouchableOpacity>
-                <TouchableOpacity 
+                <TouchableOpacity
                   style={styles.headerButton}
                   onPress={() => {
                     if (Platform.OS !== 'web') {
@@ -2840,7 +2969,7 @@ export default function ShowsScreen() {
             {[
               { key: 'for-you' as const, label: 'For You', icon: <Sparkles size={14} />, badge: 0 },
               { key: 'streaming' as const, label: 'Streaming', icon: <Tv size={14} />, badge: 0 },
-              { key: 'watchlist' as const, label: 'My List', icon: <Bookmark size={14} />, badge: shows.length },
+              { key: 'watchlist' as const, label: 'My Library', icon: <Bookmark size={14} />, badge: shows.length },
               { key: 'around-you' as const, label: 'Around You', icon: <Flame size={14} />, badge: 0 },
             ].map((tab) => {
               const isActive = selectedTab === tab.key;
@@ -2871,7 +3000,7 @@ export default function ShowsScreen() {
             {[
               { key: 'for-you' as const, label: 'For You', icon: <Sparkles size={14} />, badge: 0 },
               { key: 'streaming' as const, label: 'Streaming', icon: <Tv size={14} />, badge: 0 },
-              { key: 'watchlist' as const, label: 'My List', icon: <Bookmark size={14} />, badge: shows.length },
+              { key: 'watchlist' as const, label: 'My Library', icon: <Bookmark size={14} />, badge: shows.length },
               { key: 'around-you' as const, label: 'Around You', icon: <Flame size={14} />, badge: 0 },
             ].map((tab) => {
               const isActive = selectedTab === tab.key;
@@ -3175,113 +3304,131 @@ export default function ShowsScreen() {
         </View>
       ) : selectedTab === 'watchlist' ? (
         <View style={styles.myListContainer}>
-          {filteredShows.length > 0 ||
-          (younifyWatchlistSection && younifyWatchlistSection.items.length > 0) ? (
-            <FlatList
-              data={filteredShows}
-              renderItem={({ item }) => renderMyListCard({ item })}
-              keyExtractor={(item) => item.id}
-              numColumns={2}
-              columnWrapperStyle={filteredShows.length ? styles.myListRow : undefined}
-              contentContainerStyle={styles.myListContent}
-              showsVerticalScrollIndicator={false}
-              ListEmptyComponent={
-                filteredShows.length === 0 ? (
-                  <View style={styles.watchlistGridEmpty}>
-                    <Text style={styles.emptyText}>No saved titles match this filter.</Text>
+          <FlatList
+            data={filteredShows}
+            renderItem={({ item }) => renderMyListCard({ item })}
+            keyExtractor={(item) => item.id}
+            numColumns={2}
+            columnWrapperStyle={styles.myListRow}
+            contentContainerStyle={styles.myListContent}
+            keyboardShouldPersistTaps="handled"
+            showsVerticalScrollIndicator={false}
+            ListHeaderComponent={
+              <View style={styles.libraryHeaderArea}>
+                <View style={styles.libraryTitleRow}>
+                  <View>
+                    <Text style={styles.libraryHeading}>My Library</Text>
+                    <Text style={styles.librarySubtitle}>{shows.length} saved title{shows.length === 1 ? '' : 's'} · Pick up where you left off</Text>
                   </View>
-                ) : null
-              }
-              ListHeaderComponent={
-                <>
-                  {hasLinkedServices &&
-                  younifyWatchlistSection &&
-                  younifyWatchlistSection.items.length > 0 ? (
-                    <View style={styles.watchlistYounifyBlock}>
-                      <Text style={styles.watchlistSectionLabel}>From your services</Text>
-                      <YounifyBrowseSectionRow
-                        section={younifyWatchlistSection}
-                        linkedStreamingCount={linkedStreamingCount}
-                        onItemOpenDetails={handleYounifyRowOpenDetails}
-                      />
-                    </View>
-                  ) : null}
-                  <Text style={styles.watchlistSectionLabel}>Saved in app</Text>
-                  <ScrollView
-                    horizontal
-                    showsHorizontalScrollIndicator={false}
-                    style={styles.statusFilter}
-                    contentContainerStyle={styles.statusFilterContent}
-                  >
-                    {[
-                      { key: 'all', label: `All (${shows.length})`, icon: null },
-                      { key: 'Watching', label: `Watching (${groupedShows.watching.length})`, icon: <Eye size={14} /> },
-                      { key: 'Plan to Watch', label: `Plan to watch (${groupedShows.planToWatch.length})`, icon: <Bookmark size={14} /> },
-                      { key: 'Completed', label: `Completed (${groupedShows.completed.length})`, icon: <BookmarkCheck size={14} /> },
-                      { key: 'On Hold', label: `On Hold (${groupedShows.onHold.length})`, icon: <Pause size={14} /> },
-                    ].map((status) => (
-                      <TouchableOpacity
-                        key={status.key}
-                        style={[styles.statusChip, selectedStatus === status.key && styles.statusChipActive]}
-                        onPress={() => {
-                          if (Platform.OS !== 'web') void Haptics.selectionAsync();
-                          setSelectedStatus(status.key as any);
-                        }}
-                      >
-                        {status.icon && React.cloneElement(status.icon as React.ReactElement<{ color: string }>, {
-                          color: selectedStatus === status.key ? '#FFF' : THEME.textSecondary
-                        })}
-                        <Text style={[styles.statusChipText, selectedStatus === status.key && styles.statusChipTextActive]}>
-                          {status.label}
+                  <BookmarkCheck size={21} color={THEME.textSecondary}/>
+                </View>
+                <ScrollView horizontal showsHorizontalScrollIndicator={false}
+                  contentContainerStyle={styles.libraryFilters}>
+                  {([
+                    { key: 'Watching', label: 'Watching', count: groupedShows.watching.length },
+                    { key: 'Plan to Watch', label: 'Watchlist', count: groupedShows.planToWatch.length },
+                    { key: 'Completed', label: 'Watched', count: groupedShows.completed.length },
+                    { key: 'On Hold', label: 'Paused', count: groupedShows.onHold.length },
+                    { key: 'all', label: 'All', count: shows.length },
+                  ] as const).map(option => (
+                    <TouchableOpacity key={option.key}
+                      style={[styles.statusChip, selectedStatus === option.key && styles.statusChipActive]}
+                      onPress={() => {
+                        setSelectedStatus(option.key);
+                        if (Platform.OS !== 'web') void Haptics.selectionAsync();
+                      }}>
+                      <Text style={[styles.statusChipText, selectedStatus === option.key && styles.statusChipTextActive]}>
+                        {option.label} ({option.count})
+                      </Text>
+                    </TouchableOpacity>
+                  ))}
+                </ScrollView>
+                <View style={styles.libraryControls}>
+                  <View style={styles.libraryTypeFilters}>
+                    {([
+                      { id: 'all', name: 'All titles' },
+                      { id: 'movie', name: 'Movies' },
+                      { id: 'tv', name: 'TV' },
+                    ] as const).map(option => (
+                      <TouchableOpacity key={option.id}
+                        style={[styles.libraryTypeChip, mediaFilter === option.id && styles.libraryTypeChipActive]}
+                        onPress={() => setMediaFilter(option.id)}>
+                        <Text style={[styles.libraryTypeLabel, mediaFilter === option.id && { color: THEME.text }]}>
+                          {option.name}
                         </Text>
                       </TouchableOpacity>
                     ))}
-                  </ScrollView>
-                </>
-              }
-            />
-          ) : (
-            <ScrollView
-              showsVerticalScrollIndicator={false}
-              contentContainerStyle={styles.watchlistEmptyScroll}
-              refreshControl={
-                <RefreshControl
-                  refreshing={streamingRefreshing}
-                  onRefresh={() => void onStreamingPullRefresh()}
-                  tintColor={THEME.primary}
-                />
-              }
-            >
-              {hasLinkedServices &&
-              younifyWatchlistSection &&
-              younifyWatchlistSection.items.length > 0 ? (
-                <View style={styles.watchlistYounifyBlock}>
-                  <Text style={styles.watchlistSectionLabel}>From your services</Text>
-                  <YounifyBrowseSectionRow
-                    section={younifyWatchlistSection}
-                    linkedStreamingCount={linkedStreamingCount}
-                    onItemOpenDetails={handleYounifyRowOpenDetails}
-                  />
+                  </View>
+                  <TouchableOpacity style={styles.librarySortButton}
+                    onPress={() => setLibrarySort(prev => prev === 'recent' ? 'title' : prev === 'title' ? 'added' : 'recent')}>
+                    <Text style={styles.librarySortLabel}>{librarySort === 'recent' ? 'Recent' : librarySort === 'title' ? 'A–Z' : 'Date added'}</Text>
+                    <ChevronRight size={13} color={THEME.textSecondary}/>
+                  </TouchableOpacity>
                 </View>
-              ) : null}
-              <View style={styles.emptyState}>
-                <View style={styles.emptyIcon}>
-                  <Bookmark size={48} color={THEME.textMuted} />
+                <View style={styles.librarySearchBox}>
+                  <Search size={16} color={THEME.textSecondary}/>
+                  <TextInput value={librarySearch} onChangeText={setLibrarySearch}
+                    placeholder="Search your library" placeholderTextColor={THEME.textMuted}
+                    style={styles.librarySearchText} returnKeyType="search"/>
+                  {!!librarySearch && (
+                    <TouchableOpacity onPress={() => setLibrarySearch('')}>
+                      <X size={17} color={THEME.textSecondary}/>
+                    </TouchableOpacity>
+                  )}
                 </View>
-                <Text style={styles.emptyTitle}>Nothing saved yet</Text>
-                <Text style={styles.emptyText}>
-                  Add titles from For You or connect a streaming service for provider watchlists.
+                {readySaved.length > 0 && (
+                  <View style={styles.libraryReadyCard}>
+                    <Text style={styles.libraryReadyTitle}>On your linked services</Text>
+                    <Text style={styles.libraryReadySubtitle}>
+                      {readySaved.length} saved title{readySaved.length === 1 ? '' : 's'} also appear in a linked watchlist
+                    </Text>
+                    <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ gap: 8 }}>
+                      {readySaved.slice(0, 8).map(item => (
+                        <TouchableOpacity key={item.id} style={styles.libraryReadyChip}
+                          onPress={() => setShowStatusModal({ visible: true, show: item })}>
+                          <Text style={styles.libraryReadyChipText} numberOfLines={1}>{item.title}</Text>
+                          <ChevronRight size={12} color={THEME.textSecondary}/>
+                        </TouchableOpacity>
+                      ))}
+                    </ScrollView>
+                  </View>
+                )}
+                {hasLinkedServices && younifyWatchlistSection?.items?.length ? (
+                  <View style={styles.watchlistYounifyBlock}>
+                    <Text style={styles.watchlistSectionLabel}>From connected services</Text>
+                    <YounifyBrowseSectionRow section={younifyWatchlistSection}
+                      linkedStreamingCount={linkedStreamingCount}
+                      onItemOpenDetails={handleYounifyRowOpenDetails}/>
+                  </View>
+                ) : null}
+                <Text style={styles.librarySectionCaption}>
+                  {LIBRARY_SECTION_LABELS[selectedStatus]} · {filteredShows.length} title{filteredShows.length === 1 ? '' : 's'}
                 </Text>
-                <TouchableOpacity
-                  style={styles.emptyButton}
-                  onPress={() => setSelectedTab('for-you')}
-                >
-                  <Sparkles size={18} color="#FFF" />
-                  <Text style={styles.emptyButtonText}>Browse For You</Text>
+              </View>
+            }
+            ListEmptyComponent={
+              <View style={styles.libraryEmpty}>
+                <Bookmark size={28} color={THEME.textMuted}/>
+                <Text style={styles.emptyTitle}>
+                  {shows.length === 0 ? 'Your library starts here' : 'No titles match these filters'}
+                </Text>
+                <Text style={styles.emptyText}>
+                  {shows.length === 0
+                    ? 'Save a movie or series with one tap. Tracking is optional.'
+                    : 'Try another category or clear your search.'}
+                </Text>
+                <TouchableOpacity style={styles.emptyButton}
+                  onPress={() => {
+                    if (shows.length === 0) setSelectedTab('for-you');
+                    else { setSelectedStatus('all'); setMediaFilter('all'); setLibrarySearch(''); }
+                  }}>
+                  <Text style={styles.emptyButtonText}>
+                    {shows.length === 0 ? 'Explore titles' : 'Clear filters'}
+                  </Text>
                 </TouchableOpacity>
               </View>
-            </ScrollView>
-          )}
+            }
+          />
         </View>
       ) : selectedTab === 'around-you' ? (
         <View style={styles.aroundYouTabWrap}>
@@ -3365,10 +3512,16 @@ export default function ShowsScreen() {
                         <Text style={styles.searchResultRatingText}>{formatRating(item.vote_average)}</Text>
                       </View>
                     </View>
-                    <TouchableOpacity 
+                    <TouchableOpacity
                       style={[styles.searchResultAdd, inList && styles.searchResultAddActive]}
                       onPress={() => {
-                        if (!inList) {
+                        if (inList) {
+                          const saved = shows.find(show => show.tmdbId === item.id && libraryMediaType(show) === item.media_type);
+                          if (saved) {
+                            setShowAddModal(false);
+                            InteractionManager.runAfterInteractions(() => setShowStatusModal({ visible: true, show: saved }));
+                          }
+                        } else {
                           handleAddFromTMDB(item, item.media_type);
                         }
                       }}
@@ -3411,6 +3564,20 @@ export default function ShowsScreen() {
         }}
         onAddToList={handleAddFromTMDB}
         isInList={detailModal.item ? isInList(detailModal.item.id, detailModal.mediaType) : false}
+        savedShow={shows.find(show => show.tmdbId === detailModal.item?.id && libraryMediaType(show) === detailModal.mediaType)}
+        justSaved={justSavedKey === `${detailModal.mediaType}:${detailModal.item?.id}`}
+        onManageSaved={() => {
+          const saved = shows.find(show => show.tmdbId === detailModal.item?.id && libraryMediaType(show) === detailModal.mediaType);
+          if (saved) {
+            setDetailModal({ visible: false, item: null, mediaType: 'movie' });
+            InteractionManager.runAfterInteractions(() => setShowStatusModal({ visible: true, show: saved }));
+          }
+        }}
+        onStartWatching={() => {
+          const saved = shows.find(show => show.tmdbId === detailModal.item?.id && libraryMediaType(show) === detailModal.mediaType);
+          if (saved && updateShow) updateShow({ ...saved, status: 'Watching' });
+          setJustSavedKey(null);
+        }}
         trackedShow={trackedShowData}
         onToggleNotifications={handleToggleNotifications}
         isTogglingNotifications={toggleNotificationsMutation.isPending}
@@ -3419,15 +3586,67 @@ export default function ShowsScreen() {
         onShare={handleShare}
         hasLinkedServices={hasLinkedServices}
         younifyProviderIndex={younifyEpisodeIndex}
+        linkedProviderIds={linkedProviderIds}
+        countryCode={watchRegion}
         onConnectServices={() => router.push('/streaming-services' as any)}
       />
 
       {renderStatusModal()}
+      {renderProviderModal()}
+      <EpisodeProgressSheet
+        show={progressShow ? shows.find(s => s.id === progressShow.id) ?? progressShow : null}
+        onClose={() => setProgressShow(null)}
+        onSave={(updated) => {
+          updateShow?.(updated);
+          setProgressShow(null);
+        }}
+      />
     </View>
   );
 }
 
 const styles = StyleSheet.create({
+  libraryHeaderArea: { paddingBottom: 10, gap: 14 },
+  libraryTitleRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', paddingTop: 16, paddingHorizontal: 4 },
+  libraryHeading: { fontSize: 23, color: THEME.text, fontWeight: '700', letterSpacing: -0.4 },
+  librarySubtitle: { fontSize: 12, color: THEME.textSecondary, marginTop: 4 },
+  libraryFilters: { gap: 8, paddingVertical: 3 },
+  libraryControls: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 7 },
+  libraryTypeFilters: { flexDirection: 'row', gap: 5, flexShrink: 1 },
+  libraryTypeChip: { borderRadius: 9, paddingVertical: 8, paddingHorizontal: 9, backgroundColor: THEME.surfaceLight },
+  libraryTypeChipActive: { backgroundColor: THEME.surfaceHighlight },
+  libraryTypeLabel: { fontSize: 11, color: THEME.textSecondary, fontWeight: '700' },
+  librarySortButton: { paddingHorizontal: 8, paddingVertical: 9, borderRadius: 9, backgroundColor: THEME.surfaceLight, flexDirection: 'row', alignItems: 'center', gap: 3 },
+  librarySortLabel: { fontSize: 11, color: THEME.text, fontWeight: '600' },
+  librarySearchBox: { backgroundColor: THEME.surfaceLight, borderRadius: 12, paddingHorizontal: 12, flexDirection: 'row', alignItems: 'center', gap: 10 },
+  librarySearchText: { flex: 1, color: THEME.text, fontSize: 13, height: 43 },
+  librarySectionCaption: { color: THEME.textSecondary, fontSize: 12, fontWeight: '700', marginHorizontal: 4, marginTop: 2 },
+  libraryEmpty: { padding: 35, gap: 11, alignItems: 'center', minHeight: 240, justifyContent: 'center' },
+  libraryReadyCard: { backgroundColor: '#17171D', borderColor: THEME.border, borderWidth: 1, borderRadius: 15, padding: 13, gap: 9 },
+  libraryReadyTitle: { color: THEME.text, fontSize: 14, fontWeight: '700' },
+  libraryReadySubtitle: { color: THEME.textSecondary, fontSize: 12 },
+  libraryReadyChip: { maxWidth: 178, borderRadius: 9, flexDirection: 'row', alignItems: 'center', gap: 5, backgroundColor: '#28282F', paddingVertical: 8, paddingHorizontal: 10 },
+  libraryReadyChipText: { color: THEME.text, fontSize: 11, maxWidth: 144 },
+  savedConfirmation: { padding: 16, borderRadius: 14, backgroundColor: 'rgba(74,222,128,0.07)', marginTop: 12, borderWidth: 1, borderColor: 'rgba(74,222,128,0.2)', gap: 8 },
+  savedConfirmationHeading: { flexDirection: 'row', alignItems: 'center', gap: 8 },
+  savedConfirmationText: { fontSize: 15, fontWeight: '700', color: THEME.success },
+  savedConfirmationSubtitle: { fontSize: 13, color: THEME.textSecondary },
+  savedStartAction: { backgroundColor: THEME.primary, padding: 12, borderRadius: 9, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8, alignSelf: 'flex-start' },
+  savedStartText: { color: '#FFF', fontSize: 14, fontWeight: '700' },
+  librarySheetScrim: { flex: 1, justifyContent: 'flex-end', backgroundColor: 'rgba(0,0,0,0.73)' },
+  librarySheet: { maxHeight: '85%', backgroundColor: '#111116', borderTopLeftRadius: 24, borderTopRightRadius: 24, borderWidth: 1, borderColor: THEME.border },
+  librarySheetHandle: { width: 36, height: 4, borderRadius: 2, alignSelf: 'center', backgroundColor: '#52525B', marginTop: 10 },
+  librarySheetSubhead: { fontSize: 12, color: THEME.textSecondary, marginTop: 4 },
+  librarySheetContent: { padding: 18, paddingBottom: 26, gap: 9 },
+  libraryStatusRow: { backgroundColor: THEME.surfaceLight, flexDirection: 'row', alignItems: 'center', padding: 10, borderRadius: 12, gap: 12, borderWidth: 1, borderColor: 'transparent' },
+  libraryStatusActive: { borderColor: THEME.primary },
+  librarySecondaryAction: { flexDirection: 'row', alignItems: 'center', backgroundColor: THEME.surfaceLight, padding: 14, borderRadius: 12, gap: 12, marginTop: 5 },
+  libraryActionTitle: { fontSize: 14, fontWeight: '600', color: THEME.text },
+  libraryActionSubtitle: { fontSize: 12, color: THEME.textSecondary, marginTop: 3 },
+  libraryRatingRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', padding: 14, backgroundColor: THEME.surfaceLight, borderRadius: 12, marginTop: 5 },
+  libraryRemoveAction: { flexDirection: 'row', gap: 10, alignItems: 'center', alignSelf: 'center', padding: 12, marginTop: 9 },
+  libraryRemoveText: { color: THEME.primary, fontSize: 13, fontWeight: '600' },
+  myListManageButton: { position: 'absolute', bottom: 13, right: 12, width: 29, height: 29, borderRadius: 9, backgroundColor: 'rgba(22,22,29,0.86)', alignItems: 'center', justifyContent: 'center' },
   container: {
     flex: 1,
     backgroundColor: THEME.background,

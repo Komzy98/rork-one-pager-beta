@@ -51,7 +51,17 @@ export default function WatchProviders({
     await openStreamingApp(provider.provider_id, title, year);
   }, [title, year, tmdbId, mediaType]);
 
-  const renderProvider = useCallback((provider: WatchProvider, showLabel: boolean = true) => {
+  const tmdbWatchUrl = tmdbApi.getWhereToWatchUrl(tmdbId, mediaType);
+
+  const handleOpenTMDBWatch = useCallback(async () => {
+    if (Platform.OS !== 'web') {
+      Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+    }
+    const { Linking } = await import('react-native');
+    await Linking.openURL(link || tmdbWatchUrl);
+  }, [link, tmdbWatchUrl]);
+
+  const renderProvider = useCallback((provider: WatchProvider, action: 'Stream' | 'Rent' | 'Buy') => {
     const platform = getStreamingPlatform(provider.provider_id);
     const borderColor = platform?.color || COLORS.border;
     
@@ -62,7 +72,7 @@ export default function WatchProviders({
           styles.providerButton,
           { borderColor: borderColor + '40' }
         ]}
-        onPress={() => handleProviderPress(provider)}
+        onPress={() => action === 'Stream' ? handleProviderPress(provider) : handleOpenTMDBWatch()}
         activeOpacity={0.7}
       >
         <Image
@@ -70,20 +80,20 @@ export default function WatchProviders({
           style={styles.providerLogo}
           contentFit="contain"
         />
-        {showLabel && (
+        {(
           <View style={styles.providerInfo}>
             <Text style={styles.providerName} numberOfLines={1}>
               {provider.provider_name}
             </Text>
             <View style={styles.watchBadge}>
-              <Play size={10} color={COLORS.primary} fill={COLORS.primary} />
-              <Text style={styles.watchText}>Watch</Text>
+              <ExternalLink size={10} color={COLORS.primary} />
+              <Text style={styles.watchText}>{action === 'Stream' ? 'Open service' : `View ${action} options`}</Text>
             </View>
           </View>
         )}
       </TouchableOpacity>
     );
-  }, [handleProviderPress]);
+  }, [handleProviderPress, handleOpenTMDBWatch]);
 
   const renderCompactProvider = useCallback((provider: WatchProvider) => {
     const platform = getStreamingPlatform(provider.provider_id);
@@ -105,16 +115,6 @@ export default function WatchProviders({
     );
   }, [handleProviderPress]);
 
-  const tmdbWatchUrl = tmdbApi.getWhereToWatchUrl(tmdbId, mediaType);
-
-  const handleOpenTMDBWatch = useCallback(async () => {
-    if (Platform.OS !== 'web') {
-      Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-    }
-    const { Linking } = await import('react-native');
-    await Linking.openURL(link || tmdbWatchUrl);
-  }, [link, tmdbWatchUrl]);
-
   const renderProviderSection = (providers: WatchProvider[], title: string, icon: React.ReactNode) => {
     if (providers.length === 0) return null;
 
@@ -135,7 +135,7 @@ export default function WatchProviders({
           <Text style={styles.sectionTitle}>{title}</Text>
         </View>
         <View style={styles.providersList}>
-          {providers.slice(0, 4).map((p) => renderProvider(p, true))}
+          {providers.slice(0, 4).map((p) => renderProvider(p, title as 'Stream' | 'Rent' | 'Buy'))}
         </View>
       </View>
     );

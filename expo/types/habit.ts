@@ -177,6 +177,9 @@ export interface Show {
   type: 'Movie' | 'Series' | 'Documentary' | 'YouTube Series';
   currentSeason?: number;
   currentEpisode?: number;
+  /** Manual episode tracking, kept separate from linked provider progress. */
+  lastWatchedSeason?: number;
+  lastWatchedEpisode?: number;
   totalSeasons?: number;
   totalEpisodes?: number;
   status: 'Watching' | 'Completed' | 'On Hold' | 'Plan to Watch';
