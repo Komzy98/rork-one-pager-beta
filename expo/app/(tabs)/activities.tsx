@@ -50,6 +50,7 @@ import {
   DailySummary,
   type DailySummaryHabitRollup,
 } from '@/utils/dailySummary';
+import { buildDailyBriefingNarration } from '@/utils/dailyBriefingContext';
 import {
   buildPriorityTaskHighlights,
   buildTodayCalendarHighlights,
@@ -2438,7 +2439,7 @@ export default function ActivitiesScreen() {
                 if (isSpeaking) {
                   void stopSummarySpeech();
                 } else if (dailySummary) {
-                  void speakDailySummary(dailySummary.summary);
+                  void speakDailySummary(buildDailyBriefingNarration(dailySummary));
                 }
               }}
               onShareSummary={() => {
@@ -2446,7 +2447,7 @@ export default function ActivitiesScreen() {
                 setSummarySharePayload(
                   buildSummaryPayload(
                     dailySummary.score,
-                    dailySummary.summary,
+                    buildDailyBriefingNarration(dailySummary),
                     (profile?.name || user?.email?.split('@')[0] || '').trim() || undefined,
                   ),
                 );

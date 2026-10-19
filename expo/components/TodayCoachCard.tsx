@@ -1,6 +1,6 @@
 import React, { useMemo } from 'react';
 import { ActivityIndicator, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
-import { RefreshCw, Share2, Sparkles, Volume2, VolumeX, X } from 'lucide-react-native';
+import { CalendarDays, Clapperboard, Cloud, RefreshCw, Share2, Sparkles, Ticket, Trophy, Volume2, VolumeX, X } from 'lucide-react-native';
 
 import { useTheme } from '@/hooks/useTheme';
 import type { DailySummary } from '@/utils/dailySummary';
@@ -61,7 +61,7 @@ export default function TodayCoachCard(props: TodayCoachCardProps) {
   const supportingLine = useMemo(() => {
     if (!dailySummary) return null;
     const challenge = dailySummary.challenges?.find(Boolean);
-    if (challenge) return `Focus next: ${challenge}`;
+    if (challenge && !dailySummary.summary.toLowerCase().includes(challenge.toLowerCase())) return `Focus next: ${challenge}`;
     const win = dailySummary.wins?.find(Boolean);
     if (win) return `A win today: ${win}`;
     if (yesterdayDelta?.habitsLabel) return yesterdayDelta.habitsLabel;
@@ -74,7 +74,7 @@ export default function TodayCoachCard(props: TodayCoachCardProps) {
     <View style={styles.wrap}>
       <View style={[styles.card, { backgroundColor: colors.card, borderColor: colors.border }]}>
         <View style={styles.topRow}>
-          <Text style={[styles.kicker, { color: colors.textMuted }]}>DAY REVIEW</Text>
+          <Text style={[styles.kicker, { color: colors.textMuted }]}>YOUR DAILY BRIEFING</Text>
           {hasReview ? (
             <TouchableOpacity
               onPress={onDismissSummary}
@@ -91,6 +91,29 @@ export default function TodayCoachCard(props: TodayCoachCardProps) {
         {dailySummary && review ? (
           <>
             <Text style={[styles.review, { color: colors.text }]}>{review}</Text>
+            {!!dailySummary.contextHighlights?.length && !recoveryActive && (
+              <View style={[styles.contextSection, { borderColor: colors.border }]}>
+                <Text style={[styles.contextHeading, { color: colors.textMuted }]}>ON YOUR RADAR</Text>
+                {dailySummary.contextHighlights.slice(0, 5).map((highlight, index) => {
+                  const ContextIcon = highlight.kind === 'calendar' ? CalendarDays
+                    : highlight.kind === 'weather' ? Cloud
+                    : highlight.kind === 'sports' ? Trophy
+                    : highlight.kind === 'shows' ? Clapperboard
+                    : Ticket;
+                  return (
+                    <View style={styles.contextRow} key={`${highlight.kind}-${index}`}>
+                      <View style={[styles.contextIconWrap, { backgroundColor: colors.background }]}>
+                        <ContextIcon size={16} color={colors.primary} strokeWidth={1.8}/>
+                      </View>
+                      <View style={styles.contextTextArea}>
+                        <Text style={[styles.contextLabel, { color: colors.textSecondary }]}>{highlight.label}</Text>
+                        <Text style={[styles.contextText, { color: colors.text }]}>{highlight.text}</Text>
+                      </View>
+                    </View>
+                  );
+                })}
+              </View>
+            )}
             {supportingLine ? (
               <Text style={[styles.supporting, { color: colors.textSecondary }]} numberOfLines={2}>
                 {supportingLine}
@@ -162,9 +185,9 @@ export default function TodayCoachCard(props: TodayCoachCardProps) {
           </>
         ) : (
           <>
-            <Text style={[styles.review, { color: colors.text }]}>Your day, in a few words.</Text>
+            <Text style={[styles.review, { color: colors.text }]}>Your day, beyond the checklist.</Text>
             <Text style={[styles.supporting, { color: colors.textSecondary }]}>
-              Get a personalised recap of your progress, wins and what to focus on next.
+              Your habits, calendar, weather, favourite sports and shows in one useful briefing.
             </Text>
             <TouchableOpacity
               onPress={onGenerate}
@@ -230,8 +253,22 @@ const styles = StyleSheet.create({
     fontWeight: '700',
     letterSpacing: -0.25,
   },
+  contextSection: {
+    marginTop: 14,
+    paddingTop: 12,
+    paddingBottom: 8,
+    borderTopWidth: StyleSheet.hairlineWidth,
+    borderBottomWidth: StyleSheet.hairlineWidth,
+    gap: 11,
+  },
+  contextHeading: { fontSize: 10, fontWeight: '800', letterSpacing: 1.1, marginBottom: 1 },
+  contextRow: { flexDirection: 'row', alignItems: 'flex-start', gap: 10 },
+  contextIconWrap: { width: 32, height: 32, borderRadius: 10, alignItems: 'center', justifyContent: 'center' },
+  contextTextArea: { flex: 1, gap: 2, paddingTop: 1 },
+  contextLabel: { fontSize: 11, fontWeight: '700' },
+  contextText: { fontSize: 13, lineHeight: 19, fontWeight: '500' },
   supporting: {
-    marginTop: 6,
+    marginTop: 9,
     fontSize: 12.5,
     lineHeight: 18,
     fontWeight: '400',
