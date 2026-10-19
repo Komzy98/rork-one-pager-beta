@@ -14,7 +14,7 @@ This overhaul replaces the ambiguous save-and-start-watching flow with an explic
 
 ## Integrations and limits
 - Streaming deeplinks use the app's existing Younify/TMDB/provider navigation. Some providers can only open a title search or listing, **not guaranteed autoplay**; rental/buy routes open verified JustWatch offers rather than pretending a transaction already grants playback.
-- This project currently has Younify integrations but **no authenticated Trakt connection**. Do not claim that Trakt syncing is live. Adding it requires Trakt app credentials, OAuth consent, token handling and a conflict-resolution policy.
+- The app uses Younify for connected-provider discovery and TMDB for title metadata.
 - No EAS build or TestFlight submission is triggered by this branch.
 
 ## Verification
