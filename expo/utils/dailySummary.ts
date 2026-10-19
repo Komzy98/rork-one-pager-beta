@@ -194,6 +194,24 @@ export function buildGroundedDailySummary(
 
   if (sentences.length === 0) {
     sentences.push("There isn't enough completed activity logged yet to give you a useful wrap-up.");
+  } else if (scheduledCount > 0) {
+    // A helpful review is a short narrative, not a single completion statistic.
+    // Every detail above comes from verified activity, and these suggestions
+    // describe possible next actions rather than inventing progress or mood.
+    if (streaks.length > 0) {
+      const longest = [...streaks].sort((a, b) => b.length - a.length)[0];
+      sentences.push(`${longest.name} is on a ${longest.length}-day streak.`);
+    }
+
+    if (openItems.length > 0) {
+      sentences.push(
+        'There is no need to tackle everything at once. If you want to make more progress today, choose one remaining habit that matters most.'
+      );
+    } else if (completedCount === scheduledCount) {
+      sentences.push(
+        'Your planned habits are taken care of. You can put your attention towards whatever else matters to you today.'
+      );
+    }
   }
 
   const completionRatio = scheduledCount > 0 ? completedCount / scheduledCount : 0;
