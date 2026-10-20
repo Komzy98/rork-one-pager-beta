@@ -28,6 +28,7 @@ interface ShowInfoModalProps {
   mediaType: 'movie' | 'tv';
   showTitle?: string;
   platform?: string;
+  countryCode?: string;
 }
 
 interface ShowDetails {
@@ -62,6 +63,7 @@ export default function ShowInfoModal({
   tmdbId,
   mediaType,
   showTitle,
+  countryCode = 'GB',
 }: ShowInfoModalProps) {
   const insets = useSafeAreaInsets();
   const [details, setDetails] = useState<ShowDetails | null>(null);
@@ -123,9 +125,7 @@ export default function ShowInfoModal({
     const fetchProviders = async () => {
       try {
         const res = await tmdbApi.getWatchProviders(tmdbId, mediaType);
-        const gb = res.results?.GB;
-        const us = res.results?.US;
-        const country = gb || us;
+        const country = res.results?.[countryCode];
         if (country) {
           setProviders({
             streaming: country.flatrate || [],
@@ -143,7 +143,7 @@ export default function ShowInfoModal({
 
     void fetchDetails();
     void fetchProviders();
-  }, [visible, tmdbId, mediaType]);
+  }, [visible, tmdbId, mediaType, countryCode]);
 
   const handleOpenTMDB = useCallback(async () => {
     if (!tmdbId) return;

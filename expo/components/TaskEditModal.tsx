@@ -75,6 +75,9 @@ export const TaskEditModal: React.FC<TaskEditModalProps> = ({
   const [habitLocation, setHabitLocation] = useState<string>('');
   const [habitWindowStart, setHabitWindowStart] = useState<string>('');
   const [habitWindowEnd, setHabitWindowEnd] = useState<string>('');
+  const [reminderMode, setReminderMode] = useState<'smart' | 'fixed' | 'off'>('smart');
+  const [reminderTime, setReminderTime] = useState<string>('19:00');
+  const [reminderFollowUp, setReminderFollowUp] = useState(false);
   const [habitObstacle, setHabitObstacle] = useState<string>('');
   const [habitMinimumVersion, setHabitMinimumVersion] = useState<string>('');
   const [habitFallback, setHabitFallback] = useState<string>('');
@@ -115,6 +118,9 @@ export const TaskEditModal: React.FC<TaskEditModalProps> = ({
       setHabitLocation(task.habitEngine?.location || '');
       setHabitWindowStart(task.habitEngine?.windowStart || '');
       setHabitWindowEnd(task.habitEngine?.windowEnd || '');
+      setReminderMode(task.habitEngine?.reminderMode ?? 'smart');
+      setReminderTime(task.habitEngine?.reminderTime ?? task.habitEngine?.windowStart ?? '19:00');
+      setReminderFollowUp(task.habitEngine?.reminderFollowUp ?? false);
       setHabitObstacle(task.habitEngine?.obstacle || '');
       setHabitMinimumVersion(task.habitEngine?.minimumVersion || task.habitEngine?.fallback || '');
       setHabitFallback(task.habitEngine?.fallback || '');
@@ -146,6 +152,9 @@ export const TaskEditModal: React.FC<TaskEditModalProps> = ({
       setHabitLocation('');
       setHabitWindowStart('');
       setHabitWindowEnd('');
+      setReminderMode('smart');
+      setReminderTime('19:00');
+      setReminderFollowUp(false);
       setHabitObstacle('');
       setHabitMinimumVersion('');
       setHabitFallback('');
@@ -161,6 +170,11 @@ export const TaskEditModal: React.FC<TaskEditModalProps> = ({
 
     if (isHabit && selectedDays.length === 0) {
       Alert.alert('Error', 'Please select at least one day for your habit');
+      return;
+    }
+
+    if (isHabit && reminderMode === 'fixed' && !/^([01]\d|2[0-3]):[0-5]\d$/.test(reminderTime)) {
+      Alert.alert('Invalid reminder time', 'Enter a 24-hour time, such as 19:00.');
       return;
     }
 
@@ -192,6 +206,9 @@ export const TaskEditModal: React.FC<TaskEditModalProps> = ({
         location: habitLocation.trim() || undefined,
         windowStart: habitWindowStart.trim() || undefined,
         windowEnd: habitWindowEnd.trim() || undefined,
+        reminderMode,
+        reminderTime: reminderMode === 'fixed' ? reminderTime : undefined,
+        reminderFollowUp,
         obstacle: habitObstacle.trim() || undefined,
         minimumVersion: habitMinimumVersion.trim() || undefined,
         fallback: habitFallback.trim() || undefined,
@@ -707,6 +724,35 @@ export const TaskEditModal: React.FC<TaskEditModalProps> = ({
                       keyboardType="numbers-and-punctuation"
                       testID="habit-engine-window-end"
                     />
+                  </View>
+                  <View style={{ marginVertical: 12, gap: 10 }}>
+                    <Text style={{ fontSize: 15, fontWeight: '700', color: '#18181B' }}>Habit reminders</Text>
+                    <Text style={styles.scheduleHint}>Choose an exact time or let One Pager suggest a time based on your habit and history. Never during quiet hours.</Text>
+                    <View style={{ flexDirection: 'row', gap: 6 }}>
+                      {(['smart', 'fixed', 'off'] as const).map(mode => (
+                        <TouchableOpacity key={mode} testID={`habit-reminder-${mode}`}
+                          onPress={() => setReminderMode(mode)}
+                          style={{ flex: 1, borderWidth: 1, borderColor: reminderMode === mode ? '#3154D8' : '#D4D4D8', borderRadius: 11, paddingVertical: 12, alignItems: 'center', backgroundColor: reminderMode === mode ? '#E9EEFF' : '#FFF' }}>
+                          <Text style={{ color: reminderMode === mode ? '#2442B5' : '#52525B', fontWeight: '700', fontSize: 12 }}>
+                            {mode === 'smart' ? 'Smart' : mode === 'fixed' ? 'My time' : 'Off'}
+                          </Text>
+                        </TouchableOpacity>
+                      ))}
+                    </View>
+                    {reminderMode === 'fixed' && (
+                      <TextInput style={styles.engineInput} value={reminderTime}
+                        onChangeText={setReminderTime} placeholder="19:00 (24-hour time)"
+                        placeholderTextColor="#A1A1AA" keyboardType="numbers-and-punctuation"
+                        testID="habit-reminder-time"/>
+                    )}
+                    {reminderMode !== 'off' && (
+                      <TouchableOpacity onPress={() => setReminderFollowUp(v => !v)}
+                        style={{ flexDirection: 'row', alignItems: 'center', gap: 10, paddingVertical: 8 }}
+                        testID="habit-reminder-followup">
+                        <Text style={{ fontSize: 19, color: '#3154D8' }}>{reminderFollowUp ? '☑' : '☐'}</Text>
+                        <Text style={{ fontSize: 13, color: '#3F3F46', flex: 1 }}>Allow one gentle follow-up if unfinished</Text>
+                      </TouchableOpacity>
+                    )}
                   </View>
                   <TextInput
                     style={styles.engineInput}

@@ -76,6 +76,7 @@ export interface Habit {
     timesPerWeek?: number; // Used when type is 'times_per_week' (e.g. 3 = 3 times any day of the week)
   };
   completions: Record<string, boolean>; // date string (YYYY-MM-DD) -> completed
+  reminder?: { mode?: 'smart' | 'fixed' | 'off'; time?: string; followUp?: boolean };
   completionLogs: GoalCompletion[]; // Detailed completion logs
   createdAt: string;
   

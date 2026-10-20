@@ -9,6 +9,12 @@ import { useAppSafe } from './useHabitsStore';
 import { useTasks } from './useTasksStore';
 import { notificationService, ScheduledNotification } from '@/utils/notificationService';
 import { syncDailySummaryNotification } from '@/utils/dailySummaryNotifications';
+import {
+  reconcileHabitNotifications, installHabitNotificationActions,
+  setHabitReminderDisposition, dismissHabitRemindersForToday,
+  HABIT_SKIP_ACTION, HABIT_SNOOZE_ACTION, HABIT_DONE_ACTION, logHabitReminderHistory,
+} from '@/utils/habitReminderScheduler';
+import { localDateKey } from '@/utils/habitReminderPlanner';
 import { 
   UnifiedActivity, 
   ActivityInsight, 
@@ -53,6 +59,47 @@ export const [BackgroundServicesProvider, useBackgroundServices] = createContext
   const notificationListener = useRef<Notifications.EventSubscription | null>(null);
   const responseListener = useRef<Notifications.EventSubscription | null>(null);
   const appState = useRef<AppStateStatus>(AppState.currentState);
+  const [habitReminderRevision, setHabitReminderRevision] = useState(0);
+  const [pendingHabitCompletion, setPendingHabitCompletion] = useState<{
+    ownerId:string;habitId:string;day:string;
+  } | null>(null);
+
+  // Notification taps may reach the app before synced habits finish hydrating.
+  // Keep the user's explicit Mark Done action pending until the record exists.
+  useEffect(() => {
+    if (!pendingHabitCompletion || pendingHabitCompletion.ownerId !== user?.id ||
+        pendingHabitCompletion.day !== localDateKey(new Date())) return;
+    const {habitId,day,ownerId}=pendingHabitCompletion;
+    if(habitId.startsWith('task:')) {
+      const item=allTasks.find(t=>t.id===habitId.slice(5) && t.isHabit);
+      if(!item)return;
+      if(!item.habitCompletions?.[day]) {
+        const now=new Date().toISOString();
+        tasksContext.updateTask(item.id,{
+          habitCompletions:{...item.habitCompletions,[day]:true},
+          completionLogs:[...(item.completionLogs??[]),{
+            id:`notif-${Date.now()}`,taskId:item.id,completedAt:now,
+          }],
+        });
+      }
+    } else if(habitId.startsWith('legacy:')) {
+      const item=habits.find(h=>h.id===habitId.slice(7));
+      if(!item)return;
+      if(!item.completions?.[day]) {
+        appContext?.updateHabit({
+          ...item,completions:{...item.completions,[day]:true},
+          completionLogs:[...(item.completionLogs??[]),{
+            id:`notif-${Date.now()}`,date:day,timestamp:new Date().toISOString(),
+          }],
+        });
+      }
+    } else return;
+    setPendingHabitCompletion(null);
+    void logHabitReminderHistory(ownerId,`${ownerId}|${habitId}|${day}`,'completed');
+    void dismissHabitRemindersForToday(ownerId,habitId,day);
+    setHabitReminderRevision(x=>x+1);
+  },[pendingHabitCompletion,user?.id,allTasks,habits,tasksContext.updateTask,appContext?.updateHabit]);
+
 
   // === ACTIVITY INTELLIGENCE STATE ===
   const [isInitialized, setIsInitialized] = useState<boolean>(false);
@@ -123,30 +170,21 @@ export const [BackgroundServicesProvider, useBackgroundServices] = createContext
   }, []);
 
   const scheduleHabitReminders = useCallback(async () => {
-    if (!profile?.notificationSettings.habitReminders || !notifState.isEnabled) return;
-
-    for (const habit of habits) {
-      const { days } = habit.frequency;
-      if (days.length > 0) {
-        const todayKey = new Date().toISOString().slice(0, 10);
-        const completedToday = !!habit.completions?.[todayKey];
-        const streak = Object.values(habit.completions || {}).filter(Boolean).length;
-        const isAtRisk = (profile.notificationSettings.habitRiskAlerts ?? true) && !completedToday && streak >= 2;
-        const baseHour = isAtRisk ? 18 : 9;
-        const reminderDate = shiftOutOfQuietHours(new Date(new Date().setHours(baseHour, 0, 0, 0)));
-        const reminderHour = reminderDate.getHours();
-        const reminderMinute = reminderDate.getMinutes();
-        await notificationService.scheduleHabitReminder(
-          habit.id,
-          isAtRisk ? `${habit.name} (streak at risk)` : habit.name,
-          reminderHour,
-          reminderMinute,
-          days
-        );
-      }
-    }
+    await reconcileHabitNotifications({
+      userId: user?.id ?? 'guest',
+      enabled:!!(user?.id && profile?.notificationSettings.habitReminders && notifState.isEnabled),
+      tasks: allTasks, habits,
+      quiet: {
+        enabled: profile?.notificationSettings.quietHoursEnabled ?? true,
+        start:profile?.notificationSettings.quietHoursStart,
+        end:profile?.notificationSettings.quietHoursEnd,
+      },
+    });
     await loadScheduledNotifications();
-  }, [habits, profile?.notificationSettings.habitReminders, notifState.isEnabled, loadScheduledNotifications, shiftOutOfQuietHours]);
+  }, [
+    user?.id, allTasks, habits, profile?.notificationSettings, notifState.isEnabled,
+    loadScheduledNotifications, habitReminderRevision,
+  ]);
 
   const scheduleTaskReminders = useCallback(async () => {
     if (!notifState.isEnabled) return;
@@ -207,11 +245,12 @@ export const [BackgroundServicesProvider, useBackgroundServices] = createContext
   }, [profile?.notificationSettings.goalAlerts, notifState.isEnabled, isInQuietHours]);
 
   const cancelAllHabitReminders = useCallback(async () => {
-    for (const habit of habits) {
-      await notificationService.cancelHabitReminders(habit.id);
-    }
+    await reconcileHabitNotifications({
+      userId:user?.id ?? 'guest',enabled:false,tasks:allTasks,habits,
+      quiet:{enabled:true},
+    });
     await loadScheduledNotifications();
-  }, [habits, loadScheduledNotifications]);
+  }, [user?.id, allTasks, habits, loadScheduledNotifications]);
 
   const cancelAllTaskReminders = useCallback(async () => {
     for (const task of allTasks) {
@@ -477,16 +516,45 @@ export const [BackgroundServicesProvider, useBackgroundServices] = createContext
   useEffect(() => {
     checkPermissions();
     loadScheduledNotifications();
+    void installHabitNotificationActions().catch(error => {
+      if (__DEV__) console.warn('[HabitReminders] Action registration:',error);
+    });
 
     if (Platform.OS !== 'web') {
       notificationListener.current = Notifications.addNotificationReceivedListener(notification => {
         setNotifState(prev => ({ ...prev, lastNotification: notification }));
+        const data=notification.request.content.data;
+        if(data?.type==='habit_reminder' && data.ownerId===user?.id) {
+          void logHabitReminderHistory(String(data.ownerId),String(data.id??notification.request.identifier),'received',notification.request.content.title??undefined);
+        }
       });
 
       responseListener.current = Notifications.addNotificationResponseReceivedListener(response => {
         const data = response.notification.request.content.data;
         if (data?.type) {
           console.log('Notification tapped:', data.type, data.id);
+        }
+        if (data?.type === 'habit_reminder') {
+          if(data.ownerId===user?.id)void logHabitReminderHistory(String(data.ownerId),String(data.id??response.notification.request.identifier),'opened',response.notification.request.content.title??undefined);
+          const habitId=String(data?.habitId ?? '');
+          const ownerId=String(data?.ownerId ?? '');
+          const day=String(data?.day ?? '');
+          if (ownerId && ownerId === user?.id && habitId && day === localDateKey(new Date())) {
+            if (response.actionIdentifier === HABIT_DONE_ACTION) {
+              setPendingHabitCompletion({ownerId,habitId,day});
+              return;
+            }
+            if (response.actionIdentifier === HABIT_SKIP_ACTION || response.actionIdentifier === HABIT_SNOOZE_ACTION) {
+              void (async()=>{
+                await setHabitReminderDisposition(ownerId,habitId,day,
+                  response.actionIdentifier === HABIT_SKIP_ACTION ? 'skip' : 'snooze');
+                await dismissHabitRemindersForToday(ownerId,habitId,day);
+                setHabitReminderRevision(x=>x+1);
+              })();
+              return;
+            }
+          }
+          router.push('/(tabs)/tasks' as never);
         }
         if (data?.type === 'daily_summary') {
           router.push('/(tabs)/activities' as never);
@@ -497,6 +565,7 @@ export const [BackgroundServicesProvider, useBackgroundServices] = createContext
     const subscription = AppState.addEventListener('change', async (nextAppState) => {
       if (appState.current.match(/inactive|background/) && nextAppState === 'active') {
         await checkPermissions();
+        setHabitReminderRevision(revision => revision + 1);
       }
       appState.current = nextAppState;
     });
@@ -506,14 +575,29 @@ export const [BackgroundServicesProvider, useBackgroundServices] = createContext
       responseListener.current?.remove();
       subscription.remove();
     };
-  }, [checkPermissions, loadScheduledNotifications]);
+  }, [checkPermissions, loadScheduledNotifications, user?.id]);
 
   useEffect(() => {
-    if (notifState.isEnabled && profile?.notificationSettings.habitReminders && habits.length > 0) {
-      const timer = setTimeout(() => scheduleHabitReminders(), 2000);
-      return () => clearTimeout(timer);
-    }
-  }, [notifState.isEnabled, profile?.notificationSettings.habitReminders, habits.length, scheduleHabitReminders]);
+    if (!user?.id || Platform.OS === 'web') return;
+    let active=true;
+    void Notifications.getLastNotificationResponseAsync().then(response=>{
+      if (!active || response?.actionIdentifier !== HABIT_DONE_ACTION) return;
+      const data=response.notification.request.content.data;
+      if (data?.type==='habit_reminder' &&
+          data.ownerId===user.id && data.day===localDateKey(new Date()) &&
+          typeof data.habitId==='string') {
+        setPendingHabitCompletion({ownerId:user.id,habitId:data.habitId,day:String(data.day)});
+      }
+    }).catch(()=>{});
+    return ()=>{active=false;};
+  }, [user?.id]);
+
+  useEffect(() => {
+    if (!user?.id || !notifState.isEnabled) return;
+    const timer=setTimeout(()=>void scheduleHabitReminders(),450);
+    return () => clearTimeout(timer);
+  }, [user?.id, notifState.isEnabled, scheduleHabitReminders]);
+
 
   useEffect(() => {
     if (notifState.isEnabled && allTasks.length > 0) {
@@ -558,7 +642,7 @@ export const [BackgroundServicesProvider, useBackgroundServices] = createContext
         );
       }
 
-      if (weeklyRecap.atRiskHabits > 0 && (profile.notificationSettings.habitRiskAlerts ?? true)) {
+      if (weeklyRecap.atRiskHabits > 0 && (profile.notificationSettings.habitRiskAlerts ?? true) && !profile.notificationSettings.habitReminders) {
         const streakTime = shiftOutOfQuietHours(new Date(now.setHours(18, 30, 0, 0)));
         if (streakTime > new Date()) {
           await notificationService.scheduleNotification(

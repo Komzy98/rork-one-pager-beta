@@ -137,11 +137,14 @@ import {
 } from '@/utils/streamingLinks';
 import { buildYounifyProviderIndex, pickBestYounifyRowForEpisode } from '@/utils/younifyProviderIndex';
 import { formatShowEpisodeLabel, formatYounifyContinueEpisodeLabel } from '@/utils/showEpisodeLabel';
+import {
+  selectContinueWatching, rankWatchlist, mediaKind,
+  type SmartContinueItem, type VerifiedWatchOffer,
+} from '@/utils/watchQueueIntelligence';
+import { unifiedStorage } from '@/utils/unifiedStorage';
 import { SHOWS_HREF } from '@/constants/showsNavigation';
 
-type ActivitiesContinueItem =
-  | { kind: 'local'; show: Show & { posterUrl?: string | null } }
-  | { kind: 'younify'; row: Record<string, unknown>; key: string };
+type ActivitiesContinueItem = SmartContinueItem;
 
 function getContinueWatchingDismissKey(item: ActivitiesContinueItem): string {
   if (item.kind === 'local') {
@@ -935,11 +938,11 @@ export default function ActivitiesScreen() {
   });
 
   const currentWatchingShows = useMemo(() => {
-    return shows.filter((show: Show) => show.status === 'Watching').slice(0, 2);
+    return shows.filter((show: Show) => show.status === 'Watching').slice(0, 12);
   }, [shows]);
 
   const planToWatchShows = useMemo(() => {
-    return shows.filter((show: Show) => show.status === 'Plan to Watch').slice(0, 10);
+    return shows.filter((show: Show) => show.status === 'Plan to Watch').slice(0, 15);
   }, [shows]);
 
   const [planToWatchWithThumbnails, setPlanToWatchWithThumbnails] = useState<(Show & { posterUrl?: string | null })[]>([]);
@@ -1037,25 +1040,13 @@ export default function ActivitiesScreen() {
     }, [fetchYounifyContinueWatching]),
   );
 
-  const continueWatchingItems = useMemo((): ActivitiesContinueItem[] => {
-    const out: ActivitiesContinueItem[] = [];
-    const seenTmdb = new Set<number>();
-    for (const row of younifyContinueItems) {
-      const id = extractTmdbIdFromYounifyRow(row);
-      if (id != null) seenTmdb.add(id);
-      const key = String(
-        (row as Record<string, unknown>).itemID ??
-          (row as Record<string, unknown>).id ??
-          `yf-${out.length}`,
-      );
-      out.push({ kind: 'younify', row, key });
-    }
-    for (const show of showsWithThumbnails) {
-      if (show.tmdbId != null && seenTmdb.has(show.tmdbId)) continue;
-      out.push({ kind: 'local', show });
-    }
-    return out.filter((item) => !dismissedContinueWatching.includes(getContinueWatchingDismissKey(item)));
-  }, [younifyContinueItems, showsWithThumbnails, dismissedContinueWatching]);
+  const continueWatchingItems = useMemo((): ActivitiesContinueItem[] =>
+    selectContinueWatching({
+      providerRows:younifyContinueItems,
+      localShows:showsWithThumbnails,
+      dismissed:dismissedContinueWatching,
+    }),
+  [younifyContinueItems,showsWithThumbnails,dismissedContinueWatching]);
 
   const dailyStackContinueTitle = useMemo(() => {
     const first = continueWatchingItems[0];
@@ -1722,35 +1713,79 @@ export default function ActivitiesScreen() {
     router.push(SHOWS_HREF.streaming as any);
   };
 
-  const rankedUpNextShows = useMemo(() => {
-    const now = Date.now();
-    const watchingPlatforms = new Set(currentWatchingShows.map((s) => s.platform));
-    const watchingTypes = new Set(currentWatchingShows.map((s) => s.type));
-
-    const scored = planToWatchWithThumbnails.map((show) => {
-      const updatedAtMs = Date.parse(show.updatedAt || show.createdAt || '');
-      const daysOld = Number.isFinite(updatedAtMs) ? (now - updatedAtMs) / (1000 * 60 * 60 * 24) : 365;
-      const freshnessScore = Math.max(0, 30 - daysOld) / 30;
-      const ratingScore = Math.max(0, Math.min(5, Number(show.rating || 0))) / 5;
-      const providerId = platformNameToProviderId(show.platform);
-      const providerLinkedBoost = providerId != null && linkedProviderIds.includes(providerId) ? 1 : 0;
-      const platformContinuity = watchingPlatforms.has(show.platform) ? 1 : 0;
-      const typeContinuity = watchingTypes.has(show.type) ? 1 : 0;
-      const tmdbBoost = show.tmdbId ? 1 : 0;
-
-      const score =
-        freshnessScore * 0.34 +
-        ratingScore * 0.18 +
-        providerLinkedBoost * 0.2 +
-        platformContinuity * 0.14 +
-        typeContinuity * 0.09 +
-        tmdbBoost * 0.05;
-
-      return { show, score };
+  const [watchRegion, setWatchRegion] = useState('GB');
+  useEffect(() => {
+    let cancelled=false;
+    void unifiedStorage.getItem(`shows_watch_region_${userId}`).then(value=>{
+      if(!cancelled && value && /^[A-Z]{2}$/.test(value))setWatchRegion(value);
     });
+    return ()=>{cancelled=true;};
+  },[userId]);
 
-    return scored.sort((a, b) => b.score - a.score).map((x) => x.show).slice(0, 4);
-  }, [planToWatchWithThumbnails, currentWatchingShows, linkedProviderIds]);
+  const watchOffersQuery=useQuery({
+    queryKey:['overview-watchlist-offers',userId,watchRegion,linkedProviderIds.join(','),planToWatchShows.map(s=>`${mediaKind(s)}:${s.tmdbId}`).join('|')],
+    enabled:hasShowsInterest && planToWatchShows.some(s=>!!s.tmdbId),
+    staleTime:1000*60*60*6,
+    queryFn:async():Promise<Record<string,VerifiedWatchOffer>>=>{
+      const inputs=planToWatchShows.filter(s=>!!s.tmdbId).slice(0,10);
+      const attempts=await Promise.allSettled(inputs.map(async show=>{
+        const type=mediaKind(show);
+        const response=await tmdbApi.getWatchProviders(show.tmdbId!,type);
+        const region=response.results?.[watchRegion];
+        const streaming=region?.flatrate??[];
+        const providerNames=streaming.map(p=>p.provider_name);
+        const linkedProviderNames=streaming.filter(p=>linkedProviderIds.includes(p.provider_id)).map(p=>p.provider_name);
+        let releaseDate:string|undefined;
+        let runtime:number|undefined;
+        let genreIds:number[]|undefined;
+        try {
+          if(type==='movie') {
+            const details=await tmdbApi.getMovieDetails(show.tmdbId!);
+            releaseDate=details.release_date;
+            runtime=details.runtime;
+            genreIds=details.genres?.map(g=>g.id);
+          } else {
+            const details=await tmdbApi.getTVShowDetails(show.tmdbId!);
+            releaseDate=details.first_air_date;
+            genreIds=details.genres?.map(g=>g.id);
+          }
+        }catch{/* Availability stays verified even if metadata doesn't load. */}
+        return {key:`${type}:${show.tmdbId}`,value:{providerNames,linkedProviderNames,releaseDate,runtime,genreIds}};
+      }));
+      const result:Record<string,VerifiedWatchOffer>={};
+      for(const r of attempts)if(r.status==='fulfilled')result[r.value.key]=r.value.value;
+      return result;
+    },
+  });
+  const watchedGenreQuery=useQuery({
+    queryKey:['overview-preferred-watch-genres',userId,currentWatchingShows.map(show=>`${mediaKind(show)}:${show.tmdbId}`).join('|')],
+    enabled:hasShowsInterest && currentWatchingShows.some(s=>!!s.tmdbId),
+    staleTime:1000*60*60*6,
+    queryFn:async()=>{
+      const results=await Promise.allSettled(currentWatchingShows.filter(s=>!!s.tmdbId).slice(0,5).map(s=>
+        mediaKind(s)==='movie'?tmdbApi.getMovieDetails(s.tmdbId!):tmdbApi.getTVShowDetails(s.tmdbId!)
+      ));
+      const seen=new Set<number>();
+      for(const result of results)if(result.status==='fulfilled')for(const genre of result.value.genres??[])seen.add(genre.id);
+      return [...seen];
+    },
+  });
+  const minutesUntilNextCalendar=useMemo(()=>{
+    const current=Date.now();
+    const next=upcomingCalendarPreview.map(event=>Date.parse(event.startDate))
+      .filter(ms=>Number.isFinite(ms)&&ms>current).sort((a,b)=>a-b)[0];
+    return next!=null?(next-current)/60000:null;
+  },[upcomingCalendarPreview]);
+  const rankedUpNextShows=useMemo(()=>
+    rankWatchlist({
+      shows:planToWatchWithThumbnails,
+      watching:currentWatchingShows,
+      offers:watchOffersQuery.data ?? {},
+      preferredGenreIds:watchedGenreQuery.data ?? [],
+      minutesUntilNextCalendar,
+    }),
+    [planToWatchWithThumbnails,currentWatchingShows,watchOffersQuery.data,watchedGenreQuery.data,minutesUntilNextCalendar]
+  );
 
   const renderContinueWatchingCard = useCallback(({ item, index }: { item: ActivitiesContinueItem; index: number }) => {
     const dismissBtn = (
@@ -1776,7 +1811,7 @@ export default function ActivitiesScreen() {
         : 0;
       const progress =
         providerProgress > 0 ? providerProgress : resolvedEpisode ? localProgress : 0;
-      const episodeLabel = resolvedEpisode ?? (show.type === 'Series' ? 'Resume' : null);
+      const episodeLabel = resolvedEpisode ?? (item.progressVerified ? 'Continue' : 'Open details');
       return (
         <TouchableOpacity
           key={show.id}
@@ -1785,7 +1820,15 @@ export default function ActivitiesScreen() {
             { backgroundColor: colors.card, borderColor: colors.border },
             index === 0 && { marginLeft: 0 },
           ]}
-          onPress={() => handleContinueWatching(show)}
+          onPress={() => {
+            if (!item.progressVerified && show.tmdbId) {
+              setShowInfoModal({visible:true,tmdbId:show.tmdbId,mediaType:mediaKind(show),title:show.title,platform:show.platform});
+            } else if (!item.progressVerified) {
+              router.push(SHOWS_HREF.watchlist as any);
+            } else {
+              void handleContinueWatching(show);
+            }
+          }}
           activeOpacity={0.85}
           testID={`cw-card-${show.id}`}
         >
@@ -2764,7 +2807,7 @@ export default function ActivitiesScreen() {
               <View style={styles.upNextSection}>
                 <View style={styles.upNextHeader}>
                   <View style={styles.upNextHeaderLeft}>
-                    <Text style={[styles.upNextTitle, { color: colors.text }]}>Up Next</Text>
+                    <Text style={[styles.upNextTitle, { color: colors.text }]}>What to Watch Next</Text>
                     <View style={styles.upNextCountPill}>
                       <Text style={styles.upNextCountText}>{rankedUpNextShows.length}</Text>
                     </View>
@@ -2775,15 +2818,16 @@ export default function ActivitiesScreen() {
                 </View>
                 
                 <View style={[styles.upNextList, { backgroundColor: colors.card, borderWidth: StyleSheet.hairlineWidth, borderColor: colors.border }]}>
-                  {rankedUpNextShows.map((show, index) => (
+                  {rankedUpNextShows.map(({show,explanation,available,comingSoon,durationLabel}, index) => (
                     <TouchableOpacity 
                       key={show.id} 
                       style={[styles.upNextCard, { borderBottomColor: colors.border }, index === rankedUpNextShows.length - 1 && { borderBottomWidth: 0 }]}
                       onPress={() => {
-                        void (async () => {
-                          await handleStartWatching(show);
-                          await handleContinueWatching(show);
-                        })();
+                        if (show.tmdbId) {
+                          setShowInfoModal({visible:true,tmdbId:show.tmdbId,mediaType:mediaKind(show),title:show.title,platform:show.platform});
+                        } else {
+                          router.push(SHOWS_HREF.watchlist as any);
+                        }
                       }}
                       onLongPress={() => handleRemoveShow(show.id, show.title)}
                       delayLongPress={350}
@@ -2805,12 +2849,17 @@ export default function ActivitiesScreen() {
                       </View>
                       <View style={styles.upNextInfo}>
                         <Text style={[styles.upNextShowTitle, { color: colors.text }]} numberOfLines={1}>{show.title}</Text>
-                        <Text style={[styles.upNextShowMeta, { color: colors.textSecondary }]}>
-                          {show.type === 'Series' ? 'TV Series' : show.type} · {show.platform}
+                        <Text style={[styles.upNextShowMeta, { color: colors.textSecondary }]} numberOfLines={2}>
+                          {explanation}
                         </Text>
+                        {!!durationLabel && (
+                          <Text style={[styles.upNextShowMeta,{color:colors.textSecondary}]}>
+                            {durationLabel}
+                          </Text>
+                        )}
                       </View>
                       <View style={styles.upNextAction}>
-                        <Play size={14} color="#F59E0B" fill="#F59E0B" />
+                        {available ? <Tv size={17} color="#F59E0B"/> : <ChevronRight size={17} color="#F59E0B"/>}
                       </View>
                     </TouchableOpacity>
                   ))}
@@ -2884,6 +2933,7 @@ export default function ActivitiesScreen() {
         mediaType={showInfoModal.mediaType}
         showTitle={showInfoModal.title}
         platform={showInfoModal.platform}
+        countryCode={watchRegion}
       />
 
       {liveMatches.length > 0 && liveMatches[0] && (
