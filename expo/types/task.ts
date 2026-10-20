@@ -100,6 +100,10 @@ export interface HabitEngineConfig {
   frictionLogs?: HabitEngineFrictionLog[];
   attemptLogs?: HabitEngineAttemptLog[];
   adaptationHistory?: HabitEngineAdaptationRecord[];
+  /** Personal reminder policy; overrides inferred habit timing. */
+  reminderMode?: 'smart' | 'fixed' | 'off';
+  reminderTime?: string; // Local 24-hour HH:mm
+  reminderFollowUp?: boolean;
   promptCadence?: HabitEnginePromptCadence;
   lastInterventionAt?: string;
   minimumPlannedDate?: string; // Adopted a smaller plan, not yet completed

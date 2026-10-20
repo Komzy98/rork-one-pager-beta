@@ -82,6 +82,7 @@ import { inferJoySources, isJoySourcesEmpty } from '@/utils/joySources';
 import type { JoySources } from '@/types/habit';
 import { syncDailySummaryNotification } from '@/utils/dailySummaryNotifications';
 import { useNotificationsSafe } from '@/hooks/useBackgroundServices';
+import { getHabitReminderHistory, type HabitReminderHistoryEvent } from '@/utils/habitReminderScheduler';
 import { useGamification } from '@/hooks/useHabitsEnhancement';
 import { useTheme } from '@/hooks/useTheme';
 import SwipeableTabContainer from '@/components/SwipeableTabContainer';
@@ -223,6 +224,8 @@ export default function ProfileScreen() {
     resetOnboarding,
   } = useUserProfile();
   const profileMatchesSession = isProfileForUser(profile, user?.id);
+  const [habitReminderHistory,setHabitReminderHistory] = useState<HabitReminderHistoryEvent[]>([]);
+
   const { resetAllWalkthroughs } = useWalkthrough();
   const { dashboardSummary, shows } = useApp();
   const { allTasks } = useTasks();
@@ -240,6 +243,7 @@ export default function ProfileScreen() {
   } = useGamification();
   const {
     isEnabled: notificationsEnabled,
+    scheduledNotifications,
     toggleNotificationSetting,
     sendTestNotification,
     requestPermissions,
@@ -272,6 +276,14 @@ export default function ProfileScreen() {
   const [editingName, setEditingName] = useState<boolean>(false);
   const [tempName, setTempName] = useState<string>(profile?.name || '');
   const [expandedSection, setExpandedSection] = useState<ExpandedSection>(null);
+  useEffect(()=>{
+    if(expandedSection!=='notifications'||!user?.id)return;
+    let live=true;
+    void getHabitReminderHistory(user.id).then(history=>{if(live)setHabitReminderHistory(history);});
+    return ()=>{live=false;};
+  },[expandedSection,user?.id]);
+
+
   const { challengeId } = useLocalSearchParams<{ challengeId?: string }>();
 
   useEffect(() => {
@@ -1412,6 +1424,35 @@ export default function ProfileScreen() {
                     onValueChange={(value) => toggleNotificationSetting('habitReminders', value)}
                     trackColor={{ false: colors.border, true: colors.primary }}
                   />
+                </View>
+                <Text style={[styles.notifMetaText, { color: colors.textSecondary, marginBottom: 12 }]}>
+                  Habit Engine → edit a habit to choose Smart, My time or Off. Smart suggestions use your habit window and completion history. One optional follow-up; quiet hours respected.
+                </Text>
+                <View style={[styles.recapPreviewCard, { backgroundColor: colors.card, borderColor: colors.border, marginBottom: 14 }]}>
+                  <Text style={[styles.recapPreviewTitle, { color: colors.text }]}>Upcoming habit reminders</Text>
+                  {scheduledNotifications.filter(n => n.type === 'habit_reminder' && /^\d{4}-/.test(n.scheduledTime)).slice().sort((a,b) => a.scheduledTime.localeCompare(b.scheduledTime)).slice(0,5).map(n => (
+                    <Text key={n.identifier} style={[styles.recapPreviewText, { color: colors.textSecondary, marginTop: 5 }]}>
+                      {n.title} · {new Date(n.scheduledTime).toLocaleString('en-GB',{weekday:'short',hour:'2-digit',minute:'2-digit'})}
+                    </Text>
+                  ))}
+                  {scheduledNotifications.filter(n => n.type === 'habit_reminder' && /^\d{4}-/.test(n.scheduledTime)).length === 0 && (
+                    <Text style={[styles.recapPreviewText, { color: colors.textSecondary }]}>None scheduled. Check permissions, quiet hours and individual habit settings.</Text>
+                  )}
+                  <Text style={[styles.notifMetaText,{color:colors.textTertiary,marginTop:8}]}>
+                    Scheduled on this device; these entries do not prove delivery. Open One Pager periodically to refresh reminders and cancel completed habits.
+                  </Text>
+                  <Text style={[styles.recapPreviewTitle,{color:colors.text,marginTop:12}]}>Recent reminder activity</Text>
+                  {habitReminderHistory.slice(0,5).map((item,index)=>(
+                    <Text key={`${item.id}-${item.at}-${index}`} style={[styles.recapPreviewText,{color:colors.textSecondary,marginTop:4}]}>
+                      {item.title??'Habit reminder'} · {item.kind} · {new Date(item.at).toLocaleString('en-GB',{day:'numeric',month:'short',hour:'2-digit',minute:'2-digit'})}
+                    </Text>
+                  ))}
+                  {!habitReminderHistory.length&&(
+                    <Text style={[styles.recapPreviewText,{color:colors.textSecondary}]}>No activity recorded yet.</Text>
+                  )}
+                  <Text style={[styles.notifMetaText,{color:colors.textTertiary,marginTop:6}]}>
+                    “Received” only means the app observed a foreground notification, not confirmed delivery while closed.
+                  </Text>
                 </View>
                 <View style={[styles.notifRow, { borderBottomColor: colors.border }]}>
                   <View style={{ flex: 1, paddingRight: 12 }}>

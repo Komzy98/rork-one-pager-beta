@@ -168,7 +168,8 @@ export const notificationService = {
         content: {
           title,
           body,
-          data: data as any,
+          data: { ...(data as any)?.payload, type:data?.type, id:data?.id },
+          categoryIdentifier:data?.type === 'habit_reminder' ? 'onepager-habit-actions' : undefined,
           sound: true,
         },
         trigger: {
