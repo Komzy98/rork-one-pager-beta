@@ -43,3 +43,8 @@ jobs:
         run: npm test
       - name: TypeScript strict typecheck
         run: npx tsc --noEmit --pretty false
+      - name: Bundle iOS JavaScript without EAS or signing
+        env:
+          CI: '1'
+          EXPO_NO_TELEMETRY: '1'
+        run: npx expo export --platform ios --output-dir /tmp/onepager-phase1c-ios-js
