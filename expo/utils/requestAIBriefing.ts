@@ -3,10 +3,16 @@ import type { AppRouter } from '@/backend/trpc/app-router';
 import { supabase } from '@/utils/supabaseClient';
 import { getMetroApiBaseUrl } from '@/utils/metroApiBaseUrl';
 import type { BriefingAIRequest } from './aiBriefingFocus';
+import { loadAIBriefingPreferences } from './aiBriefingPreferences';
 
-export async function requestAIBriefing(input: BriefingAIRequest): Promise<string | null> {
+export async function requestAIBriefing(input: BriefingAIRequest, expectedUserId: string): Promise<string | null> {
+  if (!expectedUserId || expectedUserId === 'guest' || !input.items.length) return null;
   const { data: { session } } = await supabase.auth.getSession();
-  if (!session?.access_token || !session.user?.id) return null;
+  if (!session?.access_token || session.user?.id !== expectedUserId) return null;
+  // Re-check consent after the asynchronous session lookup, immediately before
+  // constructing any network request. A stale Overview snapshot must fail closed.
+  const preferences = await loadAIBriefingPreferences(expectedUserId);
+  if (!preferences.enabled || input.items.some(item => preferences.sources[item.source] !== true)) return null;
   const base = getMetroApiBaseUrl().replace(/\/+$/, '');
   const url = base.toLowerCase().endsWith('/api') ? base + '/trpc' : base + '/api/trpc';
 
