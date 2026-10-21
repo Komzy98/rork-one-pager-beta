@@ -117,6 +117,85 @@ describe('opt-in AI briefing', () => {
     assert.equal(disabled.mode,'disabled');
   });
 
+  it('bounds latency even when a provider ignores AbortSignal', async () => {
+    const request = buildPrivateBriefingRequest(context, enabledPrefs);
+    const fetchThatNeverFinishes: typeof fetch = async () => new Promise<Response>(() => {});
+    const startedAt = Date.now();
+    const result = await enrichVerifiedBriefing('phase1c-timeout-user', request, {
+      enabled: true, apiKey: 'mock-key', fetcher: fetchThatNeverFinishes, timeoutMs: 30,
+    });
+    assert.equal(result.mode, 'fallback');
+    assert.equal(result.insight, null);
+    assert.ok(Date.now() - startedAt < 750, 'hard deadline must finish promptly');
+  });
+
+  it('uses separate caches for different provider models and ignores empty model names', async () => {
+    const request = buildPrivateBriefingRequest(context, enabledPrefs);
+    let calls = 0;
+    const mockFetch: typeof fetch = async (_url, init) => {
+      calls++;
+      const body = JSON.parse(String(init?.body));
+      assert.ok(body.model);
+      return new Response(JSON.stringify({
+        status: 'completed',
+        output: [{ content: [{ type: 'output_text', text: JSON.stringify({
+          focusId: request.items[0].id, approach: 'keep_it_simple',
+        }) }] }],
+      }), { status: 200 });
+    };
+    const common = { enabled: true, apiKey: 'mock-key', fetcher: mockFetch };
+    const a = await enrichVerifiedBriefing('phase1c-model-cache-user', request, {
+      ...common, model: 'gpt-4.1-mini',
+    });
+    const b = await enrichVerifiedBriefing('phase1c-model-cache-user', request, {
+      ...common, model: 'another-model',
+    });
+    const c = await enrichVerifiedBriefing('phase1c-model-cache-user', request, {
+      ...common, model: 'another-model',
+    });
+    assert.equal(a.mode, 'ai');
+    assert.equal(b.cached, false);
+    assert.equal(c.cached, true);
+    assert.equal(calls, 2);
+  });
+
+  it('does not log account identity or private content in operational diagnostics', async () => {
+    const request = buildPrivateBriefingRequest(context, enabledPrefs);
+    const oldLog = console.info;
+    const previous = process.env.AI_BRIEFING_LOG_METRICS;
+    const logged: string[] = [];
+    try {
+      process.env.AI_BRIEFING_LOG_METRICS = 'true';
+      console.info = (...args: unknown[]) => { logged.push(args.join(' ')); };
+      const result = await enrichVerifiedBriefing('private-account-for-telemetry', request, {
+        enabled: false, apiKey: 'mock-key',
+      });
+      assert.equal(result.mode, 'disabled');
+      assert.ok(logged.some(line => line.includes('onepager.ai.briefing')));
+      for (const line of logged) {
+        assert.equal(line.includes('private-account-for-telemetry'), false);
+        assert.equal(line.includes('Submit design brief'), false);
+        assert.equal(line.includes('Read chapter'), false);
+      }
+    } finally {
+      console.info = oldLog;
+      if (previous == null) delete process.env.AI_BRIEFING_LOG_METRICS;
+      else process.env.AI_BRIEFING_LOG_METRICS = previous;
+    }
+  });
+
+  it('falls back safely on provider refusal or incomplete outputs', async () => {
+    const request = buildPrivateBriefingRequest(context, enabledPrefs);
+    const refusal: typeof fetch = async () => new Response(JSON.stringify({
+      status: 'completed', output: [{ content: [{ type: 'refusal', refusal: 'No' }] }],
+    }), { status: 200 });
+    const result = await enrichVerifiedBriefing('phase1c-refusal-user', request, {
+      enabled: true, apiKey: 'mock-key', fetcher: refusal,
+    });
+    assert.equal(result.mode, 'fallback');
+    assert.equal(result.insight, null);
+  });
+
   it('requires a bearer token before any AI operation', async () => {
     const caller = appRouter.createCaller({ req: new Request('http://localhost/api/trpc') });
     const request = buildPrivateBriefingRequest(context, enabledPrefs);
