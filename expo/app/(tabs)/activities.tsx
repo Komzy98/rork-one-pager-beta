@@ -1533,7 +1533,7 @@ export default function ActivitiesScreen() {
           });
           const request = buildPrivateBriefingRequest(context, prefs);
           if (!request.items.length) return;
-          const insight = await requestAIBriefing(request);
+          const insight = await requestAIBriefing(request, userId);
           if (!insight || seq !== summaryRequestSeqRef.current || getTodayYmd() !== today || activeBriefingUserRef.current !== userId) return;
           const latestPrefs = await loadAIBriefingPreferences(userId);
           if (!latestPrefs.enabled ||
