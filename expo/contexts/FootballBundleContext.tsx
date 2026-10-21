@@ -26,6 +26,8 @@ type FootballBundleQuery = {
   isFetching: boolean;
   isError: boolean;
   isFetched: boolean;
+  /** Last successful response timestamp, milliseconds since epoch (0 until fetched). */
+  dataUpdatedAt: number;
   status: 'error' | 'success' | 'pending';
   error: { message?: string } | null;
   refetch: () => Promise<unknown>;
