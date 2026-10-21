@@ -263,6 +263,12 @@ export default function ActivitiesScreen() {
   // Keep async AI callbacks bound to the currently displayed account.
   const activeBriefingUserRef = useRef(userId);
   activeBriefingUserRef.current = userId;
+  useEffect(() => {
+    // A previous account's private recap must not remain on screen after
+    // sign-out or a switch to another account.
+    summaryRequestSeqRef.current += 1;
+    setDailySummary(null);
+  }, [userId]);
   const [autoSummaryScheduleLabel, setAutoSummaryScheduleLabel] = useState<string>('');
   const [autoSummaryHintDismissed, setAutoSummaryHintDismissed] = useState(true);
   const [isSpeaking, setIsSpeaking] = useState<boolean>(false);
