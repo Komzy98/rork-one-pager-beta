@@ -48,9 +48,14 @@ import { tmdbApi, TMDBTVShowDetails, isTmdbFetchAbortError } from '@/utils/tmdbA
 import {
   summarizeDailyProgress,
   DailySummary,
+  type DailySummaryInput,
   type DailySummaryHabitRollup,
 } from '@/utils/dailySummary';
 import { buildDailyBriefingNarration } from '@/utils/dailyBriefingContext';
+import { buildIntelligenceContext } from '@/utils/intelligenceContext';
+import { loadAIBriefingPreferences } from '@/utils/aiBriefingPreferences';
+import { buildPrivateBriefingRequest } from '@/utils/aiBriefingFocus';
+import { requestAIBriefing } from '@/utils/requestAIBriefing';
 import {
   buildPriorityTaskHighlights,
   buildTodayCalendarHighlights,
@@ -252,6 +257,7 @@ export default function ActivitiesScreen() {
   const [dailySummary, setDailySummary] = useState<DailySummary | null>(null);
   const [yesterdayDelta, setYesterdayDelta] = useState<DailyStatsDelta | null>(null);
   const [isGeneratingSummary, setIsGeneratingSummary] = useState<boolean>(false);
+  const summaryRequestSeqRef = useRef(0);
   const autoSummaryInFlightRef = useRef(false);
   const userId = user?.id || 'guest';
   const [autoSummaryScheduleLabel, setAutoSummaryScheduleLabel] = useState<string>('');
@@ -1341,6 +1347,7 @@ export default function ActivitiesScreen() {
   }, [userId, todayYmd, appContext?.todayHabits, tasksContext?.allTasks, buildTodayStatsSnapshot, refreshYesterdayDelta]);
 
   const generateDailySummary = useCallback(async () => {
+    const seq = ++summaryRequestSeqRef.current;
     setIsGeneratingSummary(true);
     try {
       const _ds = new Date();
@@ -1460,7 +1467,7 @@ export default function ActivitiesScreen() {
           }
         : null;
 
-      const summary = await summarizeDailyProgress({
+      const summaryInput: DailySummaryInput = {
         date: today,
         recoveryMode: recovery.isActive,
         activities: activities.map((a) => ({ name: a.title, minutes: a.timeSpent, details: a.description })),
@@ -1495,7 +1502,8 @@ export default function ActivitiesScreen() {
             : {}),
         },
         notes: `${rollupNote}; ${completedTasksCount}/${totalTasksCount} regular tasks completed`,
-      });
+      };
+      const summary = await summarizeDailyProgress(summaryInput);
       setDailySummary(summary);
 
       const snapshotWithScore = buildTodayStatsSnapshot(
@@ -1509,6 +1517,34 @@ export default function ActivitiesScreen() {
       await saveDailySummaryCache(userId, today, summary);
       await clearDailySummaryDismissed(userId, today);
       await refreshYesterdayDelta(snapshotWithScore);
+
+      // The verified recap appears immediately. AI enrichment is optional,
+      // non-blocking and cannot overwrite a newer or dismissed review.
+      if (!recovery.isActive && userId !== 'guest') {
+        void (async () => {
+          const prefs = await loadAIBriefingPreferences(userId);
+          if (!prefs.enabled || seq !== summaryRequestSeqRef.current) return;
+          const context = buildIntelligenceContext(summaryInput, {
+            availability: summaryInput.sourceAvailability,
+            updatedAt: summaryInput.sourceUpdatedAt,
+          });
+          const request = buildPrivateBriefingRequest(context, prefs);
+          if (!request.items.length) return;
+          const insight = await requestAIBriefing(request);
+          if (!insight || seq !== summaryRequestSeqRef.current || getTodayYmd() !== today) return;
+          const latestPrefs = await loadAIBriefingPreferences(userId);
+          if (!latestPrefs.enabled ||
+              JSON.stringify(latestPrefs.sources) !== JSON.stringify(prefs.sources)) return;
+          if (await isDailySummaryDismissed(userId, today)) return;
+          const cached = await loadDailySummaryCache(userId, today);
+          if (!cached || cached.contextMeta?.signature !== summary.contextMeta?.signature) return;
+          const enhanced: DailySummary = { ...cached, aiInsight: insight };
+          await saveDailySummaryCache(userId, today, enhanced);
+          if (seq === summaryRequestSeqRef.current) setDailySummary(enhanced);
+        })().catch(() => {
+          // Keep the fast, verified briefing if AI is unavailable.
+        });
+      }
     } catch (error) {
       if (__DEV__) console.error('Error generating daily summary:', error);
     } finally {
@@ -2490,6 +2526,7 @@ export default function ActivitiesScreen() {
                 void generateDailySummary();
               }}
               onDismissSummary={() => {
+                summaryRequestSeqRef.current += 1;
                 void stopSummarySpeech();
                 setAudioError(null);
                 void markDailySummaryDismissed(userId, getTodayYmd());

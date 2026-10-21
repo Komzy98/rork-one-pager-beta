@@ -68,6 +68,7 @@ export type DailySummary = {
   /** Sections assembled from verified calendar, weather and media data. */
   contextHighlights?: BriefingHighlight[];
   briefingVersion?: number;
+  aiInsight?: string;
   contextMeta?: {
     signature: string;
     generatedAt: string;

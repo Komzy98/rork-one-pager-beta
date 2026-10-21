@@ -11,6 +11,7 @@ import {
   getCircuitRoute,
 } from "./routes/f1/apiSports";
 import { generateVoiceRoute } from "./routes/ai/voice/route";
+import { enrichBriefingRoute } from "./routes/ai/briefing/route";
 import { getNearbyEventsRoute, getNearbyEventsBatchRoute } from "./routes/events/nearby/route";
 import { searchGlobalEventsRoute } from "./routes/events/search/route";
 import { getEventByIdRoute } from "./routes/events/byId/route";
@@ -54,6 +55,7 @@ export const appRouter = createTRPCRouter({
   }),
   ai: createTRPCRouter({
     generateVoice: generateVoiceRoute,
+    enrichBriefing: enrichBriefingRoute,
   }),
   events: createTRPCRouter({
     getNearby: getNearbyEventsRoute,

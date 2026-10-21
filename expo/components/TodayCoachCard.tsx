@@ -114,6 +114,12 @@ export default function TodayCoachCard(props: TodayCoachCardProps) {
                 })}
               </View>
             )}
+            {dailySummary.aiInsight && !recoveryActive ? (
+              <View style={[styles.aiInsightWrap, { backgroundColor: colors.surfaceSecondary }]}>
+                <Text style={[styles.aiInsightLabel, { color: colors.textSecondary }]}>PERSONALISED SUGGESTION</Text>
+                <Text style={[styles.aiInsightText, { color: colors.text }]}>{dailySummary.aiInsight}</Text>
+              </View>
+            ) : null}
             {supportingLine ? (
               <Text style={[styles.supporting, { color: colors.textSecondary }]} numberOfLines={2}>
                 {supportingLine}
@@ -253,6 +259,9 @@ const styles = StyleSheet.create({
     fontWeight: '700',
     letterSpacing: -0.25,
   },
+  aiInsightWrap: { marginTop: 12, borderRadius: 12, padding: 12, gap: 5 },
+  aiInsightLabel: { fontSize: 10, fontWeight: '800', letterSpacing: 0.8 },
+  aiInsightText: { fontSize: 13, lineHeight: 19, fontWeight: '500' },
   contextSection: {
     marginTop: 14,
     paddingTop: 12,

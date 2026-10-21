@@ -139,7 +139,7 @@ export function buildBriefingHighlights(input: BriefingContext): BriefingHighlig
 }
 
 /** Full narration and sharing should include the same grounded context as the card. */
-export function buildDailyBriefingNarration(summary: Pick<DailySummary, 'summary' | 'contextHighlights' | 'recommendations'>): string {
+export function buildDailyBriefingNarration(summary: Pick<DailySummary, 'summary' | 'contextHighlights' | 'recommendations' | 'aiInsight'>): string {
   const parts = [clean(summary.summary)];
   if (summary.contextHighlights?.length) {
     parts.push('Here is what else is on your radar.');
@@ -147,7 +147,8 @@ export function buildDailyBriefingNarration(summary: Pick<DailySummary, 'summary
       parts.push(`${highlight.label}: ${highlight.text}.`);
     }
   }
+  if (summary.aiInsight) parts.push('A personalised suggestion: ' + clean(summary.aiInsight));
   const recommendation = summary.recommendations?.find(Boolean);
-  if (recommendation) parts.push(`One thing to consider: ${clean(recommendation)}`);
+  if (recommendation && !summary.aiInsight) parts.push(`One thing to consider: ${clean(recommendation)}`);
   return parts.filter(Boolean).join(' ').slice(0, 3700);
 }

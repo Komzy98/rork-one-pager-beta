@@ -77,6 +77,13 @@ import {
   isAutoSummaryEnabled,
 } from '@/utils/dailySummaryStats';
 import { enterRecoveryModeManual, exitRecoveryMode } from '@/utils/recoveryMode';
+import {
+  DEFAULT_AI_BRIEFING_PREFERENCES,
+  loadAIBriefingPreferences,
+  saveAIBriefingPreferences,
+  type AIBriefingPreferences,
+} from '@/utils/aiBriefingPreferences';
+import type { IntelligenceSource } from '@/utils/intelligenceContext';
 import JoySourcesEditor from '@/components/JoySourcesEditor';
 import { inferJoySources, isJoySourcesEmpty } from '@/utils/joySources';
 import type { JoySources } from '@/types/habit';
@@ -298,6 +305,27 @@ export default function ProfileScreen() {
   const [isImportingLocal, setIsImportingLocal] = useState<boolean>(false);
   const profileUserId = user?.id || 'guest';
   const [autoSummaryEnabled, setAutoSummaryEnabledState] = useState(true);
+  const [aiBriefingPrefs, setAIBriefingPrefs] = useState<AIBriefingPreferences>({
+    enabled: false,
+    sources: { ...DEFAULT_AI_BRIEFING_PREFERENCES.sources },
+  });
+  useEffect(() => {
+    let current = true;
+    setAIBriefingPrefs({ enabled: false, sources: { ...DEFAULT_AI_BRIEFING_PREFERENCES.sources } });
+    void loadAIBriefingPreferences(profileUserId).then(prefs => {
+      if (current) setAIBriefingPrefs(prefs);
+    });
+    return () => { current = false; };
+  }, [profileUserId]);
+
+  const updateAIBriefing = useCallback((patch: Partial<AIBriefingPreferences>) => {
+    const next = {
+      enabled: patch.enabled ?? aiBriefingPrefs.enabled,
+      sources: { ...aiBriefingPrefs.sources, ...(patch.sources ?? {}) },
+    };
+    setAIBriefingPrefs(next);
+    void saveAIBriefingPreferences(profileUserId, next);
+  }, [aiBriefingPrefs, profileUserId]);
   const [dailySummaryNotify, setDailySummaryNotify] = useState(true);
   const [summaryHour, setSummaryHour] = useState(20);
   const [summaryMinute, setSummaryMinute] = useState(0);
@@ -1482,6 +1510,50 @@ export default function ProfileScreen() {
                     trackColor={{ false: colors.border, true: colors.primary }}
                   />
                 </View>
+                <View style={[styles.notifRow, { borderBottomColor: colors.border }]}>
+                  <View style={{ flex: 1, paddingRight: 12 }}>
+                    <Text style={[styles.notifLabel, { color: colors.text }]}>AI personalised briefing</Text>
+                    <Text style={[styles.notifMetaText, { color: colors.textSecondary, marginTop: 2 }]}>
+                      Optional. Sends selected habit and task titles to our AI provider to suggest one grounded focus.
+                      Other categories are off until you opt in. No health metrics or private notes are sent.
+                    </Text>
+                  </View>
+                  <Switch
+                    value={!isGuest && aiBriefingPrefs.enabled}
+                    disabled={isGuest}
+                    onValueChange={value => updateAIBriefing({ enabled: value })}
+                    trackColor={{ false: colors.border, true: colors.primary }}
+                  />
+                </View>
+                {aiBriefingPrefs.enabled && !isGuest ? (
+                  <View style={[styles.recapPreviewCard, { backgroundColor: colors.card, borderColor: colors.border, marginBottom: 14 }]}>
+                    <Text style={[styles.recapPreviewTitle, { color: colors.text }]}>Data permitted for AI</Text>
+                    {([
+                      ['habits', 'Incomplete habit titles'],
+                      ['tasks', 'Open task titles and priorities'],
+                      ['calendar', 'Calendar event titles and times'],
+                      ['sports', 'Sports fixtures and results'],
+                      ['shows', 'Continue Watching titles'],
+                      ['events', 'Saved event titles and times'],
+                      ['weather', 'Local weather summary'],
+                    ] as [IntelligenceSource, string][]).map(([source, label]) => (
+                      <View key={source} style={[styles.notifRow, { borderBottomColor: colors.border }]}>
+                        <Text style={[styles.notifLabel, { color: colors.text, flex: 1, paddingRight: 8 }]}>{label}</Text>
+                        <Switch
+                          value={aiBriefingPrefs.sources[source]}
+                          onValueChange={value => updateAIBriefing({
+                            sources: { ...aiBriefingPrefs.sources, [source]: value },
+                          })}
+                          trackColor={{ false: colors.border, true: colors.primary }}
+                        />
+                      </View>
+                    ))}
+                    <Text style={[styles.notifMetaText, { color: colors.textSecondary, marginTop: 8 }]}>
+                      Applies to new summaries. Turn off AI anytime to stop future sharing.
+                      Your regular offline briefing still works.
+                    </Text>
+                  </View>
+                ) : null}
                 {autoSummaryEnabled ? (
                   <>
                     <View style={[styles.notifRow, { borderBottomColor: colors.border, alignItems: 'center' }]}>
