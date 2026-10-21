@@ -18,7 +18,7 @@ interface PolicySection {
   content: string;
 }
 
-const LAST_UPDATED = 'April 4, 2026';
+const LAST_UPDATED = 'October 21, 2026';
 
 const POLICY_SECTIONS: PolicySection[] = [
   {
@@ -44,6 +44,13 @@ const POLICY_SECTIONS: PolicySection[] = [
     title: 'Data Storage & Security',
     content:
       'Your data is stored securely using industry-standard encryption and security measures. We use cloud-based services to sync your data across devices. While we strive to use commercially acceptable means to protect your personal information, no method of transmission over the internet or electronic storage is 100% secure.',
+  },
+  {
+    title: 'Optional AI Personalised Briefing',
+    content:
+      'The AI personalised briefing is off by default. If you turn it on in Profile > Notifications, One Pager may send a small selection of the data categories you allow to OpenAI through our authenticated server to choose one relevant suggestion. The default permitted categories are unfinished habit titles and open task titles or priorities. You can separately enable calendar titles and times, sports updates, show titles, saved event details, and general weather summaries.\n\n' +
+      'We do not include your email address, account ID, private notes, health measurements, habit streaks or mood logs in these AI requests. The regular daily briefing works without AI. AI is not used for Recovery Mode.\n\n' +
+      'AI requests use OpenAI API storage disabled where supported (store: false), but provider-side operational and safety retention policies may still apply. Turning the setting off prevents new AI briefing requests; it cannot undo requests already processed. You can change which categories are shared at any time.',
   },
   {
     title: 'Third-Party Services',

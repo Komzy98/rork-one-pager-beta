@@ -37,41 +37,67 @@ export async function enrichVerifiedBriefing(
     enabled?: boolean;
     fetcher?: typeof fetch;
     now?: number;
+    /** Used to bound provider calls in tests; production hard limit is 7 seconds. */
+    timeoutMs?: number;
   } = {},
 ): Promise<BriefingEnrichment> {
   const enabled = options.enabled ?? process.env.AI_BRIEFING_ENABLED === 'true';
   const apiKey = options.apiKey ?? process.env.OPENAI_API_KEY;
-  if (!enabled) return { insight: null, cached: false, mode: 'disabled' };
-  if (!apiKey) return { insight: null, cached: false, mode: 'unconfigured' };
-  if (!input.items.length) return { insight: null, cached: false, mode: 'fallback' };
+  const startedAt = Date.now();
+  // Only coarse operational diagnostics, never identity, prompts or selected titles.
+  const outcome = (
+    mode: BriefingEnrichment['mode'],
+    insight: string | null = null,
+    cached = false,
+  ): BriefingEnrichment => {
+    if (process.env.AI_BRIEFING_LOG_METRICS === 'true') {
+      const ms = Date.now() - startedAt;
+      const latencyBand = ms < 100 ? 'under_100ms' : ms < 1000 ? 'under_1s' : ms < 3000 ? 'under_3s' : ms < 7000 ? 'under_7s' : 'over_7s';
+      console.info('[onepager.ai.briefing]', JSON.stringify({ mode, cached, latencyBand }));
+    }
+    return { insight, cached, mode };
+  };
+  if (!enabled) return outcome('disabled');
+  if (!apiKey) return outcome('unconfigured');
+  if (!input.items.length) return outcome('fallback');
 
   const now = options.now ?? Date.now();
   cleanup(now);
   // Never cache by a user-supplied identifier. Account identity comes from verified auth.
+  // Cache depends on the selected model and instruction version as well as account and input.
+  const model = options.model?.trim() || process.env.OPENAI_BRIEFING_MODEL?.trim() || 'gpt-4.1-mini';
   const fingerprint = createHash('sha256')
-    .update(userId + ':' + JSON.stringify(input)).digest('hex');
+    .update('briefing-prompt-v2:' + model + ':' + userId + ':' + JSON.stringify(input)).digest('hex');
   const cached = completedCache.get(fingerprint);
-  if (cached && cached.until > now) return { insight: cached.insight, cached: true, mode: 'ai' };
+  if (cached && cached.until > now) return outcome('ai', cached.insight, true);
 
   const inProgress = pending.get(fingerprint);
   if (inProgress) {
     const insight = await inProgress;
-    return { insight, cached: false, mode: insight ? 'ai' : 'fallback' };
+    return outcome(insight ? 'ai' : 'fallback', insight);
   }
 
   const currentBudget = budgets.get(userId) ?? { count: 0, resets: now + 60 * 60_000 };
   if (currentBudget.count >= HOURLY_REQUEST_LIMIT) {
-    return { insight: null, cached: false, mode: 'limited' };
+    return outcome('limited');
   }
   currentBudget.count += 1;
   budgets.set(userId, currentBudget);
 
-  const model = options.model ?? process.env.OPENAI_BRIEFING_MODEL?.trim() ?? 'gpt-4.1-mini';
   const controller = new AbortController();
-  const timeout = setTimeout(() => controller.abort(), 7000);
+  // A hard promise deadline is needed: abort alone cannot bound a custom fetch
+  // implementation that ignores AbortSignal.
+  const deadlineMs = Math.min(7000, Math.max(10, options.timeoutMs ?? 7000));
+  let timeout: ReturnType<typeof setTimeout> | undefined;
+  const deadline = new Promise<never>((_, reject) => {
+    timeout = setTimeout(() => {
+      controller.abort();
+      reject(new Error('AI briefing provider timed out'));
+    }, deadlineMs);
+  });
   const task = (async (): Promise<string | null> => {
     try {
-      const response = await (options.fetcher ?? fetch)('https://api.openai.com/v1/responses', {
+      const response = await Promise.race([(options.fetcher ?? fetch)('https://api.openai.com/v1/responses', {
         method: 'POST',
         signal: controller.signal,
         headers: { 'Content-Type': 'application/json', Authorization: 'Bearer ' + apiKey },
@@ -100,7 +126,7 @@ export async function enrichVerifiedBriefing(
             },
           },
         }),
-      });
+      }), deadline]);
       if (!response.ok) return null;
       const text = responseText(await response.json());
       if (!text) return null;
@@ -117,11 +143,11 @@ export async function enrichVerifiedBriefing(
       // No personal content or provider errors in server logs.
       return null;
     } finally {
-      clearTimeout(timeout);
+      if (timeout) clearTimeout(timeout);
       pending.delete(fingerprint);
     }
   })();
   pending.set(fingerprint, task);
   const insight = await task;
-  return { insight, cached: false, mode: insight ? 'ai' : 'fallback' };
+  return outcome(insight ? 'ai' : 'fallback', insight);
 }

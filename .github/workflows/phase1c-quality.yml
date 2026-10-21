@@ -1,0 +1,50 @@
+name: One Pager AI briefing quality
+
+on:
+  pull_request:
+    paths:
+      - 'expo/app/(tabs)/activities.tsx'
+      - 'expo/app/(tabs)/profile.tsx'
+      - 'expo/backend/services/briefingAiService.ts'
+      - 'expo/backend/trpc/routes/ai/briefing/**'
+      - 'expo/components/TodayCoachCard.tsx'
+      - 'expo/utils/aiBriefing*.ts'
+      - 'expo/utils/intelligenceContext.ts'
+      - 'expo/utils/requestAIBriefing.ts'
+      - 'expo/utils/__tests__/**'
+      - 'expo/docs/PHASE_1C_RELEASE_VALIDATION.md'
+      - '.github/workflows/phase1c-quality.yml'
+  push:
+    branches:
+      - feature/phase1c-quality-validation
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  unit-and-types:
+    name: Tests and TypeScript (no builds)
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    defaults:
+      run:
+        working-directory: expo
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: npm
+          cache-dependency-path: expo/package-lock.json
+      - name: Install dependencies without native postinstall scripts
+        run: npm ci --ignore-scripts
+      - name: Full regression suite
+        run: npm test
+      - name: TypeScript strict typecheck
+        run: npx tsc --noEmit --pretty false
+      - name: Bundle iOS JavaScript without EAS or signing
+        env:
+          CI: '1'
+          EXPO_NO_TELEMETRY: '1'
+        run: npx expo export --platform ios --output-dir /tmp/onepager-phase1c-ios-js

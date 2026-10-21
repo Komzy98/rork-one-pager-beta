@@ -260,6 +260,19 @@ export default function ActivitiesScreen() {
   const summaryRequestSeqRef = useRef(0);
   const autoSummaryInFlightRef = useRef(false);
   const userId = user?.id || 'guest';
+  // Keep async AI callbacks bound to the currently displayed account.
+  const activeBriefingUserRef = useRef(userId);
+  activeBriefingUserRef.current = userId;
+  const [dailySummaryOwnerId, setDailySummaryOwnerId] = useState(userId);
+  // Hide another account's briefing synchronously on the first render,
+  // before the account-change effect has time to clear the old state.
+  const displayedDailySummary = dailySummaryOwnerId === userId ? dailySummary : null;
+  useEffect(() => {
+    // A previous account's private recap must not remain on screen after
+    // sign-out or a switch to another account.
+    summaryRequestSeqRef.current += 1;
+    setDailySummary(null);
+  }, [userId]);
   const [autoSummaryScheduleLabel, setAutoSummaryScheduleLabel] = useState<string>('');
   const [autoSummaryHintDismissed, setAutoSummaryHintDismissed] = useState(true);
   const [isSpeaking, setIsSpeaking] = useState<boolean>(false);
@@ -1328,7 +1341,10 @@ export default function ActivitiesScreen() {
     void (async () => {
       const dismissed = await isDailySummaryDismissed(userId, todayYmd);
       const cached = dismissed ? null : await loadDailySummaryCache(userId, todayYmd);
-      if (cached) setDailySummary(cached);
+      if (cached) {
+        setDailySummaryOwnerId(userId);
+        setDailySummary(cached);
+      }
       const allTasks = tasksContext?.allTasks || [];
       const legacyHabits = appContext?.todayHabits || [];
       const habitEntries = buildTodayHabitEntries(allTasks, legacyHabits, todayYmd);
@@ -1504,6 +1520,7 @@ export default function ActivitiesScreen() {
         notes: `${rollupNote}; ${completedTasksCount}/${totalTasksCount} regular tasks completed`,
       };
       const summary = await summarizeDailyProgress(summaryInput);
+      setDailySummaryOwnerId(userId);
       setDailySummary(summary);
 
       const snapshotWithScore = buildTodayStatsSnapshot(
@@ -1523,15 +1540,15 @@ export default function ActivitiesScreen() {
       if (!recovery.isActive && userId !== 'guest') {
         void (async () => {
           const prefs = await loadAIBriefingPreferences(userId);
-          if (!prefs.enabled || seq !== summaryRequestSeqRef.current) return;
+          if (!prefs.enabled || seq !== summaryRequestSeqRef.current || activeBriefingUserRef.current !== userId) return;
           const context = buildIntelligenceContext(summaryInput, {
             availability: summaryInput.sourceAvailability,
             updatedAt: summaryInput.sourceUpdatedAt,
           });
           const request = buildPrivateBriefingRequest(context, prefs);
           if (!request.items.length) return;
-          const insight = await requestAIBriefing(request);
-          if (!insight || seq !== summaryRequestSeqRef.current || getTodayYmd() !== today) return;
+          const insight = await requestAIBriefing(request, userId);
+          if (!insight || seq !== summaryRequestSeqRef.current || getTodayYmd() !== today || activeBriefingUserRef.current !== userId) return;
           const latestPrefs = await loadAIBriefingPreferences(userId);
           if (!latestPrefs.enabled ||
               JSON.stringify(latestPrefs.sources) !== JSON.stringify(prefs.sources)) return;
@@ -1540,7 +1557,10 @@ export default function ActivitiesScreen() {
           if (!cached || cached.contextMeta?.signature !== summary.contextMeta?.signature) return;
           const enhanced: DailySummary = { ...cached, aiInsight: insight };
           await saveDailySummaryCache(userId, today, enhanced);
-          if (seq === summaryRequestSeqRef.current) setDailySummary(enhanced);
+          if (seq === summaryRequestSeqRef.current && activeBriefingUserRef.current === userId) {
+            setDailySummaryOwnerId(userId);
+            setDailySummary(enhanced);
+          }
         })().catch(() => {
           // Keep the fast, verified briefing if AI is unavailable.
         });
@@ -2511,7 +2531,7 @@ export default function ActivitiesScreen() {
             <TodayCoachCard
               coachPhase={coachPhase}
               chronotypeId={profile?.chronotype}
-              dailySummary={dailySummary}
+              dailySummary={displayedDailySummary}
               isGenerating={isGeneratingSummary}
               isSpeaking={isSpeaking}
               isVoicePending={generateVoiceMutation.isPending}
@@ -2535,16 +2555,16 @@ export default function ActivitiesScreen() {
               onToggleListen={() => {
                 if (isSpeaking) {
                   void stopSummarySpeech();
-                } else if (dailySummary) {
-                  void speakDailySummary(buildDailyBriefingNarration(dailySummary));
+                } else if (displayedDailySummary) {
+                  void speakDailySummary(buildDailyBriefingNarration(displayedDailySummary));
                 }
               }}
               onShareSummary={() => {
-                if (!dailySummary) return;
+                if (!displayedDailySummary) return;
                 setSummarySharePayload(
                   buildSummaryPayload(
-                    dailySummary.score,
-                    buildDailyBriefingNarration(dailySummary),
+                    displayedDailySummary.score,
+                    buildDailyBriefingNarration(displayedDailySummary),
                     (profile?.name || user?.email?.split('@')[0] || '').trim() || undefined,
                   ),
                 );
