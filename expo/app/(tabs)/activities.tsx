@@ -260,6 +260,9 @@ export default function ActivitiesScreen() {
   const summaryRequestSeqRef = useRef(0);
   const autoSummaryInFlightRef = useRef(false);
   const userId = user?.id || 'guest';
+  // Keep async AI callbacks bound to the currently displayed account.
+  const activeBriefingUserRef = useRef(userId);
+  activeBriefingUserRef.current = userId;
   const [autoSummaryScheduleLabel, setAutoSummaryScheduleLabel] = useState<string>('');
   const [autoSummaryHintDismissed, setAutoSummaryHintDismissed] = useState(true);
   const [isSpeaking, setIsSpeaking] = useState<boolean>(false);
@@ -1523,7 +1526,7 @@ export default function ActivitiesScreen() {
       if (!recovery.isActive && userId !== 'guest') {
         void (async () => {
           const prefs = await loadAIBriefingPreferences(userId);
-          if (!prefs.enabled || seq !== summaryRequestSeqRef.current) return;
+          if (!prefs.enabled || seq !== summaryRequestSeqRef.current || activeBriefingUserRef.current !== userId) return;
           const context = buildIntelligenceContext(summaryInput, {
             availability: summaryInput.sourceAvailability,
             updatedAt: summaryInput.sourceUpdatedAt,
@@ -1531,7 +1534,7 @@ export default function ActivitiesScreen() {
           const request = buildPrivateBriefingRequest(context, prefs);
           if (!request.items.length) return;
           const insight = await requestAIBriefing(request);
-          if (!insight || seq !== summaryRequestSeqRef.current || getTodayYmd() !== today) return;
+          if (!insight || seq !== summaryRequestSeqRef.current || getTodayYmd() !== today || activeBriefingUserRef.current !== userId) return;
           const latestPrefs = await loadAIBriefingPreferences(userId);
           if (!latestPrefs.enabled ||
               JSON.stringify(latestPrefs.sources) !== JSON.stringify(prefs.sources)) return;
@@ -1540,7 +1543,7 @@ export default function ActivitiesScreen() {
           if (!cached || cached.contextMeta?.signature !== summary.contextMeta?.signature) return;
           const enhanced: DailySummary = { ...cached, aiInsight: insight };
           await saveDailySummaryCache(userId, today, enhanced);
-          if (seq === summaryRequestSeqRef.current) setDailySummary(enhanced);
+          if (seq === summaryRequestSeqRef.current && activeBriefingUserRef.current === userId) setDailySummary(enhanced);
         })().catch(() => {
           // Keep the fast, verified briefing if AI is unavailable.
         });
