@@ -53,6 +53,7 @@ import {
 } from '@/utils/dailySummary';
 import { buildDailyBriefingNarration } from '@/utils/dailyBriefingContext';
 import { buildIntelligenceContext } from '@/utils/intelligenceContext';
+import { buildDailyDecision } from '@/utils/dailyDecisionEngine';
 import { loadAIBriefingPreferences } from '@/utils/aiBriefingPreferences';
 import { buildPrivateBriefingRequest } from '@/utils/aiBriefingFocus';
 import { requestAIBriefing } from '@/utils/requestAIBriefing';
@@ -1258,6 +1259,77 @@ export default function ActivitiesScreen() {
 
   const hasCalendarSource =
     calendars.length > 0 || (eventKit.isEventKitAvailable && eventKit.hasPermission);
+
+  // Lightweight local Phase 2A prioritisation, independent of summary generation
+  // and OpenAI availability. Re-evaluate every minute so calendar urgency
+  // and completed tasks/habits update without showing an expired cached tip.
+  const [decisionMinute, setDecisionMinute] = useState(() => Math.floor(Date.now() / 60_000));
+  useFocusEffect(useCallback(() => {
+    setDecisionMinute(Math.floor(Date.now() / 60_000));
+    const tick = setInterval(() => setDecisionMinute(Math.floor(Date.now() / 60_000)), 60_000);
+    return () => clearInterval(tick);
+  }, []));
+
+  const dailyDecision = useMemo(() => {
+    if (recovery.isActive) return null;
+    const allTasks = tasksContext?.allTasks ?? [];
+    const entries = buildTodayHabitEntries(allTasks, appContext?.todayHabits ?? [], todayYmd);
+    const { habits } = buildSummaryHabitsFromEntries(entries);
+    const nextMatches = upcomingMatches.slice(0, 5).map(m => ({
+      homeTeam: m.homeTeam, awayTeam: m.awayTeam, date: m.date,
+      time: m.time, competition: m.league,
+    }));
+    const context = buildIntelligenceContext({
+      date: todayYmd,
+      habits,
+      tasks: allTasks.filter(t => !t.isHabit).map(t => ({
+        name: t.title, completed: t.status === 'completed',
+        priority: t.priority, category: t.category,
+      })),
+      priorityTasks: buildPriorityTaskHighlights(allTasks),
+      todayCalendar: (recoveryHopeInput.todayCalendar ?? []).map(e => ({
+        title: e.title, timeLabel: e.timeLabel,
+        isAllDay: !e.timeLabel || /^(all day|all-day)$/i.test(e.timeLabel),
+      })),
+      savedDiscoveryEvents: buildSavedEventsHighlights(profile?.savedEvents ?? [], todayYmd),
+      sportsBeats: recoveryHopeInput.sportsBeats,
+      upcomingMatches: nextMatches,
+      continueWatching: buildContinueWatchingHighlights(continueWatchingItems),
+      weather: weather && Number.isFinite(weather.temp) ? {
+        condition: weather.condition || '', temp: weather.temp,
+        description: weather.description || '', city: weather.city || '',
+      } : undefined,
+      sourceAvailability: {
+        calendar: hasCalendarSource,
+        sports: Boolean(footballBundleQuery.data),
+        weather: Boolean(weather && Number.isFinite(weather.temp)),
+      },
+      sourceUpdatedAt: {
+        ...(weatherFetchedAt ? { weather: weatherFetchedAt } : {}),
+        ...(footballBundleQuery.dataUpdatedAt
+          ? { sports: new Date(footballBundleQuery.dataUpdatedAt).toISOString() } : {}),
+      },
+    }, {
+      now: new Date(decisionMinute * 60_000),
+      availability: {
+        calendar: hasCalendarSource,
+        sports: Boolean(footballBundleQuery.data),
+        weather: Boolean(weather && Number.isFinite(weather.temp)),
+      },
+      updatedAt: {
+        ...(weatherFetchedAt ? { weather: weatherFetchedAt } : {}),
+        ...(footballBundleQuery.dataUpdatedAt
+          ? { sports: new Date(footballBundleQuery.dataUpdatedAt).toISOString() } : {}),
+      },
+    });
+    return buildDailyDecision(context, { now: new Date(decisionMinute * 60_000) });
+  }, [
+    recovery.isActive, todayYmd, decisionMinute, tasksContext?.allTasks,
+    appContext?.todayHabits, recoveryHopeInput.todayCalendar,
+    recoveryHopeInput.sportsBeats, upcomingMatches, continueWatchingItems,
+    profile?.savedEvents, weather, weatherFetchedAt, hasCalendarSource,
+    footballBundleQuery.data, footballBundleQuery.dataUpdatedAt,
+  ]);
 
   const showCalendarSection = true;
   const eventTimeFormat =
@@ -2532,6 +2604,15 @@ export default function ActivitiesScreen() {
               coachPhase={coachPhase}
               chronotypeId={profile?.chronotype}
               dailySummary={displayedDailySummary}
+              dailyDecision={dailyDecision}
+              onOpenDecision={(destination) => {
+                switch (destination) {
+                  case 'tasks': router.push('/(tabs)/tasks' as any); break;
+                  case 'sports': router.push('/(tabs)/sports' as any); break;
+                  case 'events': router.push('/(tabs)/events' as any); break;
+                  case 'shows': router.push(SHOWS_HREF.streaming as any); break;
+                }
+              }}
               isGenerating={isGeneratingSummary}
               isSpeaking={isSpeaking}
               isVoicePending={generateVoiceMutation.isPending}

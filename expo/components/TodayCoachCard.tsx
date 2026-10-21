@@ -1,9 +1,10 @@
 import React, { useMemo } from 'react';
 import { ActivityIndicator, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
-import { CalendarDays, Clapperboard, Cloud, RefreshCw, Share2, Sparkles, Ticket, Trophy, Volume2, VolumeX, X } from 'lucide-react-native';
+import { ArrowUpRight, CalendarDays, Clapperboard, Cloud, RefreshCw, Share2, Sparkles, Ticket, Trophy, Volume2, VolumeX, X } from 'lucide-react-native';
 
 import { useTheme } from '@/hooks/useTheme';
 import type { DailySummary } from '@/utils/dailySummary';
+import type { DailyDecision, DecisionDestination } from '@/utils/dailyDecisionEngine';
 import type { DailyStatsDelta } from '@/utils/dailySummaryStats';
 import type { TodayCoachPhase } from '@/utils/todayCoach';
 
@@ -11,6 +12,8 @@ export type TodayCoachCardProps = {
   coachPhase?: TodayCoachPhase;
   chronotypeId?: string;
   dailySummary: DailySummary | null;
+  dailyDecision?: DailyDecision | null;
+  onOpenDecision?: (destination: DecisionDestination) => void;
   isGenerating: boolean;
   isSpeaking: boolean;
   isVoicePending: boolean;
@@ -41,6 +44,8 @@ export default function TodayCoachCard(props: TodayCoachCardProps) {
   const { colors } = useTheme();
   const {
     dailySummary,
+    dailyDecision,
+    onOpenDecision,
     isGenerating,
     isSpeaking,
     isVoicePending,
@@ -88,6 +93,42 @@ export default function TodayCoachCard(props: TodayCoachCardProps) {
           ) : null}
         </View>
 
+        {!recoveryActive && dailyDecision ? (
+          <View
+            style={[styles.decisionPanel, { backgroundColor: colors.surfaceSecondary }]}
+            accessibilityLabel={`Suggested next step: ${dailyDecision.title}. ${dailyDecision.guidance}. ${dailyDecision.reason}`}
+          >
+            <View style={styles.decisionHeader}>
+              <Text style={[styles.decisionKicker, { color: colors.textSecondary }]}>SUGGESTED NEXT STEP</Text>
+              <Text style={[styles.decisionUrgency, { color: colors.primary }]}>
+                {dailyDecision.urgency === 'now' ? 'PRIORITY' : dailyDecision.urgency === 'next' ? 'NEXT' : 'OPTIONAL'}
+              </Text>
+            </View>
+            <Text style={[styles.decisionTitle, { color: colors.text }]}>{dailyDecision.title}</Text>
+            <Text style={[styles.decisionGuidance, { color: colors.textSecondary }]}>{dailyDecision.guidance}</Text>
+            <Text style={[styles.decisionReason, { color: colors.textMuted }]}>{dailyDecision.reason}</Text>
+            {dailyDecision.alongside ? (
+              <Text style={[styles.decisionAlongside, { color: colors.textSecondary }]}>
+                Also on your radar: {dailyDecision.alongside}
+              </Text>
+            ) : null}
+            {dailyDecision.destination && onOpenDecision ? (
+              <TouchableOpacity
+                style={styles.decisionAction}
+                accessibilityRole="button"
+                accessibilityLabel={dailyDecision.actionLabel ?? 'Open details'}
+                onPress={() => onOpenDecision(dailyDecision.destination!)}
+                activeOpacity={0.75}
+              >
+                <Text style={[styles.decisionActionText, { color: colors.primary }]}>
+                  {dailyDecision.actionLabel ?? 'Open details'}
+                </Text>
+                <ArrowUpRight size={15} strokeWidth={2} color={colors.primary} />
+              </TouchableOpacity>
+            ) : null}
+          </View>
+        ) : null}
+
         {dailySummary && review ? (
           <>
             <Text style={[styles.review, { color: colors.text }]}>{review}</Text>
@@ -116,7 +157,7 @@ export default function TodayCoachCard(props: TodayCoachCardProps) {
             )}
             {dailySummary.aiInsight && !recoveryActive ? (
               <View style={[styles.aiInsightWrap, { backgroundColor: colors.surfaceSecondary }]}>
-                <Text style={[styles.aiInsightLabel, { color: colors.textSecondary }]}>PERSONALISED SUGGESTION</Text>
+                <Text style={[styles.aiInsightLabel, { color: colors.textSecondary }]}>{dailyDecision ? 'ADDITIONAL PERSONALISED IDEA' : 'PERSONALISED SUGGESTION'}</Text>
                 <Text style={[styles.aiInsightText, { color: colors.text }]}>{dailySummary.aiInsight}</Text>
               </View>
             ) : null}
@@ -259,6 +300,19 @@ const styles = StyleSheet.create({
     fontWeight: '700',
     letterSpacing: -0.25,
   },
+  decisionPanel: { marginTop: 12, borderRadius: 14, padding: 13, gap: 5 },
+  decisionHeader: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
+  decisionKicker: { fontSize: 10, fontWeight: '800', letterSpacing: 0.9 },
+  decisionUrgency: { fontSize: 10, fontWeight: '700', letterSpacing: 0.5 },
+  decisionTitle: { fontSize: 15, fontWeight: '700', lineHeight: 20, marginTop: 3 },
+  decisionGuidance: { fontSize: 12.5, lineHeight: 18 },
+  decisionReason: { fontSize: 11, lineHeight: 16 },
+  decisionAlongside: { fontSize: 11.5, lineHeight: 17, marginTop: 4 },
+  decisionAction: {
+    alignSelf: 'flex-start', flexDirection: 'row', alignItems: 'center',
+    gap: 5, marginTop: 6, minHeight: 30,
+  },
+  decisionActionText: { fontSize: 12, fontWeight: '700' },
   aiInsightWrap: { marginTop: 12, borderRadius: 12, padding: 12, gap: 5 },
   aiInsightLabel: { fontSize: 10, fontWeight: '800', letterSpacing: 0.8 },
   aiInsightText: { fontSize: 13, lineHeight: 19, fontWeight: '500' },
