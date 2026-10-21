@@ -1514,8 +1514,9 @@ export default function ProfileScreen() {
                   <View style={{ flex: 1, paddingRight: 12 }}>
                     <Text style={[styles.notifLabel, { color: colors.text }]}>AI personalised briefing</Text>
                     <Text style={[styles.notifMetaText, { color: colors.textSecondary, marginTop: 2 }]}>
-                      Optional. Sends selected habit and task titles to our AI provider to suggest one grounded focus.
-                      Other categories are off until you opt in. No health metrics or private notes are sent.
+                      Optional. Sends selected habit and task titles to OpenAI via our secure server to suggest one grounded focus.
+                      Other categories are off until you opt in. No health metrics, private notes or account identifiers are sent.
+                      See the Privacy Policy for provider data handling.
                     </Text>
                   </View>
                   <Switch
