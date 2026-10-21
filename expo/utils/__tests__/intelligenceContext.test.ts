@@ -85,6 +85,11 @@ describe('Phase 1 unified intelligence context', () => {
     const second = buildIntelligenceContext(input, {now: new Date('2026-10-21T09:00:00Z')});
     assert.equal(first.signature, second.signature);
     assert.notEqual(first.collectedAt, second.collectedAt);
+    const refetched = buildIntelligenceContext(input, {
+      now: new Date('2026-10-21T09:00:00Z'),
+      updatedAt: { tasks: '2026-10-21T09:00:00Z' },
+    });
+    assert.equal(first.signature, refetched.signature);
     const changed = buildIntelligenceContext({
       ...input, tasks:[{name:'Draft proposal',completed:true}],
     }, {now});

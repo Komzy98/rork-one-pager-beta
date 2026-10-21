@@ -211,7 +211,8 @@ export function buildIntelligenceContext(
     sources[key].status !== 'unavailable';
   const safe = {
     habits, habitRollup: allowed('habits') ? (input.habitRollup ?? null) : null,
-    tasks, priorityTasks, openItems: unique((input.openItems ?? []).map(x => clean(x)), x => x, 12),
+    tasks, priorityTasks, openItems: allowed('tasks')
+      ? unique((input.openItems ?? []).map(x => clean(x)), x => x, 12) : [],
     todayCalendar: usable('calendar') ? todayCalendar : [],
     upcomingEvents: usable('calendar') ? upcomingEvents : [],
     savedDiscoveryEvents: usable('events') ? savedDiscoveryEvents : [],
@@ -220,7 +221,10 @@ export function buildIntelligenceContext(
     continueWatching: shows.length || continueWatching.length ? continueWatching : [],
     shows, weather: usable('weather') ? weather : undefined,
   };
-  const signature = fingerprint({ date, sources, ...safe });
+  // Refresh timestamps are provenance, not content: an identical fetch must
+  // not invalidate an otherwise reusable briefing cache.
+  const sourceStatuses = Object.fromEntries(keys.map(key => [key, sources[key].status]));
+  const signature = fingerprint({ date, sourceStatuses, ...safe });
   return { schemaVersion: INTELLIGENCE_CONTEXT_VERSION, date, collectedAt, signature, sources, ...safe };
 }
 
