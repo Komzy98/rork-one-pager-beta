@@ -1,6 +1,7 @@
 import { buildBriefingHighlights, type BriefingHighlight } from './dailyBriefingContext';
+import { buildIntelligenceContext, type IntelligenceSource, type IntelligenceSourceHealth } from './intelligenceContext';
 
-export const DAILY_SUMMARY_VERSION = 2;
+export const DAILY_SUMMARY_VERSION = 3;
 
 export type DailySummaryHabit = {
   name: string;
@@ -67,6 +68,11 @@ export type DailySummary = {
   /** Sections assembled from verified calendar, weather and media data. */
   contextHighlights?: BriefingHighlight[];
   briefingVersion?: number;
+  contextMeta?: {
+    signature: string;
+    generatedAt: string;
+    sources: Record<IntelligenceSource, IntelligenceSourceHealth>;
+  };
 };
 
 export type DailySummaryYesterdayContext = {
@@ -247,7 +253,7 @@ Rules:
 - sentiment should lean neutral or gently positive — never punitive negative.
 - Do not invent data. Output valid JSON with the exact structure provided.`;
 
-export async function summarizeDailyProgress(input: {
+export type DailySummaryInput = {
   date: string; // e.g., "2025-09-08"
   recoveryMode?: boolean;
   activities?: { name: string; minutes?: number; details?: string }[];
@@ -283,14 +289,22 @@ export async function summarizeDailyProgress(input: {
   todayCalendar?: DailySummaryCalendarEvent[];
   weather?: { condition: string; temp: number; description: string; city: string; humidity?: number; windSpeed?: number };
   notes?: string;
+  sourceAvailability?: Partial<Record<IntelligenceSource, boolean>>;
+  sourceUpdatedAt?: Partial<Record<IntelligenceSource, string>>;
   yesterdayContext?: DailySummaryYesterdayContext | null;
-}): Promise<DailySummary> {
+};
+
+export async function summarizeDailyProgress(input: DailySummaryInput): Promise<DailySummary> {
   // The normal briefing is composed locally for instant loading, using all
   // the context already collected on Overview, not just the habit tracker.
   // Progress claims remain grounded in actual recorded completions.
   if (!input.recoveryMode) {
     const grounded = buildGroundedDailySummary(input);
-    const highlights = buildBriefingHighlights(input);
+    const context = buildIntelligenceContext(input, {
+      availability: input.sourceAvailability,
+      updatedAt: input.sourceUpdatedAt,
+    });
+    const highlights = buildBriefingHighlights(context);
     const habitTotal = input.habitRollup?.scheduledCount ??
       (input.habits ?? []).filter(h => h.scheduledToday !== false).length;
     const habitDone = input.habitRollup?.completedCount ??
@@ -327,6 +341,7 @@ export async function summarizeDailyProgress(input: {
     return {
       date: input.date,
       briefingVersion: DAILY_SUMMARY_VERSION,
+      contextMeta: { signature: context.signature, generatedAt: context.collectedAt, sources: context.sources },
       summary: lines.join(' '),
       contextHighlights: highlights,
       wins: grounded.wins,

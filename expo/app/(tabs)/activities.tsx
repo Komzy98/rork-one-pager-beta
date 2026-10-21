@@ -406,6 +406,7 @@ export default function ActivitiesScreen() {
     showStatus: string;
   }
   const [weather, setWeather] = useState<any>(null);
+  const [weatherFetchedAt, setWeatherFetchedAt] = useState<string | null>(null);
 
   const generateVoiceMutation = trpc.ai.generateVoice.useMutation();
   const summaryAudioPlayer = useAudioPlayer();
@@ -1257,6 +1258,7 @@ export default function ActivitiesScreen() {
       if (__DEV__) console.log('🌤️ Fetching weather...');
       const weatherData = await getCurrentWeather();
       setWeather(weatherData);
+      setWeatherFetchedAt(new Date().toISOString());
     } catch (error) {
       if (__DEV__) console.error('❌ Weather fetch error:', error);
     }
@@ -1423,9 +1425,9 @@ export default function ActivitiesScreen() {
         })),
       });
 
-      const weatherForSummary = weather ? {
+      const weatherForSummary = weather && Number.isFinite(weather.temp) ? {
         condition: weather.condition || '',
-        temp: weather.temp ?? 0,
+        temp: weather.temp,
         description: weather.description || '',
         city: weather.city || '',
         humidity: weather.humidity,
@@ -1481,6 +1483,17 @@ export default function ActivitiesScreen() {
         savedDiscoveryEvents,
         todayCalendar,
         weather: weatherForSummary,
+        sourceAvailability: {
+          calendar: hasCalendarSource,
+          sports: Boolean(footballBundleQuery.data),
+          weather: Boolean(weatherForSummary),
+        },
+        sourceUpdatedAt: {
+          ...(weatherFetchedAt ? { weather: weatherFetchedAt } : {}),
+          ...(footballBundleQuery.dataUpdatedAt
+            ? { sports: new Date(footballBundleQuery.dataUpdatedAt).toISOString() }
+            : {}),
+        },
         notes: `${rollupNote}; ${completedTasksCount}/${totalTasksCount} regular tasks completed`,
       });
       setDailySummary(summary);
@@ -1512,6 +1525,10 @@ export default function ActivitiesScreen() {
     appContext?.todayHabits,
     tasksContext?.allTasks,
     weather,
+    weatherFetchedAt,
+    footballBundleQuery.data,
+    footballBundleQuery.dataUpdatedAt,
+    hasCalendarSource,
     calendars,
     continueWatchingItems,
     liveMatches,
