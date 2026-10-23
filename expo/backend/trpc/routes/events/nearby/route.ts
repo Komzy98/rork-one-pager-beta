@@ -155,7 +155,7 @@ export const getNearbyEventsRoute = publicProcedure
       longitude: z.number().min(-180).max(180),
       radiusMiles: z.number().min(1).max(100).default(25),
       category: z.string().optional(),
-      size: z.number().min(1).max(50).default(30),
+      size: z.number().min(1).max(120).default(30),
     }),
   )
   .query(async ({ input }): Promise<NearbyEventsResult> => {
