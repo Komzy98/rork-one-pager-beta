@@ -1,5 +1,8 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { Modal, ScrollView, Text, TouchableOpacity, View } from 'react-native';
+import { Image } from 'expo-image';
+import { ImageOff } from 'lucide-react-native';
+import { resolveEventPosterUrl } from '@/utils/eventPosterImage';
 import type { LocalEvent } from '@/types/events';
 import type { EventsPalette } from '@/utils/eventsPalette';
 import { isAffordableEvent, isWeekendEvent } from '@/utils/eventsV2Discovery';
@@ -98,14 +101,43 @@ export function EventsWeekendPlanner({ visible, events, palette, onClose, onSave
             No verified weekend listings match these filters. Try another day, mood or budget.
           </Text> : suggested.map(event => <View key={event.id} style={{ padding: 14, borderWidth: 1,
             borderColor: palette.border, borderRadius: 16, marginBottom: 10 }}>
-            <Text style={{ color: palette.text, fontWeight: '700', fontSize: 15 }}>{event.title}</Text>
-            <Text style={{ color: palette.textSecondary, marginTop: 5 }}>
-              {event.date} · {event.time} · {event.venue}
-            </Text>
-            <Text style={{ color: palette.textSecondary, marginTop: 3 }}>
-              {event.price || 'Price not provided'} · {event.location}
-            </Text>
-            <Text style={{ color: palette.textSecondary, marginTop: 5 }}>
+            <View style={{ flexDirection: 'row', alignItems: 'flex-start', gap: 12 }}>
+              <View style={{ flex: 1, minWidth: 0 }}>
+                <Text style={{ color: palette.text, fontWeight: '700', fontSize: 15 }}
+                  numberOfLines={3}>{event.title}</Text>
+                <Text style={{ color: palette.textSecondary, marginTop: 6 }} numberOfLines={2}>
+                  {event.date} · {event.time}
+                </Text>
+                <Text style={{ color: palette.textSecondary, marginTop: 3 }} numberOfLines={2}>
+                  {event.venue}
+                </Text>
+                <Text style={{ color: palette.textSecondary, marginTop: 4 }} numberOfLines={2}>
+                  {event.price || 'Price not provided'} · {event.location}
+                </Text>
+              </View>
+              {resolveEventPosterUrl(event.image) ? (
+                <Image
+                  source={{ uri: resolveEventPosterUrl(event.image) }}
+                  style={{ width: 104, height: 138, borderRadius: 12, backgroundColor: palette.surfaceLight }}
+                  contentFit="cover"
+                  cachePolicy="memory-disk"
+                  transition={180}
+                  accessibilityLabel={event.title + ' event poster'}
+                />
+              ) : (
+                <View style={{
+                  width: 104, height: 138, borderRadius: 12, backgroundColor: palette.surfaceLight,
+                  alignItems: 'center', justifyContent: 'center', gap: 8,
+                  borderWidth: 1, borderColor: palette.border,
+                }}>
+                  <ImageOff size={24} color={palette.textSecondary} />
+                  <Text style={{ color: palette.textSecondary, fontSize: 11, textAlign: 'center' }}>
+                    No poster
+                  </Text>
+                </View>
+              )}
+            </View>
+            <Text style={{ color: palette.textSecondary, marginTop: 10 }}>
               {legs[event.id]
                 ? mode + ' · ' + legs[event.id]!.minutes + ' min route · leave by ' +
                   (findEventDeparture(event, legs[event.id])?.toLocaleTimeString('en-GB', { hour:'2-digit', minute:'2-digit' }) ?? 'time unknown')
