@@ -549,6 +549,12 @@ export default function EventDetailScreen() {
         </View>
 
         <View style={styles.body}>
+          {event.description ? (
+            <View style={styles.aboutSection}>
+              <Text style={[styles.sectionLabel, { color: palette.textSecondary }]}>About</Text>
+              <Text style={[styles.description, { color: palette.text }]}>{event.description}</Text>
+            </View>
+          ) : null}
           {needsListingRefresh ? (
             <TouchableOpacity
               onPress={() => void remoteEvent.refetch()}
@@ -724,12 +730,6 @@ export default function EventDetailScreen() {
             ) : null}
           </View>
 
-          {event.description ? (
-            <View style={styles.aboutSection}>
-              <Text style={[styles.sectionLabel, { color: palette.textSecondary }]}>About</Text>
-              <Text style={[styles.description, { color: palette.text }]}>{event.description}</Text>
-            </View>
-          ) : null}
 
           {similarEvents.length > 0 ? (
             <View style={styles.similarSection}>
