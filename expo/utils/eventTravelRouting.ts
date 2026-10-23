@@ -1,5 +1,5 @@
 import type { LocalEvent } from '@/types/events';
-export type TravelMode = 'driving' | 'walking' | 'cycling';
+export type TravelMode = 'driving' | 'walking' | 'cycling' | 'transit';
 export type Coordinates = { latitude: number; longitude: number };
 export type TravelLeg = { minutes: number; distanceKm: number };
 export function validCoordinates(p: Coordinates | null): p is Coordinates {
@@ -7,7 +7,8 @@ export function validCoordinates(p: Coordinates | null): p is Coordinates {
 }
 /** Requires an OSRM-compatible production HTTPS service configured by the app operator. */
 export async function getRealTravelLeg(from: Coordinates, to: Coordinates, mode: TravelMode, endpoint = process.env.EXPO_PUBLIC_EVENT_ROUTING_URL): Promise<TravelLeg | null> {
-  if (!endpoint || !endpoint.startsWith('https://') || !validCoordinates(from) || !validCoordinates(to)) return null;
+  // OSRM road graphs cannot calculate public-transport schedules. Never label a driving ETA as transit.
+  if (mode === 'transit' || !endpoint || !endpoint.startsWith('https://') || !validCoordinates(from) || !validCoordinates(to)) return null;
   const profile = mode === 'walking' ? 'foot' : mode === 'cycling' ? 'bike' : 'driving';
   const url = endpoint.replace(/\/$/, '') + '/route/v1/' + profile + '/' + from.longitude + ',' + from.latitude + ';' + to.longitude + ',' + to.latitude + '?overview=false';
   const controller = new AbortController();

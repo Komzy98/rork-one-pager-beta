@@ -1777,7 +1777,10 @@ function EventsScreenInner() {
       <EventsWeekendPlanner
         visible={weekendPlannerOpen}
         userCoords={permissionDenied ? null : userCoords}
+        userId={user?.id}
         events={rankEventsForYou(filteredEvents, recommendationInput)}
+        onOpenEvent={(event) => openEventDetail(event.id)}
+        onInviteEvent={(event) => openInvite(event)}
         palette={palette}
         isSaved={isSaved}
         onClose={() => setWeekendPlannerOpen(false)}
