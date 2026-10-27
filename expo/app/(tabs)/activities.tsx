@@ -106,6 +106,7 @@ import HabitEngineTodayCard from '@/components/HabitEngineTodayCard';
 import RecoveryModePanel from '@/components/RecoveryModePanel';
 import JoySourcesNudgeCard from '@/components/JoySourcesNudgeCard';
 import InterestBriefingCard from '@/components/InterestBriefingCard';
+import TimeWellSpentCard from '@/components/TimeWellSpentCard';
 import { buildFootballInterestSignals } from '@/utils/interestSignalEngine';
 import { useInterestReminderSync } from '@/hooks/useInterestReminderSync';
 import { notificationService } from '@/utils/notificationService';
@@ -1331,6 +1332,16 @@ export default function ActivitiesScreen() {
     footballBundleQuery.data, footballBundleQuery.dataUpdatedAt,
   ]);
 
+  // Curate today's actual, incomplete habit commitments for the first-screen
+  // "worth your time" experience. Do not infer goals from unrelated activity.
+  const timeWellSpentHabits = useMemo(() => {
+    const entries = buildTodayHabitEntries(
+      tasksContext?.allTasks ?? [], appContext?.todayHabits ?? [], todayYmd,
+    );
+    return buildSummaryHabitsFromEntries(entries).habits
+      .filter(h => !h.done).map(h => h.name).slice(0, 3);
+  }, [tasksContext?.allTasks, appContext?.todayHabits, todayYmd]);
+
   const showCalendarSection = true;
   const eventTimeFormat =
     profile?.displayPreferences?.timeFormat === '24h' ? '24h' : '12h';
@@ -2522,6 +2533,46 @@ export default function ActivitiesScreen() {
 
         <View style={{ backgroundColor: colors.background }}>
             <AddInterestsLaterCard />
+            <TimeWellSpentCard
+              userId={userId}
+              now={new Date(decisionMinute * 60_000)}
+              dailyDecision={null} // The recommendation is prioritised above; keep the daily review here.
+              signals={footballInterestSignals}
+              episodes={visibleNewEpisodes}
+              incompleteHabits={timeWellSpentHabits}
+              completedHabits={stats.completedHabits}
+              recoveryActive={recovery.isActive}
+              onOpen={(item) => {
+                switch (item.kind) {
+                  case 'football': {
+                    const signal = footballInterestSignals.find(s => s.match.id === item.refId);
+                    if (signal) void openInterestSignal(signal);
+                    else router.push('/(tabs)/sports' as any);
+                    break;
+                  }
+                  case 'episode': {
+                    const episode = visibleNewEpisodes.find(e => String(e.tmdbId) === item.refId);
+                    if (episode) void handleOpenNewEpisode(episode);
+                    else router.push(SHOWS_HREF.streaming as any);
+                    break;
+                  }
+                  case 'habit':
+                    navigateToHabits();
+                    break;
+                  case 'priority': {
+                    const destination = dailyDecision?.destination;
+                    if (!destination) {
+                      Alert.alert(item.title, item.detail + '\n\n' + item.reason);
+                    } else if (destination === 'shows') {
+                      router.push(SHOWS_HREF.streaming as any);
+                    } else {
+                      router.push(('/(tabs)/' + destination) as any);
+                    }
+                    break;
+                  }
+                }
+              }}
+            />
             <DailyStackCard
               habitCount={stats.totalHabits}
               completedHabits={stats.completedHabits}
