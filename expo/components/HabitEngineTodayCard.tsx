@@ -151,7 +151,8 @@ export default function HabitEngineTodayCard() {
         ]}
         testID="habit-engine-v2-card"
       >
-        <TouchableOpacity activeOpacity={0.82} onPress={openPlan}>
+        <TouchableOpacity activeOpacity={0.82} onPress={openPlan}
+          accessibilityRole="button" accessibilityLabel={`Open habit plan for ${task.title}`}>
           <View style={styles.topRow}>
             <View style={[styles.iconWrap, { backgroundColor: tone + '16' }]}>
               <BrainCircuit size={20} color={tone} />
@@ -303,6 +304,8 @@ export default function HabitEngineTodayCard() {
               {([1, 2, 3, 4, 5] as const).map((score) => (
                 <TouchableOpacity
                   key={score}
+                  accessibilityRole="button"
+                  accessibilityLabel={`Automaticity rating ${score} of 5`}
                   style={[styles.scaleButton, { borderColor: colors.border, backgroundColor: colors.surfaceSecondary }]}
                   onPress={() => submitAutomaticity(score)}
                 >
@@ -324,6 +327,8 @@ export default function HabitEngineTodayCard() {
               {FRICTION_OPTIONS.map((option) => (
                 <TouchableOpacity
                   key={option.value}
+                  accessibilityRole="button"
+                  accessibilityLabel={`Log habit obstacle: ${option.label}`}
                   style={[styles.frictionChip, { borderColor: colors.border, backgroundColor: colors.surfaceSecondary }]}
                   onPress={() => logFriction(option.value)}
                 >
