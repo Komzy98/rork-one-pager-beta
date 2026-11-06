@@ -46,6 +46,7 @@ export default function TimeWellSpentCard(props: Props) {
     opened: 0, acted: 0, notUseful: 0,
   });
   const [updating, setUpdating] = useState(false);
+  const [showAllSuggestions, setShowAllSuggestions] = useState(false);
   const loaded = pref.loaded && pref.userId === userId;
   const enabled = loaded && pref.enabled;
 
@@ -129,7 +130,7 @@ export default function TimeWellSpentCard(props: Props) {
       <Text style={{ color: colors.textSecondary, fontSize: 13 }}>
         No timely updates right now. Follow teams or shows and set personal goals to make this space yours.
       </Text>
-    </View> : suggestions.map((item, index) =>
+    </View> : (showAllSuggestions ? suggestions : suggestions.slice(0, 1)).map((item, index) =>
       <View key={item.id} style={{ borderTopWidth: 1, borderColor: colors.border,
         paddingTop: 15, paddingBottom: 10, marginTop: index === 0 ? 14 : 3 }}>
         <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
@@ -150,7 +151,7 @@ export default function TimeWellSpentCard(props: Props) {
           marginTop: 10, gap: 13 }}>
           <TouchableOpacity accessibilityRole="button" accessibilityLabel={item.actionLabel + ' for ' + item.title}
             onPress={() => { void record(item, 'opened'); onOpen(item); }}
-            style={{ flexDirection: 'row', alignItems: 'center', gap: 3 }}>
+            style={{ flexDirection: 'row', alignItems: 'center', gap: 3, minHeight: 44, paddingHorizontal: 6 }}>
             <Text style={{ color: colors.primary, fontSize: 13, fontWeight: '700' }}>
               {item.actionLabel}
             </Text>
@@ -159,7 +160,7 @@ export default function TimeWellSpentCard(props: Props) {
           <TouchableOpacity accessibilityRole="button"
             onPress={() => { void record(item, 'acted'); }}
             disabled={feedback[item.id] === 'acted'}
-            style={{ flexDirection: 'row', alignItems: 'center', gap: 4 }}>
+            style={{ flexDirection: 'row', alignItems: 'center', gap: 4, minHeight: 44, paddingHorizontal: 6 }}>
             <CheckCircle2 size={14} color={feedback[item.id] === 'acted' ? colors.primary : colors.textSecondary}/>
             <Text style={{ color: colors.textSecondary, fontSize: 12 }}>
               {feedback[item.id] === 'acted' ? 'Recorded' : 'I followed through'}
@@ -168,7 +169,7 @@ export default function TimeWellSpentCard(props: Props) {
           <TouchableOpacity accessibilityRole="button"
             disabled={feedback[item.id] === 'not_useful'}
             onPress={() => { void record(item, 'not_useful'); }}
-            style={{ flexDirection: 'row', alignItems: 'center' }}>
+            style={{ flexDirection: 'row', alignItems: 'center', minHeight: 44, paddingHorizontal: 6 }}>
             <Text style={{ color: colors.textMuted, fontSize: 12 }}>
               {feedback[item.id] === 'not_useful' ? 'Noted' : 'Not useful'}
             </Text>
@@ -176,11 +177,26 @@ export default function TimeWellSpentCard(props: Props) {
         </View>
       </View>
     )}
+    {suggestions.length > 1 ? (
+      <TouchableOpacity
+        accessibilityRole="button"
+        accessibilityLabel={showAllSuggestions ? 'Show only the top recommendation' : 'Show all recommendations'}
+        accessibilityState={{ expanded: showAllSuggestions }}
+        onPress={() => setShowAllSuggestions(value => !value)}
+        style={{ minHeight: 48, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }}
+      >
+        <Text style={{ color: colors.primary, fontSize: 13, fontWeight: '700' }}>
+          {showAllSuggestions ? 'Show less' : `See ${suggestions.length - 1} more for you`}
+        </Text>
+        <ChevronRight size={16} color={colors.primary}
+          style={{ transform: [{ rotate: showAllSuggestions ? '-90deg' : '90deg' }] }} />
+      </TouchableOpacity>
+    ) : null}
     <View style={{ borderTopWidth: 1, borderColor: colors.border, marginTop: 8, paddingTop: 13 }}>
       <TouchableOpacity onPress={() => void toggleReminders()}
         accessibilityRole="switch" accessibilityState={{ checked: enabled, disabled: !loaded || updating || Platform.OS === 'web' }}
         disabled={!loaded || updating || Platform.OS === 'web'}
-        style={{ flexDirection: 'row', alignItems: 'center', gap: 8, paddingVertical: 4 }}>
+        style={{ flexDirection: 'row', alignItems: 'center', gap: 8, minHeight: 48, paddingVertical: 8 }}>
         {enabled ? <Bell size={17} color={colors.primary}/> : <BellOff size={17} color={colors.textSecondary}/>}
         <Text style={{ flex: 1, color: colors.text, fontSize: 13, fontWeight: '600' }}>
           Timely match and episode reminders
