@@ -2534,6 +2534,10 @@ export default function ActivitiesScreen() {
 
         <View style={{ backgroundColor: colors.background }}>
             <AddInterestsLaterCard />
+            <View style={{ marginHorizontal: 18, marginTop: 24, marginBottom: 10 }}>
+              <Text style={{ color: colors.text, fontSize: 19, fontWeight: '800' }}>Your next move</Text>
+              <Text style={{ color: colors.textSecondary, fontSize: 13, marginTop: 4 }}>One useful recommendation, not another to-do list.</Text>
+            </View>
             <TimeWellSpentCard
               userId={userId}
               now={new Date(decisionMinute * 60_000)}
@@ -2693,6 +2697,10 @@ export default function ActivitiesScreen() {
               />
             ) : null}
 
+            <View style={{ marginHorizontal: 18, marginTop: 24, marginBottom: 10 }}>
+              <Text style={{ color: colors.text, fontSize: 19, fontWeight: '800' }}>Your progress</Text>
+              <Text style={{ color: colors.textSecondary, fontSize: 13, marginTop: 4 }}>Small steps count. Keep your routines moving.</Text>
+            </View>
             {/* Today's Routine Section - Combined with Progress */}
             <View style={styles.routineSection}>
               <TodaysRoutine 
@@ -2702,6 +2710,25 @@ export default function ActivitiesScreen() {
             </View>
 
             <HabitEngineTodayCard />
+
+            <View style={{ marginHorizontal: 18, marginTop: 24, marginBottom: 10 }}>
+              <Text style={{ color: colors.text, fontSize: 19, fontWeight: '800' }}>Coming up</Text>
+              <Text style={{ color: colors.textSecondary, fontSize: 13, marginTop: 4 }}>The plans and interests you've chosen to keep.</Text>
+            </View>
+            <OnePagerSavedFitSection
+              events={upcomingSaved}
+              recommendationInput={eventRecommendationInput}
+              timeFormat={eventTimeFormat}
+              colors={{
+                text: colors.text,
+                textSecondary: colors.textSecondary,
+                textMuted: colors.textMuted,
+                card: colors.card,
+                border: colors.border,
+                primary: colors.primary,
+                primaryLight: `${colors.primary}18`,
+              }}
+            />
 
             {/* Secondary insights are available on demand instead of competing
                 with the daily priority, coach and routine above the fold. */}
@@ -2769,21 +2796,6 @@ export default function ActivitiesScreen() {
             />
               </>
             ) : null}
-
-            <OnePagerSavedFitSection
-              events={upcomingSaved}
-              recommendationInput={eventRecommendationInput}
-              timeFormat={eventTimeFormat}
-              colors={{
-                text: colors.text,
-                textSecondary: colors.textSecondary,
-                textMuted: colors.textMuted,
-                card: colors.card,
-                border: colors.border,
-                primary: colors.primary,
-                primaryLight: `${colors.primary}18`,
-              }}
-            />
 
             {showCalendarSection ? (
             <View style={styles.section}>
