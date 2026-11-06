@@ -67,9 +67,10 @@ interface TabRoute {
 // Other screens remain registered in Expo Router and can still be opened
 // from Overview cards, deep links and in-app actions.
 // Profile remains available for settings and account management.
-const PRIMARY_TABS = ['activities', 'events', 'sports', 'profile'] as const;
+const ALWAYS_VISIBLE_TABS = ['activities', 'sports', 'events', 'profile'] as const;
+const CLASSIC_TAB_NAMES = ['activities', 'sports', 'events', 'profile', 'tasks', 'shows', 'cooking', 'learning', 'discover'] as const;
 function getClassicVisibleTabs(_personalized: string[]): string[] {
-  return [...PRIMARY_TABS];
+  return [...ALWAYS_VISIBLE_TABS];
 }
 
 const PINNED_START_TAB = 'activities';
