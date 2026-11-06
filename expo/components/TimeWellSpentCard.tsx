@@ -85,11 +85,13 @@ export default function TimeWellSpentCard(props: Props) {
         Alert.alert('Notifications are off', 'Enable One Pager notifications in iOS Settings to receive timely reminders.');
         return;
       }
-      await saveTimelyRemindersEnabled(userId, next);
+      // Update the control immediately, then roll back if persistence fails.
       setPref({ userId, loaded: true, enabled: next });
+      await saveTimelyRemindersEnabled(userId, next);
       // This also cancels existing One Pager "worth your time" alerts when disabled.
       if (!next) await syncTimeWellSpentReminders(userId, false, { signals, episodes });
     } catch {
+      setPref({ userId, loaded: true, enabled });
       Alert.alert('Could not change reminders', 'Please try again.');
     } finally {
       setUpdating(false);
