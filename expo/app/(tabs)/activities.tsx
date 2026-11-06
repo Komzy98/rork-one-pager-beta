@@ -2541,7 +2541,7 @@ export default function ActivitiesScreen() {
             <TimeWellSpentCard
               userId={userId}
               now={new Date(decisionMinute * 60_000)}
-              dailyDecision={null} // The recommendation is prioritised above; keep the daily review here.
+              dailyDecision={dailyDecision} // Include the personalised daily decision in ranked opportunities.
               signals={footballInterestSignals}
               episodes={visibleNewEpisodes}
               incompleteHabits={timeWellSpentHabits}
