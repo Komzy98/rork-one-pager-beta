@@ -2536,7 +2536,7 @@ export default function ActivitiesScreen() {
             <AddInterestsLaterCard />
             <View style={{ marginHorizontal: 18, marginTop: 24, marginBottom: 10 }}>
               <Text style={{ color: colors.text, fontSize: 19, fontWeight: '800' }}>Your next move</Text>
-              <Text style={{ color: colors.textSecondary, fontSize: 13, marginTop: 4 }}>One useful recommendation, not another to-do list.</Text>
+              <Text style={{ color: colors.textSecondary, fontSize: 13, marginTop: 4 }}>One timely recommendation, with more when you want them.</Text>
             </View>
             <TimeWellSpentCard
               userId={userId}
