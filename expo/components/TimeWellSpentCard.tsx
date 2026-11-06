@@ -2,6 +2,7 @@ import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { Alert, Platform, Text, TouchableOpacity, View } from 'react-native';
 import { Bell, BellOff, CheckCircle2, ChevronRight, Clock, Heart, Sparkles, Tv, Trophy } from 'lucide-react-native';
 import { useTheme } from '@/hooks/useTheme';
+import { OP_LAYOUT, OP_RADIUS, OP_SPACING, OP_TYPE } from '@/constants/onePagerDesign';
 import { notificationService } from '@/utils/notificationService';
 import {
   getTimeOpportunities, summarizeTimeOutcomes,
@@ -46,12 +47,16 @@ export default function TimeWellSpentCard(props: Props) {
     opened: 0, acted: 0, notUseful: 0,
   });
   const [updating, setUpdating] = useState(false);
+  const [showAllSuggestions, setShowAllSuggestions] = useState(false);
+  // A dismissed recommendation disappears immediately without affecting other interests.
+  const visibleSuggestions = suggestions.filter(item => feedback[item.id] !== 'not_useful');
   const loaded = pref.loaded && pref.userId === userId;
   const enabled = loaded && pref.enabled;
 
   useEffect(() => {
     let active = true;
     setFeedback({});
+    setShowAllSuggestions(false);
     setPref({ userId, loaded: false, enabled: false });
     void Promise.all([getTimelyRemindersEnabled(userId), readTimeOutcomes(userId)])
       .then(([value, records]) => {
@@ -84,11 +89,13 @@ export default function TimeWellSpentCard(props: Props) {
         Alert.alert('Notifications are off', 'Enable One Pager notifications in iOS Settings to receive timely reminders.');
         return;
       }
-      await saveTimelyRemindersEnabled(userId, next);
+      // Update the control immediately, then roll back if persistence fails.
       setPref({ userId, loaded: true, enabled: next });
+      await saveTimelyRemindersEnabled(userId, next);
       // This also cancels existing One Pager "worth your time" alerts when disabled.
       if (!next) await syncTimeWellSpentReminders(userId, false, { signals, episodes });
     } catch {
+      setPref({ userId, loaded: true, enabled });
       Alert.alert('Could not change reminders', 'Please try again.');
     } finally {
       setUpdating(false);
@@ -100,7 +107,13 @@ export default function TimeWellSpentCard(props: Props) {
     try {
       setCounters(await recordTimeOutcome(userId, item.kind, outcome));
     } catch (error) {
+      if (outcome !== 'opened') setFeedback(prev => {
+        const next = { ...prev };
+        if (next[item.id] === outcome) delete next[item.id];
+        return next;
+      });
       console.warn('[WorthYourTime] Local feedback unavailable', error);
+      Alert.alert('Could not save feedback', 'Please try again.');
     }
   }, [userId]);
 
@@ -114,22 +127,22 @@ export default function TimeWellSpentCard(props: Props) {
   };
 
   return <View style={{ marginHorizontal: 20, marginTop: 14, marginBottom: 12,
-    borderRadius: 22, backgroundColor: colors.card, borderWidth: 1, borderColor: colors.border,
-    paddingHorizontal: 17, paddingVertical: 18 }}>
+    borderRadius: OP_RADIUS.hero, backgroundColor: colors.card, borderWidth: 1, borderColor: colors.border,
+    paddingHorizontal: OP_SPACING.md, paddingVertical: OP_SPACING.lg }}>
     <View style={{ flexDirection: 'row', gap: 9, alignItems: 'center' }}>
       <Sparkles color={colors.primary} size={20}/>
-      <Text style={{ fontSize: 19, fontWeight: '800', color: colors.text, flexShrink: 1 }}>
+      <Text style={{ ...OP_TYPE.sectionTitle, color: colors.text, flexShrink: 1 }}>
         Worth your time today
       </Text>
     </View>
     <Text style={{ fontSize: 13, lineHeight: 19, color: colors.textSecondary, marginTop: 6 }}>
       Things you care about, at a time you can do something about them.
     </Text>
-    {suggestions.length === 0 ? <View style={{ paddingVertical: 18 }}>
+    {visibleSuggestions.length === 0 ? <View style={{ paddingVertical: 18 }}>
       <Text style={{ color: colors.textSecondary, fontSize: 13 }}>
         No timely updates right now. Follow teams or shows and set personal goals to make this space yours.
       </Text>
-    </View> : suggestions.map((item, index) =>
+    </View> : (showAllSuggestions ? visibleSuggestions : visibleSuggestions.slice(0, 1)).map((item, index) =>
       <View key={item.id} style={{ borderTopWidth: 1, borderColor: colors.border,
         paddingTop: 15, paddingBottom: 10, marginTop: index === 0 ? 14 : 3 }}>
         <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
@@ -150,7 +163,7 @@ export default function TimeWellSpentCard(props: Props) {
           marginTop: 10, gap: 13 }}>
           <TouchableOpacity accessibilityRole="button" accessibilityLabel={item.actionLabel + ' for ' + item.title}
             onPress={() => { void record(item, 'opened'); onOpen(item); }}
-            style={{ flexDirection: 'row', alignItems: 'center', gap: 3 }}>
+            style={{ flexDirection: 'row', alignItems: 'center', gap: 3, minHeight: 44, paddingHorizontal: 6 }}>
             <Text style={{ color: colors.primary, fontSize: 13, fontWeight: '700' }}>
               {item.actionLabel}
             </Text>
@@ -159,7 +172,7 @@ export default function TimeWellSpentCard(props: Props) {
           <TouchableOpacity accessibilityRole="button"
             onPress={() => { void record(item, 'acted'); }}
             disabled={feedback[item.id] === 'acted'}
-            style={{ flexDirection: 'row', alignItems: 'center', gap: 4 }}>
+            style={{ flexDirection: 'row', alignItems: 'center', gap: 4, minHeight: 44, paddingHorizontal: 6 }}>
             <CheckCircle2 size={14} color={feedback[item.id] === 'acted' ? colors.primary : colors.textSecondary}/>
             <Text style={{ color: colors.textSecondary, fontSize: 12 }}>
               {feedback[item.id] === 'acted' ? 'Recorded' : 'I followed through'}
@@ -168,7 +181,7 @@ export default function TimeWellSpentCard(props: Props) {
           <TouchableOpacity accessibilityRole="button"
             disabled={feedback[item.id] === 'not_useful'}
             onPress={() => { void record(item, 'not_useful'); }}
-            style={{ flexDirection: 'row', alignItems: 'center' }}>
+            style={{ flexDirection: 'row', alignItems: 'center', minHeight: 44, paddingHorizontal: 6 }}>
             <Text style={{ color: colors.textMuted, fontSize: 12 }}>
               {feedback[item.id] === 'not_useful' ? 'Noted' : 'Not useful'}
             </Text>
@@ -176,11 +189,26 @@ export default function TimeWellSpentCard(props: Props) {
         </View>
       </View>
     )}
+    {visibleSuggestions.length > 1 ? (
+      <TouchableOpacity
+        accessibilityRole="button"
+        accessibilityLabel={showAllSuggestions ? 'Show only the top recommendation' : 'Show all recommendations'}
+        accessibilityState={{ expanded: showAllSuggestions }}
+        onPress={() => setShowAllSuggestions(value => !value)}
+        style={{ minHeight: OP_LAYOUT.rowMinHeight, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }}
+      >
+        <Text style={{ color: colors.primary, fontSize: 13, fontWeight: '700' }}>
+          {showAllSuggestions ? 'Show less' : `See ${visibleSuggestions.length - 1} more for you`}
+        </Text>
+        <ChevronRight size={16} color={colors.primary}
+          style={{ transform: [{ rotate: showAllSuggestions ? '-90deg' : '90deg' }] }} />
+      </TouchableOpacity>
+    ) : null}
     <View style={{ borderTopWidth: 1, borderColor: colors.border, marginTop: 8, paddingTop: 13 }}>
       <TouchableOpacity onPress={() => void toggleReminders()}
         accessibilityRole="switch" accessibilityState={{ checked: enabled, disabled: !loaded || updating || Platform.OS === 'web' }}
         disabled={!loaded || updating || Platform.OS === 'web'}
-        style={{ flexDirection: 'row', alignItems: 'center', gap: 8, paddingVertical: 4 }}>
+        style={{ flexDirection: 'row', alignItems: 'center', gap: 8, minHeight: 48, paddingVertical: 8 }}>
         {enabled ? <Bell size={17} color={colors.primary}/> : <BellOff size={17} color={colors.textSecondary}/>}
         <Text style={{ flex: 1, color: colors.text, fontSize: 13, fontWeight: '600' }}>
           Timely match and episode reminders

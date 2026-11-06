@@ -515,13 +515,17 @@ const RoutineItem = ({
       <TouchableOpacity
         style={styles.routineItemContent}
         onPress={handlePress}
+        accessibilityRole="button"
+        accessibilityLabel={`${isCompleted ? 'Mark incomplete' : 'Complete'} ${habit.title}`}
+        accessibilityState={{ selected: isCompleted }}
         onLongPress={handleLongPress}
         delayLongPress={500}
         activeOpacity={0.7}
       >
         <View style={[styles.colorAccent, { backgroundColor: habitColor }]} />
         
-        <TouchableOpacity onPress={handlePress} style={styles.checkContainer}>
+        <TouchableOpacity onPress={handlePress} style={styles.checkContainer}
+          accessibilityRole="button" accessibilityLabel={`${isCompleted ? 'Undo completion' : 'Complete'} ${habit.title}`}>
           <Animated.View style={{ transform: [{ scale: checkScale }] }}>
             {isCompleted ? (
               <View style={styles.checkCircleDone}>
@@ -628,6 +632,7 @@ const RoutineItem = ({
         {!isCompleted ? (
           <TouchableOpacity 
             onPress={handlePress}
+            accessibilityRole="button" accessibilityLabel={`Complete ${habit.title}`}
             style={[styles.actionBtn, isBusyMode && styles.actionBtnBusy]}
             activeOpacity={0.75}
           >
@@ -1585,6 +1590,8 @@ const styles = StyleSheet.create({
   },
   actionBtn: {
     paddingHorizontal: 16,
+    minHeight: 44,
+    justifyContent: 'center',
     paddingVertical: 8,
     borderRadius: 12,
     backgroundColor: '#0F172A',
@@ -1643,8 +1650,8 @@ const styles = StyleSheet.create({
     color: '#94A3B8',
   },
   partnerIconBtn: {
-    width: 34,
-    height: 34,
+    width: 44,
+    height: 44,
     borderRadius: 10,
     borderWidth: 1,
     alignItems: 'center',
@@ -1665,6 +1672,10 @@ const styles = StyleSheet.create({
     color: '#059669',
   },
   expandButton: {
+    minWidth: 44,
+    minHeight: 44,
+    alignItems: 'center',
+    justifyContent: 'center',
     padding: 4,
     marginRight: 2,
   },

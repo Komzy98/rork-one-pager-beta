@@ -197,6 +197,7 @@ function buildSpeechSummaryText(summary: string): string {
 
 export default function ActivitiesScreen() {
   const { user } = useAuth();
+  const [showMoreDailyInsights, setShowMoreDailyInsights] = useState(false);
   const { coachPhase: devCoachPhaseParam } = useLocalSearchParams<{ coachPhase?: string }>();
   const [coachPhase, setCoachPhase] = useState<TodayCoachPhase>(() => resolveTodayCoachPhase());
 
@@ -2533,10 +2534,14 @@ export default function ActivitiesScreen() {
 
         <View style={{ backgroundColor: colors.background }}>
             <AddInterestsLaterCard />
+            <View style={{ marginHorizontal: 18, marginTop: 24, marginBottom: 10 }}>
+              <Text style={{ color: colors.text, fontSize: 19, fontWeight: '800' }}>Your next move</Text>
+              <Text style={{ color: colors.textSecondary, fontSize: 13, marginTop: 4 }}>One timely recommendation, with more when you want them.</Text>
+            </View>
             <TimeWellSpentCard
               userId={userId}
               now={new Date(decisionMinute * 60_000)}
-              dailyDecision={null} // The recommendation is prioritised above; keep the daily review here.
+              dailyDecision={dailyDecision} // Include the personalised daily decision in ranked opportunities.
               signals={footballInterestSignals}
               episodes={visibleNewEpisodes}
               incompleteHabits={timeWellSpentHabits}
@@ -2570,34 +2575,6 @@ export default function ActivitiesScreen() {
                     }
                     break;
                   }
-                }
-              }}
-            />
-            <DailyStackCard
-              habitCount={stats.totalHabits}
-              completedHabits={stats.completedHabits}
-              continueWatchingTitle={dailyStackContinueTitle}
-              tonightMatchLabel={dailyStackTonightMatch}
-              partnerCount={partnerList.length}
-            />
-            <DecisionMomentsCard
-              completedHabits={stats.completedHabits}
-              totalHabits={stats.totalHabits}
-              chronotypeId={profile?.chronotype}
-              tonightMatchLabel={dailyStackTonightMatch}
-              matchKickoffTime={dailyStackMatchKickoff}
-              weather={weather}
-              continueWatchingTitle={dailyStackContinueTitle}
-              partnerFeed={partnerActivity.feed}
-              currentUserId={user?.id}
-              onCheer={(eventId) => void partnerActivity.cheer(eventId, true)}
-              onContinueWatching={() => {
-                const first = continueWatchingItems[0];
-                if (!first) return;
-                if (first.kind === 'younify') {
-                  void handleContinueWatchingYounify(first.row);
-                } else {
-                  void handleContinueWatching(first.show);
                 }
               }}
             />
@@ -2720,6 +2697,10 @@ export default function ActivitiesScreen() {
               />
             ) : null}
 
+            <View style={{ marginHorizontal: 18, marginTop: 24, marginBottom: 10 }}>
+              <Text style={{ color: colors.text, fontSize: 19, fontWeight: '800' }}>Your progress</Text>
+              <Text style={{ color: colors.textSecondary, fontSize: 13, marginTop: 4 }}>Small steps count. Keep your routines moving.</Text>
+            </View>
             {/* Today's Routine Section - Combined with Progress */}
             <View style={styles.routineSection}>
               <TodaysRoutine 
@@ -2730,6 +2711,10 @@ export default function ActivitiesScreen() {
 
             <HabitEngineTodayCard />
 
+            <View style={{ marginHorizontal: 18, marginTop: 24, marginBottom: 10 }}>
+              <Text style={{ color: colors.text, fontSize: 19, fontWeight: '800' }}>Coming up</Text>
+              <Text style={{ color: colors.textSecondary, fontSize: 13, marginTop: 4 }}>The plans and interests you've chosen to keep.</Text>
+            </View>
             <OnePagerSavedFitSection
               events={upcomingSaved}
               recommendationInput={eventRecommendationInput}
@@ -2744,6 +2729,73 @@ export default function ActivitiesScreen() {
                 primaryLight: `${colors.primary}18`,
               }}
             />
+
+            {/* Secondary insights are available on demand instead of competing
+                with the daily priority, coach and routine above the fold. */}
+            <TouchableOpacity
+              accessibilityRole="button"
+              accessibilityLabel={showMoreDailyInsights ? 'Hide more daily insights' : 'Show more daily insights'}
+              accessibilityState={{ expanded: showMoreDailyInsights }}
+              onPress={() => setShowMoreDailyInsights((value) => !value)}
+              style={{
+                marginHorizontal: 16,
+                marginTop: 12,
+                marginBottom: 12,
+                minHeight: 48,
+                paddingHorizontal: 16,
+                borderRadius: 14,
+                backgroundColor: colors.card,
+                borderWidth: StyleSheet.hairlineWidth,
+                borderColor: colors.border,
+                flexDirection: 'row',
+                alignItems: 'center',
+                justifyContent: 'space-between',
+              }}
+            >
+              <View style={{ flex: 1 }}>
+                <Text style={{ color: colors.text, fontSize: 15, fontWeight: '700' }}>More daily insights</Text>
+                <Text style={{ color: colors.textSecondary, fontSize: 12, marginTop: 3 }}>
+                  Your daily snapshot and decision moments
+                </Text>
+              </View>
+              <ChevronRight
+                size={18}
+                color={colors.textSecondary}
+                style={{ transform: [{ rotate: showMoreDailyInsights ? '90deg' : '0deg' }] }}
+              />
+            </TouchableOpacity>
+            {showMoreDailyInsights ? (
+              <>
+            <DailyStackCard
+              habitCount={stats.totalHabits}
+              completedHabits={stats.completedHabits}
+              continueWatchingTitle={dailyStackContinueTitle}
+              tonightMatchLabel={dailyStackTonightMatch}
+              partnerCount={partnerList.length}
+            />
+            <DecisionMomentsCard
+              completedHabits={stats.completedHabits}
+              totalHabits={stats.totalHabits}
+              chronotypeId={profile?.chronotype}
+              tonightMatchLabel={dailyStackTonightMatch}
+              matchKickoffTime={dailyStackMatchKickoff}
+              weather={weather}
+              continueWatchingTitle={dailyStackContinueTitle}
+              partnerFeed={partnerActivity.feed}
+              currentUserId={user?.id}
+              onCheer={(eventId) => void partnerActivity.cheer(eventId, true)}
+              onContinueWatching={() => {
+                const first = continueWatchingItems[0];
+                if (!first) return;
+                if (first.kind === 'younify') {
+                  void handleContinueWatchingYounify(first.row);
+                } else {
+                  void handleContinueWatching(first.show);
+                }
+              }}
+            />
+              </>
+            ) : null}
 
             {showCalendarSection ? (
             <View style={styles.section}>
