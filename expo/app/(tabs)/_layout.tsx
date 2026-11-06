@@ -63,27 +63,13 @@ interface TabRoute {
   path?: string;
 }
 
-// Keep the original personalisable tab bar, but always expose the three
-// classic destinations explicitly requested by the founder.
-const CLASSIC_TAB_NAMES = ['activities', 'tasks', 'shows', 'sports', 'cooking', 'learning', 'events', 'discover', 'profile'] as const;
-const ALWAYS_VISIBLE_TABS = ['activities', 'sports', 'events', 'profile'] as const;
-function getClassicVisibleTabs(personalized: string[]): string[] {
-  // Retain the user's preferred ordering while keeping Sports and Events
-  // available even if their current interests no longer include those tabs.
-  const eligible = new Set<string>(CLASSIC_TAB_NAMES);
-  const middle = personalized.filter(
-    (name, index) =>
-      eligible.has(name) &&
-      name !== 'activities' &&
-      name !== 'profile' &&
-      personalized.indexOf(name) === index,
-  );
-  for (const name of ALWAYS_VISIBLE_TABS) {
-    if (name !== 'activities' && name !== 'profile' && !middle.includes(name)) {
-      middle.push(name);
-    }
-  }
-  return ['activities', ...middle, 'profile'];
+// Phase 1 UX: make the primary navigation predictable and easy to scan.
+// Other screens remain registered in Expo Router and can still be opened
+// from Overview cards, deep links and in-app actions.
+// Profile remains available for settings and account management.
+const PRIMARY_TABS = ['activities', 'events', 'sports', 'profile'] as const;
+function getClassicVisibleTabs(_personalized: string[]): string[] {
+  return [...PRIMARY_TABS];
 }
 
 const PINNED_START_TAB = 'activities';
