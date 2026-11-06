@@ -197,6 +197,7 @@ function buildSpeechSummaryText(summary: string): string {
 
 export default function ActivitiesScreen() {
   const { user } = useAuth();
+  const [showMoreDailyInsights, setShowMoreDailyInsights] = useState(false);
   const { coachPhase: devCoachPhaseParam } = useLocalSearchParams<{ coachPhase?: string }>();
   const [coachPhase, setCoachPhase] = useState<TodayCoachPhase>(() => resolveTodayCoachPhase());
 
@@ -2573,34 +2574,6 @@ export default function ActivitiesScreen() {
                 }
               }}
             />
-            <DailyStackCard
-              habitCount={stats.totalHabits}
-              completedHabits={stats.completedHabits}
-              continueWatchingTitle={dailyStackContinueTitle}
-              tonightMatchLabel={dailyStackTonightMatch}
-              partnerCount={partnerList.length}
-            />
-            <DecisionMomentsCard
-              completedHabits={stats.completedHabits}
-              totalHabits={stats.totalHabits}
-              chronotypeId={profile?.chronotype}
-              tonightMatchLabel={dailyStackTonightMatch}
-              matchKickoffTime={dailyStackMatchKickoff}
-              weather={weather}
-              continueWatchingTitle={dailyStackContinueTitle}
-              partnerFeed={partnerActivity.feed}
-              currentUserId={user?.id}
-              onCheer={(eventId) => void partnerActivity.cheer(eventId, true)}
-              onContinueWatching={() => {
-                const first = continueWatchingItems[0];
-                if (!first) return;
-                if (first.kind === 'younify') {
-                  void handleContinueWatchingYounify(first.row);
-                } else {
-                  void handleContinueWatching(first.show);
-                }
-              }}
-            />
             {hasSportsInterest && footballInterestSignals.length > 0 && (
               <>
                 <InterestBriefingCard
@@ -2729,6 +2702,73 @@ export default function ActivitiesScreen() {
             </View>
 
             <HabitEngineTodayCard />
+
+            {/* Secondary insights are available on demand instead of competing
+                with the daily priority, coach and routine above the fold. */}
+            <TouchableOpacity
+              accessibilityRole="button"
+              accessibilityLabel={showMoreDailyInsights ? 'Hide more daily insights' : 'Show more daily insights'}
+              accessibilityState={{ expanded: showMoreDailyInsights }}
+              onPress={() => setShowMoreDailyInsights((value) => !value)}
+              style={{
+                marginHorizontal: 16,
+                marginTop: 12,
+                marginBottom: 12,
+                minHeight: 48,
+                paddingHorizontal: 16,
+                borderRadius: 14,
+                backgroundColor: colors.card,
+                borderWidth: StyleSheet.hairlineWidth,
+                borderColor: colors.border,
+                flexDirection: 'row',
+                alignItems: 'center',
+                justifyContent: 'space-between',
+              }}
+            >
+              <View style={{ flex: 1 }}>
+                <Text style={{ color: colors.text, fontSize: 15, fontWeight: '700' }}>More daily insights</Text>
+                <Text style={{ color: colors.textSecondary, fontSize: 12, marginTop: 3 }}>
+                  Your daily snapshot and decision moments
+                </Text>
+              </View>
+              <ChevronRight
+                size={18}
+                color={colors.textSecondary}
+                style={{ transform: [{ rotate: showMoreDailyInsights ? '90deg' : '0deg' }] }}
+              />
+            </TouchableOpacity>
+            {showMoreDailyInsights ? (
+              <>
+            <DailyStackCard
+              habitCount={stats.totalHabits}
+              completedHabits={stats.completedHabits}
+              continueWatchingTitle={dailyStackContinueTitle}
+              tonightMatchLabel={dailyStackTonightMatch}
+              partnerCount={partnerList.length}
+            />
+            <DecisionMomentsCard
+              completedHabits={stats.completedHabits}
+              totalHabits={stats.totalHabits}
+              chronotypeId={profile?.chronotype}
+              tonightMatchLabel={dailyStackTonightMatch}
+              matchKickoffTime={dailyStackMatchKickoff}
+              weather={weather}
+              continueWatchingTitle={dailyStackContinueTitle}
+              partnerFeed={partnerActivity.feed}
+              currentUserId={user?.id}
+              onCheer={(eventId) => void partnerActivity.cheer(eventId, true)}
+              onContinueWatching={() => {
+                const first = continueWatchingItems[0];
+                if (!first) return;
+                if (first.kind === 'younify') {
+                  void handleContinueWatchingYounify(first.row);
+                } else {
+                  void handleContinueWatching(first.show);
+                }
+              }}
+            />
+              </>
+            ) : null}
 
             <OnePagerSavedFitSection
               events={upcomingSaved}
